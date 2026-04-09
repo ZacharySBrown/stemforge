@@ -1,0 +1,4 @@
+-r requirements-remote.txt
+torch>=2.1.0
+torchaudio>=2.1.0
+demucs>=4.0.1

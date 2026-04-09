@@ -1,0 +1,58 @@
+import numpy as np
+import soundfile as sf
+import librosa
+from pathlib import Path
+
+
+def detect_bpm_and_beats(audio_path: Path) -> tuple[float, np.ndarray]:
+    """
+    Detect BPM and beat timestamps (in seconds) from an audio file.
+    Uses the drums/most percussive stem for best accuracy.
+    Returns (bpm, beat_times_array).
+    """
+    y, sr = librosa.load(str(audio_path), sr=None, mono=True)
+    tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr, units="frames")
+    beat_times = librosa.frames_to_time(beat_frames, sr=sr)
+    return float(np.atleast_1d(tempo)[0]), beat_times
+
+
+def slice_at_beats(
+    stem_path: Path,
+    beat_times: np.ndarray,
+    output_dir: Path,
+    stem_name: str,
+    silence_threshold: float = 1e-5,
+) -> list[Path]:
+    """
+    Slice stem WAV at beat boundaries.
+    Output: {output_dir}/{stem_name}_beats/{stem_name}_beat_NNN.wav
+    Skips near-silent chunks (saves space, avoids empty Drum Rack pads).
+    Returns list of created file paths.
+    """
+    y, sr = librosa.load(str(stem_path), sr=None, mono=False)
+    if y.ndim == 1:
+        y = y[np.newaxis, :]  # (1, samples)
+
+    slices_dir = output_dir / f"{stem_name}_beats"
+    slices_dir.mkdir(parents=True, exist_ok=True)
+
+    total_samples = y.shape[-1]
+    boundaries = np.concatenate([
+        librosa.time_to_samples(beat_times, sr=sr),
+        [total_samples],
+    ]).astype(int)
+    boundaries = np.clip(boundaries, 0, total_samples)
+
+    created = []
+    for i in range(len(boundaries) - 1):
+        start, end = int(boundaries[i]), int(boundaries[i + 1])
+        if end <= start:
+            continue
+        chunk = y[:, start:end]
+        if float(np.sqrt(np.mean(chunk ** 2))) < silence_threshold:
+            continue
+        fname = slices_dir / f"{stem_name}_beat_{i + 1:03d}.wav"
+        sf.write(str(fname), chunk.T, sr, subtype="PCM_24")
+        created.append(fname)
+
+    return created
