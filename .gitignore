@@ -9,3 +9,4 @@ build/
 *.mp3
 *.flac
 .DS_Store
+test_musicai_output/

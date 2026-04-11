@@ -14,9 +14,47 @@ def to_snake_case(name: str) -> str:
     name = re.sub(r"_+", "_", name).strip("_")
     return name.lower()
 
+import shutil
+import subprocess
+import tempfile
+
 import click
 from rich.console import Console
 from rich.rule import Rule
+
+
+NON_WAV_FORMATS = {".mp3", ".m4a", ".aac", ".ogg", ".flac", ".aiff", ".wma", ".opus"}
+
+
+def ensure_wav(audio_path: Path, console: Console = None) -> tuple[Path, bool]:
+    """Convert non-WAV audio to WAV via ffmpeg. Returns (wav_path, was_converted)."""
+    if audio_path.suffix.lower() == ".wav":
+        return audio_path, False
+
+    if not shutil.which("ffmpeg"):
+        raise click.UsageError(
+            f"Cannot convert {audio_path.suffix} — ffmpeg not installed.\n"
+            "  brew install ffmpeg"
+        )
+
+    wav_path = audio_path.with_suffix(".wav")
+    if wav_path.exists():
+        if console:
+            console.print(f"  [dim]Using existing WAV: {wav_path.name}[/dim]")
+        return wav_path, False
+
+    if console:
+        console.print(f"  [dim]Converting {audio_path.suffix} → .wav ...[/dim]")
+    result = subprocess.run(
+        ["ffmpeg", "-i", str(audio_path), "-y", str(wav_path)],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        raise click.UsageError(f"ffmpeg conversion failed:\n{result.stderr[-500:]}")
+
+    if console:
+        console.print(f"  [dim]Converted: {wav_path.name}[/dim]")
+    return wav_path, True
 
 from .backends.lalal import LalalBackend
 from .backends.demucs import DemucsBackend
@@ -70,7 +108,11 @@ def split(audio_file, backend, stems, model, pipeline, output, no_slice, no_norm
       stemforge split track.wav --model 6stem            # 6-stem Demucs model
       stemforge split track.wav --pipeline glitch        # use 'glitch' pipeline config
       stemforge split track.wav --no-slice               # full stems, no beat files
+      stemforge split track.mp3                          # auto-converts to WAV
     """
+    # ── Auto-convert to WAV if needed ────────────────────────────────────────
+    audio_file, _ = ensure_wav(audio_file, console)
+
     # ── Resolve backend ──────────────────────────────────────────────────────
     if backend == "auto":
         has_lalal = bool(os.environ.get("LALAL_LICENSE_KEY", "").strip())
@@ -275,6 +317,97 @@ def create_templates():
     console.print()
     console.print("[dim]See setup.md for full parameter values.[/dim]")
     console.print("[dim]See m4l/README_M4L.md for troubleshooting.[/dim]")
+
+
+@cli.command()
+@click.argument("audio_file", type=click.Path(exists=True, path_type=Path))
+@click.option("--json-out", is_flag=True, default=False,
+              help="Output raw JSON instead of formatted table.")
+def analyze(audio_file, json_out):
+    """
+    Analyze an audio file and recommend optimal stem split settings.
+
+    Detects genre characteristics (electronic, rock, jazz, hip hop, etc.)
+    and recommends the best backend, model, and stem configuration.
+
+    \b
+    Examples:
+      stemforge analyze track.wav
+      stemforge analyze track.wav --json-out
+      stemforge analyze track.mp3              # auto-converts to WAV
+      stemforge split track.wav --auto   # analyze + split in one step
+    """
+    audio_file, _ = ensure_wav(audio_file, console)
+
+    from .analyzer import analyze as run_analysis
+    from dataclasses import asdict
+
+    console.print(Rule(f"[bold cyan]StemForge Analyze[/bold cyan] — {audio_file.name}"))
+    console.print()
+
+    with console.status("[cyan]Analyzing audio...[/cyan]"):
+        profile = run_analysis(audio_file)
+
+    if json_out:
+        import json as json_mod
+        console.print(json_mod.dumps(asdict(profile), indent=2))
+        return
+
+    # ── Genre + confidence ─────────────────────────────────────────────────
+    conf_color = "green" if profile.genre_confidence > 0.6 else "yellow" if profile.genre_confidence > 0.4 else "red"
+    console.print(f"  Genre:      [bold cyan]{profile.genre}[/bold cyan]  "
+                  f"[{conf_color}]({profile.genre_confidence:.0%} confidence)[/{conf_color}]")
+    console.print(f"  BPM:        [cyan]{profile.bpm}[/cyan]")
+    console.print()
+
+    # ── Genre scores ──────────────────────────────────────────────────────
+    console.print("[bold]Genre Scores (CLAP)[/bold]")
+    sorted_genres = sorted(profile.genre_scores.items(), key=lambda x: x[1], reverse=True)
+    for label, score in sorted_genres[:5]:
+        bar = '█' * int(score * 40)
+        console.print(f"  {label:<28s} {bar:<40s} {score:.1%}")
+    console.print()
+
+    # ── Instruments detected ───────────────────────────────────────────────
+    console.print("[bold]Instruments Detected (AST)[/bold]")
+    if profile.instruments_detected:
+        for instr in profile.instruments_detected[:8]:
+            score = profile.instrument_scores.get(instr, 0)
+            bar = '█' * int(score * 40)
+            console.print(f"  {instr:<35s} {bar:<40s} {score:.1%}")
+    else:
+        console.print("  [dim]No instruments detected above threshold[/dim]")
+    console.print()
+
+    # ── Spectral profile ───────────────────────────────────────────────────
+    console.print("[bold]Spectral Profile (librosa)[/bold]")
+    console.print(f"  Bass energy:    {'█' * int(profile.bass_ratio * 30):<30s} {profile.bass_ratio:.1%}")
+    console.print(f"  Mid energy:     {'█' * int(profile.mid_ratio * 30):<30s} {profile.mid_ratio:.1%}")
+    console.print(f"  High energy:    {'█' * int(profile.high_ratio * 30):<30s} {profile.high_ratio:.1%}")
+    console.print(f"  Percussive:     {'█' * int(profile.percussive_ratio * 30):<30s} {profile.percussive_ratio:.1%}")
+    console.print(f"  Complexity:     {'█' * int(profile.spectral_complexity * 30):<30s} {profile.spectral_complexity:.1%}")
+    console.print(f"  Dynamic range:  {profile.dynamic_range_db:.1f} dB")
+    console.print(f"  Onset density:  {profile.onset_density:.1f} / sec")
+    console.print()
+
+    # ── Recommendation ─────────────────────────────────────────────────────
+    console.print(Rule("[bold]Recommendation[/bold]"))
+    console.print(f"  Backend:  [bold cyan]{profile.recommended_backend}[/bold cyan]")
+    console.print(f"  Model:    [cyan]{profile.recommended_model}[/cyan]")
+    console.print(f"  Stems:    [cyan]{', '.join(profile.recommended_stems)}[/cyan]")
+    console.print()
+    console.print(f"  [dim]{profile.reason}[/dim]")
+    console.print()
+
+    # ── Quick command ──────────────────────────────────────────────────────
+    if profile.recommended_backend == "demucs":
+        model_key = {"htdemucs": "default", "htdemucs_ft": "fine", "htdemucs_6s": "6stem"}.get(
+            profile.recommended_model, "default")
+        cmd = f"stemforge split {audio_file} --backend demucs --model {model_key}"
+    else:
+        cmd = f"stemforge split {audio_file} --backend musicai"
+    console.print(f"  [bold]Run:[/bold]  [green]{cmd}[/green]")
+    console.print()
 
 
 @cli.command("clean-beats")
