@@ -39,7 +39,7 @@ pipelines:
         warp_mode: beats
         loop: true
       other:
-        template: "SF | Texture"
+        template: "SF | Texture Verb"
         color: 0x00AA44
         warp_mode: complex
         loop: true
@@ -49,22 +49,22 @@ pipelines:
         warp_mode: tones
         loop: true
       synthesizer:
-        template: "SF | Texture"
+        template: "SF | Texture Verb"
         color: 0xAA00FF
         warp_mode: complex
         loop: true
       guitar:
-        template: "SF | Texture"
+        template: "SF | Texture Verb"
         color: 0xFFCC00
         warp_mode: complex
         loop: true
       electricguitar:
-        template: "SF | Texture"
+        template: "SF | Texture Verb"
         color: 0xFFCC00
         warp_mode: complex
         loop: true
       piano:
-        template: "SF | Texture"
+        template: "SF | Texture Verb"
         color: 0xAA00FF
         warp_mode: tones
         loop: true

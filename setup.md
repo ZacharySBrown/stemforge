@@ -173,7 +173,7 @@ Fold the group. These tracks stay in the set forever.
 
 ### Step 5: Install AbletonOSC (optional, for tempo sync from CLI)
 git clone https://github.com/ideoforms/AbletonOSC /tmp/AbletonOSC
-cp -r /tmp/AbletonOSC/AbletonOSC \
+cp -r /tmp/AbletonOSC \
   ~/Music/Ableton/User\ Library/Remote\ Scripts/AbletonOSC
 Then: Live Preferences → MIDI → Control Surface → AbletonOSC
 

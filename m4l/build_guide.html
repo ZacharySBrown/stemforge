@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StemForge &mdash; M4L Build Guide</title>
+<style>
+  :root {
+    --bg: #0e0e0e;
+    --surface: #181818;
+    --card: #1e1e1e;
+    --border: #2a2a2a;
+    --text: #e0e0e0;
+    --muted: #888;
+    --accent: #c084fc;
+    --accent2: #818cf8;
+    --green: #4ade80;
+    --yellow: #fbbf24;
+    --red: #f87171;
+    --teal: #2dd4bf;
+    --blue: #60a5fa;
+    --orange: #fb923c;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', 'Cascadia Code', monospace;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    padding: 2rem;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-size: 1.8rem;
+    color: var(--accent);
+    margin-bottom: 0.25rem;
+    letter-spacing: -0.5px;
+  }
+
+  .subtitle {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-bottom: 2.5rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1.5rem;
+  }
+
+  .subtitle a {
+    color: var(--accent2);
+    text-decoration: none;
+  }
+  .subtitle a:hover { text-decoration: underline; }
+
+  h2 {
+    font-size: 1.15rem;
+    color: var(--yellow);
+    margin-top: 2.5rem;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  h2 .step-num {
+    background: var(--yellow);
+    color: var(--bg);
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+  }
+
+  h3 {
+    font-size: 0.95rem;
+    color: var(--accent);
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .step-body {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .step-body ul {
+    list-style: none;
+    padding-left: 0;
+  }
+
+  .step-body ul li {
+    padding: 0.2rem 0;
+    padding-left: 1.2rem;
+    position: relative;
+  }
+
+  .step-body ul li::before {
+    content: '\25B8';
+    position: absolute;
+    left: 0;
+    color: var(--muted);
+  }
+
+  code, kbd {
+    background: #252525;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    font-size: 0.85em;
+    color: var(--accent2);
+  }
+
+  kbd {
+    border: 1px solid #444;
+    color: var(--text);
+    font-size: 0.8em;
+  }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ── Patch diagram ────────────────────────────────────── */
+  .patch-diagram {
+    background: #111;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.75rem 2rem;
+    margin: 1.25rem 0;
+    font-size: 0.85rem;
+    line-height: 1.8;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--text);
+    position: relative;
+  }
+
+  .patch-diagram .obj {
+    color: var(--accent2);
+    font-weight: 600;
+  }
+
+  .patch-diagram .wire {
+    color: #555;
+  }
+
+  .patch-diagram .label {
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  /* ── Object card ──────────────────────────────────────── */
+  .obj-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1rem;
+    border-left: 3px solid var(--accent2);
+  }
+
+  .obj-card .obj-name {
+    font-weight: 700;
+    color: var(--accent2);
+    font-size: 0.95rem;
+    margin-bottom: 0.4rem;
+  }
+
+  .obj-card .obj-type {
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin-bottom: 0.6rem;
+  }
+
+  .obj-card p, .obj-card ul {
+    font-size: 0.85rem;
+    color: #bbb;
+  }
+
+  .obj-card ul {
+    list-style: none;
+    padding-left: 0;
+  }
+
+  .obj-card ul li {
+    padding: 0.15rem 0;
+    padding-left: 1rem;
+    position: relative;
+  }
+
+  .obj-card ul li::before {
+    content: '\2022';
+    position: absolute;
+    left: 0;
+    color: #555;
+  }
+
+  /* ── Connection table ─────────────────────────────────── */
+  .conn-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+    margin: 0.75rem 0;
+  }
+
+  .conn-table th {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 2px solid var(--border);
+    color: var(--yellow);
+    font-weight: 600;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .conn-table td {
+    padding: 0.4rem 0.75rem;
+    border-bottom: 1px solid #222;
+    color: #bbb;
+  }
+
+  .conn-table td code {
+    font-size: 0.82em;
+  }
+
+  .conn-table tr:hover td {
+    background: #1a1a1a;
+  }
+
+  /* ── Tip / warning boxes ──────────────────────────────── */
+  .tip-box {
+    margin: 1rem 0;
+    padding: 0.7rem 1rem;
+    border-radius: 0 6px 6px 0;
+    font-size: 0.82rem;
+  }
+
+  .tip-box.tip {
+    background: #0e1a0e;
+    border-left: 3px solid var(--green);
+    color: #a3d9a5;
+  }
+
+  .tip-box.warn {
+    background: #1a1a10;
+    border-left: 3px solid var(--yellow);
+    color: #d4c87a;
+  }
+
+  .tip-box.info {
+    background: #0e0e1a;
+    border-left: 3px solid var(--accent2);
+    color: #a5a8fc;
+  }
+
+  .tip-box strong {
+    color: inherit;
+    font-size: 0.85rem;
+  }
+
+  /* ── Section divider ──────────────────────────────────── */
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 3rem 0 1rem;
+  }
+
+  /* ── Screenshot placeholder ───────────────────────────── */
+  .screenshot {
+    background: #151515;
+    border: 1px dashed #333;
+    border-radius: 8px;
+    padding: 2rem;
+    text-align: center;
+    color: #555;
+    font-size: 0.82rem;
+    margin: 1rem 0;
+  }
+
+  /* ── Keyboard shortcut style ──────────────────────────── */
+  .shortcut {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  /* ── Nav tabs ─────────────────────────────────────────── */
+  .nav {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+  }
+
+  .nav a {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.4rem 0.85rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+    transition: all 0.15s;
+  }
+
+  .nav a:hover {
+    color: var(--text);
+    border-color: #444;
+    text-decoration: none;
+  }
+
+  .nav a.active {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: #1a1025;
+  }
+
+  footer {
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    font-size: 0.78rem;
+    color: #555;
+    text-align: center;
+  }
+
+  @media print {
+    body { background: #fff; color: #111; }
+    .step-body, .obj-card, .patch-diagram { border-color: #ccc; background: #f9f9f9; }
+    code, kbd { background: #eee; color: #333; }
+  }
+</style>
+</head>
+<body>
+
+<h1>StemForge M4L Build Guide</h1>
+<p class="subtitle">
+  Step-by-step: build the Template Builder and Loader devices in the Max for Live editor.<br>
+  No prior Max/MSP experience needed &mdash; just follow the steps.
+</p>
+
+<div class="nav">
+  <a href="#template-builder" class="active">Template Builder</a>
+  <a href="#loader">Stem Loader</a>
+  <a href="#troubleshooting">Troubleshooting</a>
+  <a href="setup.html">Back to Setup Guide</a>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- DEVICE 1: TEMPLATE BUILDER                                             -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+
+<h2 id="template-builder"><span class="step-num">DEVICE 1</span> Template Builder</h2>
+<p style="color:var(--muted); font-size:0.85rem; margin-bottom:1.5rem;">
+  One-time setup tool. Creates all 7 StemForge template tracks with devices, parameters, and colors automatically.
+  Run once, then remove it.
+</p>
+
+<!-- Step 1 -->
+<h2><span class="step-num">1</span> Create the host MIDI track</h2>
+<div class="step-body">
+  <ul>
+    <li>Open your StemForge Templates set in Ableton (or any Live set)</li>
+    <li>Create a new MIDI track: <span class="shortcut"><kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd></span></li>
+    <li>In the Browser sidebar, navigate to <strong>Max for Live &rarr; Max Instrument</strong></li>
+    <li>Drag <strong>Max Instrument</strong> onto the MIDI track</li>
+  </ul>
+  <div class="tip-box info">
+    <strong>Why MIDI?</strong> M4L instruments must live on MIDI tracks. Even though
+    the template builder doesn't process audio, it needs to be an instrument type to access
+    the Live Object Model (LOM) for creating tracks.
+  </div>
+</div>
+
+<!-- Step 2 -->
+<h2><span class="step-num">2</span> Open the Max editor</h2>
+<div class="step-body">
+  <ul>
+    <li>Look at the device in the track's device chain (bottom of the Ableton window)</li>
+    <li>Click the <strong>wrench icon</strong> in the top-right corner of the device &mdash; the Max patcher editor opens</li>
+    <li>You'll see some default objects &mdash; select all with <kbd>Cmd</kbd>+<kbd>A</kbd> and delete them</li>
+    <li>You now have a blank canvas</li>
+  </ul>
+  <div class="tip-box tip">
+    <strong>Edit vs. Run mode:</strong> The lock icon at the bottom-left (or <kbd>Cmd</kbd>+<kbd>E</kbd>)
+    toggles between edit mode (where you place/connect objects) and run mode (where you click buttons).
+    Make sure you're in <strong>edit mode</strong> (unlocked) for the next steps.
+  </div>
+</div>
+
+<!-- Step 3 -->
+<h2><span class="step-num">3</span> Add the JS object</h2>
+<div class="step-body">
+  <ul>
+    <li>Press <kbd>N</kbd> to create a new object box</li>
+    <li>Type: <code>js stemforge_template_builder.js</code></li>
+    <li>Click outside the box to confirm</li>
+    <li>The object appears with <strong>1 inlet</strong> (top) and <strong>2 outlets</strong> (bottom)</li>
+  </ul>
+</div>
+
+<div class="obj-card">
+  <div class="obj-name">[js stemforge_template_builder.js]</div>
+  <div class="obj-type">Max JavaScript object &mdash; the brain of this device</div>
+  <ul>
+    <li><strong>Inlet 0</strong> (top): receives <code>bang</code> to start the build</li>
+    <li><strong>Outlet 0</strong> (bottom-left): status messages (text)</li>
+    <li><strong>Outlet 1</strong> (bottom-right): <code>bang</code> when build is complete</li>
+  </ul>
+</div>
+
+<!-- Step 4 -->
+<h2><span class="step-num">4</span> Place the JS file where Max can find it</h2>
+<div class="step-body">
+  <ul>
+    <li><strong>Option A (recommended):</strong> Save the device first &mdash;
+      File &rarr; Save As &rarr; save into your <code>m4l/</code> folder.
+      Then make sure <code>stemforge_template_builder.js</code> is in that same folder.</li>
+    <li><strong>Option B:</strong> In the Max editor menu bar, go to
+      <strong>Options &rarr; File Preferences</strong> and add the path to your <code>m4l/</code> folder.</li>
+  </ul>
+  <div class="tip-box warn">
+    <strong>If the [js] object shows an error</strong> like "can't find file", it means Max
+    can't locate the <code>.js</code> file. Double-check the filename spelling and that the file
+    is in a search path.
+  </div>
+</div>
+
+<!-- Step 5 -->
+<h2><span class="step-num">5</span> Add the UI objects</h2>
+<div class="step-body">
+  <p style="margin-bottom:1rem; color:var(--muted); font-size:0.85rem;">
+    You need three objects. For each one: press <kbd>N</kbd>, type the name, click outside to create it.
+  </p>
+</div>
+
+<h3>A) Button &mdash; triggers the build</h3>
+<div class="obj-card">
+  <div class="obj-name">[button]</div>
+  <div class="obj-type">Bang button &mdash; click to send a bang message</div>
+  <ul>
+    <li>Press <kbd>N</kbd>, type <code>button</code>, click outside</li>
+    <li>Position it <strong>above</strong> the <code>[js]</code> object</li>
+    <li>It appears as a small circular button</li>
+  </ul>
+</div>
+
+<h3>B) Textedit &mdash; status log display</h3>
+<div class="obj-card">
+  <div class="obj-name">[textedit]</div>
+  <div class="obj-type">Multi-line text display &mdash; shows build progress</div>
+  <ul>
+    <li>Press <kbd>N</kbd>, type <code>textedit</code>, click outside</li>
+    <li>Position it <strong>below-left</strong> of the <code>[js]</code> object</li>
+    <li>Resize it by dragging the bottom-right corner &mdash; make it wide enough to read status messages</li>
+  </ul>
+</div>
+
+<h3>C) Print &mdash; completion log (optional)</h3>
+<div class="obj-card">
+  <div class="obj-name">[print TemplateBuilder]</div>
+  <div class="obj-type">Prints to the Max console &mdash; useful for debugging</div>
+  <ul>
+    <li>Press <kbd>N</kbd>, type <code>print TemplateBuilder</code>, click outside</li>
+    <li>Position it <strong>below-right</strong> of the <code>[js]</code> object</li>
+    <li>Output appears in the Max Console window (Window &rarr; Max Console)</li>
+  </ul>
+</div>
+
+<!-- Step 6 -->
+<h2><span class="step-num">6</span> Wire everything together</h2>
+<div class="step-body">
+  <p style="margin-bottom:1rem; font-size:0.85rem;">
+    To connect two objects: hover over an outlet (bottom of source object) until the cursor
+    changes, then <strong>click and drag</strong> to the inlet (top of destination object).
+    A patch cord appears.
+  </p>
+</div>
+
+<table class="conn-table">
+  <thead>
+    <tr>
+      <th>From</th>
+      <th>Port</th>
+      <th>To</th>
+      <th>Port</th>
+      <th>What it does</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>[button]</code></td>
+      <td>outlet</td>
+      <td><code>[js]</code></td>
+      <td>inlet 0</td>
+      <td>Sends <code>bang</code> &rarr; calls <code>bang()</code> in the script</td>
+    </tr>
+    <tr>
+      <td><code>[js]</code></td>
+      <td>outlet 0 (left)</td>
+      <td><code>[textedit]</code></td>
+      <td>inlet</td>
+      <td>Status messages appear in the text box</td>
+    </tr>
+    <tr>
+      <td><code>[js]</code></td>
+      <td>outlet 1 (right)</td>
+      <td><code>[print]</code></td>
+      <td>inlet</td>
+      <td>Logs "bang" to Max Console on completion</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="patch-diagram"><span class="label">         Your finished patch:</span>
+
+            <span class="obj">[button]</span>
+                <span class="wire">|</span>
+        <span class="obj">[js stemforge_template_builder.js]</span>
+           <span class="wire">|</span>                        <span class="wire">|</span>
+      <span class="obj">[textedit]</span>            <span class="obj">[print TemplateBuilder]</span>
+      <span class="label">status log</span>              <span class="label">completion bang</span></div>
+
+<!-- Step 7 -->
+<h2><span class="step-num">7</span> Test the build</h2>
+<div class="step-body">
+  <ul>
+    <li>Switch to <strong>run mode</strong>: click the lock icon or press <kbd>Cmd</kbd>+<kbd>E</kbd></li>
+    <li>Click the <strong>button</strong> &mdash; watch the textedit box fill with status messages</li>
+    <li>You should see messages like:
+      <br><code style="color:var(--green);">Created track 1/7: SF | Drums Raw</code>
+      <br><code style="color:var(--green);">Created track 2/7: SF | Drums Crushed</code>
+      <br><code style="color:var(--green);">...</code>
+      <br><code style="color:var(--green);">Template build complete! 7 tracks created.</code>
+    </li>
+    <li>Check Ableton &mdash; you should see 7 new tracks with the correct names and colors</li>
+  </ul>
+  <div class="tip-box warn">
+    <strong>If nothing happens:</strong> Make sure you're in run mode (locked).
+    In edit mode, clicking the button selects it instead of triggering it.
+  </div>
+</div>
+
+<!-- Step 8 -->
+<h2><span class="step-num">8</span> Save and freeze</h2>
+<div class="step-body">
+  <ul>
+    <li><strong>File &rarr; Save</strong> (or Save As &rarr; <code>m4l/StemForgeTemplateBuilder.amxd</code>)</li>
+    <li><strong>File &rarr; Freeze Device</strong> &mdash; this bundles the <code>.js</code> file
+      inside the <code>.amxd</code> so the device is portable</li>
+  </ul>
+</div>
+
+<!-- After running -->
+<h2><span class="step-num">9</span> After the build completes</h2>
+<div class="step-body">
+  <ul>
+    <li>VST3 plugin parameters are left at defaults &mdash; dial them in per the
+      <a href="../setup.html">Setup Guide</a></li>
+    <li>Select all 7 "SF |" tracks &rarr; <span class="shortcut"><kbd>Cmd</kbd>+<kbd>G</kbd></span>
+      to group &rarr; name <strong>"StemForge Templates"</strong> &rarr; color grey</li>
+    <li>Remove or bypass the builder device &mdash; it's a one-time tool</li>
+  </ul>
+</div>
+
+<hr class="divider">
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- DEVICE 2: STEM LOADER                                                  -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+
+<h2 id="loader"><span class="step-num">DEVICE 2</span> Stem Loader</h2>
+<p style="color:var(--muted); font-size:0.85rem; margin-bottom:1.5rem;">
+  Permanent device. Watches <code>~/stemforge/processed/</code> for new stems and loads them into
+  the template tracks. Lives on its own MIDI track.
+</p>
+
+<!-- Step 1 -->
+<h2><span class="step-num">1</span> Create the Loader host track</h2>
+<div class="step-body">
+  <ul>
+    <li>In your StemForge Templates set, create a new MIDI track</li>
+    <li>Name it <strong>"SF Loader"</strong></li>
+    <li>Drag <strong>Max Instrument</strong> onto it (same as before: Browser &rarr; Max for Live &rarr; Max Instrument)</li>
+    <li>Open the Max editor (wrench icon), delete all default objects</li>
+  </ul>
+</div>
+
+<!-- Step 2 -->
+<h2><span class="step-num">2</span> Add the core objects</h2>
+<div class="step-body">
+  <p style="margin-bottom:1rem; color:var(--muted); font-size:0.85rem;">
+    This device has more objects than the builder. Create each one with <kbd>N</kbd>.
+  </p>
+</div>
+
+<h3>A) midiin &mdash; makes it a valid instrument</h3>
+<div class="obj-card">
+  <div class="obj-name">[midiin]</div>
+  <div class="obj-type">MIDI input &mdash; required for the device to sit on a MIDI track</div>
+  <ul>
+    <li>Press <kbd>N</kbd>, type <code>midiin</code>, click outside</li>
+    <li>Place it in the top-left corner, out of the way &mdash; it doesn't connect to anything</li>
+  </ul>
+</div>
+
+<h3>B) js &mdash; the loader script</h3>
+<div class="obj-card">
+  <div class="obj-name">[js stemforge_loader.js]</div>
+  <div class="obj-type">Main logic &mdash; handles pipeline selection, folder watching, stem loading</div>
+  <ul>
+    <li>Press <kbd>N</kbd>, type <code>js stemforge_loader.js</code>, click outside</li>
+    <li>Inlet 0: receives messages (<code>loadPipeline</code>, <code>startWatch</code>, <code>stopWatch</code>, <code>bang</code>)</li>
+    <li>Outlet 0: status text</li>
+    <li>Outlet 1: completion bang</li>
+  </ul>
+</div>
+
+<h3>C) loadbang + messages &mdash; initialization chain</h3>
+<div class="obj-card">
+  <div class="obj-name">[loadbang]</div>
+  <div class="obj-type">Fires a bang automatically when the device loads</div>
+  <ul>
+    <li>Press <kbd>N</kbd>, type <code>loadbang</code>, click outside</li>
+    <li>Place it above the <code>[js]</code> object</li>
+  </ul>
+</div>
+
+<div class="obj-card">
+  <div class="obj-name">[message setPipelinesDir ~/stemforge/pipelines]</div>
+  <div class="obj-type">Sets the pipelines directory on load</div>
+  <ul>
+    <li>Press <kbd>N</kbd>, type <code>message setPipelinesDir ~/stemforge/pipelines</code>, click outside</li>
+    <li>The <code>[message]</code> box shows the text inside it</li>
+  </ul>
+</div>
+
+<div class="obj-card">
+  <div class="obj-name">[message loadPipeline default]</div>
+  <div class="obj-type">Loads the default pipeline on startup</div>
+  <ul>
+    <li>Press <kbd>N</kbd>, type <code>message loadPipeline default</code>, click outside</li>
+  </ul>
+</div>
+
+<h3>D) UI controls</h3>
+<div class="obj-card">
+  <div class="obj-name">[umenu]</div>
+  <div class="obj-type">Dropdown menu &mdash; lists available pipelines</div>
+  <ul>
+    <li>Press <kbd>N</kbd>, type <code>umenu</code>, click outside</li>
+    <li>This populates with pipeline names from the pipelines directory</li>
+  </ul>
+</div>
+
+<div class="obj-card">
+  <div class="obj-name">[toggle]</div>
+  <div class="obj-type">On/Off switch &mdash; starts/stops folder watching</div>
+  <ul>
+    <li>Press <kbd>N</kbd>, type <code>toggle</code>, click outside</li>
+    <li>Label it "Watch" (Inspector &rarr; Long Name or add a <code>[comment Watch]</code> next to it)</li>
+  </ul>
+</div>
+
+<div class="obj-card">
+  <div class="obj-name">[button]</div>
+  <div class="obj-type">Manual trigger &mdash; loads the latest stems on demand</div>
+  <ul>
+    <li>Press <kbd>N</kbd>, type <code>button</code>, click outside</li>
+    <li>Label it "Load Latest"</li>
+  </ul>
+</div>
+
+<div class="obj-card">
+  <div class="obj-name">[textedit]</div>
+  <div class="obj-type">Status display &mdash; shows what the loader is doing</div>
+  <ul>
+    <li>Press <kbd>N</kbd>, type <code>textedit</code>, click outside</li>
+    <li>Resize it wide &mdash; this is the main status readout</li>
+  </ul>
+</div>
+
+<div class="obj-card">
+  <div class="obj-name">[number]</div>
+  <div class="obj-type">Number display &mdash; shows BPM from the loaded manifest</div>
+  <ul>
+    <li>Press <kbd>N</kbd>, type <code>number</code>, click outside</li>
+    <li>Label it "BPM"</li>
+  </ul>
+</div>
+
+<!-- Step 3 -->
+<h2><span class="step-num">3</span> Wire the Loader patch</h2>
+
+<table class="conn-table">
+  <thead>
+    <tr>
+      <th>From</th>
+      <th>Port</th>
+      <th>To</th>
+      <th>Port</th>
+      <th>Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>[loadbang]</code></td>
+      <td>outlet</td>
+      <td><code>[message setPipelinesDir ...]</code></td>
+      <td>inlet</td>
+      <td>Triggers the message on device load</td>
+    </tr>
+    <tr>
+      <td><code>[message setPipelinesDir ...]</code></td>
+      <td>outlet</td>
+      <td><code>[js]</code></td>
+      <td>inlet 0</td>
+      <td>Tells the script where pipelines live</td>
+    </tr>
+    <tr>
+      <td><code>[loadbang]</code></td>
+      <td>outlet</td>
+      <td><code>[message loadPipeline default]</code></td>
+      <td>inlet</td>
+      <td>Auto-loads the default pipeline</td>
+    </tr>
+    <tr>
+      <td><code>[message loadPipeline default]</code></td>
+      <td>outlet</td>
+      <td><code>[js]</code></td>
+      <td>inlet 0</td>
+      <td>Sends pipeline name to script</td>
+    </tr>
+    <tr style="border-top: 2px solid var(--border);">
+      <td><code>[umenu]</code></td>
+      <td>outlet</td>
+      <td><code>[message loadPipeline $1]</code></td>
+      <td>inlet</td>
+      <td>Dropdown selection &rarr; load command</td>
+    </tr>
+    <tr>
+      <td><code>[message loadPipeline $1]</code></td>
+      <td>outlet</td>
+      <td><code>[js]</code></td>
+      <td>inlet 0</td>
+      <td>Sends selected pipeline to script</td>
+    </tr>
+    <tr style="border-top: 2px solid var(--border);">
+      <td><code>[toggle]</code></td>
+      <td>outlet</td>
+      <td><code>[message startWatch]</code> / <code>[message stopWatch]</code></td>
+      <td>inlet</td>
+      <td>Toggle &rarr; watch on/off (use <code>[select 1 0]</code> to route)</td>
+    </tr>
+    <tr>
+      <td><code>[button]</code></td>
+      <td>outlet</td>
+      <td><code>[js]</code></td>
+      <td>inlet 0</td>
+      <td>Manual "Load Latest" trigger</td>
+    </tr>
+    <tr style="border-top: 2px solid var(--border);">
+      <td><code>[js]</code></td>
+      <td>outlet 0</td>
+      <td><code>[textedit]</code></td>
+      <td>inlet</td>
+      <td>Status messages &rarr; display</td>
+    </tr>
+    <tr>
+      <td><code>[js]</code></td>
+      <td>outlet 1</td>
+      <td><code>[print SFLoader]</code></td>
+      <td>inlet</td>
+      <td>Completion log to Max Console</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="patch-diagram"><span class="label">         Loader patch layout:</span>
+
+  <span class="obj">[midiin]</span>                  <span class="obj">[loadbang]</span>
+  <span class="label">(unused)</span>               <span class="wire">|            \</span>
+                    <span class="obj">[msg setPipelinesDir]</span>  <span class="obj">[msg loadPipeline default]</span>
+                         <span class="wire">\                   /</span>
+  <span class="obj">[umenu]</span> <span class="obj">[toggle]</span> <span class="obj">[button]</span>
+     <span class="wire">|        |        |</span>
+  <span class="obj">[msg $1]</span> <span class="obj">[sel 1 0]</span>  <span class="wire">|</span>
+     <span class="wire">\      |    /    /</span>
+      <span class="obj">[js stemforge_loader.js]</span>
+         <span class="wire">|                    |</span>
+    <span class="obj">[textedit]</span>        <span class="obj">[print SFLoader]</span>
+    <span class="label">status log</span></div>
+
+<!-- Step 4 -->
+<h2><span class="step-num">4</span> Save, freeze, and install</h2>
+<div class="step-body">
+  <ul>
+    <li><strong>File &rarr; Save As</strong> &rarr; <code>m4l/StemForgeLoader.amxd</code></li>
+    <li><strong>File &rarr; Freeze Device</strong> to bundle the JS file</li>
+    <li>Close the Max editor (click the wrench icon again)</li>
+    <li>The device stays on the "SF Loader" track permanently</li>
+  </ul>
+</div>
+
+<hr class="divider">
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- TROUBLESHOOTING                                                        -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+
+<h2 id="troubleshooting"><span class="step-num">REF</span> Troubleshooting</h2>
+
+<div class="tip-box warn">
+  <strong>"can't find file" on the [js] object</strong><br>
+  The <code>.js</code> file must be in the same folder as the <code>.amxd</code>, or in a Max search path
+  (Options &rarr; File Preferences). Filenames are case-sensitive.
+</div>
+
+<div class="tip-box warn">
+  <strong>Nothing happens when I click the button</strong><br>
+  You're probably in edit mode. Press <kbd>Cmd</kbd>+<kbd>E</kbd> to switch to run mode (locked).
+  In edit mode, clicks select objects instead of triggering them.
+</div>
+
+<div class="tip-box warn">
+  <strong>"NOT FOUND: PluginName" in the status log</strong><br>
+  The VST3 plugin isn't installed, or its Browser name doesn't match what the script searches for.
+  Edit the <code>search</code> field in the <code>TEMPLATES</code> array in the JS file to match
+  what you see in Ableton's Browser under Plug-ins.
+</div>
+
+<div class="tip-box warn">
+  <strong>Param not found</strong><br>
+  Ableton device parameter names vary between versions. Use the M4L Inspect workflow:
+  select the device, read parameter names in the Max console, then update the <code>params</code>
+  object in the script.
+</div>
+
+<div class="tip-box info">
+  <strong>Max Console</strong><br>
+  If something isn't working, open the Max Console (Window &rarr; Max Console in the Max editor)
+  to see detailed error messages and <code>post()</code> output from the JS objects.
+</div>
+
+<div class="tip-box info">
+  <strong>Helpful shortcuts in the Max editor</strong><br>
+  <kbd>N</kbd> &mdash; new object &nbsp;&bull;&nbsp;
+  <kbd>M</kbd> &mdash; new message box &nbsp;&bull;&nbsp;
+  <kbd>C</kbd> &mdash; new comment &nbsp;&bull;&nbsp;
+  <kbd>Cmd</kbd>+<kbd>E</kbd> &mdash; toggle edit/run mode &nbsp;&bull;&nbsp;
+  <kbd>Cmd</kbd>+<kbd>I</kbd> &mdash; open Inspector for selected object
+</div>
+
+<footer>
+  StemForge M4L Build Guide &mdash;
+  <a href="../setup.html">Setup Guide</a> &middot;
+  <a href="README_M4L.md">M4L README</a>
+</footer>
+
+</body>
+</html>

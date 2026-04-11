@@ -62,7 +62,26 @@ def write_manifest(
 
     path = output_dir / "stems.json"
     path.write_text(json.dumps(asdict(manifest), indent=2))
+
+    # Update index.json in the parent (processed/) dir for M4L device discovery
+    update_index(output_dir.parent, track_name)
+
     return path
+
+
+def update_index(processed_dir: Path, track_name: str):
+    """Maintain index.json — a list of track names for M4L device discovery."""
+    index_path = processed_dir / "index.json"
+    if index_path.exists():
+        try:
+            entries = json.loads(index_path.read_text())
+        except (json.JSONDecodeError, ValueError):
+            entries = []
+    else:
+        entries = []
+    if track_name not in entries:
+        entries.append(track_name)
+    index_path.write_text(json.dumps(entries, indent=2))
 
 
 def read_manifest(manifest_path: Path) -> dict:

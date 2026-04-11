@@ -22,7 +22,7 @@
           "loop": true
         },
         "other": {
-          "template": "SF | Texture",
+          "template": "SF | Texture Verb",
           "color": 43588,
           "warp_mode": "complex",
           "loop": true
@@ -34,25 +34,25 @@
           "loop": true
         },
         "synthesizer": {
-          "template": "SF | Texture",
+          "template": "SF | Texture Verb",
           "color": 11141375,
           "warp_mode": "complex",
           "loop": true
         },
         "guitar": {
-          "template": "SF | Texture",
+          "template": "SF | Texture Verb",
           "color": 16763904,
           "warp_mode": "complex",
           "loop": true
         },
         "electricguitar": {
-          "template": "SF | Texture",
+          "template": "SF | Texture Verb",
           "color": 16763904,
           "warp_mode": "complex",
           "loop": true
         },
         "piano": {
-          "template": "SF | Texture",
+          "template": "SF | Texture Verb",
           "color": 11141375,
           "warp_mode": "tones",
           "loop": true

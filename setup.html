@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StemForge Template Set &mdash; Setup Guide</title>
+<style>
+  :root {
+    --bg: #0e0e0e;
+    --surface: #181818;
+    --card: #1e1e1e;
+    --border: #2a2a2a;
+    --text: #e0e0e0;
+    --muted: #888;
+    --accent: #c084fc;
+    --accent2: #818cf8;
+    --red: #f87171;
+    --red-dark: #b91c1c;
+    --blue: #60a5fa;
+    --green: #4ade80;
+    --teal: #2dd4bf;
+    --orange: #fb923c;
+    --bright-red: #ef4444;
+    --yellow: #fbbf24;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', 'Cascadia Code', monospace;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    padding: 2rem;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-size: 1.8rem;
+    color: var(--accent);
+    margin-bottom: 0.25rem;
+    letter-spacing: -0.5px;
+  }
+
+  .subtitle {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-bottom: 2.5rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1.5rem;
+  }
+
+  .subtitle a {
+    color: var(--accent2);
+    text-decoration: none;
+  }
+  .subtitle a:hover { text-decoration: underline; }
+
+  h2 {
+    font-size: 1.15rem;
+    color: var(--yellow);
+    margin-top: 2.5rem;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  h2 .step-num {
+    background: var(--yellow);
+    color: var(--bg);
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+  }
+
+  .step-body {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .step-body ul {
+    list-style: none;
+    padding-left: 0;
+  }
+
+  .step-body ul li {
+    padding: 0.2rem 0;
+    padding-left: 1.2rem;
+    position: relative;
+  }
+
+  .step-body ul li::before {
+    content: '\25B8';
+    position: absolute;
+    left: 0;
+    color: var(--muted);
+  }
+
+  code, .path {
+    background: #252525;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    font-size: 0.85em;
+    color: var(--accent2);
+  }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .track-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.25rem;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .track-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    width: 4px;
+  }
+
+  .track-card.color-red::before    { background: var(--red); }
+  .track-card.color-red-dk::before { background: var(--red-dark); }
+  .track-card.color-blue::before   { background: var(--blue); }
+  .track-card.color-green::before  { background: var(--green); }
+  .track-card.color-teal::before   { background: var(--teal); }
+  .track-card.color-orange::before { background: var(--orange); }
+  .track-card.color-bright::before { background: var(--bright-red); }
+
+  .track-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .track-name {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #fff;
+  }
+
+  .track-meta {
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+
+  .track-meta .tag {
+    display: inline-block;
+    background: #2a2a2a;
+    padding: 0.1rem 0.45rem;
+    border-radius: 3px;
+    margin-left: 0.3rem;
+  }
+
+  .device-chain {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .device {
+    background: #151515;
+    border: 1px solid #262626;
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+  }
+
+  .device-name {
+    font-weight: 600;
+    color: var(--accent);
+    font-size: 0.9rem;
+    margin-bottom: 0.35rem;
+  }
+
+  .device-name .vendor {
+    color: var(--muted);
+    font-weight: 400;
+    font-size: 0.78rem;
+  }
+
+  .device-params {
+    list-style: none;
+    padding: 0;
+    font-size: 0.82rem;
+    color: #bbb;
+  }
+
+  .device-params li {
+    padding: 0.1rem 0;
+    padding-left: 1rem;
+    position: relative;
+  }
+
+  .device-params li::before {
+    content: '\2022';
+    position: absolute;
+    left: 0;
+    color: #555;
+  }
+
+  .device-note {
+    font-size: 0.8rem;
+    color: var(--muted);
+    font-style: italic;
+    margin-top: 0.4rem;
+  }
+
+  .clip-settings {
+    margin-top: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background: #1a1a2e;
+    border-radius: 4px;
+    font-size: 0.82rem;
+    color: #a5b4fc;
+  }
+
+  .clip-settings strong {
+    color: #c7d2fe;
+  }
+
+  .note-box {
+    margin-top: 0.75rem;
+    padding: 0.6rem 0.85rem;
+    background: #1a1a10;
+    border-left: 3px solid var(--yellow);
+    border-radius: 0 4px 4px 0;
+    font-size: 0.82rem;
+    color: #d4c87a;
+  }
+
+  .arrow {
+    text-align: center;
+    color: #444;
+    font-size: 0.8rem;
+    margin: 0.15rem 0;
+    letter-spacing: 2px;
+  }
+
+  .cmd {
+    background: #151515;
+    border: 1px solid #262626;
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    font-size: 0.85rem;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--green);
+    margin: 0.5rem 0;
+  }
+
+  footer {
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    font-size: 0.78rem;
+    color: #555;
+    text-align: center;
+  }
+
+  @media print {
+    body { background: #fff; color: #111; }
+    .track-card, .device, .step-body { border-color: #ccc; background: #f9f9f9; }
+    .track-card::before { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    code, .path { background: #eee; color: #333; }
+  }
+</style>
+</head>
+<body>
+
+<h1>StemForge Template Set</h1>
+<p class="subtitle">
+  Setup guide for Ableton Live &mdash;
+  project root: <a href="file:///Users/zak/zacharysbrown/stemforge/">~/stemforge/</a>
+</p>
+
+<!-- ── Step 1 ──────────────────────────────────────────────── -->
+<h2><span class="step-num">1</span> Create a dedicated Ableton set</h2>
+<div class="step-body">
+  <ul>
+    <li>File &rarr; New Live Set</li>
+    <li>Save as: <code>~/Music/Ableton/Projects/StemForge Templates/StemForge Templates.als</code></li>
+    <li>This set stays open while you produce. Never delete it.</li>
+  </ul>
+</div>
+
+<!-- ── Step 2 ──────────────────────────────────────────────── -->
+<h2><span class="step-num">2</span> Add <code>processed/</code> to the Ableton browser</h2>
+<div class="step-body">
+  <ul>
+    <li>Browser &rarr; Places &rarr; right-click &rarr; <strong>"Add Folder"</strong></li>
+    <li>Select: <a href="file:///Users/zak/zacharysbrown/stemforge/processed/"><code>~/stemforge/processed/</code></a></li>
+    <li>New stems appear here instantly after each <code>stemforge</code> run.</li>
+  </ul>
+</div>
+
+<!-- ── Step 3 ──────────────────────────────────────────────── -->
+<h2><span class="step-num">3</span> Build these template tracks</h2>
+<p style="color:var(--muted); font-size:0.85rem; margin-bottom:1.25rem;">
+  Each track is a recipe. Build exactly this &mdash; the M4L device finds them by name.
+  <strong>Track names must match exactly.</strong>
+</p>
+
+<!-- TRACK 1 -->
+<div class="track-card color-red">
+  <div class="track-header">
+    <span class="track-name">SF | Drums Raw</span>
+    <span class="track-meta">Track 1 <span class="tag">Audio</span> <span class="tag">Red</span></span>
+  </div>
+  <div class="device-chain">
+    <div class="device">
+      <div class="device-name">Compressor <span class="vendor">Ableton</span></div>
+      <ul class="device-params">
+        <li>Ratio: 2.5:1</li>
+        <li>Attack: 10 ms</li>
+        <li>Release: 80 ms</li>
+        <li>Makeup: 0 dB</li>
+      </ul>
+    </div>
+    <div class="arrow">&darr;</div>
+    <div class="device">
+      <div class="device-name">EQ Eight <span class="vendor">Ableton</span></div>
+      <ul class="device-params">
+        <li>Band 1: High shelf +2 dB @ 10 kHz</li>
+      </ul>
+    </div>
+  </div>
+  <div class="clip-settings"><strong>Clip:</strong> Warp ON &middot; Mode: Beats &middot; Loop ON &middot; Launch: Toggle</div>
+</div>
+
+<!-- TRACK 2 -->
+<div class="track-card color-red-dk">
+  <div class="track-header">
+    <span class="track-name">SF | Drums Crushed</span>
+    <span class="track-meta">Track 2 <span class="tag">Audio</span> <span class="tag">Red (darker)</span></span>
+  </div>
+  <div class="device-chain">
+    <div class="device">
+      <div class="device-name">LO-FI-AF <span class="vendor">Unfiltered Audio &mdash; VST3</span></div>
+      <ul class="device-params">
+        <li>Preset: Default</li>
+        <li>Sections: Digital ON, Analog ON, Spectral OFF, Convolution OFF</li>
+        <li>Digital &rarr; Bits: ~10-bit, Rate: moderate</li>
+        <li>Analog &rarr; Flux (tape warble): moderate</li>
+        <li>Global Strength: 0.7</li>
+      </ul>
+    </div>
+    <div class="arrow">&darr;</div>
+    <div class="device">
+      <div class="device-name">Decapitator <span class="vendor">Soundtoys &mdash; VST3</span></div>
+      <ul class="device-params">
+        <li>Style: A (Ampex 350)</li>
+        <li>Drive: 3</li>
+        <li>Mix: 60%</li>
+      </ul>
+    </div>
+    <div class="arrow">&darr;</div>
+    <div class="device">
+      <div class="device-name">Compressor <span class="vendor">Ableton</span></div>
+      <ul class="device-params">
+        <li>Ratio: 6:1</li>
+        <li>Attack: 5 ms</li>
+        <li>Release: 60 ms</li>
+        <li>Makeup: +2 dB</li>
+      </ul>
+    </div>
+    <div class="arrow">&darr;</div>
+    <div class="device">
+      <div class="device-name">EchoBoy Jr <span class="vendor">Soundtoys &mdash; VST3</span></div>
+      <p class="device-note">Optional &mdash; can bypass</p>
+      <ul class="device-params">
+        <li>Style: Tape Echo</li>
+        <li>Time: Sync 1/16</li>
+        <li>Feedback: 15%</li>
+        <li>Mix: 12%</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- TRACK 3 -->
+<div class="track-card color-blue">
+  <div class="track-header">
+    <span class="track-name">SF | Bass</span>
+    <span class="track-meta">Track 3 <span class="tag">Audio</span> <span class="tag">Blue</span></span>
+  </div>
+  <div class="device-chain">
+    <div class="device">
+      <div class="device-name">EQ Eight <span class="vendor">Ableton</span></div>
+      <ul class="device-params">
+        <li>Band 1: High Pass @ 35 Hz</li>
+        <li>Band 2: Low shelf +2 dB @ 80 Hz</li>
+        <li>Band 3: High shelf -1 dB @ 8 kHz</li>
+      </ul>
+    </div>
+    <div class="arrow">&darr;</div>
+    <div class="device">
+      <div class="device-name">Compressor <span class="vendor">Ableton</span></div>
+      <ul class="device-params">
+        <li>Ratio: 4:1</li>
+        <li>Attack: 20 ms</li>
+        <li>Release: 120 ms</li>
+      </ul>
+    </div>
+    <div class="arrow">&darr;</div>
+    <div class="device">
+      <div class="device-name">LO-FI-AF <span class="vendor">Unfiltered Audio &mdash; VST3</span></div>
+      <ul class="device-params">
+        <li>Sections: Analog ON only</li>
+        <li>Analog &rarr; Flux: 0.1 (minimal), Press: 0.3</li>
+        <li>Global Strength: 0.3</li>
+      </ul>
+    </div>
+    <div class="arrow">&darr;</div>
+    <div class="device">
+      <div class="device-name">Decapitator <span class="vendor">Soundtoys &mdash; VST3</span></div>
+      <ul class="device-params">
+        <li>Style: E (warm transformer)</li>
+        <li>Drive: 1.5</li>
+        <li>Low Cut: 40 Hz</li>
+        <li>Mix: 40%</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- TRACK 4 -->
+<div class="track-card color-green">
+  <div class="track-header">
+    <span class="track-name">SF | Texture Verb</span>
+    <span class="track-meta">Track 4 <span class="tag">Audio</span> <span class="tag">Green</span></span>
+  </div>
+  <div class="device-chain">
+    <div class="device">
+      <div class="device-name">PhaseMistress <span class="vendor">Soundtoys &mdash; VST3</span></div>
+      <ul class="device-params">
+        <li>Rate: slow (20%)</li>
+        <li>Depth: 60%</li>
+        <li>Style: Vintage</li>
+      </ul>
+    </div>
+    <div class="arrow">&darr;</div>
+    <div class="device">
+      <div class="device-name">EchoBoy <span class="vendor">Soundtoys &mdash; VST3</span></div>
+      <ul class="device-params">
+        <li>Style: Tape Echo</li>
+        <li>Time: Sync 1/4</li>
+        <li>Feedback: 35%</li>
+        <li>Saturation: 20%</li>
+        <li>Mix: 40%</li>
+      </ul>
+    </div>
+    <div class="arrow">&darr;</div>
+    <div class="device">
+      <div class="device-name">Reverb <span class="vendor">Ableton</span></div>
+      <ul class="device-params">
+        <li>Room Size: 75%</li>
+        <li>Decay: 3.0 s</li>
+        <li>Diffusion: 90%</li>
+        <li>Dry/Wet: 35%</li>
+      </ul>
+    </div>
+    <div class="arrow">&darr;</div>
+    <div class="device">
+      <div class="device-name">LO-FI-AF <span class="vendor">Unfiltered Audio &mdash; VST3</span></div>
+      <ul class="device-params">
+        <li>Sections: Spectral ON, Analog ON</li>
+        <li>Spectral &rarr; Ripple: 0.2, MP3: 0.15</li>
+        <li>Analog &rarr; Flux: 0.3</li>
+        <li>Global Strength: 0.45</li>
+      </ul>
+    </div>
+  </div>
+  <div class="clip-settings"><strong>Clip:</strong> Warp Complex &middot; Loop ON</div>
+</div>
+
+<!-- TRACK 5 -->
+<div class="track-card color-teal">
+  <div class="track-header">
+    <span class="track-name">SF | Texture Crystallized</span>
+    <span class="track-meta">Track 5 <span class="tag">Audio</span> <span class="tag">Green (teal)</span></span>
+  </div>
+  <div class="device-chain">
+    <div class="device">
+      <div class="device-name">Crystallizer <span class="vendor">Soundtoys &mdash; VST3</span></div>
+      <ul class="device-params">
+        <li>Pitch: -5 semitones</li>
+        <li>Splice: short</li>
+        <li>Delay: 40%</li>
+        <li>Recycle: 30%</li>
+        <li>Reverse: ON</li>
+        <li>Mix: 70%</li>
+      </ul>
+    </div>
+    <div class="arrow">&darr;</div>
+    <div class="device">
+      <div class="device-name">Reverb <span class="vendor">Ableton</span></div>
+      <ul class="device-params">
+        <li>Room Size: 90%</li>
+        <li>Decay: 5.0 s</li>
+        <li>Dry/Wet: 60%</li>
+      </ul>
+    </div>
+    <div class="arrow">&darr;</div>
+    <div class="device">
+      <div class="device-name">Utility <span class="vendor">Ableton</span></div>
+      <ul class="device-params">
+        <li>Width: 130%</li>
+      </ul>
+    </div>
+  </div>
+  <div class="clip-settings"><strong>Clip:</strong> Warp Complex Pro &middot; Loop ON</div>
+</div>
+
+<!-- TRACK 6 -->
+<div class="track-card color-orange">
+  <div class="track-header">
+    <span class="track-name">SF | Vocals</span>
+    <span class="track-meta">Track 6 <span class="tag">Audio</span> <span class="tag">Orange</span></span>
+  </div>
+  <div class="device-chain">
+    <div class="device">
+      <div class="device-name">EQ Eight <span class="vendor">Ableton</span></div>
+      <ul class="device-params">
+        <li>Band 1: High Pass @ 120 Hz</li>
+        <li>Band 2: Presence boost +2 dB @ 3 kHz</li>
+      </ul>
+    </div>
+    <div class="arrow">&darr;</div>
+    <div class="device">
+      <div class="device-name">Compressor <span class="vendor">Ableton</span></div>
+      <ul class="device-params">
+        <li>Ratio: 3:1</li>
+        <li>Attack: 15 ms</li>
+        <li>Release: 100 ms</li>
+      </ul>
+    </div>
+    <div class="arrow">&darr;</div>
+    <div class="device">
+      <div class="device-name">LO-FI-AF <span class="vendor">Unfiltered Audio &mdash; VST3</span></div>
+      <ul class="device-params">
+        <li>Sections: Analog ON, Convolution ON (mic IRs for vintage feel)</li>
+        <li>Convolution &rarr; Amount: 0.3, IR: "phone mic" or "vintage mic"</li>
+        <li>Analog &rarr; Flux: 0.2, Press: 0.25</li>
+        <li>Global Strength: 0.4</li>
+      </ul>
+    </div>
+    <div class="arrow">&darr;</div>
+    <div class="device">
+      <div class="device-name">EchoBoy <span class="vendor">Soundtoys &mdash; VST3</span></div>
+      <ul class="device-params">
+        <li>Style: Space Echo</li>
+        <li>Time: Sync 1/8</li>
+        <li>Feedback: 20%</li>
+        <li>Mix: 25%</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- TRACK 7 -->
+<div class="track-card color-bright">
+  <div class="track-header">
+    <span class="track-name">SF | Beat Chop Simpler</span>
+    <span class="track-meta">Track 7 <span class="tag">MIDI</span> <span class="tag">Red (bright)</span></span>
+  </div>
+  <div class="device-chain">
+    <div class="device">
+      <div class="device-name">Simpler <span class="vendor">Ableton</span></div>
+      <ul class="device-params">
+        <li>Mode: Classic (not Slice)</li>
+        <li>Warp: ON, Complex Pro</li>
+      </ul>
+      <p class="device-note">M4L loads beat WAV directly into Simpler's sample slot</p>
+    </div>
+    <div class="arrow">&darr;</div>
+    <div class="device">
+      <div class="device-name">Decapitator <span class="vendor">Soundtoys &mdash; VST3</span></div>
+      <ul class="device-params">
+        <li>Style: B</li>
+        <li>Drive: 2</li>
+        <li>Mix: 50%</li>
+      </ul>
+    </div>
+    <div class="arrow">&darr;</div>
+    <div class="device">
+      <div class="device-name">PrimalTap <span class="vendor">Soundtoys &mdash; VST3</span></div>
+      <ul class="device-params">
+        <li>Clock: ~100 ms</li>
+        <li>Feedback: 20%</li>
+        <li>Mix: 20%</li>
+      </ul>
+    </div>
+  </div>
+  <div class="note-box">
+    M4L loads the DRUMS beat slice (<code>beat_001.wav</code> or most energetic beat by RMS ranking)
+    into Simpler's sample slot. The M4L device targets Simpler's "Sample" parameter via LOM.
+  </div>
+</div>
+
+<!-- ── Step 4 ──────────────────────────────────────────────── -->
+<h2><span class="step-num">4</span> Group all tracks</h2>
+<div class="step-body">
+  <ul>
+    <li>Select all 7 tracks &rarr; <kbd>Cmd+G</kbd></li>
+    <li>Name group: <strong>"StemForge Templates"</strong> &rarr; color grey</li>
+    <li>Fold the group. These tracks stay in the set forever.</li>
+  </ul>
+</div>
+
+<!-- ── Step 5 ──────────────────────────────────────────────── -->
+<h2><span class="step-num">5</span> Install AbletonOSC <span style="color:var(--muted); font-weight:400; font-size:0.85rem;">(optional, for tempo sync from CLI)</span></h2>
+<div class="step-body">
+  <div class="cmd">git clone https://github.com/ideoforms/AbletonOSC /tmp/AbletonOSC
+cp -r /tmp/AbletonOSC/AbletonOSC \
+  ~/Music/Ableton/User\ Library/Remote\ Scripts/AbletonOSC</div>
+  <ul>
+    <li>Then: Live Preferences &rarr; MIDI &rarr; Control Surface &rarr; <strong>AbletonOSC</strong></li>
+  </ul>
+</div>
+
+<!-- ── Step 6 ──────────────────────────────────────────────── -->
+<h2><span class="step-num">6</span> Install the StemForge Loader M4L device</h2>
+<div class="step-body">
+  <ul>
+    <li>Drag <a href="file:///Users/zak/zacharysbrown/stemforge/m4l/"><code>StemForgeLoader.amxd</code></a> from
+        <a href="file:///Users/zak/zacharysbrown/stemforge/m4l/">stemforge/m4l/</a>
+        onto any track in the StemForge Templates set.</li>
+    <li>A dedicated MIDI track called <strong>"SF Loader"</strong> is ideal.</li>
+    <li>It stays there permanently.</li>
+  </ul>
+  <p style="margin-top:0.75rem; font-size:0.82rem; color:var(--muted);">
+    See also: <a href="file:///Users/zak/zacharysbrown/stemforge/m4l/README_M4L.md">m4l/README_M4L.md</a>
+    &nbsp;&bull;&nbsp; <a href="file:///Users/zak/zacharysbrown/stemforge/m4l/stemforge_loader.js">m4l/stemforge_loader.js</a>
+  </p>
+</div>
+
+<footer>
+  StemForge &mdash;
+  <a href="file:///Users/zak/zacharysbrown/stemforge/">~/stemforge/</a> &middot;
+  <a href="file:///Users/zak/zacharysbrown/stemforge/README.md">README</a> &middot;
+  <a href="file:///Users/zak/zacharysbrown/stemforge/stemforge-claude-code-spec.md">Spec</a>
+</footer>
+
+</body>
+</html>

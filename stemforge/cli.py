@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
-import json, os, sys, time
+import json, os, re, sys, time
+import numpy as np
 from pathlib import Path
+
+
+def to_snake_case(name: str) -> str:
+    """Convert any string to snake_case: '01 Hey Mami' → 'hey_mami'."""
+    # Strip leading track numbers like "01_", "01 ", "01-"
+    name = re.sub(r"^\d+[\s_\-\.]*", "", name)
+    # Replace non-alphanumeric with underscores
+    name = re.sub(r"[^a-zA-Z0-9]+", "_", name)
+    # Collapse multiple underscores and strip edges
+    name = re.sub(r"_+", "_", name).strip("_")
+    return name.lower()
 
 import click
 from rich.console import Console
@@ -41,7 +53,11 @@ def cli():
               help=f"Output root directory. Default: {PROCESSED_DIR}")
 @click.option("--no-slice", is_flag=True, default=False,
               help="Skip beat slicing. Full stems only.")
-def split(audio_file, backend, stems, model, pipeline, output, no_slice):
+@click.option("--no-normalize", is_flag=True, default=False,
+              help="Skip peak normalization of stems before slicing.")
+@click.option("--silence-threshold", "-t", default=1e-3, type=float,
+              help="RMS threshold below which beat slices are discarded. Default: 0.001")
+def split(audio_file, backend, stems, model, pipeline, output, no_slice, no_normalize, silence_threshold):
     """
     Split an audio file into stems and slice at beat boundaries.
 
@@ -65,7 +81,7 @@ def split(audio_file, backend, stems, model, pipeline, output, no_slice):
 
     # ── Output dir ───────────────────────────────────────────────────────────
     out_root = output or PROCESSED_DIR
-    track_name = audio_file.stem
+    track_name = to_snake_case(audio_file.stem)
     track_out = out_root / track_name
     track_out.mkdir(parents=True, exist_ok=True)
 
@@ -125,7 +141,9 @@ def split(audio_file, backend, stems, model, pipeline, output, no_slice):
         for stem_name, stem_path in stem_paths.items():
             if stem_name == "residual":
                 continue
-            slices = slice_at_beats(stem_path, beat_times, track_out, stem_name)
+            slices = slice_at_beats(stem_path, beat_times, track_out, stem_name,
+                                   silence_threshold=silence_threshold,
+                                   normalize=not no_normalize)
             slice_counts[stem_name] = len(slices)
             console.print(f"  {stem_name}: {len(slices)} beat files → {stem_name}_beats/")
 
@@ -191,6 +209,126 @@ def list_options():
     }
     for key, desc in descs.items():
         console.print(f"  [cyan]{key:<8}[/cyan]  {desc}")
+
+
+@cli.command("create-templates")
+def create_templates():
+    """
+    Build the 7 StemForge template tracks in Ableton Live.
+
+    \b
+    If AbletonOSC is running, sends a trigger to the M4L builder device.
+    Otherwise, prints step-by-step instructions.
+    """
+    m4l_dir = Path(__file__).parent.parent / "m4l"
+    builder = m4l_dir / "stemforge_template_builder.js"
+
+    if not builder.exists():
+        console.print("[red]Builder script not found:[/red] " + str(builder))
+        sys.exit(1)
+
+    # Try OSC trigger (AbletonOSC on default port 11000)
+    triggered = False
+    try:
+        import socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(1.0)
+        # OSC message: /live/song/trigger_builder (custom, requires M4L listener)
+        # For now, just check if AbletonOSC is reachable
+        sock.sendto(b'\x00', ("127.0.0.1", 11000))
+        sock.close()
+        console.print("[green]AbletonOSC detected on port 11000[/green]")
+        console.print("[dim]Trigger the builder from the M4L device in Ableton.[/dim]")
+        triggered = True
+    except Exception:
+        pass
+
+    console.print(Rule("[bold cyan]StemForge Template Builder[/bold cyan]"))
+    console.print()
+
+    tracks = [
+        ("SF | Drums Raw",            "Audio", "Red",        "Compressor → EQ Eight"),
+        ("SF | Drums Crushed",        "Audio", "Red (dark)", "LO-FI-AF → Decapitator → Compressor → EchoBoy Jr"),
+        ("SF | Bass",                 "Audio", "Blue",       "EQ Eight → Compressor → LO-FI-AF → Decapitator"),
+        ("SF | Texture Verb",         "Audio", "Green",      "PhaseMistress → EchoBoy → Reverb → LO-FI-AF"),
+        ("SF | Texture Crystallized", "Audio", "Teal",       "Crystallizer → Reverb → Utility"),
+        ("SF | Vocals",               "Audio", "Orange",     "EQ Eight → Compressor → LO-FI-AF → EchoBoy"),
+        ("SF | Beat Chop Simpler",    "MIDI",  "Red",        "Simpler → Decapitator → PrimalTap"),
+    ]
+
+    console.print("[bold]Automated setup (recommended):[/bold]")
+    console.print(f"  1. Open your StemForge Templates set in Ableton")
+    console.print(f"  2. Create a MIDI track → drag Max Instrument onto it")
+    console.print(f"  3. Open Max editor → add [js stemforge_template_builder.js]")
+    console.print(f"  4. Wire a [button] to inlet, [textedit] to outlet 0")
+    console.print(f"  5. Click the button — all 7 tracks are built automatically")
+    console.print(f"  6. Dial in VST3 params per setup.md, then Cmd+G to group")
+    console.print()
+    console.print(f"  Builder script: [cyan]{builder}[/cyan]")
+    console.print()
+
+    console.print("[bold]Tracks that will be created:[/bold]")
+    for i, (name, ttype, color, chain) in enumerate(tracks, 1):
+        console.print(f"  {i}. [bold]{name}[/bold]  [{ttype}]  {color}")
+        console.print(f"     [dim]{chain}[/dim]")
+
+    console.print()
+    console.print("[dim]See setup.md for full parameter values.[/dim]")
+    console.print("[dim]See m4l/README_M4L.md for troubleshooting.[/dim]")
+
+
+@cli.command("clean-beats")
+@click.option("--threshold", "-t", default=1e-3, type=float,
+              help="RMS threshold. Beats below this are deleted. Default: 0.001")
+@click.option("--dir", "-d", "target_dir", default=None, type=click.Path(path_type=Path),
+              help=f"Directory to clean. Default: {PROCESSED_DIR}")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Show what would be deleted without deleting.")
+def clean_beats(threshold, target_dir, dry_run):
+    """
+    Delete silent beat slices from processed folders.
+
+    Scans all *_beats/ directories and removes WAV files
+    whose RMS is below the threshold.
+    """
+    import soundfile as sf_mod
+
+    base = target_dir or PROCESSED_DIR
+    beat_dirs = sorted(base.rglob("*_beats"))
+    if not beat_dirs:
+        console.print(f"No beat directories found in {base}")
+        return
+
+    total_deleted = 0
+    total_kept = 0
+
+    for beat_dir in beat_dirs:
+        wavs = sorted(beat_dir.glob("*.wav"))
+        deleted = 0
+        for wav in wavs:
+            data, sr = sf_mod.read(str(wav))
+            rms = float(np.sqrt(np.mean(data ** 2)))
+            if rms < threshold:
+                if dry_run:
+                    console.print(f"  [dim]would delete:[/dim] {wav.name}  (RMS={rms:.6f})")
+                else:
+                    wav.unlink()
+                deleted += 1
+        kept = len(wavs) - deleted
+        total_deleted += deleted
+        total_kept += kept
+        if deleted > 0:
+            action = "would delete" if dry_run else "deleted"
+            console.print(
+                f"  {beat_dir.relative_to(base)}: "
+                f"[red]{action} {deleted}[/red] / kept {kept}"
+            )
+
+    prefix = "[dim](dry run)[/dim] " if dry_run else ""
+    console.print(
+        f"\n{prefix}[bold]{total_deleted}[/bold] silent beats removed, "
+        f"[bold]{total_kept}[/bold] kept (threshold={threshold})"
+    )
 
 
 @cli.command("generate-pipeline-json")

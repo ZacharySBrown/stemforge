@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StemForge &mdash; User Guide</title>
+<style>
+  :root {
+    --bg: #0e0e0e;
+    --surface: #181818;
+    --card: #1e1e1e;
+    --border: #2a2a2a;
+    --text: #e0e0e0;
+    --muted: #888;
+    --accent: #c084fc;
+    --accent2: #818cf8;
+    --green: #4ade80;
+    --yellow: #fbbf24;
+    --red: #f87171;
+    --teal: #2dd4bf;
+    --blue: #60a5fa;
+    --orange: #fb923c;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', 'Cascadia Code', monospace;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    padding: 2rem;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-size: 1.8rem;
+    color: var(--accent);
+    margin-bottom: 0.25rem;
+    letter-spacing: -0.5px;
+  }
+
+  .subtitle {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-bottom: 2.5rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1.5rem;
+  }
+
+  .subtitle a {
+    color: var(--accent2);
+    text-decoration: none;
+  }
+  .subtitle a:hover { text-decoration: underline; }
+
+  h2 {
+    font-size: 1.15rem;
+    color: var(--yellow);
+    margin-top: 2.5rem;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  h2 .step-num {
+    background: var(--yellow);
+    color: var(--bg);
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+  }
+
+  h3 {
+    font-size: 0.95rem;
+    color: var(--accent);
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .step-body {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .step-body ul {
+    list-style: none;
+    padding-left: 0;
+  }
+
+  .step-body ul li {
+    padding: 0.2rem 0;
+    padding-left: 1.2rem;
+    position: relative;
+  }
+
+  .step-body ul li::before {
+    content: '\25B8';
+    position: absolute;
+    left: 0;
+    color: var(--muted);
+  }
+
+  .step-body ol {
+    padding-left: 1.5rem;
+  }
+
+  .step-body ol li {
+    padding: 0.2rem 0;
+  }
+
+  code, kbd {
+    background: #252525;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    font-size: 0.85em;
+    color: var(--accent2);
+  }
+
+  kbd {
+    border: 1px solid #444;
+    color: var(--text);
+    font-size: 0.8em;
+  }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ---- Command blocks ---- */
+  .cmd {
+    background: #151515;
+    border: 1px solid #262626;
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    font-size: 0.82rem;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--green);
+    margin: 0.5rem 0;
+  }
+
+  .cmd .comment { color: var(--muted); }
+  .cmd .prompt { color: var(--muted); user-select: none; }
+  .cmd .output { color: #bbb; }
+  .cmd .flag { color: var(--yellow); }
+  .cmd .err { color: var(--red); }
+
+  /* ---- Info cards ---- */
+  .info-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1rem;
+    border-left: 3px solid var(--accent2);
+  }
+
+  .info-card .card-title {
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: var(--accent2);
+    margin-bottom: 0.4rem;
+  }
+
+  .info-card p, .info-card ul {
+    font-size: 0.85rem;
+    color: #bbb;
+  }
+
+  .info-card ul {
+    list-style: none;
+    padding-left: 0;
+  }
+
+  .info-card ul li {
+    padding: 0.15rem 0;
+    padding-left: 1rem;
+    position: relative;
+  }
+
+  .info-card ul li::before {
+    content: '\2022';
+    position: absolute;
+    left: 0;
+    color: #555;
+  }
+
+  /* ---- Track cards (from setup.html) ---- */
+  .track-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 0.75rem;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .track-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    width: 4px;
+  }
+
+  .track-card.color-red::before    { background: var(--red); }
+  .track-card.color-red-dk::before { background: #b91c1c; }
+  .track-card.color-blue::before   { background: var(--blue); }
+  .track-card.color-green::before  { background: var(--green); }
+  .track-card.color-teal::before   { background: var(--teal); }
+  .track-card.color-orange::before { background: var(--orange); }
+  .track-card.color-bright::before { background: #ef4444; }
+
+  .track-card .track-name {
+    font-weight: 700;
+    color: #fff;
+    font-size: 0.9rem;
+  }
+
+  .track-card .track-detail {
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-top: 0.25rem;
+  }
+
+  /* ---- Tip / warning boxes ---- */
+  .tip-box {
+    margin: 1rem 0;
+    padding: 0.7rem 1rem;
+    border-radius: 0 6px 6px 0;
+    font-size: 0.82rem;
+  }
+
+  .tip-box.tip {
+    background: #0e1a0e;
+    border-left: 3px solid var(--green);
+    color: #a3d9a5;
+  }
+
+  .tip-box.warn {
+    background: #1a1a10;
+    border-left: 3px solid var(--yellow);
+    color: #d4c87a;
+  }
+
+  .tip-box.info {
+    background: #0e0e1a;
+    border-left: 3px solid var(--accent2);
+    color: #a5a8fc;
+  }
+
+  .tip-box.error {
+    background: #1a0e0e;
+    border-left: 3px solid var(--red);
+    color: #f5a5a5;
+  }
+
+  .tip-box strong {
+    color: inherit;
+    font-size: 0.85rem;
+  }
+
+  /* ---- Reference tables ---- */
+  .ref-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+    margin: 0.75rem 0;
+  }
+
+  .ref-table th {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 2px solid var(--border);
+    color: var(--yellow);
+    font-weight: 600;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .ref-table td {
+    padding: 0.4rem 0.75rem;
+    border-bottom: 1px solid #222;
+    color: #bbb;
+  }
+
+  .ref-table td code {
+    font-size: 0.82em;
+  }
+
+  .ref-table tr:hover td {
+    background: #1a1a1a;
+  }
+
+  /* ---- Pipeline cards ---- */
+  .pipeline-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 0.75rem;
+    border-left: 3px solid var(--accent);
+  }
+
+  .pipeline-card .pipeline-name {
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: var(--accent);
+    margin-bottom: 0.25rem;
+  }
+
+  .pipeline-card .pipeline-desc {
+    font-size: 0.82rem;
+    color: var(--muted);
+    margin-bottom: 0.4rem;
+  }
+
+  .pipeline-card .pipeline-stems {
+    font-size: 0.82rem;
+    color: #bbb;
+  }
+
+  /* ---- Section divider ---- */
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 3rem 0 1rem;
+  }
+
+  /* ---- Nav ---- */
+  .nav {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+  }
+
+  .nav a {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.4rem 0.85rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+    transition: all 0.15s;
+  }
+
+  .nav a:hover {
+    color: var(--text);
+    border-color: #444;
+    text-decoration: none;
+  }
+
+  footer {
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    font-size: 0.78rem;
+    color: #555;
+    text-align: center;
+  }
+
+  @media print {
+    body { background: #fff; color: #111; }
+    .step-body, .info-card, .cmd, .track-card, .pipeline-card { border-color: #ccc; background: #f9f9f9; }
+    .track-card::before { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    code, kbd { background: #eee; color: #333; }
+  }
+</style>
+</head>
+<body>
+
+<h1>StemForge &mdash; User Guide</h1>
+<p class="subtitle">
+  Complete guide to splitting stems, loading them into Ableton Live, and working with pipelines.<br>
+  Covers the CLI, the M4L Loader device, and day-to-day workflow.
+</p>
+
+<div class="nav">
+  <a href="build_guide_loader.html">Loader Build Guide</a>
+  <a href="build_guide.html">Template Builder Guide</a>
+  <a href="dev_log.html">Dev Log</a>
+  <a href="../setup.html">Setup Guide</a>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- PREREQUISITES                                                       -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+
+<h2><span class="step-num">1</span> Prerequisites</h2>
+
+<div class="step-body">
+  <ul>
+    <li><strong>Ableton Live 12+</strong> &mdash; the Loader uses <code>create_audio_clip()</code> which requires Live 12</li>
+    <li><strong>Max for Live</strong> &mdash; included with Live Suite, or available as an add-on for Standard</li>
+    <li><strong>Python 3.11+</strong> via <a href="https://github.com/pyenv/pyenv">pyenv</a> &mdash; required for the CLI</li>
+    <li><strong>uv</strong> &mdash; fast Python package manager (<code>curl -LsSf https://astral.sh/uv/install.sh | sh</code>)</li>
+    <li><strong>ffmpeg</strong> &mdash; for audio format conversion (<code>brew install ffmpeg</code>)</li>
+  </ul>
+</div>
+
+<div class="tip-box warn">
+  <strong>M2/ARM Macs:</strong> Make sure your terminal is running natively (not under Rosetta).
+  Check with <code>uname -m</code> &mdash; it should show <code>arm64</code>, not <code>x86_64</code>.
+  If you see x86_64, open Terminal.app's "Get Info" and uncheck "Open using Rosetta".
+</div>
+
+<hr class="divider">
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- INSTALLATION                                                        -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+
+<h2><span class="step-num">2</span> Installation</h2>
+
+<h3>Clone and install</h3>
+
+<div class="cmd"><span class="prompt">$ </span>git clone https://github.com/zacharysbrown/stemforge.git
+<span class="prompt">$ </span>cd stemforge
+<span class="prompt">$ </span>uv venv
+<span class="prompt">$ </span>source .venv/bin/activate
+<span class="prompt">$ </span>uv pip install -e ".[local]"</div>
+
+<div class="tip-box warn">
+  <strong>If llvmlite fails to build:</strong> Install the pre-built wheels first, then retry:
+  <div class="cmd" style="margin-top:0.5rem;"><span class="prompt">$ </span>uv pip install llvmlite numba librosa <span class="flag">--no-build</span>
+<span class="prompt">$ </span>uv pip install -e ".[local]"</div>
+</div>
+
+<h3>Verify the install</h3>
+
+<div class="cmd"><span class="prompt">$ </span>stemforge --help
+<span class="output">Usage: stemforge [OPTIONS] COMMAND [ARGS]...
+
+StemForge -- stem splitting + beat slicing for Ableton Live.
+
+Commands:
+  split                  Split an audio file into stems and slice at beat boundaries.
+  clean-beats            Delete silent beat slices from processed folders.
+  list                   Show available stems, presets, and models.
+  balance                Show remaining LALAL.AI API minutes.
+  create-templates       Build the 7 StemForge template tracks in Ableton Live.
+  generate-pipeline-json Convert pipelines/*.yaml to *.json for M4L device.</span></div>
+
+<h3>Directory structure</h3>
+
+<div class="step-body">
+  <p style="font-size:0.85rem; margin-bottom:0.75rem;">StemForge creates these directories automatically:</p>
+  <ul>
+    <li><code>~/stemforge/inbox/</code> &mdash; drop raw audio files here (optional convention)</li>
+    <li><code>~/stemforge/processed/</code> &mdash; output directory for all stems and manifests</li>
+    <li><code>~/stemforge/logs/</code> &mdash; processing logs</li>
+  </ul>
+</div>
+
+<hr class="divider">
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- TEMPLATE TRACKS                                                     -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+
+<h2><span class="step-num">3</span> Setting Up Template Tracks</h2>
+
+<div class="step-body">
+  <p style="font-size:0.85rem; margin-bottom:0.75rem;">
+    StemForge uses 7 template tracks in Ableton. The Loader matches stems to tracks by name,
+    so <strong>track names must match exactly</strong>. See the
+    <a href="../setup.html">Setup Guide</a> for full device chain details.
+  </p>
+</div>
+
+<div class="track-card color-red">
+  <span class="track-name">SF | Drums Raw</span>
+  <div class="track-detail">Audio &mdash; Compressor &rarr; EQ Eight &mdash; Warp: Beats</div>
+</div>
+
+<div class="track-card color-red-dk">
+  <span class="track-name">SF | Drums Crushed</span>
+  <div class="track-detail">Audio &mdash; LO-FI-AF &rarr; Decapitator &rarr; Compressor &rarr; EchoBoy Jr &mdash; Warp: Beats</div>
+</div>
+
+<div class="track-card color-blue">
+  <span class="track-name">SF | Bass</span>
+  <div class="track-detail">Audio &mdash; EQ Eight &rarr; Compressor &rarr; LO-FI-AF &rarr; Decapitator &mdash; Warp: Beats</div>
+</div>
+
+<div class="track-card color-green">
+  <span class="track-name">SF | Texture Verb</span>
+  <div class="track-detail">Audio &mdash; PhaseMistress &rarr; EchoBoy &rarr; Reverb &rarr; LO-FI-AF &mdash; Warp: Complex</div>
+</div>
+
+<div class="track-card color-teal">
+  <span class="track-name">SF | Texture Crystallized</span>
+  <div class="track-detail">Audio &mdash; Crystallizer &rarr; Reverb &rarr; Utility &mdash; Warp: Complex Pro</div>
+</div>
+
+<div class="track-card color-orange">
+  <span class="track-name">SF | Vocals</span>
+  <div class="track-detail">Audio &mdash; EQ Eight &rarr; Compressor &rarr; LO-FI-AF &rarr; EchoBoy &mdash; Warp: Tones</div>
+</div>
+
+<div class="track-card color-bright">
+  <span class="track-name">SF | Beat Chop Simpler</span>
+  <div class="track-detail">MIDI &mdash; Simpler &rarr; Decapitator &rarr; PrimalTap</div>
+</div>
+
+<div class="tip-box info">
+  <strong>Automated setup:</strong> Run <code>stemforge create-templates</code> from the CLI, or use the
+  <a href="build_guide.html">Template Builder M4L device</a> to create all 7 tracks automatically.
+  VST3 plugins must still be dragged from the Browser manually &mdash; the LOM cannot load them programmatically.
+</div>
+
+<div class="tip-box tip">
+  <strong>After creating tracks:</strong> Select all 7 &rarr; <kbd>Cmd</kbd>+<kbd>G</kbd> to group them.
+  Name the group <strong>"StemForge Templates"</strong> and color it grey. Keep this group folded.
+</div>
+
+<hr class="divider">
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- INSTALLING THE LOADER                                               -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+
+<h2><span class="step-num">4</span> Installing the Loader Device</h2>
+
+<div class="step-body">
+  <ol>
+    <li>In your StemForge Templates set, create a new MIDI track named <strong>"SF Loader"</strong></li>
+    <li>Drag <code>StemForgeLoader.amxd</code> from <code>m4l/</code> onto the track</li>
+    <li>The device should auto-initialize with status messages in its display</li>
+  </ol>
+  <p style="margin-top:0.75rem; font-size:0.82rem; color:var(--muted);">
+    Alternatively, build the device from scratch: see the
+    <a href="build_guide_loader.html">Loader Build Guide</a>.
+  </p>
+</div>
+
+<h3>Device controls</h3>
+
+<div class="info-card">
+  <div class="card-title">Load Latest</div>
+  <p>Button. Click to load the most recently processed stems from <code>~/stemforge/processed/</code>.
+    Finds the <code>stems.json</code> with the newest <code>processed_at</code> timestamp.</p>
+</div>
+
+<div class="info-card">
+  <div class="card-title">Watch Mode</div>
+  <p>Toggle. When enabled, the Loader polls <code>~/stemforge/processed/</code> every 3 seconds.
+    When a new <code>stems.json</code> appears, it loads automatically. Toggle off to stop watching.</p>
+</div>
+
+<div class="info-card">
+  <div class="card-title">Text Input</div>
+  <p>Type a snake_case track name (e.g., <code>hey_mami</code>) and press Enter to load
+    that specific track's stems. The name must match the folder name in <code>~/stemforge/processed/</code>.</p>
+</div>
+
+<div class="info-card">
+  <div class="card-title">Status Display</div>
+  <p>Shows loading progress, errors, and which stems were loaded onto which tracks.
+    Also appears in the Max Console (<em>Window &rarr; Max Console</em>).</p>
+</div>
+
+<hr class="divider">
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- PROCESSING A TRACK                                                  -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+
+<h2><span class="step-num">5</span> Processing a Track</h2>
+
+<h3>Basic usage</h3>
+
+<div class="cmd"><span class="prompt">$ </span>stemforge split track.wav</div>
+
+<p style="font-size:0.85rem; color:var(--muted); margin:0.5rem 0;">
+  This separates the audio into stems, detects BPM, slices at beat boundaries, and writes
+  a <code>stems.json</code> manifest. Output goes to <code>~/stemforge/processed/&lt;snake_case_name&gt;/</code>.
+</p>
+
+<h3>Options</h3>
+
+<div class="cmd"><span class="comment"># Choose backend explicitly</span>
+<span class="prompt">$ </span>stemforge split track.wav <span class="flag">--backend demucs</span>
+<span class="prompt">$ </span>stemforge split track.wav <span class="flag">--backend lalal</span>
+
+<span class="comment"># Use a specific Demucs model (4-stem, fine, or 6-stem)</span>
+<span class="prompt">$ </span>stemforge split track.wav <span class="flag">--model 6stem</span>
+
+<span class="comment"># Use a specific pipeline config</span>
+<span class="prompt">$ </span>stemforge split track.wav <span class="flag">--pipeline glitch</span>
+<span class="prompt">$ </span>stemforge split track.wav <span class="flag">--pipeline idm_crushed</span>
+
+<span class="comment"># Skip beat slicing (full stems only)</span>
+<span class="prompt">$ </span>stemforge split track.wav <span class="flag">--no-slice</span>
+
+<span class="comment"># Skip peak normalization</span>
+<span class="prompt">$ </span>stemforge split track.wav <span class="flag">--no-normalize</span>
+
+<span class="comment"># More aggressive silence threshold for beat slices</span>
+<span class="prompt">$ </span>stemforge split track.wav <span class="flag">--silence-threshold 0.01</span></div>
+
+<h3>Supported formats</h3>
+
+<div class="step-body">
+  <ul>
+    <li><code>.wav</code>, <code>.mp3</code>, <code>.flac</code>, <code>.ogg</code> &mdash; supported directly</li>
+    <li><code>.m4a</code>, <code>.aac</code> &mdash; convert to WAV first:</li>
+  </ul>
+  <div class="cmd"><span class="prompt">$ </span>ffmpeg -i track.m4a track.wav
+<span class="prompt">$ </span>stemforge split track.wav</div>
+</div>
+
+<h3>Output structure</h3>
+
+<div class="cmd"><span class="output">~/stemforge/processed/hey_mami/
+  stems.json            </span><span class="comment"># manifest (BPM, paths, pipeline, metadata)</span><span class="output">
+  drums.wav             </span><span class="comment"># full drum stem</span><span class="output">
+  bass.wav              </span><span class="comment"># full bass stem</span><span class="output">
+  vocals.wav            </span><span class="comment"># full vocal stem</span><span class="output">
+  other.wav             </span><span class="comment"># full "other" stem (textures, synths, etc.)</span><span class="output">
+  drums_beats/          </span><span class="comment"># beat-sliced drum files</span><span class="output">
+    drums_beat_001.wav
+    drums_beat_002.wav
+    ...
+  bass_beats/
+  vocals_beats/
+  other_beats/</span></div>
+
+<hr class="divider">
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- LOADING STEMS IN ABLETON                                            -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+
+<h2><span class="step-num">6</span> Loading Stems in Ableton</h2>
+
+<h3>Method 1: Type the track name</h3>
+<div class="step-body">
+  <ol>
+    <li>In the Loader device, click the text input field</li>
+    <li>Type the snake_case name (e.g., <code>hey_mami</code>) and press <kbd>Enter</kbd></li>
+    <li>The Loader reads <code>~/stemforge/processed/hey_mami/stems.json</code> and loads all stems</li>
+  </ol>
+</div>
+
+<h3>Method 2: Load Latest</h3>
+<div class="step-body">
+  <ol>
+    <li>Click the <strong>Load Latest</strong> button</li>
+    <li>The Loader finds the most recently processed track and loads it</li>
+  </ol>
+</div>
+
+<h3>Method 3: Watch Mode</h3>
+<div class="step-body">
+  <ol>
+    <li>Toggle <strong>Watch</strong> on</li>
+    <li>Run <code>stemforge split</code> from the CLI</li>
+    <li>The Loader auto-detects the new stems.json within 3 seconds and loads automatically</li>
+    <li>Toggle off when not needed to save CPU</li>
+  </ol>
+</div>
+
+<h3>What happens when stems load</h3>
+
+<div class="step-body">
+  <ul>
+    <li><strong>BPM:</strong> session tempo is set automatically from the manifest</li>
+    <li><strong>Track matching:</strong> each stem is matched to a template track by name
+      (e.g., "drums" stem &rarr; "SF | Drums Raw" track)</li>
+    <li><strong>Audio loading:</strong> stems are loaded into the first empty clip slot on each matching track
+      via <code>create_audio_clip()</code></li>
+    <li><strong>Clip properties:</strong> clips are named (<code>song_name-stem_part</code>),
+      warping is enabled, warp mode is set from the pipeline, and looping is turned on</li>
+    <li><strong>Effect parameters:</strong> if the pipeline config includes effect settings,
+      they are applied to the devices on each track</li>
+  </ul>
+</div>
+
+<div class="tip-box info">
+  <strong>Loading multiple songs:</strong> Each song's stems go into the next empty clip slots
+  on the template tracks. You can load many songs onto the same template set &mdash; they stack
+  vertically in the Session View.
+</div>
+
+<div class="tip-box tip">
+  <strong>Stem-to-track mapping:</strong> The Loader uses flexible matching. The stem "drums"
+  matches any track containing "drums" or "drum" in its name. The stem "other" matches tracks
+  containing "texture" or "other". The stem "synthesizer" matches "synth" or "texture". See
+  <code>STEM_TRACK_MAP</code> in <code>stemforge_loader.js</code> for the full mapping.
+</div>
+
+<hr class="divider">
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- PIPELINE CONFIGS                                                    -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+
+<h2><span class="step-num">7</span> Pipeline Configs</h2>
+
+<p style="font-size:0.85rem; color:var(--muted); margin-bottom:1rem;">
+  Pipelines control which template track each stem goes to, the warp mode, and effect parameters.
+  The pipeline name is baked into <code>stems.json</code> at processing time.
+</p>
+
+<div class="pipeline-card">
+  <div class="pipeline-name">default</div>
+  <div class="pipeline-desc">Clean stems, warped and looped, ready to use</div>
+  <div class="pipeline-stems">
+    drums &rarr; SF | Drums Raw (beats) &middot;
+    bass &rarr; SF | Bass (beats) &middot;
+    other &rarr; SF | Texture Verb (complex) &middot;
+    vocals &rarr; SF | Vocals (tones) &middot;
+    synth &rarr; SF | Texture Verb (complex) &middot;
+    guitar &rarr; SF | Texture Verb (complex) &middot;
+    piano &rarr; SF | Texture Verb (tones)
+  </div>
+</div>
+
+<div class="pipeline-card">
+  <div class="pipeline-name">idm_crushed</div>
+  <div class="pipeline-desc">Bitcrushed, saturated, degraded &mdash; maximum texture (Aphex Twin / Squarepusher territory)</div>
+  <div class="pipeline-stems">
+    drums &rarr; SF | Drums Crushed (beats) with LO-FI-AF + Decapitator + Compressor params &middot;
+    bass &rarr; SF | Bass (beats) with EQ + subtle tape &middot;
+    other &rarr; SF | Texture Verb (complex) with spectral + analog + tape echo + hall reverb
+  </div>
+</div>
+
+<div class="pipeline-card">
+  <div class="pipeline-name">glitch</div>
+  <div class="pipeline-desc">Granular reverse textures, spectral mangling (Four Tet / Boards of Canada)</div>
+  <div class="pipeline-stems">
+    drums &rarr; SF | Drums Raw (beats) &middot;
+    bass &rarr; SF | Bass (beats) &middot;
+    other &rarr; SF | Texture Crystallized (complex-pro) with Crystallizer + Reverb params &middot;
+    synth &rarr; SF | Texture Crystallized (complex-pro) with reverse granular
+  </div>
+</div>
+
+<div class="pipeline-card">
+  <div class="pipeline-name">ambient</div>
+  <div class="pipeline-desc">Expansive reverbs, slow modulation &mdash; textural/ambient IDM</div>
+  <div class="pipeline-stems">
+    drums &rarr; SF | Drums Raw (beats) with subtle analog warmth &middot;
+    bass &rarr; SF | Bass (tones) &middot;
+    other &rarr; SF | Texture Verb (complex-pro) with slow phase + long tape delay + plate reverb &middot;
+    synth &rarr; SF | Texture Verb (complex-pro)
+  </div>
+</div>
+
+<h3>Using a pipeline</h3>
+
+<div class="cmd"><span class="prompt">$ </span>stemforge split track.wav <span class="flag">--pipeline glitch</span></div>
+
+<h3>Editing pipeline configs</h3>
+
+<div class="step-body">
+  <ol>
+    <li>Edit <code>pipelines/default.yaml</code> (or create a new YAML file in <code>pipelines/</code>)</li>
+    <li>Run <code>stemforge generate-pipeline-json</code> to convert YAML to JSON</li>
+    <li>Restart or reload the M4L Loader device to pick up changes</li>
+  </ol>
+</div>
+
+<div class="cmd"><span class="prompt">$ </span>stemforge generate-pipeline-json
+<span class="output">OK default.yaml &rarr; default.json</span></div>
+
+<div class="tip-box info">
+  <strong>Pipeline YAML structure:</strong> Each pipeline has a name, description, and a
+  <code>stems</code> section. Each stem entry specifies the template track name, color,
+  warp mode, loop setting, and optional <code>effects</code> array with device index + parameter values.
+  See <code>pipelines/default.yaml</code> for the full schema.
+</div>
+
+<hr class="divider">
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- CLEANING UP BEAT SLICES                                             -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+
+<h2><span class="step-num">8</span> Cleaning Up Beat Slices</h2>
+
+<p style="font-size:0.85rem; color:var(--muted); margin-bottom:1rem;">
+  Beat slicing can produce silent or near-silent files. Use <code>clean-beats</code> to remove them.
+</p>
+
+<div class="cmd"><span class="comment"># Preview what would be deleted (dry run)</span>
+<span class="prompt">$ </span>stemforge clean-beats <span class="flag">--dry-run</span>
+<span class="output">  drums_beats/: would delete 3 / kept 45
+  bass_beats/: would delete 8 / kept 40
+  (dry run) 11 silent beats removed, 85 kept (threshold=0.001)</span>
+
+<span class="comment"># Actually delete silent beats</span>
+<span class="prompt">$ </span>stemforge clean-beats
+
+<span class="comment"># More aggressive cleanup (higher threshold)</span>
+<span class="prompt">$ </span>stemforge clean-beats <span class="flag">--threshold 0.01</span>
+
+<span class="comment"># Clean a specific directory</span>
+<span class="prompt">$ </span>stemforge clean-beats <span class="flag">--dir ~/stemforge/processed/hey_mami</span></div>
+
+<div class="tip-box tip">
+  <strong>Default threshold:</strong> 0.001 RMS. Beat slices with an RMS energy below this are
+  considered silent. Use <code>--threshold 0.01</code> for more aggressive cleanup (removes
+  very quiet beats too).
+</div>
+
+<hr class="divider">
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- TROUBLESHOOTING                                                     -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+
+<h2><span class="step-num">9</span> Troubleshooting</h2>
+
+<div class="tip-box error">
+  <strong>"can't find file stemforge_loader.js"</strong><br>
+  The <code>.amxd</code> and <code>.js</code> files must be in the same folder. If the device is frozen,
+  the JS is bundled inside. If unfrozen, ensure both files are in <code>m4l/</code>.
+  After fixing the path, delete and re-create the <code>[js]</code> object in the Max editor.
+</div>
+
+<div class="tip-box error">
+  <strong>"No stems.json found"</strong><br>
+  The Loader looks for <code>stems.json</code> files inside subdirectories of the processed dir.
+  Check that: (1) you've run <code>stemforge split</code> at least once, (2) the processed dir
+  path is correct (default: <code>~/stemforge/processed</code>), and (3) the path uses the
+  full absolute path in the <code>setProcessedDir</code> message box.
+</div>
+
+<div class="tip-box error">
+  <strong>Stems loading on wrong tracks</strong><br>
+  The Loader matches stems to tracks by name. Check that your template track names contain
+  the stem name (e.g., "drums", "bass", "vocals"). The matching is case-insensitive but the
+  stem name must appear in the track name. See <code>STEM_TRACK_MAP</code> in the JS for
+  the full matching logic (e.g., "other" also matches "texture").
+</div>
+
+<div class="tip-box warn">
+  <strong>CPU spike after loading</strong><br>
+  Normal. When stems are loaded, Ableton analyzes and warps the audio files. This causes a
+  brief CPU spike. Wait a few seconds for analysis to complete. If it persists, check that
+  warp mode is set correctly (Beats for drums, Complex/Complex Pro for textures).
+</div>
+
+<div class="tip-box error">
+  <strong>textedit is blank / no status messages</strong><br>
+  Check the wiring in the Max editor: <code>[js]</code> outlet 0 (leftmost) must connect to
+  <code>[textedit]</code> inlet 0. Also check the Max Console (<em>Window &rarr; Max Console</em>)
+  &mdash; status messages always appear there via <code>post()</code> even if the textedit
+  wiring is wrong.
+</div>
+
+<div class="tip-box warn">
+  <strong>"already loaded" (old version only)</strong><br>
+  This check was removed in the current version. If you see this message, you're using an
+  older version of <code>stemforge_loader.js</code>. Send a <code>reset</code> message to the
+  <code>[js]</code> object to clear the last-loaded state, or update to the latest JS file.
+</div>
+
+<div class="tip-box error">
+  <strong>JS edits not taking effect</strong><br>
+  If the device is frozen, your edits to <code>m4l/stemforge_loader.js</code> will be ignored &mdash;
+  the device uses the bundled copy. Unfreeze the device, copy the updated JS to the project's
+  <code>code/</code> subfolder (usually in <code>~/Documents/Max 9/Max for Live Devices/</code>),
+  or re-freeze to rebundle.
+</div>
+
+<div class="tip-box warn">
+  <strong>llvmlite / numba build failure</strong><br>
+  Install pre-built wheels: <code>uv pip install llvmlite numba librosa --no-build</code>
+</div>
+
+<div class="tip-box warn">
+  <strong>Demucs can't read .m4a</strong><br>
+  Convert to WAV first: <code>ffmpeg -i track.m4a track.wav</code>
+</div>
+
+<hr class="divider">
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- REFERENCE                                                           -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+
+<h2><span class="step-num">REF</span> Reference</h2>
+
+<h3>CLI Commands</h3>
+
+<table class="ref-table">
+  <thead>
+    <tr><th>Command</th><th>Description</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>stemforge split &lt;file&gt;</code></td>
+      <td>Split audio into stems, detect BPM, slice at beat boundaries, write stems.json</td>
+    </tr>
+    <tr>
+      <td><code>stemforge clean-beats</code></td>
+      <td>Delete silent beat slices from processed folders</td>
+    </tr>
+    <tr>
+      <td><code>stemforge list</code></td>
+      <td>Show available stems, presets, and Demucs models</td>
+    </tr>
+    <tr>
+      <td><code>stemforge balance</code></td>
+      <td>Show remaining LALAL.AI API minutes</td>
+    </tr>
+    <tr>
+      <td><code>stemforge create-templates</code></td>
+      <td>Print instructions for building the 7 template tracks in Ableton</td>
+    </tr>
+    <tr>
+      <td><code>stemforge generate-pipeline-json</code></td>
+      <td>Convert <code>pipelines/*.yaml</code> to <code>*.json</code> for the M4L device</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Loader Messages</h3>
+
+<p style="font-size:0.82rem; color:var(--muted); margin-bottom:0.5rem;">
+  These messages can be sent to the <code>[js stemforge_loader.js]</code> object's inlet:
+</p>
+
+<table class="ref-table">
+  <thead>
+    <tr><th>Message</th><th>Description</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>bang</code></td>
+      <td>Load the most recent stems (same as Load Latest button)</td>
+    </tr>
+    <tr>
+      <td><code>load &lt;name&gt;</code></td>
+      <td>Load stems for a specific track by snake_case name (e.g., <code>load hey_mami</code>)</td>
+    </tr>
+    <tr>
+      <td><code>loadFrom &lt;path&gt;</code></td>
+      <td>Load a specific stems.json by full path</td>
+    </tr>
+    <tr>
+      <td><code>reset</code></td>
+      <td>Clear the last-loaded manifest so the same track can be reloaded</td>
+    </tr>
+    <tr>
+      <td><code>startWatch</code></td>
+      <td>Start polling the processed dir for new stems (every 3 seconds)</td>
+    </tr>
+    <tr>
+      <td><code>stopWatch</code></td>
+      <td>Stop the watch mode polling</td>
+    </tr>
+    <tr>
+      <td><code>setProcessedDir &lt;path&gt;</code></td>
+      <td>Set the processed directory path (e.g., <code>~/stemforge/processed</code>)</td>
+    </tr>
+    <tr>
+      <td><code>setPipelinesDir &lt;path&gt;</code></td>
+      <td>Set the pipelines directory path (e.g., <code>~/stemforge/pipelines</code>)</td>
+    </tr>
+    <tr>
+      <td><code>loadPipeline &lt;name&gt;</code></td>
+      <td>Load a pipeline config JSON by name (e.g., <code>loadPipeline default</code>)</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Pipeline Stem Names</h3>
+
+<table class="ref-table">
+  <thead>
+    <tr><th>Stem Name</th><th>Backend</th><th>Default Template</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>drums</code></td><td>Demucs (htdemucs)</td><td>SF | Drums Raw</td></tr>
+    <tr><td><code>drum</code></td><td>LALAL.AI</td><td>SF | Drums Raw</td></tr>
+    <tr><td><code>bass</code></td><td>Both</td><td>SF | Bass</td></tr>
+    <tr><td><code>vocals</code></td><td>Both</td><td>SF | Vocals</td></tr>
+    <tr><td><code>other</code></td><td>Demucs</td><td>SF | Texture Verb</td></tr>
+    <tr><td><code>guitar</code></td><td>Demucs (6-stem)</td><td>SF | Texture Verb</td></tr>
+    <tr><td><code>piano</code></td><td>Demucs (6-stem)</td><td>SF | Texture Verb</td></tr>
+    <tr><td><code>synthesizer</code></td><td>LALAL.AI</td><td>SF | Texture Verb</td></tr>
+  </tbody>
+</table>
+
+<h3>Warp Modes</h3>
+
+<table class="ref-table">
+  <thead>
+    <tr><th>Mode</th><th>Index</th><th>Best For</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>beats</code></td><td>0</td><td>Drums, bass, rhythmic material</td></tr>
+    <tr><td><code>tones</code></td><td>1</td><td>Vocals, monophonic instruments, piano</td></tr>
+    <tr><td><code>texture</code></td><td>2</td><td>Ambient pads, noise, atmospheres</td></tr>
+    <tr><td><code>re-pitch</code></td><td>3</td><td>Samples where pitch shift with tempo is OK</td></tr>
+    <tr><td><code>complex</code></td><td>4</td><td>Polyphonic material, mixed textures</td></tr>
+    <tr><td><code>complex-pro</code></td><td>5</td><td>Best quality for complex material, higher CPU</td></tr>
+  </tbody>
+</table>
+
+<h3>Demucs Models</h3>
+
+<table class="ref-table">
+  <thead>
+    <tr><th>Key</th><th>Model</th><th>Stems</th><th>Notes</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>default</code></td>
+      <td>htdemucs</td>
+      <td>drums, bass, vocals, other</td>
+      <td>Fast, ~1x realtime on M2</td>
+    </tr>
+    <tr>
+      <td><code>fine</code></td>
+      <td>htdemucs_ft</td>
+      <td>drums, bass, vocals, other</td>
+      <td>Better quality, ~4x slower</td>
+    </tr>
+    <tr>
+      <td><code>6stem</code></td>
+      <td>htdemucs_6s</td>
+      <td>drums, bass, vocals, other, guitar, piano</td>
+      <td>Best for IDM sampling</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>LALAL.AI Presets</h3>
+
+<table class="ref-table">
+  <thead>
+    <tr><th>Preset</th><th>Stems</th><th>API Cost</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>idm</code></td><td>drum, bass, synthesizer</td><td>3x</td></tr>
+    <tr><td><code>chop</code></td><td>drum, bass</td><td>2x</td></tr>
+    <tr><td><code>4stem</code></td><td>vocals, drum, bass</td><td>3x</td></tr>
+    <tr><td><code>full</code></td><td>vocals, drum, bass, synthesizer, electricguitar</td><td>5x</td></tr>
+    <tr><td><code>drums</code></td><td>drum</td><td>1x</td></tr>
+  </tbody>
+</table>
+
+<footer>
+  StemForge User Guide &mdash;
+  <a href="build_guide_loader.html">Loader Build Guide</a> &middot;
+  <a href="build_guide.html">Template Builder Guide</a> &middot;
+  <a href="dev_log.html">Dev Log</a> &middot;
+  <a href="../setup.html">Setup Guide</a>
+</footer>
+
+</body>
+</html>

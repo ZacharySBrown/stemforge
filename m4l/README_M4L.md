@@ -49,6 +49,48 @@ Save as: m4l/StemForgeLoader.amxd
 3. The device will auto-watch `~/stemforge/processed/` for new stems
 4. Click "Load Latest" to manually trigger loading
 
+---
+
+## Automated Template Builder (stemforge_template_builder.js)
+
+Creates all 7 StemForge template tracks automatically — tracks, Ableton devices,
+parameters, colors — instead of building them by hand from setup.md.
+
+### Quick Start
+
+1. Open your StemForge Templates set (or any Live set)
+2. Create a MIDI track, drag "Max Instrument" onto it
+3. Click wrench to open the Max editor
+4. Add a `[js]` object, set filename to `stemforge_template_builder.js`
+5. Add a `[button]` and connect it to the `[js]` inlet
+6. Add a `[textedit]` and connect `[js]` outlet 0 to it (status log)
+7. Click the button — watch the status log as tracks are built
+
+### What It Does
+
+- Creates 7 tracks (6 audio + 1 MIDI) with correct names and colors
+- Loads Ableton native devices (Compressor, EQ Eight, Reverb, Utility) via Browser API
+- Loads VST3 plugins (Decapitator, LO-FI-AF, EchoBoy, etc.) via Browser search
+- Sets Ableton device parameters (ratio, attack, frequencies, etc.)
+- Logs any devices or parameters it can't find
+
+### After Running
+
+1. VST3 plugin parameters are left at defaults — dial them in per setup.md
+2. Group all 7 tracks: select them, Cmd+G, name "StemForge Templates", color grey
+3. Remove or bypass the builder device — it's a one-time setup tool
+
+### Troubleshooting
+
+- **"NOT FOUND: PluginName"** — the plugin isn't installed, or its Browser name
+  differs from what the script searches for. Edit the `search` field in the
+  TEMPLATES array in `stemforge_template_builder.js` to match your Browser.
+- **Param not found** — Ableton device parameter names can vary between versions.
+  Use the M4L Inspect workflow (select device, read param names in Max console)
+  to find the correct names, then update the `params` object in the script.
+
+---
+
 ### Known Limitations
 
 1. **Track positioning**: `Song.duplicate_track` inserts at source+1, so duplicated template tracks don't end up in a tidy group. Manually group them after loading.

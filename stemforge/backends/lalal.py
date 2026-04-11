@@ -45,17 +45,19 @@ class LalalBackend(AbstractBackend):
                 data=f, timeout=300,
             )
         r.raise_for_status()
-        return r.json()["source_id"]
+        data = r.json()
+        return data.get("id") or data["source_id"]
 
     def _submit(self, source_id: str, stems: list[str]) -> str:
         r = requests.post(
             f"{LALAL_BASE}/split/multistem/",
             headers={**self._h(), "Content-Type": "application/json"},
-            json={"source_id": source_id, "stem_list": stems},
+            json={"id": source_id, "stem_list": stems},
             timeout=30,
         )
         r.raise_for_status()
-        return r.json()["task_id"]
+        data = r.json()
+        return data.get("task_id") or data.get("id") or source_id
 
     def _poll(self, task_id: str, interval: int = 8, timeout: int = 600) -> list:
         deadline = time.time() + timeout
@@ -64,7 +66,7 @@ class LalalBackend(AbstractBackend):
             r = requests.post(
                 f"{LALAL_BASE}/check/",
                 headers={**self._h(), "Content-Type": "application/json"},
-                json={"task_ids": [task_id]}, timeout=15,
+                json={"id": task_id}, timeout=15,
             )
             r.raise_for_status()
             task = r.json().get(task_id, {})
@@ -106,7 +108,7 @@ class LalalBackend(AbstractBackend):
             requests.post(
                 f"{LALAL_BASE}/delete/",
                 headers={**self._h(), "Content-Type": "application/json"},
-                json={"source_id": source_id}, timeout=15,
+                json={"id": source_id}, timeout=15,
             )
         except Exception:
             pass

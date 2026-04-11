@@ -2,7 +2,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Max for Live JavaScript device — StemForge Loader
 // Watches ~/stemforge/processed/ for new stems.json files.
-// When found, loads stems into Ableton template tracks using the Live API.
+// When found:
+//   - Sets BPM
+//   - Duplicates template tracks for each stem
+//   - Renames and recolors the new tracks
+//   - Sets device parameters from pipeline config
+//   - Loads stem audio into clip slots via create_audio_clip (Live 12+)
 //
 // Live API path references (all 0-indexed):
 //   Song:          live_set
@@ -13,18 +18,16 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 inlets = 1;
-outlets = 2;   // outlet 0: status string for display, outlet 1: bang on load complete
-
-var liveAPI  = new LiveAPI();
-var YAML     = null;   // YAML parsing done in Python via system call (see below)
-var fs       = null;   // Max's file system via "file" object
+outlets = 2;   // outlet 0: status text (textedit), outlet 1: bang on load complete
 
 // ── Configuration ─────────────────────────────────────────────────────────────
-var PROCESSED_DIR = Packages.java.lang.System.getProperty("user.home") +
-                    "/stemforge/processed";
-var PIPELINES_DIR = "";  // set from Max patch via setPipelinesDir message
+var PROCESSED_DIR = "";   // set from Max patch via setProcessedDir message
+var PIPELINES_DIR = "";   // set from Max patch via setPipelinesDir message
 var POLL_INTERVAL = 3000; // ms between folder checks in watch mode
-var WARP_MODES    = {beats:0, tones:1, texture:2, "re-pitch":3, complex:4, "complex-pro":5};
+var WARP_MODES    = {
+    beats: 0, tones: 1, texture: 2,
+    "re-pitch": 3, complex: 4, "complex-pro": 5
+};
 
 // State
 var lastLoadedManifest = "";
@@ -38,14 +41,48 @@ function bang() {
     loadLatest();
 }
 
-function loadLatest() {
-    var manifest = findLatestManifest(PROCESSED_DIR);
-    if (!manifest) {
-        outlet(0, "No stems.json found in " + PROCESSED_DIR);
+// Load by name: send "load hey_mami" from Max
+function load() {
+    var args = arrayfromargs(messagename, arguments);
+    var name = args.length > 1 ? String(args[1]) : "";
+    if (!name) {
+        status("Usage: load track_name (e.g. load hey_mami)");
         return;
     }
-    if (manifest === lastLoadedManifest) {
-        outlet(0, "Already loaded: " + manifest);
+    if (!PROCESSED_DIR) {
+        status("Set processed dir first");
+        return;
+    }
+    var path = PROCESSED_DIR + "/" + String(name) + "/stems.json";
+    status("Loading by name: " + name);
+    lastLoadedManifest = "";  // reset so it doesn't skip
+    loadManifest(path);
+}
+
+// Direct load: send "loadFrom /full/path/to/stems.json" from Max
+function loadFrom() {
+    var path = arrayfromargs(messagename, arguments).slice(1).join(" ");
+    if (!path || path === "loadFrom") {
+        status("Usage: loadFrom /path/to/stems.json");
+        return;
+    }
+    lastLoadedManifest = "";
+    loadManifest(String(path));
+}
+
+function reset() {
+    lastLoadedManifest = "";
+    status("Reset — ready to reload");
+}
+
+function loadLatest() {
+    if (!PROCESSED_DIR) {
+        status("No processed dir set — send setProcessedDir message first");
+        return;
+    }
+    var manifest = findLatestManifest(PROCESSED_DIR);
+    if (!manifest) {
+        status("No stems.json found in " + PROCESSED_DIR);
         return;
     }
     loadManifest(manifest);
@@ -53,132 +90,161 @@ function loadLatest() {
 
 function startWatch() {
     if (isWatching) return;
+    if (!PROCESSED_DIR) {
+        status("Set processed dir first");
+        return;
+    }
     isWatching = true;
-    outlet(0, "Watching " + PROCESSED_DIR);
+    status("Watching " + PROCESSED_DIR);
     scheduleWatch();
 }
 
 function stopWatch() {
     isWatching = false;
     if (watchTimer) { watchTimer.cancel(); watchTimer = null; }
-    outlet(0, "Watch stopped");
+    status("Watch stopped");
+}
+
+function setProcessedDir(dir) {
+    PROCESSED_DIR = String(dir);
+    status("Processed dir: " + PROCESSED_DIR);
 }
 
 function setPipelinesDir(dir) {
-    PIPELINES_DIR = dir;
-    outlet(0, "Pipelines dir: " + dir);
+    PIPELINES_DIR = String(dir);
+    status("Pipelines dir: " + PIPELINES_DIR);
 }
 
 function loadPipeline(name) {
-    // Read and parse the default.yaml pipeline config.
-    // Max doesn't have native YAML parsing so we read it as text
-    // and do lightweight parsing for the values we need.
-    // For production, consider converting default.yaml to JSON.
-    var path = PIPELINES_DIR + "/" + (name || "default") + ".yaml";
-    var f = new File(path, "read", "text");
-    if (!f.isopen) {
-        outlet(0, "Pipeline not found: " + path);
-        return null;
+    var pName = String(name || "default");
+    var jsonPath = PIPELINES_DIR + "/" + pName + ".json";
+    var raw = readFileContents(jsonPath);
+    if (raw === null) {
+        status("Pipeline not found: " + jsonPath);
+        return;
     }
-    // Read full content
-    var lines = [];
-    f.open();
-    while (!f.eof) {
-        lines.push(f.readline());
+    try {
+        pipelineConfig[pName] = JSON.parse(raw);
+        status("Loaded pipeline: " + pName);
+    } catch (e) {
+        status("Pipeline JSON parse error: " + e);
     }
-    f.close();
-    // Store raw for lookup — parameter setting uses pipeline lookup below
-    pipelineConfig[name || "default"] = lines.join("\n");
-    outlet(0, "Loaded pipeline: " + (name || "default"));
 }
 
 // ── Core: load a stems.json manifest ─────────────────────────────────────────
 
 function loadManifest(manifestPath) {
-    outlet(0, "Loading: " + manifestPath);
+    status("Loading: " + manifestPath);
 
-    // Read stems.json
-    var f = new File(manifestPath, "read", "text");
-    if (!f.isopen) {
-        outlet(0, "Cannot open: " + manifestPath);
+    var raw = readFileContents(manifestPath);
+    if (raw === null) {
+        status("Cannot open: " + manifestPath);
         return;
     }
-    var raw = "";
-    f.open();
-    while (!f.eof) { raw += f.readline() + "\n"; }
-    f.close();
 
     var manifest;
     try {
         manifest = JSON.parse(raw);
-    } catch(e) {
-        outlet(0, "JSON parse error: " + e);
+    } catch (e) {
+        status("JSON parse error: " + e);
         return;
     }
 
     // Set tempo
     setBPM(manifest.bpm);
 
-    // Load pipeline config for parameter setting
-    loadPipeline(manifest.pipeline || "default");
-    var pipeline = getPipelineSection(manifest.pipeline || "default");
+    // Load pipeline config
+    var pName = manifest.pipeline || "default";
+    if (!pipelineConfig[pName] && PIPELINES_DIR) {
+        loadPipeline(pName);
+    }
+    var stemConfigs = getPipelineStemConfigs(pName);
 
-    // Get current track count so we append after existing tracks
-    var api = new LiveAPI("live_set");
-    api.property = "tracks";
-    var numTracks = getTrackCount();
-
-    // Process each stem
+    // Process each stem — find existing tracks by matching suffix
     var stemsLoaded = 0;
+    var failedLoads = [];
+
     for (var i = 0; i < manifest.stems.length; i++) {
         var stemInfo = manifest.stems[i];
         if (stemInfo.name === "residual") continue;
 
-        var stemConfig = pipeline ? pipeline[stemInfo.name] : null;
-        var templateName = stemConfig ? stemConfig.template : "SF | Texture Verb";
-
-        outlet(0, "Loading stem: " + stemInfo.name + " → " + templateName);
-
-        var newTrackIndex = duplicateTemplate(templateName, numTracks + stemsLoaded);
-        if (newTrackIndex < 0) {
-            outlet(0, "Template not found: " + templateName);
+        // Find an existing track whose name ends with the stem name
+        // e.g., stem "drums" matches "SF | Drums Raw", "My Track | drums", etc.
+        var trackIndex = findTrackBySuffix(stemInfo.name);
+        if (trackIndex < 0) {
+            status("  No track found ending with '" + stemInfo.name + "' — skipping");
+            failedLoads.push(stemInfo.name + " (no matching track)");
             continue;
         }
 
-        // Rename track
-        var trackName = manifest.track_name + " | " + stemInfo.name;
-        setTrackName(newTrackIndex, trackName);
+        var trackAPI = new LiveAPI("live_set tracks " + trackIndex);
+        var trackName = trackAPI.get("name");
+        trackName = (trackName && typeof trackName === "object")
+                    ? trackName[0] : String(trackName);
 
-        // Set color
-        var color = stemConfig ? stemConfig.color : 0x444444;
-        setTrackColor(newTrackIndex, color || 0x444444);
-
-        // Load audio into clip slot 0
-        loadAudioClip(newTrackIndex, 0, stemInfo.wav_path);
-
-        // Set clip properties
-        var warpMode = stemConfig ? WARP_MODES[stemConfig.warp_mode] || 0 : 0;
-        setClipProperties(newTrackIndex, 0, {
-            warp_mode: warpMode,
-            looping: stemConfig ? (stemConfig.loop ? 1 : 0) : 1,
-            warping: 1,
-        });
+        status("Stem: " + stemInfo.name + " → " + trackName);
 
         // Apply effect parameters from pipeline config
+        var stemConfig = stemConfigs ? stemConfigs[stemInfo.name] : null;
         if (stemConfig && stemConfig.effects) {
-            applyEffects(newTrackIndex, stemConfig.effects);
+            applyEffects(trackIndex, stemConfig.effects);
+        }
+
+        // Load audio into first empty clip slot via create_audio_clip
+        if (stemInfo.wav_path) {
+            var slotIndex = findEmptyClipSlot(trackIndex);
+            if (slotIndex < 0) {
+                status("  No empty clip slot on " + trackName);
+                failedLoads.push(stemInfo.name + " → " + trackName + " (no empty slot)");
+            } else {
+                try {
+                    var csPath = "live_set tracks " + trackIndex + " clip_slots " + slotIndex;
+                    var csAPI = new LiveAPI(csPath);
+                    csAPI.call("create_audio_clip", String(stemInfo.wav_path));
+
+                    // Name the clip: song_name-stem_part
+                    var clipPath = csPath + " clip";
+                    var clipAPI = new LiveAPI(clipPath);
+                    if (clipAPI.id !== "0") {
+                        var clipName = manifest.track_name + "-" + stemInfo.name;
+                        clipAPI.set("name", clipName);
+
+                        // Enable warping and set warp mode from pipeline
+                        clipAPI.set("warping", 1);
+                        var stemConfig2 = stemConfigs ? stemConfigs[stemInfo.name] : null;
+                        if (stemConfig2 && stemConfig2.warp_mode !== undefined) {
+                            var wm = WARP_MODES[stemConfig2.warp_mode];
+                            if (wm !== undefined) {
+                                clipAPI.set("warp_mode", wm);
+                            }
+                        }
+                        clipAPI.set("looping", 1);
+                    }
+
+                    status("  Loaded: " + clipName + " → slot " + slotIndex);
+                } catch (e) {
+                    status("  Auto-load failed: " + e);
+                    failedLoads.push(stemInfo.name + " → " + trackName);
+                }
+            }
         }
 
         stemsLoaded++;
     }
 
-    // Load best beat slice into "SF | Beat Chop Simpler" if present
-    loadBestBeatSlice(manifest, numTracks + stemsLoaded);
+    status("──────────────────────────────────");
+    status("Loaded " + stemsLoaded + " stems — " +
+           manifest.track_name + " @ " + manifest.bpm + " BPM");
 
-    lastLoadedManifest = manifestPath;
-    outlet(0, "Loaded " + stemsLoaded + " stems — " + manifest.track_name +
-              " @ " + manifest.bpm + " BPM");
-    outlet(1, "bang"); // signal completion
+    if (failedLoads.length > 0) {
+        status("──────────────────────────────────");
+        status("These stems need manual drag from Browser:");
+        for (var d = 0; d < failedLoads.length; d++) {
+            status("  " + failedLoads[d]);
+        }
+    }
+
+    outlet(1, "bang");
 }
 
 // ── Live API helpers ──────────────────────────────────────────────────────────
@@ -186,7 +252,7 @@ function loadManifest(manifestPath) {
 function setBPM(bpm) {
     var api = new LiveAPI("live_set");
     api.set("tempo", bpm);
-    outlet(0, "Tempo → " + bpm + " BPM");
+    status("Tempo → " + bpm + " BPM");
 }
 
 function getTrackCount() {
@@ -199,25 +265,101 @@ function findTrackByName(name) {
     for (var i = 0; i < count; i++) {
         var api = new LiveAPI("live_set tracks " + i);
         var trackName = api.get("name");
-        if (trackName && trackName[0] === name) {
+        var tName = (trackName && typeof trackName === "object")
+                    ? trackName[0] : String(trackName);
+        if (tName === name) {
             return i;
         }
     }
     return -1;
 }
 
-function duplicateTemplate(templateName, insertAfterIndex) {
+function findTrackBySuffix(stemName) {
+    // Find a track whose name ends with the stem name (case-insensitive)
+    // e.g., stemName "drums" matches "SF | Drums Raw" won't work directly,
+    // so we also check common patterns:
+    //   - track name ends with stemName
+    //   - track name contains stemName as a word (after | or space)
+    var target = stemName.toLowerCase();
+    var count = getTrackCount();
+    for (var i = 0; i < count; i++) {
+        var api = new LiveAPI("live_set tracks " + i);
+        var raw = api.get("name");
+        var tName = (raw && typeof raw === "object") ? raw[0] : String(raw);
+        var lower = tName.toLowerCase();
+
+        // Check: name ends with stem name
+        if (lower.lastIndexOf(target) === lower.length - target.length && lower.length >= target.length) {
+            return i;
+        }
+        // Check: "| drums" or "| drum" pattern
+        if (lower.indexOf("| " + target) >= 0) {
+            return i;
+        }
+        // Check: stem name appears after last space or pipe
+        var parts = lower.split(/[\|\s]+/);
+        var lastWord = parts[parts.length - 1];
+        if (lastWord === target) {
+            return i;
+        }
+    }
+
+    // Second pass: looser match — stem name anywhere in track name
+    // Handles "SF | Drums Raw" matching "drums"
+    var STEM_TRACK_MAP = {
+        "drums": ["drums", "drum"],
+        "drum":  ["drums", "drum"],
+        "bass":  ["bass"],
+        "vocals": ["vocals", "vocal"],
+        "other": ["texture", "other"],
+        "guitar": ["guitar"],
+        "electricguitar": ["guitar"],
+        "piano": ["piano"],
+        "synthesizer": ["synth", "texture"]
+    };
+    var candidates = STEM_TRACK_MAP[target] || [target];
+
+    for (var i = 0; i < count; i++) {
+        var api2 = new LiveAPI("live_set tracks " + i);
+        var raw2 = api2.get("name");
+        var tName2 = (raw2 && typeof raw2 === "object") ? raw2[0] : String(raw2);
+        var lower2 = tName2.toLowerCase();
+
+        for (var c = 0; c < candidates.length; c++) {
+            if (lower2.indexOf(candidates[c]) >= 0) {
+                return i;
+            }
+        }
+    }
+
+    return -1;
+}
+
+function findEmptyClipSlot(trackIndex) {
+    var track = new LiveAPI("live_set tracks " + trackIndex);
+    var slotCount;
+    try {
+        slotCount = track.getcount("clip_slots");
+    } catch (e) {
+        return 0;  // fallback to slot 0
+    }
+    for (var s = 0; s < slotCount; s++) {
+        var cs = new LiveAPI("live_set tracks " + trackIndex + " clip_slots " + s);
+        var hasClip = cs.get("has_clip");
+        var occupied = (hasClip && (hasClip[0] === 1 || hasClip[0] === true));
+        if (!occupied) return s;
+    }
+    return -1;  // all slots full
+}
+
+function duplicateTemplate(templateName) {
     var templateIndex = findTrackByName(templateName);
     if (templateIndex < 0) return -1;
 
-    // Duplicate the track via Song.duplicate_track
     var songAPI = new LiveAPI("live_set");
     songAPI.call("duplicate_track", templateIndex);
 
-    // The new track appears at templateIndex + 1
-    // We need to move it to insertAfterIndex
-    // LOM doesn't have move_track, but duplicate inserts at source+1
-    // Acceptable for now — tracks appear in order of stem processing
+    // duplicate_track inserts the new track at templateIndex + 1
     return templateIndex + 1;
 }
 
@@ -231,28 +373,6 @@ function setTrackColor(trackIndex, color) {
     api.set("color", color);
 }
 
-function loadAudioClip(trackIndex, slotIndex, filePath) {
-    // This is the key capability: ClipSlot.create_clip via file path
-    // The LOM function signature: create_clip(path) on an audio track ClipSlot
-    var api = new LiveAPI("live_set tracks " + trackIndex +
-                          " clip_slots " + slotIndex);
-    api.call("create_clip", filePath);
-    // Small delay to let Live process the file
-    var t = new Task(function() {}, this);
-    t.schedule(200);
-}
-
-function setClipProperties(trackIndex, slotIndex, props) {
-    var clipPath = "live_set tracks " + trackIndex +
-                   " clip_slots " + slotIndex + " clip";
-    var api = new LiveAPI(clipPath);
-    if (api.id === "0") return; // clip not yet loaded
-
-    if (props.warping !== undefined)   api.set("warping", props.warping);
-    if (props.warp_mode !== undefined) api.set("warp_mode", props.warp_mode);
-    if (props.looping !== undefined)   api.set("looping", props.looping);
-}
-
 function applyEffects(trackIndex, effects) {
     for (var d = 0; d < effects.length; d++) {
         var effect = effects[d];
@@ -260,29 +380,53 @@ function applyEffects(trackIndex, effects) {
         var params = effect.params;
         if (!params) continue;
 
-        // Get parameter list for this device
         var devicePath = "live_set tracks " + trackIndex +
                          " devices " + deviceIndex;
-        var deviceAPI = new LiveAPI(devicePath);
-        var paramCount = deviceAPI.getcount("parameters");
+        var deviceAPI;
+        try {
+            deviceAPI = new LiveAPI(devicePath);
+        } catch (e) {
+            continue;
+        }
+        if (!deviceAPI || deviceAPI.id === "0") continue;
 
-        // For each named parameter in the config, find and set it
-        // Note: param matching is by index in the config (not by name)
-        // The config uses descriptive keys for readability but the actual
-        // setting is by sequential index in the effects[d].params object
+        var paramCount;
+        try {
+            paramCount = deviceAPI.getcount("parameters");
+        } catch (e) {
+            continue;
+        }
+
+        // Match parameters by name
         var paramKeys = Object.keys(params);
-        for (var p = 0; p < paramKeys.length; p++) {
+        for (var p = 0; p < paramCount; p++) {
             var paramPath = devicePath + " parameters " + p;
-            var paramAPI = new LiveAPI(paramPath);
-            if (paramAPI.id !== "0") {
-                paramAPI.set("value", params[paramKeys[p]]);
+            var paramAPI;
+            try {
+                paramAPI = new LiveAPI(paramPath);
+            } catch (e) {
+                continue;
+            }
+            var rawName = paramAPI.get("name");
+            var pName = (rawName && typeof rawName === "object")
+                        ? rawName[0] : String(rawName);
+
+            for (var k = 0; k < paramKeys.length; k++) {
+                if (pName === paramKeys[k]) {
+                    try {
+                        paramAPI.set("value", params[paramKeys[k]]);
+                    } catch (e) {
+                        status("  Param error: " + pName + " — " + e);
+                    }
+                    break;
+                }
             }
         }
     }
 }
 
-function loadBestBeatSlice(manifest, insertIndex) {
-    // Find the drums stem beat slices
+function loadBestBeatSlice(manifest) {
+    // Find the drums stem
     var drumsStem = null;
     for (var i = 0; i < manifest.stems.length; i++) {
         if (manifest.stems[i].name === "drums" ||
@@ -293,119 +437,139 @@ function loadBestBeatSlice(manifest, insertIndex) {
     }
     if (!drumsStem || !drumsStem.beats_dir) return;
 
-    // Find Simpler template track
     var simplerIndex = findTrackByName("SF | Beat Chop Simpler");
     if (simplerIndex < 0) return;
 
-    // Duplicate it
-    var newSimpler = duplicateTemplate("SF | Beat Chop Simpler", insertIndex);
-    if (newSimpler < 0) return;
+    var newIndex = duplicateTemplate("SF | Beat Chop Simpler");
+    if (newIndex < 0) return;
 
-    setTrackName(newSimpler, manifest.track_name + " | chop");
-    setTrackColor(newSimpler, 0xFF2400);
+    setTrackName(newIndex, manifest.track_name + " | chop");
+    setTrackColor(newIndex, 0xFF2400);
 
-    // Load first beat slice (beat_001.wav) into Simpler's sample slot
-    // Simpler's sample parameter is typically parameter index 0
-    var firstBeat = drumsStem.beats_dir + "/" +
-                    drumsStem.name + "_beat_001.wav";
-
-    // Load via Simpler's built-in load mechanism (device param 0)
-    var devicePath = "live_set tracks " + newSimpler + " devices 0";
-    var deviceAPI = new LiveAPI(devicePath);
-    deviceAPI.call("load_device", firstBeat);
-    // Note: if load_device is not available, fallback is drag-and-drop.
-    // Document this limitation clearly.
-
-    outlet(0, "Beat chop Simpler loaded: " + drumsStem.name + "_beat_001.wav");
+    var beatFile = drumsStem.name + "_beat_001.wav";
+    status("  Drag " + beatFile + " into Simpler on: " +
+           manifest.track_name + " | chop");
 }
 
 // ── File watching ─────────────────────────────────────────────────────────────
 
 function findLatestManifest(baseDir) {
-    // Walk baseDir for the most recently modified stems.json
-    // Max's file access is limited — we check known structure:
-    // baseDir/{track_name}/stems.json
-    var f = new File(baseDir);
-    if (!f.isopen) return null;
+    // Try reading a manifest index written by the CLI.
+    // The CLI writes processed/{track}/stems.json — we read processed/index.json
+    // which lists all track names. If that doesn't exist, try the Folder API
+    // as a fallback, then give up with a helpful message.
 
     var newest = null;
     var newestTime = 0;
 
-    // List subdirectories
-    var subdirs = [];
-    f.open();
-    var entry;
-    while ((entry = f.readdir()) !== null) {
-        subdirs.push(entry);
-    }
-    f.close();
-
-    for (var i = 0; i < subdirs.length; i++) {
-        var manifestPath = baseDir + "/" + subdirs[i] + "/stems.json";
-        var mf = new File(manifestPath);
-        if (mf.isopen) {
-            // Use file modification date for comparison
-            // Max's File object doesn't expose mtime directly,
-            // so we track by reading and comparing processed_at timestamps
-            mf.open();
-            var content = "";
-            while (!mf.eof) { content += mf.readline() + "\n"; }
-            mf.close();
-            try {
-                var parsed = JSON.parse(content);
-                var t = new Date(parsed.processed_at).getTime();
-                if (t > newestTime) {
-                    newestTime = t;
-                    newest = manifestPath;
+    // Strategy 1: read index.json (written by CLI)
+    var indexPath = baseDir + "/index.json";
+    var indexContent = readFileContents(indexPath);
+    if (indexContent) {
+        try {
+            var trackNames = JSON.parse(indexContent);
+            for (var i = 0; i < trackNames.length; i++) {
+                var mp = baseDir + "/" + trackNames[i] + "/stems.json";
+                var found = tryManifest(mp);
+                if (found && found.time > newestTime) {
+                    newestTime = found.time;
+                    newest = mp;
                 }
-            } catch(e) {}
-        }
+            }
+            if (newest) return newest;
+        } catch (e) {}
     }
 
-    return newest;
+    // Strategy 2: Folder API (needs Max path format)
+    try {
+        var folder = new Folder(toMaxPath(baseDir));
+        folder.reset();
+        while (!folder.end) {
+            var entry = folder.filename;
+            if (entry && entry !== "." && entry !== "..") {
+                var mp2 = baseDir + "/" + entry + "/stems.json";
+                var found2 = tryManifest(mp2);
+                if (found2 && found2.time > newestTime) {
+                    newestTime = found2.time;
+                    newest = mp2;
+                }
+            }
+            folder.next();
+        }
+        folder.close();
+        if (newest) return newest;
+    } catch (e) {
+        status("  Folder scan failed: " + e);
+    }
+
+    // Strategy 3: give up with instructions
+    status("  Auto-scan could not find manifests.");
+    status("  Use loadFrom: send 'loadFrom " + baseDir + "/TRACKNAME/stems.json' to [js]");
+    return null;
+}
+
+function tryManifest(path) {
+    var content = readFileContents(path);
+    if (!content) return null;
+    try {
+        var parsed = JSON.parse(content);
+        if (parsed.processed_at) {
+            return { time: new Date(parsed.processed_at).getTime() };
+        }
+        // No processed_at — still valid, use time 1
+        return { time: 1 };
+    } catch (e) {
+        return null;
+    }
 }
 
 function scheduleWatch() {
     if (!isWatching) return;
-    watchTimer = new Task(function() {
+    watchTimer = new Task(function () {
         var manifest = findLatestManifest(PROCESSED_DIR);
         if (manifest && manifest !== lastLoadedManifest) {
-            outlet(0, "New stems detected: " + manifest);
+            status("New stems detected!");
             loadManifest(manifest);
         }
-        scheduleWatch(); // reschedule
+        scheduleWatch();
     }, this);
     watchTimer.schedule(POLL_INTERVAL);
 }
 
-// ── Pipeline config parsing ────────────────────────────────────────────────────
+// ── Utility ───────────────────────────────────────────────────────────────────
 
-function getPipelineSection(pipelineName) {
-    // Convert the loaded YAML text (stored in pipelineConfig) to a usable
-    // JS object. Since Max lacks YAML parsing, the pipeline config should
-    // also be distributed as a JSON file: pipelines/default.json
-    // Claude Code should generate BOTH default.yaml (human-editable)
-    // AND default.json (machine-readable, auto-generated from yaml on CLI run).
-    // The M4L device reads default.json.
-
-    var jsonPath = PIPELINES_DIR + "/" + pipelineName + ".json";
-    var f = new File(jsonPath, "read", "text");
-    if (!f.isopen) {
-        outlet(0, "Pipeline JSON not found: " + jsonPath +
-                  " — run: stemforge generate-pipeline-json");
-        return null;
+function toMaxPath(posixPath) {
+    // Max on macOS needs "Macintosh HD:/Users/..." not "/Users/..."
+    var p = String(posixPath);
+    if (p.indexOf("/") === 0) {
+        return "Macintosh HD:" + p;
     }
+    return p;
+}
+
+function readFileContents(path) {
+    var maxPath = toMaxPath(path);
+    var f = new File(maxPath, "read");
+    if (!f.isopen) return null;
     var raw = "";
-    f.open();
-    while (!f.eof) { raw += f.readline() + "\n"; }
-    f.close();
-
-    try {
-        var config = JSON.parse(raw);
-        return config.pipelines ? config.pipelines[pipelineName] ?
-               config.pipelines[pipelineName].stems : null : null;
-    } catch(e) {
-        outlet(0, "Pipeline JSON parse error: " + e);
-        return null;
+    while (f.position < f.eof) {
+        raw += f.readstring(65536);
     }
+    f.close();
+    return raw;
+}
+
+function getPipelineStemConfigs(pName) {
+    var config = pipelineConfig[pName];
+    if (!config) return null;
+    if (config.pipelines && config.pipelines[pName]) {
+        return config.pipelines[pName].stems || null;
+    }
+    // Try top-level stems key
+    return config.stems || null;
+}
+
+function status(msg) {
+    outlet(0, "set", msg);
+    post(msg + "\n");
 }

@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StemForge &mdash; M4L Development Log</title>
+<style>
+  :root {
+    --bg: #0e0e0e;
+    --surface: #181818;
+    --card: #1e1e1e;
+    --border: #2a2a2a;
+    --text: #e0e0e0;
+    --muted: #888;
+    --accent: #c084fc;
+    --accent2: #818cf8;
+    --green: #4ade80;
+    --yellow: #fbbf24;
+    --red: #f87171;
+    --teal: #2dd4bf;
+    --blue: #60a5fa;
+    --orange: #fb923c;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', 'Cascadia Code', monospace;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    padding: 2rem;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-size: 1.8rem;
+    color: var(--accent);
+    margin-bottom: 0.25rem;
+    letter-spacing: -0.5px;
+  }
+
+  .subtitle {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-bottom: 2.5rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1.5rem;
+  }
+
+  .subtitle a {
+    color: var(--accent2);
+    text-decoration: none;
+  }
+  .subtitle a:hover { text-decoration: underline; }
+
+  h2 {
+    font-size: 1.15rem;
+    color: var(--yellow);
+    margin-top: 2.5rem;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  h2 .step-num {
+    background: var(--yellow);
+    color: var(--bg);
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+  }
+
+  h3 {
+    font-size: 0.95rem;
+    color: var(--accent);
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .step-body {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .step-body ul {
+    list-style: none;
+    padding-left: 0;
+  }
+
+  .step-body ul li {
+    padding: 0.2rem 0;
+    padding-left: 1.2rem;
+    position: relative;
+  }
+
+  .step-body ul li::before {
+    content: '\25B8';
+    position: absolute;
+    left: 0;
+    color: var(--muted);
+  }
+
+  code, kbd {
+    background: #252525;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    font-size: 0.85em;
+    color: var(--accent2);
+  }
+
+  kbd {
+    border: 1px solid #444;
+    color: var(--text);
+    font-size: 0.8em;
+  }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ---- Log entry cards ---- */
+  .log-entry {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1rem;
+    border-left: 3px solid var(--accent2);
+  }
+
+  .log-entry.problem {
+    border-left-color: var(--red);
+  }
+
+  .log-entry.fix {
+    border-left-color: var(--green);
+  }
+
+  .log-entry.pivot {
+    border-left-color: var(--yellow);
+  }
+
+  .log-entry.breakthrough {
+    border-left-color: var(--teal);
+  }
+
+  .log-entry .entry-title {
+    font-weight: 700;
+    font-size: 0.95rem;
+    margin-bottom: 0.4rem;
+    color: var(--accent2);
+  }
+
+  .log-entry.problem .entry-title { color: var(--red); }
+  .log-entry.fix .entry-title     { color: var(--green); }
+  .log-entry.pivot .entry-title   { color: var(--yellow); }
+  .log-entry.breakthrough .entry-title { color: var(--teal); }
+
+  .log-entry .entry-type {
+    font-size: 0.72rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.5rem;
+  }
+
+  .log-entry p, .log-entry ul {
+    font-size: 0.85rem;
+    color: #bbb;
+  }
+
+  .log-entry ul {
+    list-style: none;
+    padding-left: 0;
+  }
+
+  .log-entry ul li {
+    padding: 0.15rem 0;
+    padding-left: 1rem;
+    position: relative;
+  }
+
+  .log-entry ul li::before {
+    content: '\2022';
+    position: absolute;
+    left: 0;
+    color: #555;
+  }
+
+  /* ---- Tip / warning boxes ---- */
+  .tip-box {
+    margin: 1rem 0;
+    padding: 0.7rem 1rem;
+    border-radius: 0 6px 6px 0;
+    font-size: 0.82rem;
+  }
+
+  .tip-box.tip {
+    background: #0e1a0e;
+    border-left: 3px solid var(--green);
+    color: #a3d9a5;
+  }
+
+  .tip-box.warn {
+    background: #1a1a10;
+    border-left: 3px solid var(--yellow);
+    color: #d4c87a;
+  }
+
+  .tip-box.info {
+    background: #0e0e1a;
+    border-left: 3px solid var(--accent2);
+    color: #a5a8fc;
+  }
+
+  .tip-box.error {
+    background: #1a0e0e;
+    border-left: 3px solid var(--red);
+    color: #f5a5a5;
+  }
+
+  .tip-box strong {
+    color: inherit;
+    font-size: 0.85rem;
+  }
+
+  /* ---- Code blocks ---- */
+  .cmd {
+    background: #151515;
+    border: 1px solid #262626;
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    font-size: 0.82rem;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--green);
+    margin: 0.5rem 0;
+  }
+
+  .cmd .comment { color: var(--muted); }
+  .cmd .err { color: var(--red); }
+  .cmd .ok { color: var(--green); }
+
+  /* ---- Section divider ---- */
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 3rem 0 1rem;
+  }
+
+  /* ---- Nav ---- */
+  .nav {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+  }
+
+  .nav a {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.4rem 0.85rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+    transition: all 0.15s;
+  }
+
+  .nav a:hover {
+    color: var(--text);
+    border-color: #444;
+    text-decoration: none;
+  }
+
+  /* ---- Timeline marker ---- */
+  .timeline-marker {
+    display: inline-block;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.15rem 0.6rem;
+    font-size: 0.72rem;
+    color: var(--muted);
+    margin-right: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  footer {
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    font-size: 0.78rem;
+    color: #555;
+    text-align: center;
+  }
+
+  @media print {
+    body { background: #fff; color: #111; }
+    .step-body, .log-entry, .cmd { border-color: #ccc; background: #f9f9f9; }
+    code, kbd { background: #eee; color: #333; }
+  }
+</style>
+</head>
+<body>
+
+<h1>StemForge M4L &mdash; Development Log</h1>
+<p class="subtitle">
+  Everything we tried, everything that broke, and how we fixed it.<br>
+  Two M4L devices: <a href="build_guide.html">Template Builder</a> and <a href="build_guide_loader.html">Loader</a>.
+</p>
+
+<div class="nav">
+  <a href="build_guide.html">Template Builder Guide</a>
+  <a href="build_guide_loader.html">Loader Build Guide</a>
+  <a href="user_guide.html">User Guide</a>
+  <a href="../setup.html">Setup Guide</a>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- TEMPLATE BUILDER DEVICE                                             -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+
+<h2><span class="step-num">1</span> Template Builder Device &mdash; Patch Building</h2>
+
+<div class="log-entry">
+  <div class="entry-type">Build</div>
+  <div class="entry-title">Initial patch structure</div>
+  <p>Built the Template Builder M4L device with the following objects wired together:</p>
+  <ul>
+    <li><code>[js stemforge_template_builder.js]</code> &mdash; the brain, creates tracks via LOM</li>
+    <li><code>[button]</code> &mdash; triggers the build via bang</li>
+    <li><code>[textedit]</code> &mdash; status display, shows build progress</li>
+    <li><code>[print]</code> &mdash; logs to Max Console for debugging</li>
+  </ul>
+  <p style="margin-top:0.5rem;">Wiring: <code>[button]</code> outlet 0 &rarr; <code>[js]</code> inlet 0.
+    <code>[js]</code> outlet 0 &rarr; <code>[textedit]</code>.
+    <code>[js]</code> outlet 1 &rarr; <code>[print]</code>.</p>
+</div>
+
+<div class="log-entry problem">
+  <div class="entry-type">Bug</div>
+  <div class="entry-title">textedit "doesn't understand" error</div>
+  <p>Status messages sent to the <code>[textedit]</code> object via <code>outlet(0, msg)</code>
+    produced a <em>"textedit: doesn't understand"</em> error. The textedit object does not accept
+    raw strings &mdash; it needs a <code>set</code> prefix.</p>
+</div>
+
+<div class="log-entry fix">
+  <div class="entry-type">Fix</div>
+  <div class="entry-title">outlet(0, "set", msg) prefix</div>
+  <p>Changed the <code>status()</code> function from <code>outlet(0, msg)</code>
+    to <code>outlet(0, "set", msg)</code>. The <code>"set"</code> message tells textedit
+    to replace its contents with the following text. This pattern is used in both JS files.</p>
+  <div class="cmd">function status(msg) {
+    outlet(0, <span class="ok">"set"</span>, msg);   <span class="comment">// was: outlet(0, msg)</span>
+    post(msg + "\n");
+}</div>
+</div>
+
+<hr class="divider">
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- BROWSER API DEAD END                                                -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+
+<h2><span class="step-num">2</span> The Browser API Dead End</h2>
+
+<div class="log-entry">
+  <div class="entry-type">Attempt</div>
+  <div class="entry-title">live_app browser &mdash; programmatic device loading</div>
+  <p>The original plan was to load devices (VST3 plugins, Ableton effects) programmatically
+    onto the template tracks. First attempted the <code>live_app browser</code> approach:</p>
+  <div class="cmd"><span class="err">var browser = new LiveAPI("live_app browser");</span>
+<span class="comment">// Result: "attribute doesn't exist on Application"</span></div>
+</div>
+
+<div class="log-entry problem">
+  <div class="entry-type">Failure</div>
+  <div class="entry-title">app.get("browser") &mdash; also failed</div>
+  <p>Tried an alternative approach via the Application object:</p>
+  <div class="cmd"><span class="err">var app = new LiveAPI("live_app");
+app.get("browser");</span>
+<span class="comment">// Result: "'Application' object has no attribute 'browser'"</span></div>
+</div>
+
+<div class="log-entry pivot">
+  <div class="entry-type">Discovery</div>
+  <div class="entry-title">Browser was NEVER in the LOM</div>
+  <p>After extensive research through Ableton's Live Object Model documentation and community
+    forums, the conclusion was clear: the Browser object has <strong>never been exposed</strong>
+    in the LOM. The original script's approach was based on incorrect assumptions about the API.
+    There is no <code>browser</code> property on the <code>Application</code> object, and there
+    never has been.</p>
+</div>
+
+<div class="log-entry">
+  <div class="entry-type">Research</div>
+  <div class="entry-title">Track.insert_device(name) &mdash; Live 12.3+ only</div>
+  <p><code>Track.insert_device(name)</code> was added in Live 12.3, but it only works for
+    <strong>native Ableton devices</strong> (Compressor, EQ Eight, Reverb, etc.), not for VST3
+    plugins (Decapitator, LO-FI-AF, EchoBoy, etc.). Additionally, the user's build of
+    Live was version 2025-11-03, which predates the Live 12.3 release of November 25, 2025.</p>
+</div>
+
+<div class="log-entry pivot">
+  <div class="entry-type">Pivot</div>
+  <div class="entry-title">Script creates tracks, user drags devices manually</div>
+  <p>Given that programmatic VST3 loading is impossible via LOM, the Template Builder was
+    pivoted to a simpler role:</p>
+  <ul>
+    <li>Creates all 7 tracks with correct names and colors via LOM</li>
+    <li>Prints a device checklist to the textedit &mdash; lists exactly which devices to drag onto each track</li>
+    <li>User drags devices from the Browser manually</li>
+  </ul>
+  <p style="margin-top:0.5rem;">The Template Builder is a <strong>one-time setup tool</strong>. Since you only run it once,
+    manual device loading is acceptable. The real automation payoff is in the Loader device, which runs
+    every time you process a track.</p>
+</div>
+
+<hr class="divider">
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- LOADER DEVICE — PATCH BUILDING                                      -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+
+<h2><span class="step-num">3</span> Loader Device &mdash; Patch Building</h2>
+
+<div class="log-entry">
+  <div class="entry-type">Build</div>
+  <div class="entry-title">More complex patch with more objects</div>
+  <p>The Loader device required a more involved patch than the Template Builder. Objects:</p>
+  <ul>
+    <li><code>[loadbang]</code> &mdash; fires on device load to set up paths and pipeline config</li>
+    <li>Three message boxes for <code>setProcessedDir</code>, <code>setPipelinesDir</code>, <code>loadPipeline default</code></li>
+    <li><code>[button]</code> &mdash; "Load Latest" manual trigger</li>
+    <li><code>[toggle]</code> + <code>[select 1 0]</code> &mdash; watch mode on/off with routing</li>
+    <li><code>[startWatch]</code> and <code>[stopWatch]</code> message boxes</li>
+    <li><code>[textedit]</code> &mdash; status display</li>
+    <li><code>[print SFLoader]</code> &mdash; completion log</li>
+  </ul>
+</div>
+
+<div class="tip-box warn">
+  <strong>Message boxes need [M] key, not [N].</strong>
+  In the Max editor, <kbd>N</kbd> creates an <em>object box</em> (plain rectangle).
+  <kbd>M</kbd> creates a <em>message box</em> (has a flag/tab on the right side).
+  The <code>setProcessedDir</code>, <code>setPipelinesDir</code>, <code>loadPipeline</code>,
+  <code>startWatch</code>, and <code>stopWatch</code> messages must all be message boxes.
+  Using object boxes instead will produce cryptic errors.
+</div>
+
+<div class="log-entry">
+  <div class="entry-type">Gotcha</div>
+  <div class="entry-title">[select 1 0] has 3 inlets and 3 outlets</div>
+  <p><code>[select 1 0]</code> is deceptive &mdash; it creates 3 inlets and 3 outlets, not 2.
+    You must connect the <code>[toggle]</code> to <strong>inlet 0</strong> (the leftmost).
+    Outlet 0 (left) fires when input is <code>1</code>, outlet 1 (middle) fires when input
+    is <code>0</code>, outlet 2 (right) fires for anything else. We only use outlets 0 and 1.</p>
+</div>
+
+<div class="log-entry">
+  <div class="entry-type">Build</div>
+  <div class="entry-title">Presentation mode for Ableton device chain</div>
+  <p>Max patches have two views: Patching view (where you wire things) and Presentation view
+    (what the user sees in Ableton's device chain). To make controls visible in Ableton:</p>
+  <ul>
+    <li>Right-click each UI object (button, toggle, textedit) &rarr; <strong>Add to Presentation</strong></li>
+    <li>Switch to Presentation view &mdash; arrange the controls in a usable layout</li>
+    <li>Only objects added to Presentation appear in Ableton's device rack</li>
+    <li>Non-UI objects (loadbang, select, message boxes) stay in Patching view only</li>
+  </ul>
+</div>
+
+<hr class="divider">
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- LOADER DEVICE — JS BUGS                                             -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+
+<h2><span class="step-num">4</span> Loader Device &mdash; JS Bugs Fixed</h2>
+
+<div class="log-entry problem">
+  <div class="entry-type">Bug</div>
+  <div class="entry-title">Java interop doesn't work in Max 8/9's V8 engine</div>
+  <p>The original home directory detection code used Java interop:</p>
+  <div class="cmd"><span class="err">var home = Packages.java.lang.System.getProperty("user.home");</span>
+<span class="comment">// Max's V8 JavaScript engine does NOT have Java interop</span>
+<span class="comment">// This was a holdover from Max 5/6 era which used Rhino (Java-based JS)</span></div>
+  <p>Replaced with a message-based approach: the <code>setProcessedDir</code> and
+    <code>setPipelinesDir</code> messages send the full paths from the Max patch, avoiding
+    any need to detect the home directory in JS.</p>
+</div>
+
+<div class="log-entry problem">
+  <div class="entry-type">Bug</div>
+  <div class="entry-title">File.readdir() doesn't exist in Max JS</div>
+  <p>Attempted to list directory contents using <code>File.readdir()</code> to find the latest
+    stems.json. This method does not exist in Max's JavaScript environment. Replaced with the
+    <code>Folder</code> API, which also had its own issues (see the File Path Saga below).</p>
+</div>
+
+<div class="log-entry problem">
+  <div class="entry-type">Bug</div>
+  <div class="entry-title">outlet(0, msg) &mdash; same textedit fix</div>
+  <p>Same issue as the Template Builder. Changed <code>outlet(0, msg)</code>
+    to <code>outlet(0, "set", msg)</code> in the Loader's <code>status()</code> function.</p>
+</div>
+
+<div class="log-entry problem">
+  <div class="entry-type">Bug</div>
+  <div class="entry-title">ClipSlot.create_clip(filePath) &mdash; wrong API</div>
+  <p>Originally used <code>ClipSlot.create_clip(filePath)</code> to load audio. This is wrong &mdash;
+    <code>create_clip()</code> takes a <strong>beat length</strong> (a number), not a file path.
+    It creates an empty MIDI clip of the specified length.</p>
+  <div class="cmd"><span class="err">csAPI.call("create_clip", stemInfo.wav_path);</span>
+<span class="comment">// create_clip takes a beat LENGTH, not a file path</span>
+<span class="comment">// e.g., create_clip(4.0) creates a 4-beat empty clip</span></div>
+  <p>At this point, we believed LOM could not load audio at all. This turned out to be wrong &mdash;
+    see the Audio Loading Breakthrough below.</p>
+</div>
+
+<div class="log-entry problem">
+  <div class="entry-type">Bug</div>
+  <div class="entry-title">device.call("load_device", ...) &mdash; doesn't exist</div>
+  <p>Attempted to load audio files via a device API call. <code>load_device</code> does not
+    exist in the LOM. This was another dead end in the search for programmatic audio loading.</p>
+</div>
+
+<hr class="divider">
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- THE FILE PATH SAGA                                                  -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+
+<h2><span class="step-num">5</span> The File Path Saga</h2>
+
+<div class="log-entry problem">
+  <div class="entry-type">Root Cause</div>
+  <div class="entry-title">Max's File object CANNOT open bare POSIX paths</div>
+  <p>This was the single most time-consuming bug. Max's <code>File</code> object on macOS
+    does not understand standard POSIX paths like <code>/Users/zak/stemforge/...</code>.
+    It requires the "Macintosh HD:" volume prefix:</p>
+  <div class="cmd"><span class="err">var f = new File("/Users/zak/stemforge/processed/hey_mami/stems.json");</span>
+<span class="comment">// f.isopen === false — cannot open</span>
+
+<span class="ok">var f = new File("Macintosh HD:/Users/zak/stemforge/processed/hey_mami/stems.json");</span>
+<span class="comment">// f.isopen === true — works</span></div>
+  <p>This was the root cause of ALL <em>"Cannot open"</em> and <em>"No stems.json found"</em>
+    errors during development.</p>
+</div>
+
+<div class="log-entry fix">
+  <div class="entry-type">Fix</div>
+  <div class="entry-title">toMaxPath() helper function</div>
+  <p>Created a helper that prepends the volume prefix to any POSIX path:</p>
+  <div class="cmd">function toMaxPath(posixPath) {
+    var p = String(posixPath);
+    if (p.indexOf("/") === 0) {
+        return <span class="ok">"Macintosh HD:" + p</span>;
+    }
+    return p;
+}</div>
+  <p>This function is called before every <code>new File()</code> and <code>new Folder()</code> operation.</p>
+</div>
+
+<div class="log-entry problem">
+  <div class="entry-type">Bug</div>
+  <div class="entry-title">File constructor's "TEXT" typelist was filtering out JSON</div>
+  <p>The original <code>File</code> constructor used a typelist parameter to filter file types:</p>
+  <div class="cmd"><span class="err">var f = new File(maxPath, "read", "TEXT");</span>
+<span class="comment">// "TEXT" typelist filtered OUT .json files — they don't match "TEXT" type</span>
+
+<span class="ok">var f = new File(maxPath, "read");</span>
+<span class="comment">// No typelist — reads any file</span></div>
+</div>
+
+<div class="log-entry problem">
+  <div class="entry-type">Bug</div>
+  <div class="entry-title">String() coercion needed on all path arguments</div>
+  <p>When Max sends a message like <code>setProcessedDir /Users/zak/stemforge/processed</code>
+    to the <code>[js]</code> object, the arguments arrive as Max atoms, not JavaScript strings.
+    Operations like string concatenation can silently fail or produce garbage. Fixed by wrapping
+    all incoming arguments in <code>String()</code>:</p>
+  <div class="cmd">function setProcessedDir(dir) {
+    PROCESSED_DIR = <span class="ok">String(dir)</span>;  <span class="comment">// was: dir</span>
+}</div>
+</div>
+
+<div class="log-entry fix">
+  <div class="entry-type">Fix</div>
+  <div class="entry-title">readstring(65536) instead of readline()</div>
+  <p><code>readline()</code> reads one line at a time and is unreliable for JSON files that
+    may contain long lines. Switched to <code>readstring(65536)</code> which reads up to 64KB
+    at a time in a loop until EOF:</p>
+  <div class="cmd">function readFileContents(path) {
+    var maxPath = toMaxPath(path);
+    var f = new File(maxPath, "read");
+    if (!f.isopen) return null;
+    var raw = "";
+    while (f.position < f.eof) {
+        raw += <span class="ok">f.readstring(65536)</span>;
+    }
+    f.close();
+    return raw;
+}</div>
+</div>
+
+<div class="log-entry problem">
+  <div class="entry-type">Bug</div>
+  <div class="entry-title">Folder object also needs "Macintosh HD:" prefix</div>
+  <p>The <code>Folder</code> API (used for directory listing in <code>findLatestManifest</code>)
+    has the same path format requirement as <code>File</code>. Added <code>toMaxPath()</code>
+    calls to all <code>new Folder()</code> invocations.</p>
+</div>
+
+<hr class="divider">
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- FREEZE / UNFREEZE CHAOS                                             -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+
+<h2><span class="step-num">6</span> Freeze / Unfreeze Chaos</h2>
+
+<div class="log-entry problem">
+  <div class="entry-type">Discovery</div>
+  <div class="entry-title">Freezing bundles JS into the .amxd</div>
+  <p>When you <strong>Freeze</strong> a Max for Live device (<em>File &rarr; Freeze Device</em>),
+    it bundles the JavaScript file inside the <code>.amxd</code> binary. After that,
+    <strong>edits to <code>m4l/stemforge_loader.js</code> have NO effect on the frozen device</strong>.
+    The device continues using the bundled copy.</p>
+</div>
+
+<div class="log-entry problem">
+  <div class="entry-type">Discovery</div>
+  <div class="entry-title">Unfreezing copies JS to a different location</div>
+  <p>When you <strong>Unfreeze</strong> a device, Max copies the bundled JS to a project folder:</p>
+  <div class="cmd">/Users/zak/Documents/Max 9/Max for Live Devices/StemForgeLoader Project/code/stemforge_loader.js</div>
+  <p>The device now reads from that <code>code/</code> subfolder, NOT from the original
+    <code>m4l/</code> folder. To apply JS changes, you had to manually copy the updated file
+    to the project's <code>code/</code> folder after each edit.</p>
+</div>
+
+<div class="log-entry problem">
+  <div class="entry-type">Problem</div>
+  <div class="entry-title">Multiple discarded and duplicate copies</div>
+  <p>Repeated freeze/unfreeze cycles created multiple project folders and "discarded" copies.
+    At one point there were three copies of the JS file in different locations, none of which
+    were the current version. Extremely confusing.</p>
+</div>
+
+<div class="tip-box warn">
+  <strong>Lesson learned:</strong> During active development, keep the device <strong>unfrozen</strong>.
+  Save the <code>.amxd</code> in the same folder as the <code>.js</code> file. Only freeze once
+  development is complete. If you need to edit the JS, unfreeze, copy your updated file to the
+  project's <code>code/</code> subfolder, then re-freeze when done.
+</div>
+
+<hr class="divider">
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- AUDIO LOADING BREAKTHROUGH                                          -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+
+<h2><span class="step-num">7</span> The Audio Loading Breakthrough</h2>
+
+<div class="log-entry problem">
+  <div class="entry-type">Belief</div>
+  <div class="entry-title">Originally believed LOM could NOT load audio</div>
+  <p>After the <code>create_clip()</code> and <code>load_device()</code> failures, the working
+    assumption was that the LOM simply could not load audio files into clip slots. The Loader
+    was designed to print drag-and-drop instructions to the textedit, and the user would
+    manually drag stems from the Browser.</p>
+</div>
+
+<div class="log-entry breakthrough">
+  <div class="entry-type">Breakthrough</div>
+  <div class="entry-title">ClipSlot.create_audio_clip(file_path) EXISTS in Live 12+</div>
+  <p>After the user pushed back with additional research, we discovered that
+    <code>ClipSlot.create_audio_clip(file_path)</code> was added in <strong>Live 12</strong>.
+    This method takes a POSIX file path and creates an audio clip from the file:</p>
+  <div class="cmd"><span class="ok">var csAPI = new LiveAPI("live_set tracks " + trackIndex + " clip_slots " + slotIndex);
+csAPI.call("create_audio_clip", "/Users/zak/stemforge/processed/hey_mami/drums.wav");</span>
+<span class="comment">// Takes a POSIX path — NOT "Macintosh HD:" format!</span>
+<span class="comment">// Opposite convention from the File object!</span></div>
+  <p style="margin-top:0.5rem;"><strong>Critical detail:</strong> <code>create_audio_clip()</code> takes a standard
+    POSIX path (<code>/Users/zak/...</code>), NOT the "Macintosh HD:" format that the
+    <code>File</code> object requires. This is the opposite convention.</p>
+  <p style="margin-top:0.5rem;">This was the key breakthrough. Full automation of stem loading became possible &mdash;
+    the Loader could now load audio, set BPM, name clips, enable warping, and set loop mode,
+    all without any manual drag-and-drop.</p>
+</div>
+
+<hr class="divider">
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- TRACK MATCHING EVOLUTION                                            -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+
+<h2><span class="step-num">8</span> Track Matching Evolution</h2>
+
+<div class="log-entry">
+  <div class="entry-type">v1</div>
+  <div class="entry-title">Duplicate template tracks, rename them</div>
+  <p>The first approach duplicated template tracks for each song, creating new tracks
+    named like <code>hey_mami | drums</code>, <code>hey_mami | bass</code>, etc. Problem:
+    this created new tracks every time, cluttering the session. Over multiple loads, the
+    track count would balloon.</p>
+</div>
+
+<div class="log-entry pivot">
+  <div class="entry-type">v2</div>
+  <div class="entry-title">Load stems onto EXISTING tracks by name matching</div>
+  <p>The user wanted stems loaded onto the existing template tracks, not duplicated ones.
+    The Loader now finds tracks by matching the stem name against the track name.</p>
+</div>
+
+<div class="log-entry fix">
+  <div class="entry-type">Implementation</div>
+  <div class="entry-title">findTrackBySuffix() with multi-pass matching</div>
+  <p>The <code>findTrackBySuffix()</code> function uses a multi-pass approach to match
+    stem names to tracks:</p>
+  <ul>
+    <li><strong>Pass 1 &mdash; exact suffix:</strong> stem "drums" matches track name ending with "drums" (case-insensitive)</li>
+    <li><strong>Pass 1 &mdash; pipe pattern:</strong> checks for "| drums" anywhere in the track name</li>
+    <li><strong>Pass 1 &mdash; last word:</strong> splits on spaces/pipes, checks if last word matches</li>
+    <li><strong>Pass 2 &mdash; loose match via STEM_TRACK_MAP:</strong> stem "drums" matches tracks containing "drums" or "drum"; stem "other" matches "texture"; stem "synthesizer" matches "synth" or "texture"</li>
+  </ul>
+</div>
+
+<div class="log-entry">
+  <div class="entry-type">Implementation</div>
+  <div class="entry-title">findEmptyClipSlot() &mdash; first empty slot</div>
+  <p>Once the target track is found, <code>findEmptyClipSlot()</code> iterates through
+    the track's clip slots looking for the first one without a clip. This allows loading
+    multiple songs onto the same template tracks &mdash; each goes into the next empty slot.</p>
+</div>
+
+<hr class="divider">
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- TEXT INPUT FOR TRACK NAMES                                          -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+
+<h2><span class="step-num">9</span> Text Input for Track Names</h2>
+
+<div class="log-entry">
+  <div class="entry-type">Build</div>
+  <div class="entry-title">textedit input chain for named loading</div>
+  <p>Added a text input field so the user can type a track name (e.g., <code>hey_mami</code>)
+    instead of only using "Load Latest". The wiring chain:</p>
+  <div class="cmd"><span class="obj">[textedit]</span> &rarr; <span class="obj">[route text]</span> &rarr; <span class="obj">[prepend load]</span> &rarr; <span class="obj">[js stemforge_loader.js]</span></div>
+  <ul>
+    <li><code>[textedit]</code> outputs messages prefixed with <code>text</code> (e.g., <code>text hey_mami</code>)</li>
+    <li><code>[route text]</code> strips the <code>text</code> prefix, passing through just the name</li>
+    <li><code>[prepend load]</code> prepends <code>load</code> so the JS receives <code>load hey_mami</code></li>
+  </ul>
+</div>
+
+<div class="log-entry fix">
+  <div class="entry-type">Fix</div>
+  <div class="entry-title">Clearing input after submission</div>
+  <p>Used <code>[t l b]</code> (trigger list bang) between route and prepend, plus a
+    <code>[set]</code> message to clear the textedit after the name is submitted.
+    Without this, old text would accumulate and get sent with the next submission.</p>
+</div>
+
+<div class="log-entry fix">
+  <div class="entry-type">Fix</div>
+  <div class="entry-title">load() takes first argument only</div>
+  <p>The <code>load()</code> function in the JS takes only the first argument from the message
+    to avoid accumulation issues:</p>
+  <div class="cmd">function load() {
+    var args = arrayfromargs(messagename, arguments);
+    var name = args.length > 1 ? <span class="ok">String(args[1])</span> : "";
+    <span class="comment">// Only uses args[1] — ignores any extra words</span>
+}</div>
+</div>
+
+<div class="log-entry">
+  <div class="entry-type">Detail</div>
+  <div class="entry-title">CLI converts folder names to snake_case</div>
+  <p>The CLI's <code>to_snake_case()</code> function strips leading track numbers
+    (e.g., "01 Hey Mami" becomes "hey_mami"), lowercases everything, and replaces
+    non-alphanumeric characters with underscores. The user must type the snake_case name
+    in the Loader's text input.</p>
+</div>
+
+<hr class="divider">
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- CLIP PROPERTIES                                                     -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+
+<h2><span class="step-num">10</span> Clip Properties</h2>
+
+<div class="log-entry">
+  <div class="entry-type">Implementation</div>
+  <div class="entry-title">Clip naming, warping, and looping</div>
+  <p>After <code>create_audio_clip()</code> creates the clip, the Loader configures it:</p>
+  <ul>
+    <li><strong>Name:</strong> <code>song_name-stem_part</code> (e.g., <code>hey_mami-drums</code>)</li>
+    <li><strong>Warping:</strong> auto-enabled via <code>clipAPI.set("warping", 1)</code></li>
+    <li><strong>Warp mode:</strong> set from the pipeline config (e.g., beats for drums, tones for vocals)</li>
+    <li><strong>Looping:</strong> enabled via <code>clipAPI.set("looping", 1)</code></li>
+  </ul>
+  <div class="cmd">var clipName = manifest.track_name + "-" + stemInfo.name;
+clipAPI.set("name", clipName);
+clipAPI.set("warping", 1);
+clipAPI.set("warp_mode", WARP_MODES[stemConfig.warp_mode]);
+clipAPI.set("looping", 1);</div>
+</div>
+
+<div class="log-entry fix">
+  <div class="entry-type">Change</div>
+  <div class="entry-title">Removed "already loaded" check</div>
+  <p>An earlier version skipped loading if a clip with the same name was already on the track.
+    This was removed because the user wants to reload freely &mdash; overwriting the previous
+    stem or loading into the next empty slot. The <code>lastLoadedManifest</code> check is
+    reset before each explicit load request.</p>
+</div>
+
+<hr class="divider">
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- PYTHON ENVIRONMENT ISSUES                                           -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+
+<h2><span class="step-num">11</span> Python Environment Issues</h2>
+
+<p style="color:var(--muted); font-size:0.85rem; margin-bottom:1rem;">
+  Not M4L-specific, but these were encountered during the same session while getting the CLI working.
+</p>
+
+<div class="log-entry problem">
+  <div class="entry-type">Problem</div>
+  <div class="entry-title">conda base had Python 3.8 &mdash; too old</div>
+  <p>The conda base environment was running Python 3.8, which is too old for the StemForge
+    CLI (requires 3.11+ for type hint syntax like <code>list[str]</code>).</p>
+</div>
+
+<div class="log-entry problem">
+  <div class="entry-type">Problem</div>
+  <div class="entry-title">pyenv 3.11 without shell integration</div>
+  <p>pyenv had Python 3.11 installed but the shell integration was not set up.
+    Needed to add <code>eval "$(pyenv init -)"</code> to the shell profile so that
+    <code>python</code> resolved to the pyenv-managed version.</p>
+</div>
+
+<div class="log-entry problem">
+  <div class="entry-type">Problem</div>
+  <div class="entry-title">llvmlite build failures</div>
+  <p><code>llvmlite</code> (a dependency of <code>numba</code>, which is a dependency of
+    <code>librosa</code>) failed to build from source. Fixed by using the <code>--no-build</code>
+    flag to install pre-built wheels:</p>
+  <div class="cmd"><span class="ok">uv pip install llvmlite numba librosa --no-build</span></div>
+</div>
+
+<div class="log-entry problem">
+  <div class="entry-type">Problem</div>
+  <div class="entry-title">x86_64 Python on ARM Mac (Rosetta)</div>
+  <p>The user was running an x86_64 (Intel) Python via Rosetta on an M2 Mac. This caused
+    binary wheel mismatches and build failures for native libraries. Solution: switch to an
+    ARM-native terminal and reinstall Python via pyenv for arm64.</p>
+</div>
+
+<div class="log-entry">
+  <div class="entry-type">Detail</div>
+  <div class="entry-title">uv for package management</div>
+  <p>Used <code>uv</code> instead of <code>pip</code> or <code>conda</code> for faster,
+    more reliable package management. <code>uv venv</code> to create the virtualenv,
+    <code>uv pip install -e ".[local]"</code> for editable install.</p>
+</div>
+
+<div class="log-entry problem">
+  <div class="entry-type">Problem</div>
+  <div class="entry-title">ffmpeg had stale library links</div>
+  <p>Homebrew's ffmpeg had stale dylib links after a system update. Fixed with:</p>
+  <div class="cmd"><span class="ok">brew reinstall ffmpeg</span></div>
+</div>
+
+<div class="log-entry problem">
+  <div class="entry-type">Problem</div>
+  <div class="entry-title">Demucs couldn't read .m4a files</div>
+  <p>Demucs uses <code>torchaudio</code> which could not read <code>.m4a</code> files directly.
+    Required converting to WAV first:</p>
+  <div class="cmd"><span class="ok">ffmpeg -i track.m4a track.wav</span></div>
+</div>
+
+<div class="log-entry problem">
+  <div class="entry-type">Problem</div>
+  <div class="entry-title">torchcodec missing on M2 Mac</div>
+  <p><code>torchcodec</code> (an optional dependency for torchaudio) was not available for
+    Apple Silicon. Required a separate <code>pip install</code> or skipping the codec entirely
+    and relying on ffmpeg for audio I/O.</p>
+</div>
+
+<hr class="divider">
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- SUMMARY                                                             -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+
+<h2><span class="step-num">TL;DR</span> Key Lessons</h2>
+
+<div class="step-body">
+  <ul>
+    <li><strong>LOM has no Browser API.</strong> You cannot programmatically load VST3 plugins onto tracks. Accept it and move on.</li>
+    <li><strong>Max's File object needs "Macintosh HD:" prefix.</strong> POSIX paths don't work. Create a <code>toMaxPath()</code> helper.</li>
+    <li><strong>LOM's create_audio_clip() uses POSIX paths.</strong> Opposite convention from File. Don't prepend the volume name.</li>
+    <li><strong>String() coerce all Max message arguments.</strong> They arrive as atoms, not JS strings.</li>
+    <li><strong>readstring(65536) not readline().</strong> More reliable for JSON files.</li>
+    <li><strong>outlet(0, "set", msg) for textedit.</strong> Raw strings cause "doesn't understand" errors.</li>
+    <li><strong>Don't freeze during development.</strong> Keep the device unfrozen. Copy JS to the project's code/ folder.</li>
+    <li><strong>Message boxes need M key, not N.</strong> N creates object boxes.</li>
+    <li><strong>[select 1 0] has 3 inlets/outlets.</strong> Use inlet 0 (leftmost).</li>
+    <li><strong>Convert .m4a to .wav before processing.</strong> Demucs/torchaudio can't read .m4a.</li>
+    <li><strong>Use --no-build for llvmlite.</strong> Building from source fails on most systems.</li>
+  </ul>
+</div>
+
+<footer>
+  StemForge Development Log &mdash;
+  <a href="build_guide_loader.html">Loader Build Guide</a> &middot;
+  <a href="build_guide.html">Template Builder Guide</a> &middot;
+  <a href="user_guide.html">User Guide</a> &middot;
+  <a href="../setup.html">Setup Guide</a>
+</footer>
+
+</body>
+</html>

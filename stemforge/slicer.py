@@ -21,17 +21,28 @@ def slice_at_beats(
     beat_times: np.ndarray,
     output_dir: Path,
     stem_name: str,
-    silence_threshold: float = 1e-5,
+    silence_threshold: float = 1e-3,
+    normalize: bool = True,
+    normalize_headroom_db: float = -1.0,
 ) -> list[Path]:
     """
     Slice stem WAV at beat boundaries.
     Output: {output_dir}/{stem_name}_beats/{stem_name}_beat_NNN.wav
     Skips near-silent chunks (saves space, avoids empty Drum Rack pads).
+    If normalize=True, peak-normalizes the stem before slicing so all
+    beat slices share a consistent level across stems.
     Returns list of created file paths.
     """
     y, sr = librosa.load(str(stem_path), sr=None, mono=False)
     if y.ndim == 1:
         y = y[np.newaxis, :]  # (1, samples)
+
+    # Peak-normalize: scale so the loudest sample hits headroom target
+    if normalize:
+        peak = np.max(np.abs(y))
+        if peak > 0:
+            target = 10 ** (normalize_headroom_db / 20)  # e.g. -1dB → 0.891
+            y = y * (target / peak)
 
     slices_dir = output_dir / f"{stem_name}_beats"
     slices_dir.mkdir(parents=True, exist_ok=True)
