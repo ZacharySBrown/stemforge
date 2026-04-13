@@ -58,11 +58,12 @@ def ensure_wav(audio_path: Path, console: Console = None) -> tuple[Path, bool]:
 
 from .backends.lalal import LalalBackend
 from .backends.demucs import DemucsBackend
+from .backends.musicai import MusicAiBackend
 from .slicer import detect_bpm_and_beats, slice_at_beats
 from .manifest import write_manifest
 from .config import (
     PROCESSED_DIR, LALAL_PRESETS, LALAL_STEMS, LALAL_DEFAULT_PRESET,
-    DEMUCS_MODELS,
+    DEMUCS_MODELS, MUSIC_AI_WORKFLOWS, MUSIC_AI_DEFAULT_WORKFLOW,
 )
 
 console = Console()
@@ -77,9 +78,9 @@ def cli():
 @cli.command()
 @click.argument("audio_file", type=click.Path(exists=True, path_type=Path))
 @click.option("--backend", "-b",
-              type=click.Choice(["lalal", "demucs", "auto"]),
+              type=click.Choice(["lalal", "demucs", "musicai", "auto"]),
               default="auto",
-              help="'auto' uses LALAL if LALAL_LICENSE_KEY is set, else Demucs.")
+              help="'auto' uses LALAL if key is set, else Demucs. 'musicai' for Music.AI API.")
 @click.option("--stems", "-s", default=None,
               help=f"[lalal] Preset ({', '.join(LALAL_PRESETS)}) or "
                    f"comma-separated stems. Default: {LALAL_DEFAULT_PRESET}")
@@ -116,10 +117,21 @@ def split(audio_file, backend, stems, model, pipeline, output, no_slice, no_norm
     # ── Resolve backend ──────────────────────────────────────────────────────
     if backend == "auto":
         has_lalal = bool(os.environ.get("LALAL_LICENSE_KEY", "").strip())
-        backend = "lalal" if has_lalal else "demucs"
+        has_musicai = bool(os.environ.get("MUSIC_AI_API_KEY", "").strip())
+        if has_lalal:
+            backend = "lalal"
+        elif has_musicai:
+            backend = "musicai"
+        else:
+            backend = "demucs"
         console.print(f"  [dim]Auto-selected backend: {backend}[/dim]")
 
-    be = LalalBackend() if backend == "lalal" else DemucsBackend()
+    if backend == "lalal":
+        be = LalalBackend()
+    elif backend == "musicai":
+        be = MusicAiBackend()
+    else:
+        be = DemucsBackend()
 
     # ── Output dir ───────────────────────────────────────────────────────────
     out_root = output or PROCESSED_DIR
@@ -127,7 +139,7 @@ def split(audio_file, backend, stems, model, pipeline, output, no_slice, no_norm
     track_out = out_root / track_name
     track_out.mkdir(parents=True, exist_ok=True)
 
-    # ── LALAL stem resolution ─────────────────────────────────────────────────
+    # ── Backend-specific kwargs ──────────────────────────────────────────────
     backend_kwargs = {}
     if backend == "lalal":
         if stems is None:
@@ -140,6 +152,13 @@ def split(audio_file, backend, stems, model, pipeline, output, no_slice, no_norm
             if bad:
                 raise click.UsageError(f"Unknown stems: {bad}. Available: {LALAL_STEMS}")
             backend_kwargs["stems"] = stem_list
+    elif backend == "musicai":
+        if stems and stems in MUSIC_AI_WORKFLOWS:
+            backend_kwargs["workflow"] = stems
+        elif stems:
+            backend_kwargs["workflow"] = stems
+        else:
+            backend_kwargs["workflow"] = MUSIC_AI_DEFAULT_WORKFLOW
     else:
         backend_kwargs["model"] = model
 
@@ -251,6 +270,14 @@ def list_options():
     }
     for key, desc in descs.items():
         console.print(f"  [cyan]{key:<8}[/cyan]  {desc}")
+    console.print("\n[bold]Music.AI workflows:[/bold]")
+    wf_descs = {
+        "suite":  "stem-separation-suite — up to 9 stems (vocals, drums, bass, keys, strings, guitars, piano, wind, other)",
+        "vocals": "stems-vocals-accompaniment — 4 stems (vocals, drums, bass, other)",
+    }
+    for key, desc in wf_descs.items():
+        default = " [dim](default)[/dim]" if key == MUSIC_AI_DEFAULT_WORKFLOW else ""
+        console.print(f"  [cyan]{key:<8}[/cyan]  {desc}{default}")
 
 
 @cli.command("create-templates")
@@ -405,7 +432,7 @@ def analyze(audio_file, json_out):
             profile.recommended_model, "default")
         cmd = f"stemforge split {audio_file} --backend demucs --model {model_key}"
     else:
-        cmd = f"stemforge split {audio_file} --backend musicai"
+        cmd = f"stemforge split {audio_file} --backend musicai --stems suite"
     console.print(f"  [bold]Run:[/bold]  [green]{cmd}[/green]")
     console.print()
 

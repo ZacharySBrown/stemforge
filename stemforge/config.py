@@ -29,6 +29,16 @@ LALAL_PRESETS = {
 
 LALAL_DEFAULT_PRESET = "idm"
 
+# ── Music.AI ──────────────────────────────────────────────────────────────────
+MUSIC_AI_BASE = "https://api.music.ai/v1"
+
+MUSIC_AI_WORKFLOWS = {
+    "suite":  "music-ai/stem-separation-suite",       # 9-stem: vocals, drums, bass, keys, strings, guitars, piano, wind, other
+    "vocals": "music-ai/stems-vocals-accompaniment",   # 4-stem: vocals, drums, bass, other
+}
+
+MUSIC_AI_DEFAULT_WORKFLOW = "vocals"
+
 # ── Demucs ────────────────────────────────────────────────────────────────────
 DEMUCS_MODELS = {
     "default": "htdemucs",      # 4 stems: drums, bass, vocals, other — fast
@@ -51,6 +61,8 @@ STEM_COLORS = {
     "synthesizer":    0xAA00FF,
     "strings":        0x00CCAA,  # teal
     "wind":           0x88BBFF,  # light blue
+    "keys":           0xAA00FF,  # purple (alias for synth/piano)
+    "guitars":        0xFFCC00,  # yellow (alias for guitar group)
     "residual":       0x444444,  # dark grey
 }
 

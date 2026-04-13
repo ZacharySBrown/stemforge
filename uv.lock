@@ -719,6 +719,18 @@ wheels = [
 ]
 
 [[package]]
+name = "musicai-sdk"
+version = "1.0.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7a/3d/51ac5a5f7e506adadacc13b2e31193a5379bcaa7e17dea8c49fc1cc9970e/musicai_sdk-1.0.3.tar.gz", hash = "sha256:3494f63eff938916af6de88f50f7e6fd1c89707919601ad167f2b7c1cb7394cb", size = 5074, upload-time = "2025-06-11T17:42:21.09Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d6/ec/ca650279b1059dbc0f887e6fcf5eb3da65f5c5aad8734272cfc4cc09fd3b/musicai_sdk-1.0.3-py3-none-any.whl", hash = "sha256:17cdea280358d8e42459bb8287a572a56acda6cdad3c37f9501c50d42d272edb", size = 6017, upload-time = "2025-06-11T17:42:16.304Z" },
+]
+
+[[package]]
 name = "networkx"
 version = "3.6.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1373,6 +1385,7 @@ source = { editable = "." }
 dependencies = [
     { name = "click" },
     { name = "librosa" },
+    { name = "musicai-sdk" },
     { name = "numpy" },
     { name = "pyyaml" },
     { name = "requests" },
@@ -1392,6 +1405,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.1.7" },
     { name = "demucs", marker = "extra == 'local'", specifier = ">=4.0.1" },
     { name = "librosa", specifier = ">=0.10.2" },
+    { name = "musicai-sdk", specifier = ">=0.1.0" },
     { name = "numpy", specifier = ">=1.26.0" },
     { name = "pyyaml", specifier = ">=6.0.1" },
     { name = "requests", specifier = ">=2.31.0" },
