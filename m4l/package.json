@@ -1,0 +1,11 @@
+{
+  "name": "stemforge-m4l-bridge",
+  "version": "0.1.0",
+  "description": "Node-for-Max bridge that spawns the stemforge Python backend and streams progress/load commands to the Max for Live device.",
+  "main": "stemforge_bridge.js",
+  "private": true,
+  "engines": {
+    "node": ">=16"
+  },
+  "dependencies": {}
+}

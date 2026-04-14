@@ -136,6 +136,24 @@ uv pip install -e .
 echo "  Installing local Demucs backend (torch + torchaudio + demucs)..."
 uv pip install torch torchaudio demucs
 
+# Write the absolute python interpreter path for the M4L node.script bridge.
+# Prefer the project venv; fall back to `which python3`.
+SF_DOTDIR="$HOME/.stemforge"
+mkdir -p "$SF_DOTDIR"
+if [ -x "$STEMFORGE_DIR/.venv/bin/python" ]; then
+    SF_PYTHON_PATH="$STEMFORGE_DIR/.venv/bin/python"
+elif command -v python3 &>/dev/null; then
+    SF_PYTHON_PATH="$(command -v python3)"
+else
+    SF_PYTHON_PATH=""
+fi
+if [ -n "$SF_PYTHON_PATH" ]; then
+    printf '%s\n' "$SF_PYTHON_PATH" > "$SF_DOTDIR/python_path"
+    echo "  Wrote $SF_DOTDIR/python_path → $SF_PYTHON_PATH"
+else
+    echo "  ⚠  Could not resolve a python interpreter to write to $SF_DOTDIR/python_path"
+fi
+
 # ── 6. Create folder structure ───────────────────────────────────────────────
 echo "▸ [6/8] Creating folder structure..."
 mkdir -p "$STEMFORGE_ROOT/inbox"
@@ -153,6 +171,10 @@ stemforge generate-pipeline-json
 M4L_DEST="$ABLETON_USER_LIB/Presets/MIDI Effects/Max MIDI Effect/StemForge"
 mkdir -p "$M4L_DEST"
 cp "$STEMFORGE_DIR/m4l/stemforge_loader.js" "$M4L_DEST/"
+cp "$STEMFORGE_DIR/m4l/stemforge_bridge.js" "$M4L_DEST/" 2>/dev/null || true
+cp "$STEMFORGE_DIR/m4l/stemforge_lom.js"    "$M4L_DEST/" 2>/dev/null || true
+cp "$STEMFORGE_DIR/m4l/package.json"        "$M4L_DEST/" 2>/dev/null || true
+cp "$STEMFORGE_DIR/m4l/StemForgeDevice.maxpat" "$M4L_DEST/" 2>/dev/null || true
 
 # Generate a Max patch description file for reference
 cp "$STEMFORGE_DIR/m4l/README_M4L.md" "$M4L_DEST/"

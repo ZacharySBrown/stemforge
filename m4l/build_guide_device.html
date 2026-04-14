@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StemForge &mdash; Integrated Forge Device Guide</title>
+<style>
+  :root {
+    --bg: #0e0e0e;
+    --surface: #181818;
+    --card: #1e1e1e;
+    --border: #2a2a2a;
+    --text: #e0e0e0;
+    --muted: #888;
+    --accent: #c084fc;
+    --accent2: #818cf8;
+    --green: #4ade80;
+    --yellow: #fbbf24;
+    --red: #f87171;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+    background: var(--bg); color: var(--text);
+    line-height: 1.7; padding: 2rem; max-width: 900px; margin: 0 auto;
+  }
+  h1 { font-size: 1.8rem; color: var(--accent); letter-spacing: -0.5px; }
+  .subtitle {
+    color: var(--muted); font-size: 0.85rem;
+    margin: 0.25rem 0 2.5rem; border-bottom: 1px solid var(--border);
+    padding-bottom: 1.5rem;
+  }
+  h2 {
+    font-size: 1.15rem; color: var(--yellow);
+    margin: 2.5rem 0 1rem; display: flex; align-items: center; gap: 0.5rem;
+  }
+  h2 .step-num {
+    background: var(--yellow); color: var(--bg);
+    font-size: 0.75rem; font-weight: 700;
+    padding: 0.15rem 0.5rem; border-radius: 3px;
+  }
+  h3 { font-size: 0.95rem; color: var(--accent); margin: 1.5rem 0 0.75rem; }
+  .step-body {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1.25rem 1.5rem; margin-bottom: 1rem;
+  }
+  .step-body ul { list-style: none; padding-left: 0; }
+  .step-body ul li { padding: 0.2rem 0 0.2rem 1.2rem; position: relative; }
+  .step-body ul li::before {
+    content: '\25B8'; position: absolute; left: 0; color: var(--muted);
+  }
+  code, kbd {
+    background: #252525; padding: 0.15rem 0.4rem;
+    border-radius: 3px; font-size: 0.85em; color: var(--accent2);
+  }
+  kbd { border: 1px solid #444; color: var(--text); font-size: 0.8em; }
+  .tip-box {
+    margin: 1rem 0; padding: 0.7rem 1rem;
+    border-radius: 0 6px 6px 0; font-size: 0.82rem;
+  }
+  .tip-box.tip  { background: #0e1a0e; border-left: 3px solid var(--green);  color: #a3d9a5; }
+  .tip-box.warn { background: #1a1a10; border-left: 3px solid var(--yellow); color: #d4c87a; }
+  .tip-box.info { background: #0e0e1a; border-left: 3px solid var(--accent2); color: #a5a8fc; }
+  .tip-box strong { font-size: 0.85rem; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  footer {
+    margin-top: 3rem; padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    font-size: 0.78rem; color: #555; text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<h1>StemForge Integrated Forge Device</h1>
+<p class="subtitle">
+  One-button split &rarr; slice &rarr; curate &rarr; play pipeline,
+  driven from an Ableton audio clip through a Max for Live device.
+</p>
+
+<h2><span class="step-num">1</span> Install the Python backend</h2>
+<div class="step-body">
+  <ul>
+    <li>From a terminal in the repo root: <code>./install.sh</code></li>
+    <li>When it finishes, verify <code>~/.stemforge/python_path</code> exists and points at a python executable (usually <code>&lt;repo&gt;/.venv/bin/python</code>).</li>
+    <li>The device uses this file to find the interpreter; Max does not inherit your shell PATH.</li>
+  </ul>
+  <div class="tip-box info">
+    <strong>Re-run any time</strong> your venv moves. The install script is idempotent and rewrites <code>python_path</code> on each run.
+  </div>
+</div>
+
+<h2><span class="step-num">2</span> Open the patch in Max</h2>
+<div class="step-body">
+  <ul>
+    <li>Open Max 8 or Max 9 (standalone, not from within Ableton the first time).</li>
+    <li>File &rarr; Open &rarr; select <code>m4l/StemForgeDevice.maxpat</code> from the repo.</li>
+    <li>The patch should load with a <strong>FORGE</strong> button, strategy menu, n_bars numbox, 4&times;4 pad grid, four stem dials, and a spectroscope.</li>
+    <li>Make sure <code>stemforge_bridge.js</code>, <code>stemforge_lom.js</code>, and <code>package.json</code> are in the <strong>same folder</strong> as the <code>.maxpat</code>.</li>
+  </ul>
+</div>
+
+<h2><span class="step-num">3</span> Save as an Audio Effect</h2>
+<div class="step-body">
+  <ul>
+    <li>File &rarr; Save As &rarr; navigate to your Ableton User Library: <code>~/Music/Ableton/User Library/Presets/Audio Effects/Max Audio Effect/StemForge/</code> (create the folder if needed).</li>
+    <li>Save as <code>StemForgeDevice.amxd</code>. Set the device type to <strong>Audio Effect</strong>.</li>
+    <li>After saving, choose <strong>File &rarr; Freeze Device</strong> to bundle the JS files into the <code>.amxd</code>.</li>
+  </ul>
+  <div class="tip-box warn">
+    <strong>Why Audio Effect?</strong> The forge device reads audio clips from the track it sits on, so it must live on an audio track alongside the source clip.
+  </div>
+</div>
+
+<h2><span class="step-num">4</span> Drop the device on a track</h2>
+<div class="step-body">
+  <ul>
+    <li>In Ableton, drop an audio clip onto an audio track. Let Ableton auto-warp it (or correct warp markers manually if the groove is complex).</li>
+    <li>From the Browser &rarr; Max for Live &rarr; Max Audio Effect, drag <strong>StemForgeDevice</strong> onto the same track.</li>
+    <li>Select the clip slot holding your audio so the device knows which clip to analyze.</li>
+  </ul>
+</div>
+
+<h2><span class="step-num">5</span> Press FORGE</h2>
+<div class="step-body">
+  <ul>
+    <li>Pick a <strong>Strategy</strong> (<code>max-diversity</code> is a good default) and choose <strong>n_bars</strong> (12&ndash;16).</li>
+    <li>Click <strong>FORGE</strong>. The status line will show <code>started</code> &rarr; <code>splitting</code> &rarr; <code>slicing</code> &rarr; <code>curating</code> &rarr; <code>done</code>.</li>
+    <li>When complete, the pad grid unlocks and each pad plays one curated bar. Pads are time-stretched via <code>groove~</code> so they stay locked to session tempo.</li>
+    <li>Click <strong>CANCEL</strong> at any time to kill the Python subprocess.</li>
+  </ul>
+</div>
+
+<h2><span class="step-num">6</span> MIDI-map the pads</h2>
+<div class="step-body">
+  <ul>
+    <li>Press <kbd>Cmd</kbd>+<kbd>M</kbd> in Ableton to enter MIDI map mode.</li>
+    <li>Click a cell in the 4&times;4 pad grid and play a pad/key on your controller (Push, Launchpad, keyboard). Repeat for each pad.</li>
+    <li>Exit MIDI map mode with <kbd>Cmd</kbd>+<kbd>M</kbd>. Pads will now trigger from hardware.</li>
+  </ul>
+</div>
+
+<h2><span class="step-num">7</span> Troubleshooting</h2>
+
+<h3>"Python backend not found"</h3>
+<div class="step-body">
+  <ul>
+    <li>The device could not read <code>~/.stemforge/python_path</code>. Re-run <code>./install.sh</code>.</li>
+    <li>If you moved the repo or the venv, rewrite the file manually: <code>echo /abs/path/to/.venv/bin/python &gt; ~/.stemforge/python_path</code>.</li>
+  </ul>
+</div>
+
+<h3>First run hangs on "splitting"</h3>
+<div class="step-body">
+  <ul>
+    <li>Demucs downloads an ~80 MB model to <code>~/.cache/torch/hub/</code> on first use. The status line shows <code>downloading model...</code> when it detects this.</li>
+    <li>On slow connections this can take a few minutes. Subsequent runs skip the download.</li>
+  </ul>
+</div>
+
+<h3>Odd time signatures (7/4, 6/8, 5/4)</h3>
+<div class="step-body">
+  <ul>
+    <li>Set the clip's time signature correctly in Ableton <strong>before</strong> forging. The device reads <code>signature_numerator</code> / <code>signature_denominator</code> from the clip.</li>
+    <li>Verify warp markers are present and correct. Without markers, the device falls back to a rigid grid and flags <code>analysis_fallback: true</code> in the status.</li>
+  </ul>
+</div>
+
+<h3>Pads do not trigger after FORGE completes</h3>
+<div class="step-body">
+  <ul>
+    <li>Check the status line for errors. The pad gate only opens after a <code>ready N</code> event from the bridge.</li>
+    <li>If <code>curated/drums/</code> is empty, the backend selected no bars &mdash; lower the RMS floor in the CLI or try a different strategy.</li>
+  </ul>
+</div>
+
+<h3>"curated stem dir not found"</h3>
+<div class="step-body">
+  <ul>
+    <li>The default focus stem is <code>drums</code>. If your Demucs backend produced different stem names, send <code>setFocusStem &lt;name&gt;</code> to the <code>node.script</code> object (e.g. <code>bass</code>, <code>vocals</code>, <code>other</code>).</li>
+  </ul>
+</div>
+
+<footer>StemForge M4L &mdash; integrated forge device</footer>
+</body>
+</html>

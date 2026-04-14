@@ -59,7 +59,11 @@ def ensure_wav(audio_path: Path, console: Console = None) -> tuple[Path, bool]:
 from .backends.lalal import LalalBackend
 from .backends.demucs import DemucsBackend
 from .backends.musicai import MusicAiBackend
-from .slicer import detect_bpm_and_beats, slice_at_beats
+from .slicer import (
+    detect_bpm_and_beats, slice_at_beats,
+    slice_at_bars, slice_at_bars_from_analysis,
+)
+from . import curator as _curator
 from .manifest import write_manifest
 from .config import (
     PROCESSED_DIR, LALAL_PRESETS, LALAL_STEMS, LALAL_DEFAULT_PRESET,
@@ -507,6 +511,161 @@ def generate_pipeline_json(pipeline_dir):
         json_file.write_text(json.dumps(data, indent=2))
         console.print(f"[green]OK[/green] {yaml_file.name} → {json_file.name}")
     console.print("\nRestart or reload the M4L device to pick up changes.")
+
+
+@cli.command()
+@click.argument("audio_file", type=click.Path(exists=True, path_type=Path))
+@click.option("--analysis", type=click.Path(exists=True, path_type=Path), default=None,
+              help="Ableton analysis JSON. If omitted, uses librosa beat detection.")
+@click.option("--backend", "-b", default="demucs",
+              type=click.Choice(["demucs"]))
+@click.option("--model", "-m", default="default")
+@click.option("--strategy", "-s", default="max-diversity",
+              type=click.Choice(["max-diversity", "rhythm-taxonomy", "sectional"]))
+@click.option("--n-bars", "-n", default=14, type=int, help="Number of bars to curate.")
+@click.option("--time-sig", default="4/4",
+              help="Time signature (librosa fallback only). Format: numerator/denominator.")
+@click.option("--output", "-o", default=None, type=click.Path(path_type=Path))
+def forge(audio_file, analysis, backend, model, strategy, n_bars, time_sig, output):
+    """
+    Full pipeline: split → slice at bars → curate → curated WAVs + manifest.
+
+    Emits newline-delimited JSON events on stdout for M4L integration.
+    """
+    import shutil as _shutil
+
+    def emit(event: str, **data):
+        print(json.dumps({"event": event, **data}), flush=True)
+
+    audio_file, _ = ensure_wav(audio_file, console=None)
+
+    try:
+        num_str, _den_str = time_sig.split("/")
+        fallback_numerator = int(num_str)
+    except Exception:
+        fallback_numerator = 4
+
+    out_root = Path(output) if output else PROCESSED_DIR
+    track_name = to_snake_case(audio_file.stem)
+    track_out = Path(out_root) / track_name
+    track_out.mkdir(parents=True, exist_ok=True)
+
+    emit("started", track=track_name, audio=str(audio_file),
+         backend=backend, strategy=strategy, n_bars=n_bars,
+         output_dir=str(track_out))
+
+    # ── 1. Separation ──
+    emit("progress", phase="splitting", pct=0)
+    be = DemucsBackend()
+    try:
+        stem_paths = be.separate(audio_file, track_out, model=model)
+    except Exception as e:
+        emit("error", phase="splitting", message=str(e))
+        sys.exit(1)
+    emit("progress", phase="splitting", pct=100,
+         stems=[str(p) for p in stem_paths.values()])
+
+    # ── 2. Slicing at bar boundaries ──
+    emit("progress", phase="slicing", pct=0)
+
+    analysis_data = None
+    if analysis is not None:
+        analysis_data = json.loads(Path(analysis).read_text())
+
+    stem_bar_paths: dict[str, list[Path]] = {}
+    non_residual = [(n, p) for n, p in stem_paths.items() if n != "residual"]
+
+    # When no analysis, reuse a single beat detection on drums for all stems.
+    shared_beat_times = None
+    if analysis_data is None:
+        bpm_source = (stem_paths.get("drums") or stem_paths.get("drum")
+                      or next(iter(stem_paths.values())))
+        _bpm, shared_beat_times = detect_bpm_and_beats(bpm_source)
+
+    for i, (stem_name, stem_path) in enumerate(non_residual):
+        if analysis_data is not None:
+            bars = slice_at_bars_from_analysis(
+                stem_path, analysis_data, track_out, stem_name,
+            )
+        else:
+            bars = slice_at_bars(
+                stem_path, track_out, stem_name,
+                time_sig_numerator=fallback_numerator,
+                beat_times=shared_beat_times,
+            )
+        stem_bar_paths[stem_name] = sorted(bars)
+        pct = int(((i + 1) / len(non_residual)) * 100)
+        emit("progress", phase="slicing", pct=pct,
+             stem=stem_name, bars=len(bars))
+
+    total_bars = len(stem_bar_paths.get("drums", next(iter(stem_bar_paths.values()), [])))
+    emit("progress", phase="slicing", pct=100, bars=total_bars)
+
+    # ── 3. Curation on drums stem ──
+    emit("progress", phase="curating", pct=0)
+    curation_source = "drums" if "drums" in stem_bar_paths else next(iter(stem_bar_paths))
+    drums_bar_dir = track_out / f"{curation_source}_bars"
+
+    selected_drum_paths = _curator.curate(
+        drums_bar_dir, n_bars=n_bars, strategy=strategy,
+    )
+
+    # Map selected drum bars back to their bar index (1-based from filename)
+    import re as _re
+    selected_indices: list[int] = []
+    for p in selected_drum_paths:
+        m = _re.search(r"_bar_(\d+)\.wav$", p.name)
+        if m:
+            selected_indices.append(int(m.group(1)))
+
+    curated_root = track_out / "curated"
+    curated_root.mkdir(parents=True, exist_ok=True)
+
+    # Mirror selection across all non-residual stems.
+    curated_manifest: dict = {
+        "track": track_name,
+        "source_audio": str(audio_file),
+        "strategy": strategy,
+        "n_bars": len(selected_indices),
+        "analysis_source": "ableton" if analysis_data else "librosa",
+        "time_signature_numerator": (
+            analysis_data["time_signature"]["numerator"]
+            if analysis_data else fallback_numerator
+        ),
+        "stems": {},
+    }
+
+    for stem_name, bar_paths in stem_bar_paths.items():
+        stem_curated_dir = curated_root / stem_name
+        stem_curated_dir.mkdir(parents=True, exist_ok=True)
+        by_index = {}
+        for bp in bar_paths:
+            m = _re.search(r"_bar_(\d+)\.wav$", bp.name)
+            if m:
+                by_index[int(m.group(1))] = bp
+
+        entries = []
+        for pos, src_idx in enumerate(selected_indices, start=1):
+            src = by_index.get(src_idx)
+            if src is None or not src.exists():
+                continue
+            dest = stem_curated_dir / f"bar_{pos:02d}.wav"
+            _shutil.copy2(src, dest)
+            entries.append({
+                "position": pos,
+                "source_bar_index": src_idx,
+                "file": str(dest.relative_to(track_out)),
+            })
+        curated_manifest["stems"][stem_name] = entries
+
+    manifest_path = curated_root / "manifest.json"
+    manifest_path.write_text(json.dumps(curated_manifest, indent=2))
+
+    emit("progress", phase="curating", pct=100, selected=len(selected_indices))
+    emit("complete",
+         output_dir=str(curated_root),
+         manifest=str(manifest_path),
+         bars=len(selected_indices))
 
 
 if __name__ == "__main__":

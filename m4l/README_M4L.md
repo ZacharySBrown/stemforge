@@ -1,3 +1,27 @@
+## Integrated Forge Device (StemForgeDevice.maxpat)
+
+One-button split → slice → curate → play pipeline, driven from an Ableton
+audio clip. See `build_guide_device.html` for step-by-step setup.
+
+Files:
+- `StemForgeDevice.maxpat` — Max for Live Audio Effect patch (open in Max, save-as `.amxd`)
+- `stemforge_bridge.js` — Node-for-Max script; spawns `stemforge forge`, streams JSON progress
+- `stemforge_lom.js` — classic Max JS; reads clip warp markers/time sig via LOM, writes temp JSON
+- `package.json` — declares `stemforge_bridge.js` as the node.script entry
+- `build_guide_device.html` — user-facing build/install guide
+
+Python path discovery: the bridge reads `~/.stemforge/python_path` (written by
+`install.sh`). It spawns `<python> -m stemforge.cli forge <audio> --analysis
+<tmp.json> --n-bars N --strategy S` and parses newline-delimited JSON events
+(`started`, `progress`, `complete`) off stdout. On `complete`, it walks
+`<output_dir>/curated/<focus_stem>/` and emits one `load <wav> <idx>` message
+per curated bar into `polybuffer~ sf_bars`.
+
+The LOM read is split into a classic `[js]` object because `node.script`
+cannot access the Live Object Model directly.
+
+---
+
 ## Max Patch Structure for StemForgeLoader.amxd
 
 The patch contains:
