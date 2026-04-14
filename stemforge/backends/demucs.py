@@ -51,8 +51,8 @@ class DemucsBackend(AbstractBackend):
         model = get_model(model_name)
         model.to(device)
 
-        # Load audio
-        waveform, sr = torchaudio.load(str(audio_path))
+        # Load audio — force soundfile backend (torchaudio ≥2.11 defaults to torchcodec)
+        waveform, sr = torchaudio.load(str(audio_path), backend="soundfile")
 
         # Resample if needed
         if sr != model.samplerate:

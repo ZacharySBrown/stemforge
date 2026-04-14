@@ -24,6 +24,7 @@ def slice_at_beats(
     silence_threshold: float = 1e-3,
     normalize: bool = True,
     normalize_headroom_db: float = -1.0,
+    beats_per_slice: int = 1,
 ) -> list[Path]:
     """
     Slice stem WAV at beat boundaries.
@@ -31,6 +32,8 @@ def slice_at_beats(
     Skips near-silent chunks (saves space, avoids empty Drum Rack pads).
     If normalize=True, peak-normalizes the stem before slicing so all
     beat slices share a consistent level across stems.
+    beats_per_slice: how many beats per output file (1 = individual beats,
+                     4 = bars in 4/4 time, etc.)
     Returns list of created file paths.
     """
     y, sr = librosa.load(str(stem_path), sr=None, mono=False)
@@ -48,10 +51,11 @@ def slice_at_beats(
     slices_dir.mkdir(parents=True, exist_ok=True)
 
     total_samples = y.shape[-1]
-    boundaries = np.concatenate([
-        librosa.time_to_samples(beat_times, sr=sr),
-        [total_samples],
-    ]).astype(int)
+    beat_samples = librosa.time_to_samples(beat_times, sr=sr).astype(int)
+
+    # Group beats into slices of beats_per_slice
+    bar_boundaries = beat_samples[::beats_per_slice]
+    boundaries = np.concatenate([bar_boundaries, [total_samples]]).astype(int)
     boundaries = np.clip(boundaries, 0, total_samples)
 
     created = []
