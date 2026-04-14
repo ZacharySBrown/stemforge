@@ -77,24 +77,16 @@
             {
                 "box": {
                     "id": "obj-forge-btn",
-                    "maxclass": "live.text",
+                    "maxclass": "textbutton",
                     "numinlets": 1,
-                    "numoutlets": 1,
-                    "outlettype": [""],
-                    "parameter_enable": 1,
+                    "numoutlets": 3,
+                    "outlettype": ["", "", "int"],
                     "patching_rect": [16.0, 112.0, 120.0, 44.0],
                     "presentation": 1,
                     "presentation_rect": [16.0, 40.0, 120.0, 44.0],
-                    "saved_attribute_attributes": {
-                        "valueof": {
-                            "parameter_invisible": 1,
-                            "parameter_longname": "ForgeButton",
-                            "parameter_mmax": 1,
-                            "parameter_shortname": "FORGE",
-                            "parameter_type": 2
-                        }
-                    },
                     "text": "FORGE",
+                    "fontsize": 16.0,
+                    "bgoncolor": [0.9, 0.35, 0.15, 1.0],
                     "varname": "forge_button"
                 }
             },
@@ -150,21 +142,13 @@
             {
                 "box": {
                     "id": "obj-cancel-btn",
-                    "maxclass": "live.text",
+                    "maxclass": "textbutton",
                     "numinlets": 1,
-                    "numoutlets": 1,
-                    "outlettype": [""],
-                    "parameter_enable": 1,
+                    "numoutlets": 3,
+                    "outlettype": ["", "", "int"],
                     "patching_rect": [392.0, 112.0, 80.0, 22.0],
                     "presentation": 1,
                     "presentation_rect": [392.0, 40.0, 80.0, 22.0],
-                    "saved_attribute_attributes": {
-                        "valueof": {
-                            "parameter_longname": "Cancel",
-                            "parameter_shortname": "Cancel",
-                            "parameter_type": 2
-                        }
-                    },
                     "text": "CANCEL",
                     "varname": "cancel_button"
                 }
@@ -189,6 +173,17 @@
                     "outlettype": [""],
                     "patching_rect": [16.0, 140.0, 160.0, 22.0],
                     "text": "pak forge 14 max-diversity"
+                }
+            },
+            {
+                "box": {
+                    "id": "obj-cancel-msg",
+                    "maxclass": "message",
+                    "numinlets": 2,
+                    "numoutlets": 1,
+                    "outlettype": [""],
+                    "patching_rect": [392.0, 140.0, 80.0, 22.0],
+                    "text": "cancel"
                 }
             },
             {
@@ -611,7 +606,8 @@
             { "patchline": { "source": ["obj-nbars", 0], "destination": ["obj-pak-forge", 1] } },
             { "patchline": { "source": ["obj-strategy", 1], "destination": ["obj-pak-forge", 2] } },
             { "patchline": { "source": ["obj-pak-forge", 0], "destination": ["obj-js-lom", 0] } },
-            { "patchline": { "source": ["obj-cancel-btn", 0], "destination": ["obj-node-bridge", 0] } },
+            { "patchline": { "source": ["obj-cancel-btn", 0], "destination": ["obj-cancel-msg", 0] } },
+            { "patchline": { "source": ["obj-cancel-msg", 0], "destination": ["obj-node-bridge", 0] } },
             { "patchline": { "source": ["obj-js-lom", 0], "destination": ["obj-status-prepend", 0] } },
             { "patchline": { "source": ["obj-js-lom", 1], "destination": ["obj-node-bridge", 0] } },
             { "patchline": { "source": ["obj-node-bridge", 0], "destination": ["obj-status-route", 0] } },
