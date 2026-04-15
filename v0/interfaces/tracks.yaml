@@ -1,0 +1,130 @@
+# StemForge v0 — Ableton template track specification
+# Source of truth for:
+#   - Track D (generates StemForge.als with these tracks pre-built)
+#   - Track C (M4L device duplicates these per stem at runtime)
+#
+# Format is stable across v0; changes require version bump.
+
+version: 1
+
+# Master settings applied to the generated .als
+master:
+  tempo_auto_set_from_stems_json: true
+  time_signature: "4/4"
+
+# The 7 template tracks. Each is duplicated per matching stem when the
+# M4L device processes a file (e.g., drums.wav populates "SF | Drums Raw"
+# and "SF | Drums Crushed" via the `stem_target` field).
+tracks:
+  - id: drums_raw
+    name: "SF | Drums Raw"
+    type: audio
+    color: "#FF4444"
+    stem_target: drums
+    chain:
+      - device: Compressor
+        params: { threshold_db: -18, ratio: 4, attack_ms: 5, release_ms: 50 }
+      - device: EQ Eight
+        params: {}
+
+  - id: drums_crushed
+    name: "SF | Drums Crushed"
+    type: audio
+    color: "#882222"
+    stem_target: drums
+    chain:
+      - device: "XLN.LO-FI-AF"  # VST3 — present-if-installed
+        params: { bitcrush: 0.6, drive: 0.4 }
+      - device: "SoundToys.Decapitator"
+        params: { drive: 0.35, style: "E" }
+      - device: Compressor
+        params: { threshold_db: -15, ratio: 6 }
+      - device: "SoundToys.EchoBoyJr"
+        params: { delay: "1/8", feedback: 0.25 }
+
+  - id: bass
+    name: "SF | Bass"
+    type: audio
+    color: "#4477FF"
+    stem_target: bass
+    chain:
+      - device: EQ Eight
+        params: {}
+      - device: Compressor
+        params: { threshold_db: -14, ratio: 3 }
+      - device: "XLN.LO-FI-AF"
+        params: { bitcrush: 0.3, drive: 0.5 }
+      - device: "SoundToys.Decapitator"
+        params: { drive: 0.2, style: "N" }
+
+  - id: texture_verb
+    name: "SF | Texture Verb"
+    type: audio
+    color: "#44DD77"
+    stem_target: other
+    chain:
+      - device: "SoundToys.PhaseMistress"
+        params: { rate: "1/4", depth: 0.6 }
+      - device: "SoundToys.EchoBoy"
+        params: { delay: "1/4 dotted", feedback: 0.45 }
+      - device: Reverb
+        params: { decay_sec: 4.2, diffusion: 0.9 }
+      - device: "XLN.LO-FI-AF"
+        params: { bitcrush: 0.2, drive: 0.15 }
+
+  - id: texture_crystallized
+    name: "SF | Texture Crystallized"
+    type: audio
+    color: "#44CCCC"
+    stem_target: other
+    chain:
+      - device: "SoundToys.Crystallizer"
+        params: { splice: "1/16", shift: "+5 semitones" }
+      - device: Reverb
+        params: { decay_sec: 6.0, diffusion: 0.95 }
+      - device: Utility
+        params: { gain_db: -3 }
+
+  - id: vocals
+    name: "SF | Vocals"
+    type: audio
+    color: "#FFAA44"
+    stem_target: vocals
+    chain:
+      - device: EQ Eight
+        params: {}
+      - device: Compressor
+        params: { threshold_db: -16, ratio: 4 }
+      - device: "XLN.LO-FI-AF"
+        params: { bitcrush: 0.25, drive: 0.3 }
+      - device: "SoundToys.EchoBoy"
+        params: { delay: "1/8 triplet", feedback: 0.3 }
+
+  - id: beat_chop_simpler
+    name: "SF | Beat Chop Simpler"
+    type: midi
+    color: "#FF4444"
+    stem_target: drums_beats  # maps to *_beats/ directory, not a single stem
+    chain:
+      - device: Simpler
+        params:
+          # Beat slices loaded into Simpler slice mode at runtime by the M4L device.
+          mode: slice
+          warp: off
+          # slice_source populated by M4L bridge, not by template
+      - device: "SoundToys.Decapitator"
+        params: { drive: 0.4, style: "A" }
+      - device: "SoundToys.PrimalTap"
+        params: { delay: "1/16", feedback: 0.5 }
+
+# Stems that don't have an explicit `stem_target` above (e.g., guitar, piano
+# from htdemucs_6s) get loaded into a generic audio track named
+# "SF | <stem-name>" with the default chain:
+fallback_chain:
+  type: audio
+  color: "#888888"
+  chain:
+    - device: EQ Eight
+      params: {}
+    - device: Compressor
+      params: { threshold_db: -18, ratio: 3 }

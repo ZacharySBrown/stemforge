@@ -1,0 +1,98 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://stemforge.dev/schemas/v0/ndjson-events.json",
+  "title": "StemForge v0 — native binary → M4L event protocol",
+  "description": "The native binary emits one JSON object per line on stdout. Each object is one of the event types below. The M4L node.script child reads lines, parses, and translates to Max messages.",
+  "oneOf": [
+    { "$ref": "#/definitions/started" },
+    { "$ref": "#/definitions/progress" },
+    { "$ref": "#/definitions/stem" },
+    { "$ref": "#/definitions/bpm" },
+    { "$ref": "#/definitions/slice_dir" },
+    { "$ref": "#/definitions/complete" },
+    { "$ref": "#/definitions/error" }
+  ],
+  "definitions": {
+    "started": {
+      "type": "object",
+      "required": ["event", "track", "audio", "output_dir"],
+      "additionalProperties": false,
+      "properties": {
+        "event":      { "const": "started" },
+        "track":      { "type": "string", "description": "snake_case track name" },
+        "audio":      { "type": "string", "description": "absolute path to input" },
+        "backend":    { "type": "string", "enum": ["demucs", "lalal", "musicai"] },
+        "pipeline":   { "type": "string" },
+        "output_dir": { "type": "string", "description": "absolute path" }
+      }
+    },
+    "progress": {
+      "type": "object",
+      "required": ["event", "phase", "pct"],
+      "additionalProperties": false,
+      "properties": {
+        "event":   { "const": "progress" },
+        "phase":   { "enum": ["downloading_weights", "loading_model", "splitting", "analyzing", "slicing", "writing_manifest"] },
+        "pct":     { "type": "number", "minimum": 0, "maximum": 100 },
+        "message": { "type": "string" }
+      }
+    },
+    "stem": {
+      "type": "object",
+      "description": "Emitted once per stem as it's written to disk.",
+      "required": ["event", "name", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "event":      { "const": "stem" },
+        "name":       { "type": "string", "description": "e.g. drums, bass, vocals, other, guitar, piano, residual" },
+        "path":       { "type": "string", "description": "absolute path to stem WAV" },
+        "size_bytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "bpm": {
+      "type": "object",
+      "required": ["event", "bpm", "beat_count"],
+      "additionalProperties": false,
+      "properties": {
+        "event":      { "const": "bpm" },
+        "bpm":        { "type": "number", "minimum": 20, "maximum": 400 },
+        "beat_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "slice_dir": {
+      "type": "object",
+      "description": "Emitted once per stem after beat slicing completes.",
+      "required": ["event", "stem", "dir", "count"],
+      "additionalProperties": false,
+      "properties": {
+        "event": { "const": "slice_dir" },
+        "stem":  { "type": "string" },
+        "dir":   { "type": "string", "description": "absolute path to *_beats directory" },
+        "count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "complete": {
+      "type": "object",
+      "required": ["event", "manifest", "bpm", "stem_count"],
+      "additionalProperties": false,
+      "properties": {
+        "event":      { "const": "complete" },
+        "manifest":   { "type": "string", "description": "absolute path to stems.json" },
+        "bpm":        { "type": "number" },
+        "stem_count": { "type": "integer" },
+        "duration_sec": { "type": "number" }
+      }
+    },
+    "error": {
+      "type": "object",
+      "required": ["event", "phase", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "event":   { "const": "error" },
+        "phase":   { "type": "string" },
+        "message": { "type": "string" },
+        "fatal":   { "type": "boolean", "default": true }
+      }
+    }
+  }
+}
