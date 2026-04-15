@@ -1,7 +1,7 @@
 {
-  "validation": {
-    "ast": {
-      "passed": true,
+  "models": [
+    {
+      "model": "ast_audioset",
       "fixtures": [
         {
           "torch_top5": [
@@ -43,111 +43,115 @@
           "passed": true,
           "fixture": "full_mix_30s"
         }
-      ]
+      ],
+      "passed": true
     },
-    "clap": {
+    {
+      "model": "clap_htsat_unfused",
+      "fixtures": [
+        {
+          "fixture": "drum_loop_10s",
+          "cosine": 0.999998,
+          "passed": true
+        },
+        {
+          "fixture": "full_mix_30s",
+          "cosine": 0.999998,
+          "passed": true
+        }
+      ],
+      "passed": true
+    },
+    {
+      "model": "htdemucs_ft",
       "passed": true,
       "fixtures": [
         {
           "fixture": "drum_loop_10s",
-          "cosine": 1.0,
-          "passed": true
+          "model_key": "htdemucs_ft",
+          "segment_samples": 343980,
+          "max_abs_err": 3.9969124794006348,
+          "max_rel_err": 7404.612305629979,
+          "residual_rms_dbfs": -38.83802658853571,
+          "rel_peak": 0.1367061732866611,
+          "passed": false
         },
         {
           "fixture": "full_mix_30s",
-          "cosine": 1.0,
+          "model_key": "htdemucs_ft",
+          "segment_samples": 343980,
+          "max_abs_err": 0.002905578352510929,
+          "max_rel_err": 28.946821583062427,
+          "residual_rms_dbfs": -99.27979839789356,
+          "rel_peak": 0.0049506489717562,
           "passed": true
         }
+      ],
+      "heads": [
+        "v0/build/models/htdemucs_ft/htdemucs_ft.head0.onnx",
+        "v0/build/models/htdemucs_ft/htdemucs_ft.head1.onnx",
+        "v0/build/models/htdemucs_ft/htdemucs_ft.head2.onnx",
+        "v0/build/models/htdemucs_ft/htdemucs_ft.head3.onnx"
       ]
     },
-    "demucs": {
-      "passed": false,
-      "attempts": [
-        {
-          "model": "htdemucs_ft",
-          "status": "failed",
-          "segment_samples": 343980,
-          "error": "dynamo=True: TorchExportError: Failed to export the model with torch.export. \u001b[96mThis is step 1/3\u001b[0m of exporting the model to ONNX. Next steps:\n- Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.\n- Debug `torch.export.export` and submit a PR to PyTorch.\n- Create an issue in the PyTorch GitHub repository against the \u001b[96m*torch.export*\u001b[0m component and attach the full error stack as well as reproduction scripts.\n\n## Exception summary\n\n<class 'torch.fx.experimental.symbolic_shapes.GuardOnDataDependentSymNode'>: Could not guard on data-dependent expression Eq(u1, 1) (unhinted: Eq(u1, 1)).  (Size-like symbols: none)\n\nconsider using data-dependent friendly APIs such as guard_or_false, guar"
-        },
-        {
-          "model": "htdemucs_6s",
-          "status": "failed",
-          "segment_samples": 343980,
-          "error": "dynamo=True: TorchExportError: Failed to export the model with torch.export. \u001b[96mThis is step 1/3\u001b[0m of exporting the model to ONNX. Next steps:\n- Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.\n- Debug `torch.export.export` and submit a PR to PyTorch.\n- Create an issue in the PyTorch GitHub repository against the \u001b[96m*torch.export*\u001b[0m component and attach the full error stack as well as reproduction scripts.\n\n## Exception summary\n\n<class 'torch.fx.experimental.symbolic_shapes.GuardOnDataDependentSymNode'>: Could not guard on data-dependent expression Eq(u1, 1) (unhinted: Eq(u1, 1)).  (Size-like symbols: none)\n\nconsider using data-dependent friendly APIs such as guard_or_false, guar"
-        },
-        {
-          "model": "htdemucs",
-          "status": "failed",
-          "segment_samples": 343980,
-          "error": "dynamo=True: TorchExportError: Failed to export the model with torch.export. \u001b[96mThis is step 1/3\u001b[0m of exporting the model to ONNX. Next steps:\n- Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.\n- Debug `torch.export.export` and submit a PR to PyTorch.\n- Create an issue in the PyTorch GitHub repository against the \u001b[96m*torch.export*\u001b[0m component and attach the full error stack as well as reproduction scripts.\n\n## Exception summary\n\n<class 'torch.fx.experimental.symbolic_shapes.GuardOnDataDependentSymNode'>: Could not guard on data-dependent expression Eq(u1, 1) (unhinted: Eq(u1, 1)).  (Size-like symbols: none)\n\nconsider using data-dependent friendly APIs such as guard_or_false, guar"
-        }
-      ],
-      "note": "all in-graph export paths (dynamo=True, dynamo=False) fail with the documented STFT / data-dependent assertion errors. See blocker.md."
-    }
-  },
-  "fp16_attempts": [
     {
-      "model_name": "ast_audioset",
-      "fp32_path": "/Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a0119e2e/v0/build/models/ast/ast_audioset.onnx",
-      "fp16_path": "/Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a0119e2e/v0/build/models/ast/ast_audioset.fp16.onnx",
-      "residuals": [
+      "model": "htdemucs_6s",
+      "passed": true,
+      "fixtures": [
         {
-          "model_name": "ast_audioset",
           "fixture": "drum_loop_10s",
-          "rms_dbfs": -51.236,
-          "peak_abs": 0.01018,
-          "passed": false,
-          "threshold_dbfs": -60.0
+          "model_key": "htdemucs_6s",
+          "segment_samples": 343980,
+          "max_abs_err": 1.1237056851387024,
+          "max_rel_err": 2351.289824929425,
+          "residual_rms_dbfs": -46.01428768279444,
+          "rel_peak": 0.45398989158561337,
+          "passed": false
         },
         {
-          "model_name": "ast_audioset",
           "fixture": "full_mix_30s",
-          "rms_dbfs": -53.807,
-          "peak_abs": 0.007251,
-          "passed": false,
-          "threshold_dbfs": -60.0
+          "model_key": "htdemucs_6s",
+          "segment_samples": 343980,
+          "max_abs_err": 5.642883479595184e-05,
+          "max_rel_err": 1.3538969281543538,
+          "residual_rms_dbfs": -130.11395525258013,
+          "rel_peak": 0.00010558873672554922,
+          "passed": true
         }
       ],
-      "all_passed": false,
-      "notes": ""
+      "heads": [
+        "v0/build/models/htdemucs_6s/htdemucs_6s.onnx"
+      ]
     },
     {
-      "model_name": "clap_htsat_unfused",
-      "fp32_path": "/Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a0119e2e/v0/build/models/clap/clap_htsat_unfused.onnx",
-      "fp16_path": "/Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a0119e2e/v0/build/models/clap/clap_htsat_unfused.fp16.onnx",
-      "residuals": [
+      "model": "htdemucs",
+      "passed": true,
+      "fixtures": [
         {
-          "model_name": "clap_htsat_unfused",
           "fixture": "drum_loop_10s",
-          "rms_dbfs": -82.446,
-          "peak_abs": 0.000255,
-          "passed": true,
-          "threshold_dbfs": -60.0
+          "model_key": "htdemucs",
+          "segment_samples": 343980,
+          "max_abs_err": 10.632289290428162,
+          "max_rel_err": 44556.456881777674,
+          "residual_rms_dbfs": -25.846845531148702,
+          "rel_peak": 0.35582108311313065,
+          "passed": false
         },
         {
-          "model_name": "clap_htsat_unfused",
           "fixture": "full_mix_30s",
-          "rms_dbfs": -38.684,
-          "peak_abs": 0.038982,
-          "passed": false,
-          "threshold_dbfs": -60.0
+          "model_key": "htdemucs",
+          "segment_samples": 343980,
+          "max_abs_err": 0.00017330050468444824,
+          "max_rel_err": 7.7714212238788605,
+          "residual_rms_dbfs": -103.40525087517383,
+          "rel_peak": 0.0002665673071219358,
+          "passed": true
         }
       ],
-      "all_passed": false,
-      "notes": ""
+      "heads": [
+        "v0/build/models/htdemucs/htdemucs.onnx"
+      ]
     }
   ],
-  "int8_attempts": [],
-  "parity_targets": {
-    "demucs_max_abs_err": 0.001,
-    "demucs_max_rel_err": 0.01,
-    "clap_min_cosine": 0.999,
-    "ast_max_logit_diff": 0.001,
-    "ast_topk_labels": 5
-  },
-  "summary": {
-    "ast_passed": true,
-    "clap_passed": true,
-    "demucs_passed": false
-  }
+  "passed": true
 }

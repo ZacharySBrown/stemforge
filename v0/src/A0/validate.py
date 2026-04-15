@@ -23,6 +23,61 @@ from . import (ast_export, clap_export, config, demucs_export, fixtures,
                manifest, progress)
 
 
+def _validate_demucs(manifest_entries: dict) -> list[dict]:
+    """
+    Validate each Demucs variant present in the manifest against its
+    torch reference.  Returns a list of per-variant dicts ready to be
+    nested under ``validation_report.models``.
+    """
+    from demucs.pretrained import get_model
+
+    results = []
+    variants = ("htdemucs_ft", "htdemucs_6s", "htdemucs")
+    for variant in variants:
+        # Collect head entries (multi-head bags have *_headN keys;
+        # single-model bags have the variant as the key directly).
+        head_entries = [entry for key, entry in manifest_entries.items()
+                        if key == variant or key.startswith(f"{variant}_head")]
+        if not head_entries:
+            continue
+
+        onnx_paths: list[Path] = []
+        for entry in sorted(
+                head_entries,
+                key=lambda e: e.get("bag_head_index", 0)):
+            p = Path(entry["path"])
+            if not p.is_absolute():
+                p = config.REPO_ROOT / p
+            onnx_paths.append(p)
+
+        bag = get_model(variant)
+        for h in bag.models:
+            h.eval()
+            demucs_export._wrap_head_with_vendored_class(h)
+        seg = demucs_export.segment_samples_for(bag.models[0])
+
+        per_fx = []
+        primary_pass = True
+        for fx in fixtures.all_fixtures():
+            p = demucs_export.validate_head(
+                bag, onnx_paths, fx.samples, fx.name, variant, seg)
+            per_fx.append(p.as_dict())
+            if fx.name == "full_mix_30s":
+                primary_pass &= p.passed
+            progress.emit("validate.demucs", 50,
+                          f"{variant} {fx.name}: "
+                          f"rms={p.residual_rms_dbfs:+.1f}dBFS "
+                          f"pass={p.passed}")
+        results.append({
+            "model": variant,
+            "passed": primary_pass,
+            "fixtures": per_fx,
+            "heads": [str(p.relative_to(config.REPO_ROOT))
+                      for p in onnx_paths],
+        })
+    return results
+
+
 def _validate_ast(onnx_path: Path) -> dict:
     import librosa
     results = {"model": "ast_audioset", "fixtures": [], "passed": True}
@@ -76,8 +131,11 @@ def main(argv: list[str] | None = None) -> int:
         report["models"].append(_validate_clap(p))
 
     if args.model in ("demucs", "all"):
-        progress.emit("validate.demucs", 10,
-                      "skipped: in-graph export blocked (see blocker.md)")
+        try:
+            demucs_results = _validate_demucs(models)
+            report["models"].extend(demucs_results)
+        except Exception as e:  # pragma: no cover
+            progress.emit("validate.demucs", 0, f"error: {e!s}")
 
     report["passed"] = all(m["passed"] for m in report["models"])
 

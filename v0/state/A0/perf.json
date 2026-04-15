@@ -343,6 +343,664 @@
       "seconds": 0.4997,
       "failed": true,
       "ts": "2026-04-15T01:50:26Z"
+    },
+    {
+      "stage": "demucs.export_head.htdemucs",
+      "seconds": 3.3146,
+      "failed": true,
+      "segment_samples": 343980,
+      "ts": "2026-04-15T02:02:54Z"
+    },
+    {
+      "stage": "demucs.export_head.htdemucs",
+      "seconds": 3.8385,
+      "failed": true,
+      "segment_samples": 343980,
+      "ts": "2026-04-15T02:03:32Z"
+    },
+    {
+      "stage": "demucs.export_head.htdemucs",
+      "seconds": 0.0307,
+      "failed": true,
+      "segment_samples": 343980,
+      "ts": "2026-04-15T02:06:13Z"
+    },
+    {
+      "stage": "demucs.export_head.htdemucs",
+      "seconds": 4.4215,
+      "failed": false,
+      "segment_samples": 343980,
+      "ts": "2026-04-15T02:06:30Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs.drum_loop_10s",
+      "seconds": 2.3111,
+      "failed": false,
+      "ts": "2026-04-15T02:06:32Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs.drum_loop_10s",
+      "seconds": 2.4925,
+      "failed": false,
+      "ts": "2026-04-15T02:06:35Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs.full_mix_30s",
+      "seconds": 2.271,
+      "failed": false,
+      "ts": "2026-04-15T02:06:37Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs.full_mix_30s",
+      "seconds": 2.6342,
+      "failed": false,
+      "ts": "2026-04-15T02:06:40Z"
+    },
+    {
+      "stage": "demucs.export_head.htdemucs",
+      "seconds": 2.8066,
+      "failed": true,
+      "segment_samples": 343980,
+      "ts": "2026-04-15T02:14:26Z"
+    },
+    {
+      "stage": "demucs.export_head.htdemucs",
+      "seconds": 2.7608,
+      "failed": true,
+      "segment_samples": 343980,
+      "ts": "2026-04-15T02:14:33Z"
+    },
+    {
+      "stage": "demucs.export_head.htdemucs",
+      "seconds": 2.8327,
+      "failed": true,
+      "segment_samples": 343980,
+      "ts": "2026-04-15T02:14:43Z"
+    },
+    {
+      "stage": "demucs.export_head.htdemucs",
+      "seconds": 4.4242,
+      "failed": false,
+      "segment_samples": 343980,
+      "ts": "2026-04-15T02:15:02Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs.drum_loop_10s",
+      "seconds": 2.4729,
+      "failed": false,
+      "ts": "2026-04-15T02:15:05Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs.drum_loop_10s",
+      "seconds": 2.5734,
+      "failed": false,
+      "ts": "2026-04-15T02:15:07Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs.full_mix_30s",
+      "seconds": 2.2535,
+      "failed": false,
+      "ts": "2026-04-15T02:15:09Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs.full_mix_30s",
+      "seconds": 2.5692,
+      "failed": false,
+      "ts": "2026-04-15T02:15:12Z"
+    },
+    {
+      "stage": "demucs.export_head.htdemucs",
+      "seconds": 4.0786,
+      "failed": false,
+      "segment_samples": 343980,
+      "ts": "2026-04-15T02:16:34Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs.drum_loop_10s",
+      "seconds": 2.2054,
+      "failed": false,
+      "ts": "2026-04-15T02:16:36Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs.drum_loop_10s",
+      "seconds": 2.5605,
+      "failed": false,
+      "ts": "2026-04-15T02:16:39Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs.full_mix_30s",
+      "seconds": 2.3577,
+      "failed": false,
+      "ts": "2026-04-15T02:16:41Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs.full_mix_30s",
+      "seconds": 2.4815,
+      "failed": false,
+      "ts": "2026-04-15T02:16:44Z"
+    },
+    {
+      "stage": "demucs.export_head.htdemucs_6s",
+      "seconds": 3.977,
+      "failed": false,
+      "segment_samples": 343980,
+      "ts": "2026-04-15T02:17:08Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs_6s.drum_loop_10s",
+      "seconds": 2.3238,
+      "failed": false,
+      "ts": "2026-04-15T02:17:11Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs_6s.drum_loop_10s",
+      "seconds": 2.1819,
+      "failed": false,
+      "ts": "2026-04-15T02:17:13Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs_6s.full_mix_30s",
+      "seconds": 2.1968,
+      "failed": false,
+      "ts": "2026-04-15T02:17:15Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs_6s.full_mix_30s",
+      "seconds": 2.1763,
+      "failed": false,
+      "ts": "2026-04-15T02:17:17Z"
+    },
+    {
+      "stage": "demucs.export_head.htdemucs_ft.head0",
+      "seconds": 5.1951,
+      "failed": false,
+      "segment_samples": 343980,
+      "ts": "2026-04-15T02:17:36Z"
+    },
+    {
+      "stage": "demucs.export_head.htdemucs_ft.head1",
+      "seconds": 5.2977,
+      "failed": false,
+      "segment_samples": 343980,
+      "ts": "2026-04-15T02:17:41Z"
+    },
+    {
+      "stage": "demucs.export_head.htdemucs_ft.head2",
+      "seconds": 5.1343,
+      "failed": false,
+      "segment_samples": 343980,
+      "ts": "2026-04-15T02:17:46Z"
+    },
+    {
+      "stage": "demucs.export_head.htdemucs_ft.head3",
+      "seconds": 5.3918,
+      "failed": false,
+      "segment_samples": 343980,
+      "ts": "2026-04-15T02:17:52Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs_ft.drum_loop_10s",
+      "seconds": 8.9947,
+      "failed": false,
+      "ts": "2026-04-15T02:18:01Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs_ft.drum_loop_10s",
+      "seconds": 10.2738,
+      "failed": false,
+      "ts": "2026-04-15T02:18:11Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs_ft.full_mix_30s",
+      "seconds": 9.3218,
+      "failed": false,
+      "ts": "2026-04-15T02:18:20Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs_ft.full_mix_30s",
+      "seconds": 9.8269,
+      "failed": false,
+      "ts": "2026-04-15T02:18:30Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs_ft.drum_loop_10s",
+      "seconds": 9.0024,
+      "failed": false,
+      "ts": "2026-04-15T02:19:53Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs_ft.drum_loop_10s",
+      "seconds": 9.6387,
+      "failed": false,
+      "ts": "2026-04-15T02:20:03Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs_ft.full_mix_30s",
+      "seconds": 9.0667,
+      "failed": false,
+      "ts": "2026-04-15T02:20:12Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs_ft.full_mix_30s",
+      "seconds": 9.6917,
+      "failed": false,
+      "ts": "2026-04-15T02:20:21Z"
+    },
+    {
+      "stage": "ast.export",
+      "seconds": 4.7429,
+      "failed": false,
+      "model": "MIT/ast-finetuned-audioset-10-10-0.4593",
+      "ts": "2026-04-15T02:20:41Z"
+    },
+    {
+      "stage": "ast.validate.torch",
+      "seconds": 0.4246,
+      "failed": false,
+      "ts": "2026-04-15T02:20:43Z"
+    },
+    {
+      "stage": "ast.validate.onnx",
+      "seconds": 1.081,
+      "failed": false,
+      "ts": "2026-04-15T02:20:44Z"
+    },
+    {
+      "stage": "ast.validate.torch",
+      "seconds": 0.4292,
+      "failed": false,
+      "ts": "2026-04-15T02:20:44Z"
+    },
+    {
+      "stage": "ast.validate.onnx",
+      "seconds": 1.0655,
+      "failed": false,
+      "ts": "2026-04-15T02:20:46Z"
+    },
+    {
+      "stage": "clap.export",
+      "seconds": 1.744,
+      "failed": false,
+      "model": "laion/clap-htsat-unfused",
+      "ts": "2026-04-15T02:21:05Z"
+    },
+    {
+      "stage": "clap.validate.torch",
+      "seconds": 0.0527,
+      "failed": false,
+      "ts": "2026-04-15T02:21:08Z"
+    },
+    {
+      "stage": "clap.validate.onnx",
+      "seconds": 0.0701,
+      "failed": false,
+      "ts": "2026-04-15T02:21:08Z"
+    },
+    {
+      "stage": "clap.validate.torch",
+      "seconds": 0.0523,
+      "failed": false,
+      "ts": "2026-04-15T02:21:09Z"
+    },
+    {
+      "stage": "clap.validate.onnx",
+      "seconds": 0.0734,
+      "failed": false,
+      "ts": "2026-04-15T02:21:09Z"
+    },
+    {
+      "stage": "demucs.export_head.htdemucs",
+      "seconds": 3.8816,
+      "failed": false,
+      "segment_samples": 343980,
+      "ts": "2026-04-15T02:21:30Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs.drum_loop_10s",
+      "seconds": 2.2964,
+      "failed": false,
+      "ts": "2026-04-15T02:21:33Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs.drum_loop_10s",
+      "seconds": 2.5928,
+      "failed": false,
+      "ts": "2026-04-15T02:21:35Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs.full_mix_30s",
+      "seconds": 2.2898,
+      "failed": false,
+      "ts": "2026-04-15T02:21:38Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs.full_mix_30s",
+      "seconds": 2.4835,
+      "failed": false,
+      "ts": "2026-04-15T02:21:40Z"
+    },
+    {
+      "stage": "demucs.export_head.htdemucs_6s",
+      "seconds": 4.5574,
+      "failed": false,
+      "segment_samples": 343980,
+      "ts": "2026-04-15T02:21:59Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs_6s.drum_loop_10s",
+      "seconds": 2.2053,
+      "failed": false,
+      "ts": "2026-04-15T02:22:01Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs_6s.drum_loop_10s",
+      "seconds": 2.1628,
+      "failed": false,
+      "ts": "2026-04-15T02:22:03Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs_6s.full_mix_30s",
+      "seconds": 2.1318,
+      "failed": false,
+      "ts": "2026-04-15T02:22:06Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs_6s.full_mix_30s",
+      "seconds": 2.0891,
+      "failed": false,
+      "ts": "2026-04-15T02:22:08Z"
+    },
+    {
+      "stage": "demucs.export_head.htdemucs_ft.head0",
+      "seconds": 4.9826,
+      "failed": false,
+      "segment_samples": 343980,
+      "ts": "2026-04-15T02:22:26Z"
+    },
+    {
+      "stage": "demucs.export_head.htdemucs_ft.head1",
+      "seconds": 5.0029,
+      "failed": false,
+      "segment_samples": 343980,
+      "ts": "2026-04-15T02:22:31Z"
+    },
+    {
+      "stage": "demucs.export_head.htdemucs_ft.head2",
+      "seconds": 5.3741,
+      "failed": false,
+      "segment_samples": 343980,
+      "ts": "2026-04-15T02:22:36Z"
+    },
+    {
+      "stage": "demucs.export_head.htdemucs_ft.head3",
+      "seconds": 5.2208,
+      "failed": false,
+      "segment_samples": 343980,
+      "ts": "2026-04-15T02:22:41Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs_ft.drum_loop_10s",
+      "seconds": 9.3968,
+      "failed": false,
+      "ts": "2026-04-15T02:22:51Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs_ft.drum_loop_10s",
+      "seconds": 9.9884,
+      "failed": false,
+      "ts": "2026-04-15T02:23:01Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs_ft.full_mix_30s",
+      "seconds": 9.1137,
+      "failed": false,
+      "ts": "2026-04-15T02:23:10Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs_ft.full_mix_30s",
+      "seconds": 9.9597,
+      "failed": false,
+      "ts": "2026-04-15T02:23:20Z"
+    },
+    {
+      "stage": "ast.validate.torch",
+      "seconds": 0.9869,
+      "failed": false,
+      "ts": "2026-04-15T02:25:02Z"
+    },
+    {
+      "stage": "ast.validate.onnx",
+      "seconds": 0.5196,
+      "failed": false,
+      "ts": "2026-04-15T02:25:02Z"
+    },
+    {
+      "stage": "ast.validate.torch",
+      "seconds": 0.4098,
+      "failed": false,
+      "ts": "2026-04-15T02:25:03Z"
+    },
+    {
+      "stage": "ast.validate.onnx",
+      "seconds": 0.5187,
+      "failed": false,
+      "ts": "2026-04-15T02:25:04Z"
+    },
+    {
+      "stage": "clap.validate.torch",
+      "seconds": 0.2312,
+      "failed": false,
+      "ts": "2026-04-15T02:25:06Z"
+    },
+    {
+      "stage": "clap.validate.onnx",
+      "seconds": 0.0764,
+      "failed": false,
+      "ts": "2026-04-15T02:25:06Z"
+    },
+    {
+      "stage": "clap.validate.torch",
+      "seconds": 0.0518,
+      "failed": false,
+      "ts": "2026-04-15T02:25:07Z"
+    },
+    {
+      "stage": "clap.validate.onnx",
+      "seconds": 0.0694,
+      "failed": false,
+      "ts": "2026-04-15T02:25:07Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs_ft.drum_loop_10s",
+      "seconds": 9.096,
+      "failed": false,
+      "ts": "2026-04-15T02:25:17Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs_ft.drum_loop_10s",
+      "seconds": 10.1599,
+      "failed": false,
+      "ts": "2026-04-15T02:25:28Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs_ft.full_mix_30s",
+      "seconds": 8.7907,
+      "failed": false,
+      "ts": "2026-04-15T02:25:36Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs_ft.full_mix_30s",
+      "seconds": 9.7575,
+      "failed": false,
+      "ts": "2026-04-15T02:25:46Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs_6s.drum_loop_10s",
+      "seconds": 2.1101,
+      "failed": false,
+      "ts": "2026-04-15T02:25:48Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs_6s.drum_loop_10s",
+      "seconds": 2.1591,
+      "failed": false,
+      "ts": "2026-04-15T02:25:51Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs_6s.full_mix_30s",
+      "seconds": 2.15,
+      "failed": false,
+      "ts": "2026-04-15T02:25:53Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs_6s.full_mix_30s",
+      "seconds": 2.1115,
+      "failed": false,
+      "ts": "2026-04-15T02:25:55Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs.drum_loop_10s",
+      "seconds": 2.252,
+      "failed": false,
+      "ts": "2026-04-15T02:25:57Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs.drum_loop_10s",
+      "seconds": 2.5302,
+      "failed": false,
+      "ts": "2026-04-15T02:26:00Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs.full_mix_30s",
+      "seconds": 2.1563,
+      "failed": false,
+      "ts": "2026-04-15T02:26:02Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs.full_mix_30s",
+      "seconds": 2.4863,
+      "failed": false,
+      "ts": "2026-04-15T02:26:05Z"
+    },
+    {
+      "stage": "ast.validate.torch",
+      "seconds": 0.9651,
+      "failed": false,
+      "ts": "2026-04-15T02:26:43Z"
+    },
+    {
+      "stage": "ast.validate.onnx",
+      "seconds": 1.0863,
+      "failed": false,
+      "ts": "2026-04-15T02:26:44Z"
+    },
+    {
+      "stage": "ast.validate.torch",
+      "seconds": 0.4121,
+      "failed": false,
+      "ts": "2026-04-15T02:26:45Z"
+    },
+    {
+      "stage": "ast.validate.onnx",
+      "seconds": 1.0565,
+      "failed": false,
+      "ts": "2026-04-15T02:26:46Z"
+    },
+    {
+      "stage": "clap.validate.torch",
+      "seconds": 0.2338,
+      "failed": false,
+      "ts": "2026-04-15T02:26:48Z"
+    },
+    {
+      "stage": "clap.validate.onnx",
+      "seconds": 0.0789,
+      "failed": false,
+      "ts": "2026-04-15T02:26:48Z"
+    },
+    {
+      "stage": "clap.validate.torch",
+      "seconds": 0.051,
+      "failed": false,
+      "ts": "2026-04-15T02:26:50Z"
+    },
+    {
+      "stage": "clap.validate.onnx",
+      "seconds": 0.0826,
+      "failed": false,
+      "ts": "2026-04-15T02:26:50Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs_ft.drum_loop_10s",
+      "seconds": 9.1639,
+      "failed": false,
+      "ts": "2026-04-15T02:27:00Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs_ft.drum_loop_10s",
+      "seconds": 9.9319,
+      "failed": false,
+      "ts": "2026-04-15T02:27:10Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs_ft.full_mix_30s",
+      "seconds": 9.6292,
+      "failed": false,
+      "ts": "2026-04-15T02:27:20Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs_ft.full_mix_30s",
+      "seconds": 9.7201,
+      "failed": false,
+      "ts": "2026-04-15T02:27:29Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs_6s.drum_loop_10s",
+      "seconds": 2.2171,
+      "failed": false,
+      "ts": "2026-04-15T02:27:32Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs_6s.drum_loop_10s",
+      "seconds": 2.3335,
+      "failed": false,
+      "ts": "2026-04-15T02:27:34Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs_6s.full_mix_30s",
+      "seconds": 2.1647,
+      "failed": false,
+      "ts": "2026-04-15T02:27:36Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs_6s.full_mix_30s",
+      "seconds": 2.143,
+      "failed": false,
+      "ts": "2026-04-15T02:27:38Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs.drum_loop_10s",
+      "seconds": 2.3014,
+      "failed": false,
+      "ts": "2026-04-15T02:27:41Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs.drum_loop_10s",
+      "seconds": 2.5609,
+      "failed": false,
+      "ts": "2026-04-15T02:27:43Z"
+    },
+    {
+      "stage": "demucs.validate.torch.htdemucs.full_mix_30s",
+      "seconds": 2.4544,
+      "failed": false,
+      "ts": "2026-04-15T02:27:46Z"
+    },
+    {
+      "stage": "demucs.validate.onnx.htdemucs.full_mix_30s",
+      "seconds": 2.4416,
+      "failed": false,
+      "ts": "2026-04-15T02:27:48Z"
     }
   ]
 }

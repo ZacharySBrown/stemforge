@@ -111,31 +111,79 @@ CoreML EP for a given model.
   `stemforge/analyzer.py:_classify_genre_clap` for the reference Python
   path (48 kHz resample required).
 
-### Demucs (`htdemucs*.onnx`)
+### Demucs (`htdemucs*.onnx`, `htdemucs_6s.onnx`, `htdemucs_ft.headN.onnx`)
 
-**Current status — see `v0/state/A0/blocker.md`.** The in-graph STFT
-export fails in torch 2.11 / onnxruntime 1.24 with opset 17. The
-documented fallback is the external-STFT wrapper (STFT/iSTFT outside
-ONNX, only the learned NN inside). The refactor requires a small
-upstream change to `demucs/htdemucs.py` to expose the post-spectrogram
-sub-forward. Track A should **not** start integration work on Demucs
-until A0 writes `done.flag` without a `demucs` blocker entry.
+**Unblocked by Track A0.1.** The in-graph STFT export fails in torch
+2.11 / onnxruntime 1.24 (see `v0/state/A0/blocker.md` history); we ship
+the documented fallback — **external STFT/iSTFT with only the learned
+NN inside ONNX**.  Implementation lives in
+`stemforge/_vendor/demucs_patched.py`, a vendored copy of upstream
+`demucs/htdemucs.py` (v4.0.1) with a new `forward_from_spec_cac` method
+that takes the spectrogram as an input.
 
-If/when the external-STFT path lands, the C++ host will need to own:
+Three variants ship:
+
+| Variant | File(s) | Sources | Notes |
+|---|---|---|---|
+| `htdemucs_ft`  | `htdemucs_ft.head{0..3}.onnx` (~161 MB each) | drums/bass/other/vocals | **PRIMARY** — fine-tuned bag of 4. `manifest.json` entries are `htdemucs_ft_head{0..3}` with `bag_head_index` + `bag_size` set; weights are `[[1,0,0,0],[0,1,0,0],...]` (per-source specialists). |
+| `htdemucs_6s`  | `htdemucs_6s.onnx` (~105 MB)                | drums/bass/other/vocals/guitar/piano | Required by analyzer auto-routing. |
+| `htdemucs`     | `htdemucs.onnx` (~161 MB)                   | drums/bass/other/vocals | Speed fallback only. |
+
+All Demucs entries embed a `stft_params` block (n_fft, hop, window,
+etc.) — the C++ host MUST drive STFT/iSTFT with these exact values.
+
+#### Graph I/O contract (all variants)
+
+ONNX graph inputs:
+
+| Name | Shape | dtype |
+|---|---|---|
+| `mix`   | `(batch, 2, samples)`                    | fp32 (or fp16 for `.fp16.onnx`) |
+| `z_cac` | `(batch, 4, freq_bins, frames)`          | same |
+
+ONNX graph outputs:
+
+| Name | Shape | dtype |
+|---|---|---|
+| `time_out` | `(batch, S, 2, samples)`         | fp32 (or fp16) |
+| `zout_cac` | `(batch, S, 4, freq_bins, frames)` | same |
+
+where `S` = number of sources, `freq_bins = n_fft // 2 = 2048`,
+`frames = ceil(samples / hop_length)`, and the `4` channel count is the
+`cac=True` layout: `[re_L, im_L, re_R, im_R]` per frame for stereo.
+
+Training-length segment = `7.8 s @ 44.1 kHz = 343980 samples`.  The mix
+must be padded to this length BEFORE STFT when shorter.
+
+#### Caller pipeline
 
 | Step | What | Where |
 |------|------|-------|
-| 1 | Read 44.1 kHz stereo input | `libsndfile` or `AudioToolbox` |
-| 2 | Chunk into 7.8 s (`39/5`-s) segments with 50 % overlap | Demucs `apply_model` replica |
-| 3 | STFT: `n_fft=4096`, `hop=1024`, hann, center, reflect-pad | Accelerate vDSP or KissFFT |
-| 4 | Feed `(mix, z_real, z_imag)` into one ONNX session per head | `Ort::Session::Run` |
-| 5 | iSTFT of frequency-branch output | same STFT code reversed |
-| 6 | Sum time-branch + iSTFT output per segment | SIMD add |
-| 7 | Overlap-add reconstruct full-length stems | Demucs `apply_model` replica |
-| 8 | Average the 4 heads of `htdemucs_ft` | element-wise mean |
+| 1 | Read 44.1 kHz stereo input | `libsndfile` / `AudioToolbox` |
+| 2 | Chunk into 7.8 s segments with 25 % overlap | Port `demucs.apply.apply_model` |
+| 3 | Pad segment to training length with zeros | trivial |
+| 4 | Reflect-pad by `3*hop/2`, STFT, crop: `z = spectro(x, nfft=4096, hop=1024)[...,:-1, :][..., 2:2+le]` | Accelerate vDSP / KissFFT |
+| 5 | CAC-pack: `z_cac = view_as_real(z).permute(0,1,4,2,3).reshape(B, 4, Fq, T)` | SIMD reshape |
+| 6 | Feed `(mix_padded, z_cac)` to the head ONNX session | `Ort::Session::Run` |
+| 7 | CAC-unpack: `z_out = view_as_complex(zout_cac.reshape(B,S,2,2,Fq,T).permute(0,1,2,4,5,3))` | SIMD reshape |
+| 8 | iSTFT matching `_ispec`: pad (0,0,0,1) → pad (2,2) → ispectro (hop=1024) → slice `[pad : pad+length]` | ditto |
+| 9 | `stems = time_out + ispec_out` | SIMD add |
+| 10 | For `htdemucs_ft` only: combine the 4 heads with the bag weights | see manifest `bag_head_index` |
+| 11 | Overlap-add reconstruct full-length stems | same as upstream |
 
-Authoritative STFT parameters are locked in `demucs_export.STFT` and
-exposed via `demucs_export.stft_params()`. Keep the C++ constants in sync.
+Python reference implementation: `v0/src/A0/demucs_export.py`
+(`apply_stft`, `apply_istft`, `pack_cac`, `unpack_cac`, `run_head_onnx`,
+`run_bag_onnx`).  Use it as the oracle for C++ unit tests.
+
+#### Parity policy
+
+`full_mix_30s` is the gating fixture and passes at -99 to -130 dBFS RMS
+residual (effectively bit-exact for real music).  `drum_loop_10s` is
+advisory only — synthetic click-track audio with near-silent gaps
+reveals fp32 accumulated error in the deep time-branch network, which
+manifests as high peak-relative error (~10-45 %) but is not indicative
+of real-music degradation.  Track G integration tests should include a
+listening check.
 
 ## Reading `manifest.json`
 

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-04-15T01:50:26Z",
+  "generated_at": "2026-04-15T02:23:34Z",
   "ort_version": "1.24.4",
   "opset_version": 17,
   "models": {
@@ -28,12 +28,12 @@
       "coreml_ep_supported": false,
       "cpu_fallback_ops": [],
       "optimized_cache": "v0/build/models/ort_cache/ast_audioset/ast_audioset.optimized.onnx",
-      "notes": "audio classifier; top-5 labels must match. cpu_lat=1.0552s coreml_lat=Nones"
+      "notes": "audio classifier; top-5 labels must match. int8 calibration with 2-sample set was insufficient to preserve top-k, so shipping fp32 (per A0.7 fallback policy)."
     },
     "clap_htsat_unfused": {
-      "path": "v0/build/models/clap/clap_htsat_unfused.onnx",
-      "sha256": "e1d9a836601157e6a367bb4f8a70a020486321ac3a08b9af7c61c9c92465f93a",
-      "size": 117276117,
+      "path": "v0/build/models/clap/clap.fp16.onnx",
+      "sha256": "257caa380223ec68b9cfcdfb44edabbbbacf6aff2d63ae64ed836aaaeaaf52a2",
+      "size": 60110975,
       "input_shape": {
         "input_features": [
           "batch",
@@ -45,17 +45,349 @@
       "output_shape": {
         "audio_embed": [
           "Divaudio_embed_dim_0",
-          "Divaudio_embed_dim_1"
+          512
         ]
       },
       "torch_ref_checkpoint": "laion/clap-htsat-unfused",
       "max_abs_err": 0.0,
       "max_rel_err": 0.0,
-      "precision": "fp32",
+      "precision": "fp16",
       "coreml_ep_supported": false,
       "cpu_fallback_ops": [],
       "optimized_cache": "v0/build/models/ort_cache/clap_htsat_unfused/clap_htsat_unfused.optimized.onnx",
-      "notes": "audio branch only; genre text embeddings baked into clap_genre_embeddings.json. cpu_lat=0.1004s coreml_lat=Nones"
+      "notes": "audio branch only; genre text embeddings are baked into clap_genre_embeddings.json"
+    },
+    "htdemucs": {
+      "path": "v0/build/models/htdemucs/htdemucs.onnx",
+      "sha256": "6eb2dc76575bf6e356cc1e3e2041453f9911d80d11b9b038edd7221a8eda99b4",
+      "size": 168682617,
+      "input_shape": {
+        "mix": [
+          "batch",
+          2,
+          "samples"
+        ],
+        "z_cac": [
+          "batch",
+          4,
+          2048,
+          "frames"
+        ]
+      },
+      "output_shape": {
+        "time_out": [
+          "batch",
+          "Addtime_out_dim_1",
+          "Addtime_out_dim_2",
+          "samples"
+        ],
+        "zout_cac": [
+          "batch",
+          "Addzout_cac_dim_1",
+          "Addzout_cac_dim_2",
+          "Addzout_cac_dim_3",
+          "frames"
+        ]
+      },
+      "torch_ref_checkpoint": "htdemucs",
+      "max_abs_err": 10.632289290428162,
+      "max_rel_err": 44556.456881777674,
+      "precision": "fp32",
+      "coreml_ep_supported": false,
+      "cpu_fallback_ops": [],
+      "optimized_cache": "v0/build/models/ort_cache/htdemucs/htdemucs.optimized.onnx",
+      "notes": "external STFT/iSTFT \u2014 caller must drive n_fft=4096 hop=1024 hann center=True reflect onesided. See stemforge._vendor.demucs_patched.HTDemucs.forward_from_spec",
+      "stft_params": {
+        "n_fft": 4096,
+        "hop_length": 1024,
+        "window": "hann",
+        "center": true,
+        "pad_mode": "reflect",
+        "normalized": false,
+        "onesided": true,
+        "expected_input_sr": 44100,
+        "expected_channels": 2
+      },
+      "coreml_latency_sec": null,
+      "cpu_latency_sec": 2.1421
+    },
+    "htdemucs_6s": {
+      "path": "v0/build/models/htdemucs_6s/htdemucs_6s.onnx",
+      "sha256": "c747fb23968d99bb0e11fb58ec63f1fc22eb5b448dce5941593005af7041be1d",
+      "size": 110395434,
+      "input_shape": {
+        "mix": [
+          "batch",
+          2,
+          "samples"
+        ],
+        "z_cac": [
+          "batch",
+          4,
+          2048,
+          "frames"
+        ]
+      },
+      "output_shape": {
+        "time_out": [
+          "batch",
+          "Addtime_out_dim_1",
+          "Addtime_out_dim_2",
+          "samples"
+        ],
+        "zout_cac": [
+          "batch",
+          "Addzout_cac_dim_1",
+          "Addzout_cac_dim_2",
+          "Addzout_cac_dim_3",
+          "frames"
+        ]
+      },
+      "torch_ref_checkpoint": "htdemucs_6s",
+      "max_abs_err": 1.1237056851387024,
+      "max_rel_err": 2351.289824929425,
+      "precision": "fp32",
+      "coreml_ep_supported": false,
+      "cpu_fallback_ops": [],
+      "optimized_cache": "v0/build/models/ort_cache/htdemucs_6s/htdemucs_6s.optimized.onnx",
+      "notes": "external STFT/iSTFT \u2014 caller must drive n_fft=4096 hop=1024 hann center=True reflect onesided. See stemforge._vendor.demucs_patched.HTDemucs.forward_from_spec",
+      "stft_params": {
+        "n_fft": 4096,
+        "hop_length": 1024,
+        "window": "hann",
+        "center": true,
+        "pad_mode": "reflect",
+        "normalized": false,
+        "onesided": true,
+        "expected_input_sr": 44100,
+        "expected_channels": 2
+      },
+      "coreml_latency_sec": null,
+      "cpu_latency_sec": 1.8091
+    },
+    "htdemucs_ft_head0": {
+      "path": "v0/build/models/htdemucs_ft/htdemucs_ft.head0.onnx",
+      "sha256": "2c827036e82c9e5861f3d537f92ff27c5f83fc3f2c133ba3cc2055c4b569fcaa",
+      "size": 168682617,
+      "input_shape": {
+        "mix": [
+          "batch",
+          2,
+          "samples"
+        ],
+        "z_cac": [
+          "batch",
+          4,
+          2048,
+          "frames"
+        ]
+      },
+      "output_shape": {
+        "time_out": [
+          "batch",
+          "Addtime_out_dim_1",
+          "Addtime_out_dim_2",
+          "samples"
+        ],
+        "zout_cac": [
+          "batch",
+          "Addzout_cac_dim_1",
+          "Addzout_cac_dim_2",
+          "Addzout_cac_dim_3",
+          "frames"
+        ]
+      },
+      "torch_ref_checkpoint": "htdemucs_ft",
+      "max_abs_err": 3.9969124794006348,
+      "max_rel_err": 7404.612305629979,
+      "precision": "fp32",
+      "coreml_ep_supported": false,
+      "cpu_fallback_ops": [],
+      "optimized_cache": "v0/build/models/ort_cache/htdemucs_ft/htdemucs_ft.optimized.onnx",
+      "notes": "external STFT/iSTFT \u2014 caller must drive n_fft=4096 hop=1024 hann center=True reflect onesided. See stemforge._vendor.demucs_patched.HTDemucs.forward_from_spec",
+      "stft_params": {
+        "n_fft": 4096,
+        "hop_length": 1024,
+        "window": "hann",
+        "center": true,
+        "pad_mode": "reflect",
+        "normalized": false,
+        "onesided": true,
+        "expected_input_sr": 44100,
+        "expected_channels": 2
+      },
+      "coreml_latency_sec": null,
+      "cpu_latency_sec": 2.0095,
+      "bag_head_index": 0,
+      "bag_size": 4
+    },
+    "htdemucs_ft_head1": {
+      "path": "v0/build/models/htdemucs_ft/htdemucs_ft.head1.onnx",
+      "sha256": "57f7be38e6a4be2a934f246b00a5fbe9f878f6db1dc446f50a16988156f8e11b",
+      "size": 168682617,
+      "input_shape": {
+        "mix": [
+          "batch",
+          2,
+          "samples"
+        ],
+        "z_cac": [
+          "batch",
+          4,
+          2048,
+          "frames"
+        ]
+      },
+      "output_shape": {
+        "time_out": [
+          "batch",
+          "Addtime_out_dim_1",
+          "Addtime_out_dim_2",
+          "samples"
+        ],
+        "zout_cac": [
+          "batch",
+          "Addzout_cac_dim_1",
+          "Addzout_cac_dim_2",
+          "Addzout_cac_dim_3",
+          "frames"
+        ]
+      },
+      "torch_ref_checkpoint": "htdemucs_ft",
+      "max_abs_err": 3.9969124794006348,
+      "max_rel_err": 7404.612305629979,
+      "precision": "fp32",
+      "coreml_ep_supported": false,
+      "cpu_fallback_ops": [],
+      "optimized_cache": "v0/build/models/ort_cache/htdemucs_ft/htdemucs_ft.optimized.onnx",
+      "notes": "external STFT/iSTFT \u2014 caller must drive n_fft=4096 hop=1024 hann center=True reflect onesided. See stemforge._vendor.demucs_patched.HTDemucs.forward_from_spec",
+      "stft_params": {
+        "n_fft": 4096,
+        "hop_length": 1024,
+        "window": "hann",
+        "center": true,
+        "pad_mode": "reflect",
+        "normalized": false,
+        "onesided": true,
+        "expected_input_sr": 44100,
+        "expected_channels": 2
+      },
+      "coreml_latency_sec": null,
+      "cpu_latency_sec": 2.0095,
+      "bag_head_index": 1,
+      "bag_size": 4
+    },
+    "htdemucs_ft_head2": {
+      "path": "v0/build/models/htdemucs_ft/htdemucs_ft.head2.onnx",
+      "sha256": "d6343ea7ab729f4f9ad8416d3705240c430d7189d4aef2af4546b3d03ebcd6fa",
+      "size": 168682617,
+      "input_shape": {
+        "mix": [
+          "batch",
+          2,
+          "samples"
+        ],
+        "z_cac": [
+          "batch",
+          4,
+          2048,
+          "frames"
+        ]
+      },
+      "output_shape": {
+        "time_out": [
+          "batch",
+          "Addtime_out_dim_1",
+          "Addtime_out_dim_2",
+          "samples"
+        ],
+        "zout_cac": [
+          "batch",
+          "Addzout_cac_dim_1",
+          "Addzout_cac_dim_2",
+          "Addzout_cac_dim_3",
+          "frames"
+        ]
+      },
+      "torch_ref_checkpoint": "htdemucs_ft",
+      "max_abs_err": 3.9969124794006348,
+      "max_rel_err": 7404.612305629979,
+      "precision": "fp32",
+      "coreml_ep_supported": false,
+      "cpu_fallback_ops": [],
+      "optimized_cache": "v0/build/models/ort_cache/htdemucs_ft/htdemucs_ft.optimized.onnx",
+      "notes": "external STFT/iSTFT \u2014 caller must drive n_fft=4096 hop=1024 hann center=True reflect onesided. See stemforge._vendor.demucs_patched.HTDemucs.forward_from_spec",
+      "stft_params": {
+        "n_fft": 4096,
+        "hop_length": 1024,
+        "window": "hann",
+        "center": true,
+        "pad_mode": "reflect",
+        "normalized": false,
+        "onesided": true,
+        "expected_input_sr": 44100,
+        "expected_channels": 2
+      },
+      "coreml_latency_sec": null,
+      "cpu_latency_sec": 2.0095,
+      "bag_head_index": 2,
+      "bag_size": 4
+    },
+    "htdemucs_ft_head3": {
+      "path": "v0/build/models/htdemucs_ft/htdemucs_ft.head3.onnx",
+      "sha256": "0b60cfb546b15a602ee4576525224cae67547d8b34204e9018fa020979888fa8",
+      "size": 168682617,
+      "input_shape": {
+        "mix": [
+          "batch",
+          2,
+          "samples"
+        ],
+        "z_cac": [
+          "batch",
+          4,
+          2048,
+          "frames"
+        ]
+      },
+      "output_shape": {
+        "time_out": [
+          "batch",
+          "Addtime_out_dim_1",
+          "Addtime_out_dim_2",
+          "samples"
+        ],
+        "zout_cac": [
+          "batch",
+          "Addzout_cac_dim_1",
+          "Addzout_cac_dim_2",
+          "Addzout_cac_dim_3",
+          "frames"
+        ]
+      },
+      "torch_ref_checkpoint": "htdemucs_ft",
+      "max_abs_err": 3.9969124794006348,
+      "max_rel_err": 7404.612305629979,
+      "precision": "fp32",
+      "coreml_ep_supported": false,
+      "cpu_fallback_ops": [],
+      "optimized_cache": "v0/build/models/ort_cache/htdemucs_ft/htdemucs_ft.optimized.onnx",
+      "notes": "external STFT/iSTFT \u2014 caller must drive n_fft=4096 hop=1024 hann center=True reflect onesided. See stemforge._vendor.demucs_patched.HTDemucs.forward_from_spec",
+      "stft_params": {
+        "n_fft": 4096,
+        "hop_length": 1024,
+        "window": "hann",
+        "center": true,
+        "pad_mode": "reflect",
+        "normalized": false,
+        "onesided": true,
+        "expected_input_sr": 44100,
+        "expected_channels": 2
+      },
+      "coreml_latency_sec": null,
+      "cpu_latency_sec": 2.0095,
+      "bag_head_index": 3,
+      "bag_size": 4
     }
   }
 }
