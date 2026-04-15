@@ -1,15 +1,20 @@
 {
-  "completed_at": "2026-04-15T07:38:00Z",
-  "branch": "feat/v0-A-validator",
+  "completed_at": "2026-04-15T09:20:00Z",
+  "branch": "feat/v0-coreml-opt",
+  "supersedes": "feat/v0-A-validator@done.flag",
   "binary_path": "v0/build/stemforge-native",
   "binary_arch": "arm64",
   "universal2": false,
   "codesigned": "ad-hoc",
-  "coreml_ep_active": false,
-  "coreml_nodes_assigned": 0,
-  "coreml_nodes_total": null,
-  "demucs_latency_sec_per_10s_input": 18.44,
-  "tests_pass": true,
+  "coreml_ep_active": true,
+  "coreml_partitions": 32,
+  "coreml_nodes_assigned": 1446,
+  "coreml_nodes_total": 1500,
+  "coreml_partition_pct": 96.4,
+  "demucs_per_segment_latency_cpu_sec": 2.20,
+  "demucs_per_segment_latency_coreml_sec": 0.544,
+  "demucs_per_segment_speedup_vs_cpu_x": 4.04,
+  "tests_pass": "warm-cache htdemucs and htdemucs_6s meet ≤12s target; htdemucs_ft cold regresses pending session-persistence (v2)",
   "stems_json_schema_compat": true,
   "ndjson_schema_valid": true,
   "validation": {
@@ -17,27 +22,38 @@
     "fixture_sr": 44100,
     "fixture_duration_sec": 10.0,
     "fixture_channels": 2,
-    "end_to_end_runs": 2,
-    "wall_clock_total_sec": [23.88, 22.11],
+    "wall_clock_sec": {
+      "htdemucs_ft_cold": 215.25,
+      "htdemucs_ft_warm": 50.33,
+      "htdemucs_fast_cold": 52.90,
+      "htdemucs_fast_warm": 10.92,
+      "htdemucs_6s_cold": 31.87,
+      "htdemucs_6s_warm": 7.31
+    },
     "ndjson_events_emitted": 21,
-    "ndjson_events_valid": 21,
-    "output_dir": "/tmp/sf_out_validator/short_loop",
-    "stems_written": ["drums.wav", "bass.wav", "other.wav", "vocals.wav"],
-    "stems_json_present": true,
+    "output_dir_examples": ["/tmp/sf_coreml_test_new/short_loop",
+                            "/tmp/sf_fast_warm/short_loop",
+                            "/tmp/sf_6s_warm/short_loop"],
+    "stems_written_default_variant": ["drums.wav", "bass.wav",
+                                       "other.wav", "vocals.wav"],
+    "stems_written_6s_variant": ["drums.wav", "bass.wav", "other.wav",
+                                 "vocals.wav", "guitar.wav", "piano.wav"],
     "bpm_detected": 117.45,
     "beats_detected": 20,
-    "per_stage_sec": {
-      "loading_model_demucs": 3.32,
-      "demucs_inference_segment1": 8.80,
-      "demucs_inference_segment2": 9.64,
-      "demucs_inference_total": 18.44,
-      "write_stems": 0.02,
-      "beat_tracking": 0.05,
-      "slicing_all_stems": 0.04,
-      "writing_manifest": 0.001
-    },
-    "coreml_notes": "Manifest declares coreml_ep_supported=false for all models (htdemucs, htdemucs_ft_head0..3, htdemucs_6s, ast_audioset, clap_htsat_unfused) per A0's node-assignment heuristics. DemucsRunner.build_session() gates CoreML append on entry.coreml_ep_supported, so CoreML EP was not appended at runtime. All inference ran on CPU EP. This is the intended design per sf_demucs.hpp:145. Future work: re-probe CoreML at runtime with force_cpu_only=0 + entry.coreml_ep_supported flag flip and measure node residency via VERBOSE ORT logs.",
-    "ort_warnings": 4,
-    "ort_warning_msg": "NchwcTransformer environment-bound optimized cache notice (expected, not an error)"
-  }
+    "coreml_runtime_log_evidence": "CoreMLExecutionProvider::GetCapability, number of partitions supported by CoreML: 32 number of nodes in the graph: 1500 number of nodes supported by CoreML: 1446",
+    "parity_check": {
+      "dynamic_vs_static_onnx_residual_rms_dbfs": -151.0,
+      "coreml_vs_cpu_reference_residual_rms_dbfs": -113.0,
+      "threshold_inaudibility_dbfs": -60.0
+    }
+  },
+  "manifest_flag_flips": {
+    "htdemucs": "coreml_ep_supported: false → true",
+    "htdemucs_6s": "coreml_ep_supported: false → true",
+    "htdemucs_ft_head0": "coreml_ep_supported: false → true",
+    "htdemucs_ft_head1": "coreml_ep_supported: false → true",
+    "htdemucs_ft_head2": "coreml_ep_supported: false → true",
+    "htdemucs_ft_head3": "coreml_ep_supported: false → true"
+  },
+  "report": "v0/state/A/coreml_report.md"
 }

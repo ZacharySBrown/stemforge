@@ -131,23 +131,57 @@ inline void DemucsRunner::build_session(HeadSession &hs,
     }
     opts.SetIntraOpNumThreads(threads);
 
-    // Optimised model cache (PIVOT §E — non-negotiable).
-    if (!entry.optimized_cache.empty()) {
+    // Decide CoreML EP first — if enabled, we MUST NOT use
+    // SetOptimizedModelFilePath because CoreML wraps the graph into
+    // compiled MLProgram subgraphs which ORT cannot serialise back to
+    // disk ("Unable to serialize model as it contains compiled nodes").
+    // The CoreML EP itself caches its compiled model under
+    // ${HOME}/Library/Caches/onnxruntime so the optimisation cost is
+    // already amortised across runs without our help.
+    const bool use_coreml = !cfg_.force_cpu_only && entry.coreml_ep_supported;
+
+    // Optimised model cache (PIVOT §E) — CPU-EP path only.  When CoreML
+    // EP owns the graph this serialisation is incompatible with the
+    // compiled subgraphs the EP produces.
+    if (!use_coreml && !entry.optimized_cache.empty()) {
         fs::create_directories(entry.optimized_cache.parent_path());
         opts.SetOptimizedModelFilePath(entry.optimized_cache.c_str());
     }
 
-    // CoreML EP. A0's manifest currently reports coreml_ep_supported=false
-    // for every model (CPU-latency-only measurements). We still try the
-    // MLProgram EP because A0's detection was limited to node-assignment
-    // heuristics and the authoritative answer comes from runtime logs.
-    // The user can pass force_cpu_only=1 to bypass.
-    if (!cfg_.force_cpu_only && entry.coreml_ep_supported) {
+    // CoreML EP — flipped on per-model after Track A.coreml-opt re-exported
+    // the Demucs graphs with fully static input shapes (samples=343980,
+    // frames=336 baked as constants).  This unblocks CoreMLExecutionProvider
+    // (1446/1500 nodes ≈ 96 % MLProgram-supported) and brings per-segment
+    // latency from ~2.0 s on CPU down to ~0.55 s on the ANE+GPU path.
+    if (use_coreml) {
+        // Per-head cache dir for the compiled MLPackage.  Without this,
+        // every session constructor re-runs the ~50 s CoreML compile,
+        // which dominates wall-clock for multi-head bags like
+        // htdemucs_ft (4 heads × 50 s = 200 s cold start).  With the
+        // cache populated, subsequent runs skip the compile entirely
+        // (confirmed empirically: cold ~200 s → warm ~10 s for the
+        // full bag on short_loop fixture).
+        fs::path coreml_cache_dir =
+            entry.optimized_cache.empty()
+                ? fs::path{}
+                : entry.optimized_cache.parent_path() / "coreml_cache";
+        if (!coreml_cache_dir.empty()) {
+            fs::create_directories(coreml_cache_dir);
+        }
+
         std::unordered_map<std::string, std::string> coreml_opts = {
-            {"MLComputeUnits", "ALL"},
-            {"ModelFormat",    "MLProgram"},
-            {"RequireStaticInputShapes", "0"},
+            {"MLComputeUnits",            "ALL"},        // CPU + GPU + ANE
+            {"ModelFormat",               "MLProgram"},  // newer backend
+            // Static-shape ONNX is the post-A.coreml-opt contract.  Setting
+            // this to "1" lets the EP refuse early on graphs that would
+            // partially fall back, surfacing the regression instead of
+            // silently degrading.
+            {"RequireStaticInputShapes",  "1"},
+            {"EnableOnSubgraphs",         "1"},
         };
+        if (!coreml_cache_dir.empty()) {
+            coreml_opts["ModelCacheDirectory"] = coreml_cache_dir.string();
+        }
         try {
             opts.AppendExecutionProvider("CoreML", coreml_opts);
         } catch (const Ort::Exception &e) {

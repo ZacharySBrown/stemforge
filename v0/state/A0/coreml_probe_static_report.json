@@ -1,0 +1,128 @@
+[
+  {
+    "label": "htdemucs_dynamic::cpu_only",
+    "onnx_path": "/Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a74b3cc1/v0/build/models/htdemucs/htdemucs.onnx",
+    "options": {},
+    "providers_resolved": [
+      "CPUExecutionProvider"
+    ],
+    "coreml_loaded": false,
+    "load_error": null,
+    "forward_error": null,
+    "n_nodes_total": 4244,
+    "n_nodes_coreml": 0,
+    "n_nodes_cpu": 0,
+    "coreml_partition_pct": 0.0,
+    "runs": 5,
+    "warmup_sec": 5.9506,
+    "mean_latency_sec": 2.0793,
+    "p50_latency_sec": 2.0028,
+    "p95_latency_sec": 2.3772,
+    "notes": null
+  },
+  {
+    "label": "htdemucs_dynamic::coreml_mlprogram_all_dynamic",
+    "onnx_path": "/Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a74b3cc1/v0/build/models/htdemucs/htdemucs.onnx",
+    "options": {
+      "MLComputeUnits": "ALL",
+      "ModelFormat": "MLProgram",
+      "RequireStaticInputShapes": "0",
+      "EnableOnSubgraphs": "1"
+    },
+    "providers_resolved": [],
+    "coreml_loaded": false,
+    "load_error": "Fail: [ONNXRuntimeError] : 1 : FAIL : Failed to create MLModel, error: Failed to build the model execution plan using a model architecture file '/private/var/folders/6g/cl6l69gn1hnfvdbjjbflwlzc0000gn/T/onnxruntime-51510A05-4ABA-4B6C-A860-42AA77EF1203-23110-00000C0CD26373CB.mlmodelc/model.mil' with error code: -7.",
+    "forward_error": null,
+    "n_nodes_total": null,
+    "n_nodes_coreml": null,
+    "n_nodes_cpu": null,
+    "coreml_partition_pct": null,
+    "runs": 0,
+    "warmup_sec": null,
+    "mean_latency_sec": null,
+    "p50_latency_sec": null,
+    "p95_latency_sec": null,
+    "notes": null
+  },
+  {
+    "label": "htdemucs_dynamic::coreml_mlprogram_all_static",
+    "onnx_path": "/Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a74b3cc1/v0/build/models/htdemucs/htdemucs.onnx",
+    "options": {
+      "MLComputeUnits": "ALL",
+      "ModelFormat": "MLProgram",
+      "RequireStaticInputShapes": "1",
+      "EnableOnSubgraphs": "1"
+    },
+    "providers_resolved": [
+      "CoreMLExecutionProvider",
+      "CPUExecutionProvider"
+    ],
+    "coreml_loaded": true,
+    "load_error": null,
+    "forward_error": null,
+    "n_nodes_total": 4244,
+    "n_nodes_coreml": 0,
+    "n_nodes_cpu": 0,
+    "coreml_partition_pct": 0.0,
+    "runs": 5,
+    "warmup_sec": 5.9387,
+    "mean_latency_sec": 1.9686,
+    "p50_latency_sec": 1.9653,
+    "p95_latency_sec": 1.9937,
+    "notes": null
+  },
+  {
+    "label": "htdemucs_dynamic::coreml_mlprogram_ane_only",
+    "onnx_path": "/Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a74b3cc1/v0/build/models/htdemucs/htdemucs.onnx",
+    "options": {
+      "MLComputeUnits": "CPUAndNeuralEngine",
+      "ModelFormat": "MLProgram",
+      "RequireStaticInputShapes": "1",
+      "EnableOnSubgraphs": "1"
+    },
+    "providers_resolved": [
+      "CoreMLExecutionProvider",
+      "CPUExecutionProvider"
+    ],
+    "coreml_loaded": true,
+    "load_error": null,
+    "forward_error": null,
+    "n_nodes_total": 4244,
+    "n_nodes_coreml": 0,
+    "n_nodes_cpu": 0,
+    "coreml_partition_pct": 0.0,
+    "runs": 5,
+    "warmup_sec": 6.0204,
+    "mean_latency_sec": 1.9809,
+    "p50_latency_sec": 1.9708,
+    "p95_latency_sec": 2.0135,
+    "notes": null
+  },
+  {
+    "label": "htdemucs_dynamic::coreml_neuralnetwork_all",
+    "onnx_path": "/Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a74b3cc1/v0/build/models/htdemucs/htdemucs.onnx",
+    "options": {
+      "MLComputeUnits": "ALL",
+      "ModelFormat": "NeuralNetwork",
+      "RequireStaticInputShapes": "1",
+      "EnableOnSubgraphs": "1"
+    },
+    "providers_resolved": [
+      "CoreMLExecutionProvider",
+      "CPUExecutionProvider"
+    ],
+    "coreml_loaded": true,
+    "load_error": null,
+    "forward_error": null,
+    "n_nodes_total": 4244,
+    "n_nodes_coreml": 0,
+    "n_nodes_cpu": 0,
+    "coreml_partition_pct": 0.0,
+    "runs": 5,
+    "warmup_sec": 5.794,
+    "mean_latency_sec": 1.8967,
+    "p50_latency_sec": 1.8999,
+    "p95_latency_sec": 1.9548,
+    "notes": null
+  }
+]
