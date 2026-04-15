@@ -100,5 +100,55 @@
     "end_to_end_warm_htdemucs": 10.92,
     "baseline_end_to_end_cpu_htdemucs_ft": 22.11
   },
-  "notes": "End-to-end validated on v0/tests/fixtures/short_loop.wav. CoreML EP IS ACTIVE — ORT logs confirm 1446/1500 nodes assigned to CoreMLExecutionProvider for every Demucs head. Per-segment Demucs inference drops 4x. Cold-cache wall-clock regresses for htdemucs_ft because each of 4 heads pays ~50 s compile cost; warm-cache wall-clock for htdemucs_ft is 50 s (session-setup dominated) vs 22 s CPU baseline — known trade-off for v0 CLI, inverts for v2 M4L where sessions persist. Single-head variants already meet the target. See v0/state/A/coreml_report.md for full analysis."
+  "notes": "End-to-end validated on v0/tests/fixtures/short_loop.wav. CoreML EP IS ACTIVE — ORT logs confirm 1446/1500 nodes assigned to CoreMLExecutionProvider for every Demucs head. Per-segment Demucs inference drops 4x. Cold-cache wall-clock regresses for htdemucs_ft because each of 4 heads pays ~50 s compile cost; warm-cache wall-clock for htdemucs_ft is 50 s (session-setup dominated) vs 22 s CPU baseline — known trade-off for v0 CLI, inverts for v2 M4L where sessions persist. Single-head variants already meet the target. See v0/state/A/coreml_report.md for full analysis.",
+
+  "fusion_followup": {
+    "status": "aborted",
+    "branch": "feat/v0-demucs-ft-fused",
+    "date": "2026-04-15",
+    "report": "v0/state/A/fusion_aborted.md",
+    "verbose_log": "v0/state/A/fusion_coreml_verbose.log",
+    "artifacts": {
+      "htdemucs_ft_fused.onnx": {
+        "path": "v0/build/models/htdemucs_ft/htdemucs_ft_fused.onnx",
+        "data_path": "v0/build/models/htdemucs_ft/htdemucs_ft_fused.onnx.data",
+        "onnx_body_bytes": 25834724,
+        "external_data_bytes": 671522816,
+        "total_bytes": 697357540,
+        "sha256": "4a6f1d7861a83bd2162137fe67b353665b38a71b60c8a2a9c3090ec8e1b17621",
+        "ships_in_manifest": false,
+        "notes": "built and on disk; NOT added to manifest until CoreML MLProgram compile is fixed"
+      }
+    },
+    "scripts": [
+      "v0/src/A0/fusion_smoke.py",
+      "v0/src/A0/fuse_ft.py",
+      "v0/src/A0/fusion_parity.py"
+    ],
+    "coverage": {
+      "total_nodes_fused_4head": 5944,
+      "coreml_supported_nodes_fused_4head": 5728,
+      "coreml_partitions_fused_4head": 32,
+      "coreml_partition_pct_fused_4head": 96.4,
+      "gate_coverage_ge_90pct": "PASS"
+    },
+    "parity_vs_unfused_bag_cpu": {
+      "max_abs_time_branch": 0.0,
+      "max_abs_zcac_branch": 0.0,
+      "residual_rms_dbfs_time": -240.0,
+      "gate_rms_le_minus_60_dbfs": "PASS (bit-exact)"
+    },
+    "cpu_inference_sec_per_segment_fused": 7.60,
+    "cpu_inference_sec_per_segment_unfused_bag_sequential": 10.44,
+    "cpu_fusion_speedup_x": 1.37,
+    "coreml_mlprogram_compile": {
+      "result": "FAIL",
+      "error": "SystemError : 20 (ENOTDIR)",
+      "fallback_behavior": "ORT silently falls back to CPUExecutionProvider",
+      "gate_coreml_loaded": "FAIL"
+    },
+    "coreml_latency_sec_per_segment_fused": null,
+    "coreml_warm_wall_clock_sec_fused": null,
+    "recommendation": "See fusion_aborted.md §Recommendation. Three options: (1) keep unfused bag (status quo, accept 50 s warm for v0 CLI), (2) swap default_variant to htdemucs_6s (7.3 s warm, 6 stems, quality tradeoff for user), (3) debug CoreML MLProgram compile on fused graph (unlocks ~10-12 s warm if fixable). No binary or manifest defaults were changed in this session."
+  }
 }
