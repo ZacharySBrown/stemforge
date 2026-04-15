@@ -1,0 +1,41 @@
+<Eq8 Id="0">
+  <LomId Value="0" />
+  <On>
+    <LomId Value="0" />
+    <Manual Value="true" />
+    <AutomationTarget Id="0" />
+    <MidiCcOnOffThresholds>
+      <Min Value="64" />
+      <Max Value="127" />
+    </MidiCcOnOffThresholds>
+  </On>
+  <UserDisplayName Value="" />
+  <GlobalGain>
+    <LomId Value="0" />
+    <Manual Value="0" />
+    <AutomationTarget Id="0" />
+    <ModulationTarget Id="0" />
+    <MidiControllerRange>
+      <Min Value="-15" />
+      <Max Value="15" />
+    </MidiControllerRange>
+  </GlobalGain>
+  <Oversampling>
+    <LomId Value="0" />
+    <Manual Value="false" />
+    <AutomationTarget Id="0" />
+    <MidiCcOnOffThresholds>
+      <Min Value="64" />
+      <Max Value="127" />
+    </MidiCcOnOffThresholds>
+  </Oversampling>
+  <Mode>
+    <LomId Value="0" />
+    <Manual Value="0" />
+    <AutomationTarget Id="0" />
+    <MidiControllerRange>
+      <Min Value="0" />
+      <Max Value="1" />
+    </MidiControllerRange>
+  </Mode>
+</Eq8>

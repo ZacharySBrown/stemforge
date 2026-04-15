@@ -1,0 +1,109 @@
+<Compressor Id="0">
+  <LomId Value="0" />
+  <On>
+    <LomId Value="0" />
+    <Manual Value="true" />
+    <AutomationTarget Id="0" />
+    <MidiCcOnOffThresholds>
+      <Min Value="64" />
+      <Max Value="127" />
+    </MidiCcOnOffThresholds>
+  </On>
+  <UserDisplayName Value="" />
+  <Threshold>
+    <LomId Value="0" />
+    <Manual Value="-18" />
+    <AutomationTarget Id="0" />
+    <ModulationTarget Id="0" />
+    <MidiControllerRange>
+      <Min Value="-70" />
+      <Max Value="0" />
+    </MidiControllerRange>
+  </Threshold>
+  <Ratio>
+    <LomId Value="0" />
+    <Manual Value="4" />
+    <AutomationTarget Id="0" />
+    <ModulationTarget Id="0" />
+    <MidiControllerRange>
+      <Min Value="1" />
+      <Max Value="100" />
+    </MidiControllerRange>
+  </Ratio>
+  <Attack>
+    <LomId Value="0" />
+    <Manual Value="5" />
+    <AutomationTarget Id="0" />
+    <ModulationTarget Id="0" />
+    <MidiControllerRange>
+      <Min Value="0.009999999776" />
+      <Max Value="500" />
+    </MidiControllerRange>
+  </Attack>
+  <Release>
+    <LomId Value="0" />
+    <Manual Value="50" />
+    <AutomationTarget Id="0" />
+    <ModulationTarget Id="0" />
+    <MidiControllerRange>
+      <Min Value="0.9999999776" />
+      <Max Value="3000" />
+    </MidiControllerRange>
+  </Release>
+  <AutoReleaseControlOnOff>
+    <LomId Value="0" />
+    <Manual Value="false" />
+    <AutomationTarget Id="0" />
+    <MidiCcOnOffThresholds>
+      <Min Value="64" />
+      <Max Value="127" />
+    </MidiCcOnOffThresholds>
+  </AutoReleaseControlOnOff>
+  <Model>
+    <LomId Value="0" />
+    <Manual Value="2" />
+    <AutomationTarget Id="0" />
+    <MidiControllerRange>
+      <Min Value="0" />
+      <Max Value="2" />
+    </MidiControllerRange>
+  </Model>
+  <LegacyModel>
+    <LomId Value="0" />
+    <Manual Value="false" />
+    <AutomationTarget Id="0" />
+    <MidiCcOnOffThresholds>
+      <Min Value="64" />
+      <Max Value="127" />
+    </MidiCcOnOffThresholds>
+  </LegacyModel>
+  <Knee>
+    <LomId Value="0" />
+    <Manual Value="2.5" />
+    <AutomationTarget Id="0" />
+    <ModulationTarget Id="0" />
+    <MidiControllerRange>
+      <Min Value="0" />
+      <Max Value="10" />
+    </MidiControllerRange>
+  </Knee>
+  <GainCompensation>
+    <LomId Value="0" />
+    <Manual Value="true" />
+    <AutomationTarget Id="0" />
+    <MidiCcOnOffThresholds>
+      <Min Value="64" />
+      <Max Value="127" />
+    </MidiCcOnOffThresholds>
+  </GainCompensation>
+  <DryWet>
+    <LomId Value="0" />
+    <Manual Value="1" />
+    <AutomationTarget Id="0" />
+    <ModulationTarget Id="0" />
+    <MidiControllerRange>
+      <Min Value="0" />
+      <Max Value="1" />
+    </MidiControllerRange>
+  </DryWet>
+</Compressor>

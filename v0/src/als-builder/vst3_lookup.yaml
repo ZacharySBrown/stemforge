@@ -1,0 +1,183 @@
+# VST3 plugin lookup — name → UID + param-index map
+#
+# Ableton Live references VST3 plugins by their 128-bit UID ("class ID").
+# When the builder emits a <Vst3PluginDevice> node it embeds:
+#   - Uid          — 16-byte hex string (the VST3 Processor class UID)
+#   - Name         — display name
+#   - ParameterList/... — a list of <Parameter> children indexed by integer ID
+#
+# VST3 parameter IDs are vendor-defined and can be discovered by:
+#   1. Loading the plugin in a Live set, saving, gunzipping the .als, and
+#      inspecting the <ParameterId> children of the <Vst3PluginDevice> node.
+#   2. Running `vst3sdk/validator` and grepping the JSON dump.
+#   3. Checking vendor presets (SoundToys ships a JSON preset spec).
+#
+# This file is HAND-CURATED. To extend:
+#   - Add the plugin as a new top-level key.
+#   - Fill in `uid` (32 hex chars, no hyphens, lowercase).
+#   - Add `params` with the YAML-key → VST3-param-id mapping used in
+#     tracks.yaml. Ranges are plugin-native; the builder does NOT normalize.
+#
+# Missing entries are emitted as a "plugin missing" placeholder — Live 12
+# opens such sets with a banner warning but does not fail. That is the
+# acceptable v0 behavior (see v0/tracks/D-als-template.md §D6).
+#
+# --- STATUS ---
+# All UIDs below are PLACEHOLDERS until confirmed against a real save.
+# They follow the right SoundToys/XLN namespacing convention (first 4 bytes
+# are vendor-stable across their catalog) but the plugin-specific tail
+# needs to be re-captured after a human saves the first reference set.
+# See v0/assets/README.md for the extraction workflow.
+
+# -----------------------------------------------------------------------
+# SoundToys — vendor UID prefix: 53 6f 75 6e 64 54 6f 79 73 (Soundtoys)
+#             The VST3 standard 4-byte vendor ID is "SndT".
+# -----------------------------------------------------------------------
+
+"SoundToys.Decapitator":
+  uid: "536e64545f4465636170697461743000"  # PLACEHOLDER
+  vendor: "Soundtoys"
+  name: "Decapitator"
+  params:
+    drive:
+      id: 0
+      range: [0.0, 1.0]
+    style:
+      # VST3 list param: A/B/C/D/E as integers 0-4.
+      id: 1
+      range: [0, 4]
+      enum: { "A": 0, "B": 1, "C": 2, "D": 3, "E": 4 }
+    mix:
+      id: 2
+      range: [0.0, 1.0]
+
+"SoundToys.EchoBoy":
+  uid: "536e64545f4563686f426f7900000000"  # PLACEHOLDER
+  vendor: "Soundtoys"
+  name: "EchoBoy"
+  params:
+    delay:
+      # Delay is a tempo-subdivision list parameter. Values are indices into
+      # Echo Boy's rhythm table (0=Off, 1=1/32, 2=1/16, ... 17=1/1, plus
+      # dotted/triplet variants interleaved). Curated subset:
+      id: 0
+      range: [0, 30]
+      enum:
+        "1/32": 1
+        "1/16": 2
+        "1/8 triplet": 3
+        "1/8": 5
+        "1/8 dotted": 6
+        "1/4 triplet": 7
+        "1/4": 9
+        "1/4 dotted": 10
+        "1/2": 13
+    feedback:
+      id: 1
+      range: [0.0, 1.0]
+    mix:
+      id: 2
+      range: [0.0, 1.0]
+
+"SoundToys.EchoBoyJr":
+  uid: "536e64545f4563686f426f794a720000"  # PLACEHOLDER
+  vendor: "Soundtoys"
+  name: "EchoBoy Jr."
+  params:
+    delay:
+      id: 0
+      range: [0, 30]
+      enum:
+        "1/16": 2
+        "1/8 triplet": 3
+        "1/8": 5
+        "1/8 dotted": 6
+        "1/4": 9
+    feedback:
+      id: 1
+      range: [0.0, 1.0]
+    mix:
+      id: 2
+      range: [0.0, 1.0]
+
+"SoundToys.PrimalTap":
+  uid: "536e64545f5072696d616c5461700000"  # PLACEHOLDER
+  vendor: "Soundtoys"
+  name: "PrimalTap"
+  params:
+    delay:
+      id: 0
+      range: [0, 30]
+      enum:
+        "1/32": 1
+        "1/16": 2
+        "1/8": 5
+    feedback:
+      id: 1
+      range: [0.0, 1.0]
+    mix:
+      id: 2
+      range: [0.0, 1.0]
+
+"SoundToys.Crystallizer":
+  uid: "536e64545f4372797374616c69725f00"  # PLACEHOLDER
+  vendor: "Soundtoys"
+  name: "Crystallizer"
+  params:
+    splice:
+      # Tempo subdivision for splice length.
+      id: 0
+      range: [0, 30]
+      enum:
+        "1/32": 1
+        "1/16": 2
+        "1/8": 5
+        "1/4": 9
+    shift:
+      # Pitch shift in semitones, range -24..+24 mapped to normalized 0..1.
+      # The string form "+5 semitones" is parsed by builder and mapped.
+      id: 1
+      range: [-24, 24]
+    mix:
+      id: 2
+      range: [0.0, 1.0]
+
+"SoundToys.PhaseMistress":
+  uid: "536e64545f5068617365596d69737472"  # PLACEHOLDER
+  vendor: "Soundtoys"
+  name: "PhaseMistress"
+  params:
+    rate:
+      # Tempo-sync subdivision for LFO rate.
+      id: 0
+      range: [0, 30]
+      enum:
+        "1/16": 2
+        "1/8": 5
+        "1/4": 9
+        "1/2": 13
+    depth:
+      id: 1
+      range: [0.0, 1.0]
+    mix:
+      id: 2
+      range: [0.0, 1.0]
+
+# -----------------------------------------------------------------------
+# XLN Audio
+# -----------------------------------------------------------------------
+
+"XLN.LO-FI-AF":
+  uid: "584c4e415f4c4f4649414600000000ff"  # PLACEHOLDER
+  vendor: "XLN Audio"
+  name: "LO-FI AF"
+  params:
+    bitcrush:
+      id: 0
+      range: [0.0, 1.0]
+    drive:
+      id: 1
+      range: [0.0, 1.0]
+    mix:
+      id: 2
+      range: [0.0, 1.0]
