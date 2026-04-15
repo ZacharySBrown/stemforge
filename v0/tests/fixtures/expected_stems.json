@@ -1,0 +1,19 @@
+{
+  "_comment": "Structural template for stems.json emitted by stemforge-native. Values are type sentinels (<type>), not actual values — BPM is stochastic and paths are per-run absolute. Derived from v0/src/A/src/sf_manifest.hpp (the C++ writer that mirrors stemforge.manifest.write_manifest()). Track G asserts this shape via test_binary_manifest_schema_compat.",
+  "track_name": "<string>",
+  "source_file": "<string>",
+  "backend": "<string>",
+  "bpm": "<float>",
+  "beat_count": "<int>",
+  "stems": [
+    {
+      "name": "<string>",
+      "wav_path": "<string>",
+      "beats_dir": "<string>",
+      "beat_count": "<int>"
+    }
+  ],
+  "output_dir": "<string>",
+  "pipeline": "<string>",
+  "processed_at": "<string>"
+}
