@@ -1,0 +1,21 @@
+{
+  "track": "A0",
+  "status": "partial",
+  "artifacts": [
+    {
+      "path": "v0/build/models/manifest.json"
+    },
+    {
+      "path": "v0/build/models/ast/ast_audioset.onnx"
+    },
+    {
+      "path": "v0/build/models/clap/clap_htsat_unfused.onnx"
+    }
+  ],
+  "duration_sec": 52.65,
+  "results": {
+    "ast": true,
+    "clap": true,
+    "demucs": false
+  }
+}

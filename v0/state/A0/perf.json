@@ -1,0 +1,348 @@
+{
+  "stages": [
+    {
+      "stage": "ast.export",
+      "seconds": 5.145,
+      "failed": false,
+      "model": "MIT/ast-finetuned-audioset-10-10-0.4593",
+      "ts": "2026-04-15T01:41:16Z"
+    },
+    {
+      "stage": "ast.validate.torch",
+      "seconds": 0.4182,
+      "failed": false,
+      "ts": "2026-04-15T01:41:18Z"
+    },
+    {
+      "stage": "ast.validate.onnx",
+      "seconds": 1.0615,
+      "failed": false,
+      "ts": "2026-04-15T01:41:19Z"
+    },
+    {
+      "stage": "clap.export",
+      "seconds": 1.4047,
+      "failed": true,
+      "model": "laion/clap-htsat-unfused",
+      "ts": "2026-04-15T01:41:37Z"
+    },
+    {
+      "stage": "ast.export",
+      "seconds": 3.945,
+      "failed": false,
+      "model": "MIT/ast-finetuned-audioset-10-10-0.4593",
+      "ts": "2026-04-15T01:45:12Z"
+    },
+    {
+      "stage": "ast.validate.torch",
+      "seconds": 0.4177,
+      "failed": false,
+      "ts": "2026-04-15T01:45:14Z"
+    },
+    {
+      "stage": "ast.validate.onnx",
+      "seconds": 1.1138,
+      "failed": false,
+      "ts": "2026-04-15T01:45:15Z"
+    },
+    {
+      "stage": "ast.validate.torch",
+      "seconds": 0.4112,
+      "failed": false,
+      "ts": "2026-04-15T01:45:16Z"
+    },
+    {
+      "stage": "ast.validate.onnx",
+      "seconds": 1.0336,
+      "failed": false,
+      "ts": "2026-04-15T01:45:17Z"
+    },
+    {
+      "stage": "clap.export",
+      "seconds": 1.6872,
+      "failed": false,
+      "model": "laion/clap-htsat-unfused",
+      "ts": "2026-04-15T01:45:30Z"
+    },
+    {
+      "stage": "clap.validate.torch",
+      "seconds": 0.0668,
+      "failed": false,
+      "ts": "2026-04-15T01:45:33Z"
+    },
+    {
+      "stage": "clap.validate.onnx",
+      "seconds": 0.0797,
+      "failed": false,
+      "ts": "2026-04-15T01:45:33Z"
+    },
+    {
+      "stage": "clap.validate.torch",
+      "seconds": 0.0642,
+      "failed": false,
+      "ts": "2026-04-15T01:45:34Z"
+    },
+    {
+      "stage": "clap.validate.onnx",
+      "seconds": 0.0756,
+      "failed": false,
+      "ts": "2026-04-15T01:45:34Z"
+    },
+    {
+      "stage": "demucs.export.in_graph.dynamo=False",
+      "seconds": 3.5011,
+      "failed": true,
+      "ts": "2026-04-15T01:45:50Z"
+    },
+    {
+      "stage": "demucs.export.in_graph.dynamo=True",
+      "seconds": 1.1917,
+      "failed": true,
+      "ts": "2026-04-15T01:45:51Z"
+    },
+    {
+      "stage": "demucs.export.in_graph.dynamo=False",
+      "seconds": 2.8914,
+      "failed": true,
+      "ts": "2026-04-15T01:45:56Z"
+    },
+    {
+      "stage": "demucs.export.in_graph.dynamo=True",
+      "seconds": 0.5013,
+      "failed": true,
+      "ts": "2026-04-15T01:45:56Z"
+    },
+    {
+      "stage": "demucs.export.in_graph.dynamo=False",
+      "seconds": 3.1938,
+      "failed": true,
+      "ts": "2026-04-15T01:46:00Z"
+    },
+    {
+      "stage": "demucs.export.in_graph.dynamo=True",
+      "seconds": 0.4959,
+      "failed": true,
+      "ts": "2026-04-15T01:46:00Z"
+    },
+    {
+      "stage": "clap.validate.torch",
+      "seconds": 0.2304,
+      "failed": false,
+      "ts": "2026-04-15T01:46:56Z"
+    },
+    {
+      "stage": "clap.validate.onnx",
+      "seconds": 0.0668,
+      "failed": false,
+      "ts": "2026-04-15T01:46:56Z"
+    },
+    {
+      "stage": "clap.validate.torch",
+      "seconds": 0.053,
+      "failed": false,
+      "ts": "2026-04-15T01:46:58Z"
+    },
+    {
+      "stage": "clap.validate.onnx",
+      "seconds": 0.0677,
+      "failed": false,
+      "ts": "2026-04-15T01:46:58Z"
+    },
+    {
+      "stage": "ast.export",
+      "seconds": 4.3899,
+      "failed": false,
+      "model": "MIT/ast-finetuned-audioset-10-10-0.4593",
+      "ts": "2026-04-15T01:47:12Z"
+    },
+    {
+      "stage": "ast.validate.torch",
+      "seconds": 0.4029,
+      "failed": false,
+      "ts": "2026-04-15T01:47:13Z"
+    },
+    {
+      "stage": "ast.validate.onnx",
+      "seconds": 1.0291,
+      "failed": false,
+      "ts": "2026-04-15T01:47:14Z"
+    },
+    {
+      "stage": "ast.validate.torch",
+      "seconds": 0.4129,
+      "failed": false,
+      "ts": "2026-04-15T01:47:15Z"
+    },
+    {
+      "stage": "ast.validate.onnx",
+      "seconds": 1.12,
+      "failed": false,
+      "ts": "2026-04-15T01:47:16Z"
+    },
+    {
+      "stage": "clap.export",
+      "seconds": 1.5709,
+      "failed": false,
+      "model": "laion/clap-htsat-unfused",
+      "ts": "2026-04-15T01:47:28Z"
+    },
+    {
+      "stage": "clap.validate.torch",
+      "seconds": 0.0523,
+      "failed": false,
+      "ts": "2026-04-15T01:47:31Z"
+    },
+    {
+      "stage": "clap.validate.onnx",
+      "seconds": 0.0718,
+      "failed": false,
+      "ts": "2026-04-15T01:47:31Z"
+    },
+    {
+      "stage": "clap.validate.torch",
+      "seconds": 0.0528,
+      "failed": false,
+      "ts": "2026-04-15T01:47:33Z"
+    },
+    {
+      "stage": "clap.validate.onnx",
+      "seconds": 0.0695,
+      "failed": false,
+      "ts": "2026-04-15T01:47:33Z"
+    },
+    {
+      "stage": "demucs.export.in_graph.dynamo=False",
+      "seconds": 3.2147,
+      "failed": true,
+      "ts": "2026-04-15T01:47:48Z"
+    },
+    {
+      "stage": "demucs.export.in_graph.dynamo=True",
+      "seconds": 1.1841,
+      "failed": true,
+      "ts": "2026-04-15T01:47:49Z"
+    },
+    {
+      "stage": "demucs.export.in_graph.dynamo=False",
+      "seconds": 2.8496,
+      "failed": true,
+      "ts": "2026-04-15T01:47:52Z"
+    },
+    {
+      "stage": "demucs.export.in_graph.dynamo=True",
+      "seconds": 0.5346,
+      "failed": true,
+      "ts": "2026-04-15T01:47:53Z"
+    },
+    {
+      "stage": "demucs.export.in_graph.dynamo=False",
+      "seconds": 2.7871,
+      "failed": true,
+      "ts": "2026-04-15T01:47:56Z"
+    },
+    {
+      "stage": "demucs.export.in_graph.dynamo=True",
+      "seconds": 0.5004,
+      "failed": true,
+      "ts": "2026-04-15T01:47:56Z"
+    },
+    {
+      "stage": "ast.export",
+      "seconds": 4.4503,
+      "failed": false,
+      "model": "MIT/ast-finetuned-audioset-10-10-0.4593",
+      "ts": "2026-04-15T01:49:40Z"
+    },
+    {
+      "stage": "ast.validate.torch",
+      "seconds": 0.4084,
+      "failed": false,
+      "ts": "2026-04-15T01:49:41Z"
+    },
+    {
+      "stage": "ast.validate.onnx",
+      "seconds": 1.0192,
+      "failed": false,
+      "ts": "2026-04-15T01:49:42Z"
+    },
+    {
+      "stage": "ast.validate.torch",
+      "seconds": 0.4117,
+      "failed": false,
+      "ts": "2026-04-15T01:49:43Z"
+    },
+    {
+      "stage": "ast.validate.onnx",
+      "seconds": 1.0848,
+      "failed": false,
+      "ts": "2026-04-15T01:49:44Z"
+    },
+    {
+      "stage": "clap.export",
+      "seconds": 1.6736,
+      "failed": false,
+      "model": "laion/clap-htsat-unfused",
+      "ts": "2026-04-15T01:49:56Z"
+    },
+    {
+      "stage": "clap.validate.torch",
+      "seconds": 0.0523,
+      "failed": false,
+      "ts": "2026-04-15T01:49:59Z"
+    },
+    {
+      "stage": "clap.validate.onnx",
+      "seconds": 0.0719,
+      "failed": false,
+      "ts": "2026-04-15T01:49:59Z"
+    },
+    {
+      "stage": "clap.validate.torch",
+      "seconds": 0.0538,
+      "failed": false,
+      "ts": "2026-04-15T01:50:01Z"
+    },
+    {
+      "stage": "clap.validate.onnx",
+      "seconds": 0.0687,
+      "failed": false,
+      "ts": "2026-04-15T01:50:01Z"
+    },
+    {
+      "stage": "demucs.export.in_graph.dynamo=False",
+      "seconds": 3.5212,
+      "failed": true,
+      "ts": "2026-04-15T01:50:16Z"
+    },
+    {
+      "stage": "demucs.export.in_graph.dynamo=True",
+      "seconds": 1.1814,
+      "failed": true,
+      "ts": "2026-04-15T01:50:17Z"
+    },
+    {
+      "stage": "demucs.export.in_graph.dynamo=False",
+      "seconds": 3.3887,
+      "failed": true,
+      "ts": "2026-04-15T01:50:21Z"
+    },
+    {
+      "stage": "demucs.export.in_graph.dynamo=True",
+      "seconds": 0.4992,
+      "failed": true,
+      "ts": "2026-04-15T01:50:22Z"
+    },
+    {
+      "stage": "demucs.export.in_graph.dynamo=False",
+      "seconds": 3.2915,
+      "failed": true,
+      "ts": "2026-04-15T01:50:25Z"
+    },
+    {
+      "stage": "demucs.export.in_graph.dynamo=True",
+      "seconds": 0.4997,
+      "failed": true,
+      "ts": "2026-04-15T01:50:26Z"
+    }
+  ]
+}

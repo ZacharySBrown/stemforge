@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-04-15T01:50:26Z",
+  "ort_version": "1.24.4",
+  "opset_version": 17,
+  "models": {
+    "ast_audioset": {
+      "path": "v0/build/models/ast/ast_audioset.onnx",
+      "sha256": "fae64b37bdca1d3d21611246bbb8820bd4818682f5196001a484e020e413ba96",
+      "size": 346650903,
+      "input_shape": {
+        "input_values": [
+          "batch_size",
+          1024,
+          128
+        ]
+      },
+      "output_shape": {
+        "logits": [
+          "batch_size",
+          527
+        ]
+      },
+      "torch_ref_checkpoint": "MIT/ast-finetuned-audioset-10-10-0.4593",
+      "max_abs_err": 2.4e-05,
+      "max_rel_err": 0.0,
+      "precision": "fp32",
+      "coreml_ep_supported": false,
+      "cpu_fallback_ops": [],
+      "optimized_cache": "v0/build/models/ort_cache/ast_audioset/ast_audioset.optimized.onnx",
+      "notes": "audio classifier; top-5 labels must match. cpu_lat=1.0552s coreml_lat=Nones"
+    },
+    "clap_htsat_unfused": {
+      "path": "v0/build/models/clap/clap_htsat_unfused.onnx",
+      "sha256": "e1d9a836601157e6a367bb4f8a70a020486321ac3a08b9af7c61c9c92465f93a",
+      "size": 117276117,
+      "input_shape": {
+        "input_features": [
+          "batch",
+          1,
+          1001,
+          64
+        ]
+      },
+      "output_shape": {
+        "audio_embed": [
+          "Divaudio_embed_dim_0",
+          "Divaudio_embed_dim_1"
+        ]
+      },
+      "torch_ref_checkpoint": "laion/clap-htsat-unfused",
+      "max_abs_err": 0.0,
+      "max_rel_err": 0.0,
+      "precision": "fp32",
+      "coreml_ep_supported": false,
+      "cpu_fallback_ops": [],
+      "optimized_cache": "v0/build/models/ort_cache/clap_htsat_unfused/clap_htsat_unfused.optimized.onnx",
+      "notes": "audio branch only; genre text embeddings baked into clap_genre_embeddings.json. cpu_lat=0.1004s coreml_lat=Nones"
+    }
+  }
+}

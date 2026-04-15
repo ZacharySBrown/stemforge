@@ -10,3 +10,14 @@ build/
 *.flac
 .DS_Store
 test_musicai_output/
+
+# v0 build tree — ONNX weights live here (large binary artifacts).
+# The build/ glob above already excludes them; explicit rules below
+# ensure the manifest + human-readable metadata are tracked even when
+# the weights themselves are not.
+v0/build/**
+!v0/build/
+!v0/build/README.md
+!v0/build/models/
+!v0/build/models/manifest.json
+!v0/build/models/clap_genre_embeddings.json
