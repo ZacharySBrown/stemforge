@@ -1,0 +1,10 @@
+# Vendored ONNX Runtime release tarball — fetched by build-native.sh.
+vendor/onnxruntime-osx-*
+# CMake build dirs.
+build-test/
+build-*/
+
+# KissFFT and nlohmann_json.hpp ARE committed (small, header-only) so
+# the build doesn't require network access past the ORT fetch.
+!vendor/kissfft/
+!vendor/nlohmann_json.hpp

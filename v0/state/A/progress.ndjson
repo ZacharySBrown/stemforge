@@ -1,0 +1,10 @@
+{"ts":"2026-04-15T02:36:00Z","phase":"startup","pct":0,"message":"worktree rebased onto feat/harness-patterns; branch feat/v0-A-native created"}
+{"ts":"2026-04-15T02:38:00Z","phase":"planning","pct":5,"message":"read PIVOT/SHARED/track-brief; confirmed A0 manifest but .onnx files missing"}
+{"ts":"2026-04-15T02:42:00Z","phase":"vendoring","pct":15,"message":"downloaded ONNX Runtime 1.24.4 arm64 + nlohmann/json 3.11.3 + KissFFT 131.1.0"}
+{"ts":"2026-04-15T02:48:00Z","phase":"designing","pct":25,"message":"authored frozen C ABI header stemforge.h"}
+{"ts":"2026-04-15T03:00:00Z","phase":"implementing","pct":60,"message":"libstemforge modules: ndjson, manifest, wav (AudioToolbox), stft (kissfft), beat (mel+Ellis DP), slicer, model_manifest (CommonCrypto sha256), demucs runner, sf_lib orchestration"}
+{"ts":"2026-04-15T03:08:00Z","phase":"implementing","pct":75,"message":"CLI wrapper main.cpp (<200 LOC per PIVOT §A); CMake + build script; entitlements.plist"}
+{"ts":"2026-04-15T03:12:00Z","phase":"building","pct":85,"message":"cmake configure + build clean; 13 unit tests compiled"}
+{"ts":"2026-04-15T03:14:00Z","phase":"testing","pct":92,"message":"13/13 unit tests pass; STFT round-trip SNR=120.7 dB; NDJSON schema coverage complete"}
+{"ts":"2026-04-15T03:17:00Z","phase":"signing","pct":96,"message":"install_name_tool + ad-hoc codesign with hardened runtime; binary runs, emits schema-valid NDJSON on error paths"}
+{"ts":"2026-04-15T03:19:00Z","phase":"blocked","pct":100,"message":"A0 .onnx files absent from v0/build/models/; cannot verify CoreML EP or latency end-to-end. Wrote blocker.md."}

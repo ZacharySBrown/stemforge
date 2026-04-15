@@ -21,3 +21,9 @@ v0/build/**
 !v0/build/models/
 !v0/build/models/manifest.json
 !v0/build/models/clap_genre_embeddings.json
+# Track A artifacts — scripts + headers only, not built binaries.
+!v0/build/.gitignore
+!v0/build/build-native.sh
+!v0/build/entitlements.plist
+!v0/build/include/
+!v0/build/include/stemforge.h

@@ -1,0 +1,42 @@
+{
+  "track": "A",
+  "status": "blocked",
+  "branch": "feat/v0-A-native",
+  "blocker": "v0/state/A/blocker.md",
+  "artifacts": [
+    {
+      "path": "v0/build/stemforge-native",
+      "sha256": "482609c99bcad6c39cf908d4e6da08b448f7a7956190e8e7469b016c8ceeaf98",
+      "size_bytes": 384240
+    },
+    {
+      "path": "v0/build/libstemforge.a",
+      "sha256": "5b19bd1a27bba683916f966b2fefa108c9e3cb62339f12e3816ca4fe1c5ac3c7",
+      "size_bytes": 457424
+    },
+    {
+      "path": "v0/build/libonnxruntime.1.24.4.dylib",
+      "sha256": "3f67e64325fff708ebd0a762b12b89f6d6b11a44dcc3f90e2ea56087c4e2d7b8",
+      "size_bytes": 35230784
+    },
+    {
+      "path": "v0/build/include/stemforge.h",
+      "sha256": "301adb843602774058e1eff1afa6b47cc4cc757a5103ae82011a197247fc4c6c",
+      "size_bytes": 5719
+    }
+  ],
+  "tests": {
+    "unit_total": 13,
+    "unit_passed": 13,
+    "ndjson_schema_valid": true
+  },
+  "c_abi_version": "0.0.0",
+  "c_abi_header": "v0/build/include/stemforge.h",
+  "arch": "arm64",
+  "universal2": false,
+  "codesigned_adhoc": true,
+  "hardened_runtime": true,
+  "coreml_ep_active": null,
+  "demucs_latency_sec": null,
+  "notes": "Build+tests green; end-to-end inference blocked by missing A0 .onnx files. See blocker.md."
+}
