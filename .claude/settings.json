@@ -104,7 +104,17 @@
       "Edit(specs/**)",
       "Write(specs/**)",
       "Edit(.claude/sessions/**)",
-      "Write(.claude/sessions/**)"
+      "Write(.claude/sessions/**)",
+      "Edit(.claude/agents/**)",
+      "Write(.claude/agents/**)",
+      "Edit(tools/**)",
+      "Write(tools/**)",
+      "Edit(.github/workflows/**)",
+      "Write(.github/workflows/**)",
+      "Edit(pyproject.toml)",
+      "Write(pyproject.toml)",
+      "Edit(v0/build/**)",
+      "Write(v0/build/**)"
     ],
     "deny": [
       "Bash(git push --force*)",
