@@ -1,8 +1,7 @@
 {
   "track": "A",
-  "status": "blocked",
-  "branch": "feat/v0-A-native",
-  "blocker": "v0/state/A/blocker.md",
+  "status": "done",
+  "branch": "feat/v0-A-validator",
   "artifacts": [
     {
       "path": "v0/build/stemforge-native",
@@ -23,12 +22,38 @@
       "path": "v0/build/include/stemforge.h",
       "sha256": "301adb843602774058e1eff1afa6b47cc4cc757a5103ae82011a197247fc4c6c",
       "size_bytes": 5719
+    },
+    {
+      "path": "v0/tests/fixtures/short_loop.wav",
+      "size_bytes": 1764044,
+      "sample_rate": 44100,
+      "channels": 2,
+      "duration_sec": 10.0,
+      "format": "PCM_16",
+      "purpose": "validator fixture — tones (220Hz, 330Hz) + 2Hz drum-like clicks. Committed from Track A validator session."
     }
   ],
   "tests": {
     "unit_total": 13,
     "unit_passed": 13,
-    "ndjson_schema_valid": true
+    "ndjson_schema_valid": true,
+    "end_to_end_inference": true,
+    "e2e_runs": 2,
+    "e2e_total_sec": [23.88, 22.11]
+  },
+  "runtime": {
+    "coreml_ep_active": false,
+    "coreml_nodes_assigned": 0,
+    "coreml_nodes_total": null,
+    "demucs_latency_sec_per_10s_input": 18.44,
+    "model_load_sec": 3.32,
+    "beat_track_sec": 0.05,
+    "slicing_sec": 0.04,
+    "manifest_write_sec": 0.001,
+    "ort_version": "1.24.4",
+    "cpu_ep_threads": "hardware_concurrency - 1",
+    "optimized_cache_used": true,
+    "coreml_explanation": "Manifest declares coreml_ep_supported=false for all 8 models. sf_demucs.hpp:145 gates CoreML append on that flag, so only CPU EP was used. CoreML EP was NOT attempted at runtime. Future work: flip manifest flag + re-probe residency with ORT VERBOSE logs."
   },
   "c_abi_version": "0.0.0",
   "c_abi_header": "v0/build/include/stemforge.h",
@@ -36,7 +61,7 @@
   "universal2": false,
   "codesigned_adhoc": true,
   "hardened_runtime": true,
-  "coreml_ep_active": null,
-  "demucs_latency_sec": null,
-  "notes": "Build+tests green; end-to-end inference blocked by missing A0 .onnx files. See blocker.md."
+  "coreml_ep_active": false,
+  "demucs_latency_sec": 18.44,
+  "notes": "End-to-end inference validated on v0/tests/fixtures/short_loop.wav (10s stereo 44.1kHz). 21 NDJSON events emitted, all 21 validate against v0/interfaces/ndjson.schema.json. Stems + stems.json manifest written. BPM detected 117.45, 20 beats, slice counts 19+16+20+20. No source tweaks required — pre-built binary from agent-a133b5f9 worktree ran correctly against models symlinked from agent-a74b3cc1."
 }

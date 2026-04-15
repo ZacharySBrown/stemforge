@@ -1,0 +1,43 @@
+{
+  "completed_at": "2026-04-15T07:38:00Z",
+  "branch": "feat/v0-A-validator",
+  "binary_path": "v0/build/stemforge-native",
+  "binary_arch": "arm64",
+  "universal2": false,
+  "codesigned": "ad-hoc",
+  "coreml_ep_active": false,
+  "coreml_nodes_assigned": 0,
+  "coreml_nodes_total": null,
+  "demucs_latency_sec_per_10s_input": 18.44,
+  "tests_pass": true,
+  "stems_json_schema_compat": true,
+  "ndjson_schema_valid": true,
+  "validation": {
+    "fixture": "v0/tests/fixtures/short_loop.wav",
+    "fixture_sr": 44100,
+    "fixture_duration_sec": 10.0,
+    "fixture_channels": 2,
+    "end_to_end_runs": 2,
+    "wall_clock_total_sec": [23.88, 22.11],
+    "ndjson_events_emitted": 21,
+    "ndjson_events_valid": 21,
+    "output_dir": "/tmp/sf_out_validator/short_loop",
+    "stems_written": ["drums.wav", "bass.wav", "other.wav", "vocals.wav"],
+    "stems_json_present": true,
+    "bpm_detected": 117.45,
+    "beats_detected": 20,
+    "per_stage_sec": {
+      "loading_model_demucs": 3.32,
+      "demucs_inference_segment1": 8.80,
+      "demucs_inference_segment2": 9.64,
+      "demucs_inference_total": 18.44,
+      "write_stems": 0.02,
+      "beat_tracking": 0.05,
+      "slicing_all_stems": 0.04,
+      "writing_manifest": 0.001
+    },
+    "coreml_notes": "Manifest declares coreml_ep_supported=false for all models (htdemucs, htdemucs_ft_head0..3, htdemucs_6s, ast_audioset, clap_htsat_unfused) per A0's node-assignment heuristics. DemucsRunner.build_session() gates CoreML append on entry.coreml_ep_supported, so CoreML EP was not appended at runtime. All inference ran on CPU EP. This is the intended design per sf_demucs.hpp:145. Future work: re-probe CoreML at runtime with force_cpu_only=0 + entry.coreml_ep_supported flag flip and measure node residency via VERBOSE ORT logs.",
+    "ort_warnings": 4,
+    "ort_warning_msg": "NchwcTransformer environment-bound optimized cache notice (expected, not an error)"
+  }
+}
