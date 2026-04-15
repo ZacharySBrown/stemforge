@@ -1,0 +1,20 @@
+{
+  "completed_at": "2026-04-15T01:30:35Z",
+  "branch": "feat/v0-F-cicd",
+  "workflows": ["ci.yml", "release.yml"],
+  "actionlint_passed": false,
+  "actionlint_note": "actionlint not installed in sandbox; YAML parsed via python yaml.safe_load (all 4 files OK). Phase 2 should install actionlint and rerun.",
+  "secrets_documented": true,
+  "composite_actions": ["notarize", "lipo-merge"],
+  "onnx_first": true,
+  "referenced_but_not_yet_existent": [
+    "v0/src/A0/convert.py",
+    "v0/src/A0/validate.py",
+    "v0/build/build-native.sh",
+    "v0/build/entitlements.plist",
+    "v0/src/maxpat-builder/builder.py",
+    "v0/src/als-builder/builder.py",
+    "v0/assets/skeleton.als",
+    "v0/src/installer/build-pkg.sh"
+  ]
+}

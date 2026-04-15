@@ -1,0 +1,43 @@
+name: Lipo merge universal2
+description: >
+  Uses `lipo -create` to produce a universal2 Mach-O binary from separate
+  arm64 and x86_64 slices. Verifies the result contains both architectures.
+
+inputs:
+  arm64-binary:
+    description: Path to the arm64 Mach-O.
+    required: true
+  x86_64-binary:
+    description: Path to the x86_64 Mach-O.
+    required: true
+  out-binary:
+    description: Output path for the universal2 binary.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Lipo create
+      shell: bash
+      env:
+        ARM64_BIN: ${{ inputs.arm64-binary }}
+        X86_BIN: ${{ inputs.x86_64-binary }}
+        OUT: ${{ inputs.out-binary }}
+      run: |
+        set -euo pipefail
+        mkdir -p "$(dirname "$OUT")"
+        chmod +x "$ARM64_BIN" "$X86_BIN" || true
+        lipo -create "$ARM64_BIN" "$X86_BIN" -output "$OUT"
+        chmod +x "$OUT"
+
+    - name: Verify architectures
+      shell: bash
+      env:
+        OUT: ${{ inputs.out-binary }}
+      run: |
+        set -euo pipefail
+        INFO=$(lipo -info "$OUT")
+        echo "$INFO"
+        echo "$INFO" | grep -q arm64
+        echo "$INFO" | grep -q x86_64
+        file "$OUT"

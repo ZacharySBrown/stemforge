@@ -1,0 +1,181 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Global defaults — keep this job under 10 minutes wall-time.
+# Heavy ML deps (torch, demucs, transformers) are intentionally excluded.
+# Native binary builds + model conversion only run on tag (release.yml).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint + format
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dev deps only (no torch)
+        # Track B splits dependencies into tiers. CI uses the lightweight core
+        # + dev extras. Never install [native] or [analyzer] here.
+        run: |
+          uv pip install --system -e '.[dev]' || uv pip install --system ruff mypy pytest
+
+      - name: ruff check
+        run: ruff check stemforge tests
+
+      - name: ruff format --check
+        run: ruff format --check stemforge tests
+
+  typecheck:
+    name: mypy (strict)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install
+        run: |
+          pip install uv
+          uv pip install --system -e '.[dev]' || uv pip install --system mypy
+
+      - name: mypy --strict stemforge
+        # mypy-strict on stemforge/ per F brief. Tests intentionally omitted.
+        run: mypy --strict stemforge
+
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install (core + dev, no ML extras)
+        run: |
+          pip install uv
+          uv pip install --system -e '.[dev]'
+
+      - name: Assert no heavy deps imported at import time
+        # Track B acceptance: importing stemforge.cli must NOT pull torch.
+        run: |
+          python -c "import sys; import stemforge.cli; assert 'torch' not in sys.modules, 'torch leaked into core import'; print('OK: torch not imported')"
+
+      - name: pytest
+        # Fixtures must be <5s of audio. Any test needing real ML runs offline.
+        run: pytest -q --maxfail=5
+
+  smoke-build-als:
+    name: Smoke build .als (Track D)
+    runs-on: macos-14
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install build deps
+        run: |
+          pip install uv
+          uv pip install --system lxml pyyaml
+
+      - name: Build .als (no signing)
+        # Referenced path lands with Track D. Expected to fail until then.
+        continue-on-error: true
+        run: |
+          if [ -f v0/src/als-builder/builder.py ]; then
+            python v0/src/als-builder/builder.py \
+              --tracks v0/interfaces/tracks.yaml \
+              --skeleton v0/assets/skeleton.als \
+              --out v0/build/StemForge.als
+          else
+            echo "::warning::v0/src/als-builder/builder.py not yet present (Track D pending)"
+            exit 0
+          fi
+
+      - name: Validate .als is gzipped XML
+        if: hashFiles('v0/build/StemForge.als') != ''
+        run: |
+          python - <<'PY'
+          import gzip, sys
+          import xml.etree.ElementTree as ET
+          with gzip.open('v0/build/StemForge.als', 'rb') as f:
+              ET.parse(f)
+          print("OK: .als parses as gzipped XML")
+          PY
+
+  smoke-build-amxd:
+    name: Smoke build .amxd (Track C)
+    runs-on: macos-14
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install build deps
+        run: |
+          pip install uv
+          uv pip install --system pyyaml
+
+      - name: Build .amxd (Path 1 preferred, no signing)
+        # Referenced path lands with Track C. Expected to fail until then.
+        continue-on-error: true
+        run: |
+          if [ -f v0/src/maxpat-builder/builder.py ]; then
+            python v0/src/maxpat-builder/builder.py \
+              --device v0/interfaces/device.yaml \
+              --events v0/interfaces/ndjson.schema.json \
+              --out v0/build/StemForge.amxd
+          else
+            echo "::warning::v0/src/maxpat-builder/builder.py not yet present (Track C pending)"
+            exit 0
+          fi
+
+      - name: Validate .amxd structure
+        if: hashFiles('v0/build/StemForge.amxd') != ''
+        run: |
+          python - <<'PY'
+          import pathlib, sys
+          p = pathlib.Path('v0/build/StemForge.amxd')
+          data = p.read_bytes()
+          # .amxd: 'ampf' magic + container chunks. Minimal sanity check only.
+          if len(data) < 32:
+              sys.exit("amxd too small")
+          if not (b'ampf' in data[:256] or b'mx@c' in data[:256] or b'ptch' in data[:512]):
+              sys.exit("amxd missing expected container magic")
+          print(f"OK: .amxd {len(data)} bytes, container magic present")
+          PY
