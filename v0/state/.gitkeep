@@ -1,0 +1,8 @@
+# This directory is populated at runtime by track agents.
+# Per-track subdirectories (A/, B/, ... G/) contain:
+#   - progress.ndjson   (append-only status log)
+#   - artifacts.json    (final artifact metadata on success)
+#   - done.flag         (success signal, mutually exclusive with blocker.md)
+#   - blocker.md        (failure details, no done.flag written)
+#
+# See v0/SHARED.md for the full contract.
