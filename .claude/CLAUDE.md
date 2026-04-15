@@ -127,10 +127,15 @@ On session end: delete the session file.
 
 | Role | Can Modify | Read-Only |
 |------|-----------|-----------|
-| Architect | `docs/`, `specs/`, `.claude/` (excl. `sessions/`) | Everything |
-| Engineer | `stemforge/`, `m4l/`, `tests/`, `pipelines/` | Everything |
+| Architect | `docs/`, `specs/`, `v0/PLAN.md`, `v0/PIVOT.md`, `v0/DAG.md`, `v0/SHARED.md`, `v0/tracks/`, `v0/interfaces/` (pre-lock only), `.claude/` (excl. `sessions/`) | Everything |
+| Engineer | `stemforge/`, `m4l/`, `tests/`, `pipelines/`, `v0/src/<my-track-id>/`, `v0/state/<my-track-id>/`, `v0/build/<my-artifacts>` | Everything |
 | Reviewer | Nothing (read-only) | Everything |
-| Operator | `tools/`, `docs/` | Everything |
+| Operator | `tools/`, `docs/`, `v0/state/` (cleanup only — stale flags, never another track's `done.flag`) | Everything |
+
+**v0 track write-lane rules** (see `v0/SHARED.md` for full spec):
+- Engineers claim exactly one v0 track per session; record `"v0_track": "A"` in their session file.
+- `v0/interfaces/` is read-only once locked (Wave 1 complete). Interface changes escalate to Architect.
+- Filesystem coordination flags (`done.flag`, `blocker.md`) are per-track — only that track's Engineer writes them.
 
 2. **Claim before you build** — Every coding session must have a stated focus in its session file.
 3. **One task at a time** — WIP limit of 1 per session. Finish or park before switching.

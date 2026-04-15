@@ -1,160 +1,142 @@
-# Track A — Native Inference Binary
+# Track A — Native Inference Binary (ONNX Runtime + CoreML EP)
+
+**Supersedes:** the original PyInstaller-based Track A. See `v0/PIVOT.md` for rationale.
+**Gates:** requires Track A0 `done.flag` (validated `.onnx` files must exist).
 
 ## Goal
 
-Produce a signed, notarized, universal2 macOS binary `stemforge-native` that runs the StemForge pipeline with zero Python environment on the user's machine.
+Produce a signed, notarized, universal2 macOS binary `stemforge-native` that runs the StemForge inference pipeline using **ONNX Runtime with CoreML Execution Provider**, no Python interpreter present.
 
-## v0 Approach: PyInstaller
+## Approach
 
-Not ONNX. ONNX is v1. For v0 we freeze the existing working Python pipeline. Lower risk, proves the shipping pipeline.
+**Library-first** (v2 forward-compat, per `v0/PIVOT.md` §v2-forward-compat). The deliverable is `libstemforge` (static lib + stable C ABI header) *plus* a thin CLI wrapper `stemforge-native` that links it. v2's Max external will link the same library — this is the whole point.
+
+C++ host program, single static binary where feasible. Links:
+
+- ONNX Runtime (static libs, universal2, with CoreML EP enabled)
+- libsndfile + libsamplerate (WAV I/O + resampling — replaces soundfile + librosa.resample)
+- A small DSP module for STFT / beat tracking (replaces librosa beat_track — either port the Ellis algorithm in C++, or ship a second tiny binary `stemforge-beats` that embeds librosa via a minimal Python subset… prefer C++ port)
+- nlohmann/json for NDJSON emission + manifest writing
+- libcurl (static) for model weight download on first run (if not bundled)
+- ffmpeg (universal2 static) bundled alongside for non-WAV input formats — same as original plan
+
+No Python at runtime. Cloud backends (LALAL.AI, Music.AI) are **not** in this binary; they stay in the Python `stemforge` CLI for dev use. The shipped binary only does local inference (the ONNX Demucs path) + slicing + manifest.
 
 ## Inputs
 
-- `stemforge/` package (existing source)
-- `v0/interfaces/ndjson.schema.json` — the event contract binary must conform to
-- Apple Developer ID Application certificate (injected via CI secrets)
-- ffmpeg universal2 static binary (fetched from `https://evermeet.cx/ffmpeg/`)
+- `v0/build/models/*.onnx` from Track A0
+- `v0/interfaces/ndjson.schema.json` — event contract
+- `stemforge/cli.py` (read-only reference — port `forge` / `split` command flow)
+- `stemforge/slicer.py` (read-only reference — port beat/bar slicing logic)
+- `stemforge/manifest.py` or equivalent (read-only reference — port manifest writing)
+- Apple Developer ID Application certificate (CI secret)
 
 ## Outputs
 
-- `v0/build/stemforge-native` — universal2 Mach-O binary, signed, notarized
-- `v0/build/build-native.sh` — reproducible build script
-- `v0/build/stemforge-native.spec` — PyInstaller spec file
-- `v0/state/A/artifacts.json` — metadata (sha256, size, arch, signed, notarized)
-- `v0/state/A/done.flag` — touched on success
+- `v0/build/libstemforge.a` — universal2 static library (the actual work)
+- `v0/build/include/stemforge.h` — stable C ABI header (frozen after A.1; v2 must link unmodified)
+- `v0/build/stemforge-native` — universal2 Mach-O binary (CLI wrapper over libstemforge), signed, notarized
+- `v0/src/A/` — C++ source tree (CMake-based, `libstemforge` + `stemforge-native` as two targets)
+- `v0/src/A/CMakeLists.txt`
+- `v0/build/build-native.sh` — reproducible build script (cmake + codesign + notarize)
+- `v0/build/entitlements.plist`
+- `v0/state/A/artifacts.json` — metadata
+- `v0/state/A/done.flag`
 
 ## Subtasks
 
-### A1 — Wire `--json-events` into CLI
-Current state: the `forge` command emits NDJSON already (see `stemforge/cli.py:537`). The `split` command does not.
+### A.1 — C++ host skeleton
+- `main()` parses subcommand: `split`, `forge`, `--version`, `--json-events`
+- Emits NDJSON to stdout conforming to `v0/interfaces/ndjson.schema.json`
+- No Rich-style output; if `--json-events` is absent, emits minimal human-readable progress to stderr only
+- Exit codes match Python CLI conventions
 
-Add a single `--json-events` flag (global, or per-command) that:
-- Silences Rich output entirely
-- Emits NDJSON conforming to `v0/interfaces/ndjson.schema.json`
-- Maps existing events: `started`, `progress (phase=splitting|slicing|writing_manifest)`, `stem` per stem, `bpm`, `slice_dir` per stem_beats/, `complete`, `error`
+### A.2 — Model loader
+- Reads `v0/build/models/manifest.json` at runtime from `~/Library/Application Support/StemForge/models/` (or `$STEMFORGE_MODEL_DIR` override for dev)
+- Verifies SHA256 against manifest before loading
+- Constructs `Ort::SessionOptions` with `SessionOptionsAppendExecutionProvider_CoreML` (flags: use ANE when possible, fall back gracefully to CPU EP per-op)
+- Caches sessions across invocations if run as daemon (not v1; single-shot is fine)
 
-**File touched:** `stemforge/cli.py` only. Do not restructure other modules.
+### A.3 — Demucs inference path
+- Load WAV via libsndfile; resample to 44.1kHz stereo if needed (libsamplerate)
+- Feed into ONNX Demucs session. If `htdemucs_ft` is bag-of-heads, run each head, average outputs.
+- Write each separated stem to `~/stemforge/processed/<track>/<stem>.wav`
+- Emit `stem` NDJSON events per stem
 
-### A2 — ffmpeg bundling
-Fetch universal2 static ffmpeg into `v0/build/vendor/ffmpeg`. PyInstaller's `--add-binary` flag includes it. At runtime, `ensure_wav()` in `cli.py` is updated to first check `sys._MEIPASS/ffmpeg` before `shutil.which("ffmpeg")`.
+### A.4 — Beat tracking + slicing
+- Port the Ellis onset+tempo algorithm used by librosa, or use aubio (C library, liberal license). **Prefer aubio** — well-tested, permissive, no Python baggage.
+- BPM detection → emit `bpm` event
+- Beat-grid + bar-level slicing per `stemforge/slicer.py` logic
+- Write slice WAVs to `<stem>_beats/` dirs; emit `slice_dir` events
 
-### A3 — Model weights policy
-**Do NOT bundle weights into the binary.** Binary size would balloon past 2GB.
+### A.5 — Manifest writer
+- Emit `stems.json` matching existing schema (crib from `stemforge/manifest.py` or wherever it lives — read-only reference, port to C++)
+- Must be byte-for-byte schema-compatible with Python output so Track C's .amxd loader doesn't care which produced it
 
-On first use, binary checks `~/Library/Application Support/StemForge/models/`. If missing, downloads `htdemucs` and `htdemucs_6s` checkpoints from Facebook AI's public URL, emits `progress phase=downloading_weights`. Cache keyed by model SHA.
+### A.6 — First-run model download
+- If `~/Library/Application Support/StemForge/models/` missing or SHA mismatch, fetch ONNX files from release URL (Track F provides URL via a build-time `#define` or config file)
+- Emit `progress phase=downloading_weights pct=…` events during download
 
-### A4 — PyInstaller spec
-```python
-# v0/build/stemforge-native.spec
-a = Analysis(
-    ['../../stemforge/cli.py'],
-    binaries=[('vendor/ffmpeg', '.')],
-    datas=[('../../pipelines', 'pipelines')],
-    hiddenimports=[
-        'stemforge', 'stemforge.backends.demucs',
-        'stemforge.backends.lalal', 'stemforge.backends.musicai',
-        'torch', 'torchaudio', 'demucs', 'librosa', 'soundfile',
-    ],
-    hookspath=['hooks'],
-    ...
-)
-# Collect-all torch/demucs/librosa via hook files for transitive deps.
-exe = EXE(pyz, a.scripts, ..., name='stemforge-native',
-          target_arch='universal2', codesign_identity=os.environ['CODESIGN_ID'],
-          entitlements_file='entitlements.plist')
-```
+### A.7 — Universal2 build
+- Two arch slices built separately on x86_64 and arm64 runners (or cross-compile via CMake osx architectures), then `lipo -create`. See original Track F brief for CI matrix.
+- ONNX Runtime publishes universal2 release assets — use those to skip cross-arch pain.
 
-### A5 — Entitlements
-Torch and numpy need JIT:
-```xml
-<key>com.apple.security.cs.allow-jit</key><true/>
-<key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
-<key>com.apple.security.cs.disable-library-validation</key><true/>
-```
-
-### A6 — Universal2 strategy
-PyInstaller cross-arch for torch is fragile. Build on each arch separately then `lipo -create` merge:
-```bash
-# On x86_64 runner:
-pyinstaller stemforge-native.spec --target-arch x86_64
-mv dist/stemforge-native dist/stemforge-native-x86_64
-# On arm64 runner:
-pyinstaller stemforge-native.spec --target-arch arm64
-mv dist/stemforge-native dist/stemforge-native-arm64
-# Later (either runner):
-lipo -create dist/stemforge-native-x86_64 dist/stemforge-native-arm64 \
-     -output v0/build/stemforge-native
-```
-
-This coordinates with Track F (CI uses two macos runners).
-
-### A7 — Codesign + notarize
+### A.8 — Codesign + notarize
+Same as original plan:
 ```bash
 codesign --force --deep --options runtime \
   --entitlements entitlements.plist \
-  --sign "$CODESIGN_ID" \
-  v0/build/stemforge-native
-
+  --sign "$CODESIGN_ID" v0/build/stemforge-native
 ditto -c -k --keepParent v0/build/stemforge-native v0/build/stemforge-native.zip
 xcrun notarytool submit v0/build/stemforge-native.zip \
   --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$APP_PW" --wait
 xcrun stapler staple v0/build/stemforge-native
 ```
 
-### A8 — Self-test
-Binary must pass:
+Entitlements are simpler than PyInstaller — **no JIT needed** (ONNX Runtime is AOT). Probably just hardened runtime + network (for model download).
+
+### A.9 — Self-test
 ```bash
 ./stemforge-native split tests/fixtures/short_loop.wav --json-events 2>/dev/null \
   | jq -c 'select(.event)' \
   | v0/tests/validate-ndjson.py
+# then:
+diff <(jq -S . ~/stemforge/processed/short_loop/stems.json) \
+     <(jq -S . v0/tests/golden/short_loop.stems.json)
 ```
-And produce `~/stemforge/processed/short_loop/stems.json` conforming to the existing manifest schema.
 
 ## Acceptance
 
-- `file v0/build/stemforge-native` → "Mach-O universal binary with 2 architectures"
-- `codesign -dvv v0/build/stemforge-native` → valid Developer ID signature
-- `spctl -a -t exec v0/build/stemforge-native` → "accepted"
-- `./stemforge-native --version` prints version and exits 0
-- `./stemforge-native split test.wav --json-events` emits valid NDJSON per schema
-- Runs on a freshly-imaged Mac with no Homebrew, no Python installed
+- `file v0/build/stemforge-native` → universal2 Mach-O
+- `codesign -dvv` → valid Developer ID
+- `spctl -a -t exec` → accepted
+- `--version` prints + exit 0
+- `split test.wav --json-events` emits valid NDJSON, produces stems.json matching golden fixture (within float tolerance)
+- `ORT_LOGGING_LEVEL=VERBOSE ./stemforge-native split …` shows CoreML EP actively executing Demucs ops (not full CPU fallback)
+- Binary runs on freshly-imaged Mac — no Homebrew, no Python, no Xcode tooling
 
-## Risk / Unknowns
+## Risks
 
-- PyInstaller + torch: known to need aggressive `--collect-all`. Budget iteration.
-- Universal2 torch wheels: available on PyPI but not all versions. Pin to a torch release with confirmed universal2 wheel.
-- Notarization latency: 5 min to 4 hours. CI must wait.
-- Binary size estimate: 600MB – 1.2GB. Acceptable for v0.
+- **C++ port of slicing / beat tracking is real work** — aubio gives us BPM but the bar-level slicing + curation logic in `stemforge/slicer.py` + `stemforge/curator.py` is non-trivial. Budget 2–3 days. Alternative: keep slicer in Python and embed CPython via `Py_Initialize` in the host — but that defeats the "no Python" goal. Prefer the C++ port.
+- **ONNX Runtime binary size** — ~40MB. Add Demucs `.onnx` (100–500MB) and we're in the 150–600MB range. Still smaller than PyInstaller would have been.
+- **ORT CoreML EP op coverage** — some Demucs ops may fall back to CPU. A0.5 flags this; A then accepts whatever A0 greenlit.
 
 ## Subagent Brief
 
-You are implementing Track A of StemForge v0.
+You are implementing Track A (native ONNX host) of StemForge v0.
 
-**Read before starting:**
-- `v0/PLAN.md`
-- `v0/SHARED.md`
+**Read first:**
+- `v0/PLAN.md`, `v0/PIVOT.md`, `v0/SHARED.md`, this file
 - `v0/interfaces/ndjson.schema.json`
-- `v0/tracks/A-native-binary.md` (this file)
-- `stemforge/cli.py` (understand the existing `forge` NDJSON emissions)
+- `v0/state/A0/artifacts.json` (the model manifest A0 produced)
+- `stemforge/cli.py`, `stemforge/slicer.py`, `stemforge/curator.py`, `stemforge/backends/demucs.py` — read to port
 
-**Produce:**
-- Changes to `stemforge/cli.py` (add `--json-events` flag, conforming to schema)
-- `v0/build/build-native.sh` (reproducible build script)
-- `v0/build/stemforge-native.spec` (PyInstaller spec)
-- `v0/build/entitlements.plist`
-- `v0/build/hooks/` (PyInstaller hooks for torch/demucs/librosa if needed)
-- `v0/build/stemforge-native` (the binary — on CI only; local dev may skip signing)
-- `v0/state/A/progress.ndjson` (append status updates)
-- `v0/state/A/artifacts.json` (final metadata)
-- `v0/state/A/done.flag` (on success)
+**Produce:** files under *Outputs* above.
 
-**Do not touch:**
-- Any file under `v0/interfaces/`
-- Any other track's state directory
-- `v0/build/StemForge.amxd`, `v0/build/StemForge.als`, `v0/build/*.pkg`
+**Do not touch:** `stemforge/**` (Python source is read-only reference — if Python needs changes for `--json-events` parity, open a blocker and escalate), `v0/interfaces/**`, other tracks' state dirs, the `.onnx` files (those are A0's artifacts).
 
 **Constraints:**
-- `stemforge/cli.py` changes must be additive. Existing CLI behavior unchanged when `--json-events` is absent.
-- Binary must be runnable without any environment variables set (beyond those the installer guarantees).
+- Binary must run without any env vars set.
+- NDJSON output must validate against schema on every code path (including error paths).
 
-**On blocker:** write `v0/state/A/blocker.md` with details and exit. Do not partially commit a broken binary.
+**On blocker:** write `v0/state/A/blocker.md` with specifics. Do not partially commit a broken binary.

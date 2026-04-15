@@ -1,5 +1,7 @@
 # v0 Execution Graph
 
+> **ONNX-first update (2026-04-14):** see `v0/PIVOT.md`. Track A0 (ONNX conversion + parity) is inserted as Wave 1.5 and gates Track A. Tracks B, D, F remain parallel to A0. Track A now depends on A0's `done.flag` as well as interfaces.
+
 ## Dependency DAG
 
 ```
