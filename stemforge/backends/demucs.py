@@ -24,12 +24,14 @@ class DemucsBackend(AbstractBackend):
             import torchaudio
             from demucs.pretrained import get_model
             from demucs.apply import apply_model
-        except ImportError:
+        except ImportError as e:
             raise RuntimeError(
-                "Demucs not installed.\n"
-                "  pip install torch torchaudio demucs\n"
-                "  See requirements-local.txt"
-            )
+                "Demucs backend requires the 'native' extras (torch + demucs).\n"
+                "  Install with:  pip install 'stemforge[native]'\n"
+                "Alternatively, use a cloud backend:\n"
+                "  stemforge split <file> --backend lalal\n"
+                "  stemforge split <file> --backend musicai"
+            ) from e
 
         model_key = kwargs.get("model", "default")
         model_name = DEMUCS_MODELS.get(model_key, model_key)

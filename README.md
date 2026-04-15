@@ -20,6 +20,23 @@ The installer will:
 - Create `~/stemforge/inbox/`, `processed/`, `logs/`
 - Verify everything works
 
+### Install Variants
+
+StemForge ships with a lightweight core and opt-in extras for heavy ML deps.
+Pick the install that matches how you want to separate stems.
+
+| Command                                         | Includes                              | Use when |
+|-------------------------------------------------|---------------------------------------|----------|
+| `pip install stemforge`                         | Core only (cloud backends, slicer, manifest) | You only use LALAL.AI or Music.AI (no torch, fast install). |
+| `pip install 'stemforge[native]'`               | Core + torch + demucs                 | You want local Demucs stem separation. |
+| `pip install 'stemforge[analyzer]'`             | Core + transformers + CLAP            | You want `stemforge analyze` (genre/instrument detection). |
+| `pip install 'stemforge[native,analyzer]'`      | Core + native + analyzer              | Local Demucs and analyzer. |
+| `pip install 'stemforge[native,analyzer,dev]'`  | Everything + test/lint/build tooling  | Developing on StemForge. |
+
+Running `stemforge split --backend demucs` without the `native` extra will print
+a friendly error pointing you at the right install command. Same for
+`stemforge analyze` without the `analyzer` extra.
+
 ## TLDR Usage
 
 ```bash
