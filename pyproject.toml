@@ -32,6 +32,14 @@ analyzer = [
     "transformers>=4.40",
     "laion-clap>=1.1",
 ]
+# ONNX Runtime + conversion tooling (required for native M4L binary per PIVOT).
+onnx = [
+    "onnx>=1.16",
+    "onnxruntime>=1.18",
+    "onnxconverter-common>=1.14",
+    "optimum[onnxruntime]>=1.20",
+    "onnxscript>=0.1",
+]
 # Everything above + test/lint/build tooling.
 dev = [
     "pytest>=8.0",
