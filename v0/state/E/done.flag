@@ -1,0 +1,11 @@
+{
+  "completed_at": "2026-04-14T08:00:00Z",
+  "branch": "feat/v0-E-installer",
+  "pkg_path": "v0/build/StemForge-0.0.0.pkg",
+  "pkg_size_bytes": 9667693,
+  "pkg_sha256": "3ccf95c2c7f6e25b6a78ebeadf098ac0a607d13165a8886dd62a6babff8ad6db",
+  "als_included": false,
+  "signed": false,
+  "notarized": false,
+  "tests_pass": true
+}

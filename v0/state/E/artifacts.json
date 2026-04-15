@@ -1,0 +1,36 @@
+{
+  "track": "E",
+  "status": "done",
+  "branch": "feat/v0-E-installer",
+  "artifacts": [
+    {
+      "path": "v0/build/StemForge-0.0.0.pkg",
+      "sha256": "3ccf95c2c7f6e25b6a78ebeadf098ac0a607d13165a8886dd62a6babff8ad6db",
+      "size_bytes": 9667693,
+      "signed": false,
+      "notarized": false,
+      "als_included": false
+    },
+    {"path": "v0/build/build-pkg.sh", "role": "reproducible build entrypoint"},
+    {"path": "v0/build/sign-notarize-pkg.sh", "role": "invoked by Track F CI"},
+    {"path": "v0/build/install.sh", "role": "curl-pipeable wrapper"},
+    {"path": "v0/build/uninstall.sh", "role": "installed at /usr/local/bin/stemforge-uninstall"},
+    {"path": "v0/src/installer/distribution.xml", "role": "productbuild distribution"},
+    {"path": "v0/src/installer/scripts/postinstall", "role": ".pkg postinstall (user-local relocation)"},
+    {"path": "v0/src/installer/component-system.plist", "role": "reserved (empty; non-bundle payload)"},
+    {"path": "v0/src/installer/component-user.plist", "role": "reserved (empty; non-bundle payload)"}
+  ],
+  "upstream_sources": {
+    "stemforge-native": "/Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a133b5f9/v0/build/stemforge-native",
+    "libonnxruntime.1.24.4.dylib": "/Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a133b5f9/v0/build/libonnxruntime.1.24.4.dylib",
+    "StemForge.amxd": "/Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a02a5a81/v0/build/StemForge.amxd",
+    "StemForge.als": "NOT FOUND — Track D blocked on skeleton.als"
+  },
+  "tests": {
+    "total": 19,
+    "passed": 19,
+    "failed": 0,
+    "file_layout": "v0/src/installer/tests/"
+  },
+  "notes": "Unsigned dev build. build-pkg.sh resolves artifacts from this worktree or any sibling worktree (harness multi-agent layout), so `bash v0/build/build-pkg.sh` works from any branch once A/C are done. Rerun the same command after Track D lands StemForge.als to produce a bundle that also installs the template. Signing + notarization is gated on CI secrets (see sign-notarize-pkg.sh); Track F wires it."
+}

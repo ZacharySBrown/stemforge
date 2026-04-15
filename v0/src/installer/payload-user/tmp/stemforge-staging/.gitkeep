@@ -1,0 +1,2 @@
+# Placeholder — real StemForge.amxd (and optional StemForge.als) are copied here by build-pkg.sh.
+# Postinstall script relocates them to the user's Ableton Library.

@@ -8,5 +8,10 @@ cmake-x86_64/
 lib/
 tmp/
 
-# Keep: manifest.json, entitlements.plist, build-native.sh, README.md,
-# include/, models/ (A0 artifacts — tracked separately by A0's lane).
+# Installer output — produced by build-pkg.sh. Release-signed pkgs are
+# attached to GitHub releases by Track F, not committed here.
+StemForge-*.pkg
+
+# Keep: manifest.json, entitlements.plist, build-native.sh, build-pkg.sh,
+# install.sh, uninstall.sh, sign-notarize-pkg.sh, README.md, include/,
+# models/ (A0 artifacts — tracked separately by A0's lane).

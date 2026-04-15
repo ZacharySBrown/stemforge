@@ -1,0 +1,66 @@
+#!/bin/bash
+# StemForge postinstall — runs after the .pkg lays down system files.
+# Relocates user-local payload from /tmp/stemforge-staging into the Ableton
+# User Library, then creates the per-user support directories.
+#
+# Runs as root when the .pkg is installed via `sudo installer`, so we resolve
+# $HOME via the installed-for user ($USER at install time is set by
+# Installer.app to the target user; we fall back to $HOME if unset).
+set -e
+
+# When the .pkg is installed for a specific user, macOS sets $HOME to that
+# user's home. If somehow unset (e.g. manual `installer` run as root with no
+# login session), derive it from the logged-in console user.
+if [ -z "${HOME:-}" ] || [ "$HOME" = "/var/root" ]; then
+    CONSOLE_USER=$(stat -f "%Su" /dev/console 2>/dev/null || echo "$USER")
+    HOME=$(dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
+    export HOME
+fi
+
+detect_ableton_lib() {
+    local prefs
+    prefs=$(ls -1d "$HOME/Library/Preferences/Ableton/Live "* 2>/dev/null | sort -V | tail -1)
+    if [ -n "$prefs" ] && [ -f "$prefs/Preferences.cfg" ]; then
+        local lib
+        lib=$(grep -oE '"UserLibraryFolder"[^"]*"[^"]+"' "$prefs/Preferences.cfg" \
+              | tail -1 | grep -oE '"[^"]+"$' | tr -d '"')
+        if [ -n "$lib" ]; then
+            echo "$lib"
+            return 0
+        fi
+    fi
+    echo "$HOME/Music/Ableton/User Library"
+}
+
+LIB=$(detect_ableton_lib)
+mkdir -p "$LIB/Presets/Audio Effects/Max Audio Effect"
+mkdir -p "$LIB/Templates"
+mkdir -p "$HOME/Library/Application Support/StemForge/models"
+mkdir -p "$HOME/Library/Application Support/StemForge/bin"
+mkdir -p "$HOME/stemforge/inbox"
+mkdir -p "$HOME/stemforge/processed"
+mkdir -p "$HOME/stemforge/logs"
+
+STAGING=/tmp/stemforge-staging
+if [ -f "$STAGING/StemForge.amxd" ]; then
+    cp "$STAGING/StemForge.amxd" "$LIB/Presets/Audio Effects/Max Audio Effect/"
+else
+    echo "WARNING: StemForge.amxd missing from staging; device will not appear in Ableton" >&2
+fi
+
+if [ -f "$STAGING/StemForge.als" ]; then
+    cp "$STAGING/StemForge.als" "$LIB/Templates/"
+else
+    echo "StemForge.als not bundled in this build (skeleton.als pending); template skipped"
+fi
+
+# Chown anything we created as root back to the target user.
+if [ "$(id -u)" = "0" ] && [ -n "${USER:-}" ] && [ "$USER" != "root" ]; then
+    chown -R "$USER" "$HOME/Library/Application Support/StemForge" \
+                    "$HOME/stemforge" \
+                    "$LIB/Presets/Audio Effects/Max Audio Effect/StemForge.amxd" \
+                    "$LIB/Templates/StemForge.als" 2>/dev/null || true
+fi
+
+rm -rf "$STAGING"
+exit 0

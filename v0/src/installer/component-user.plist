@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Reserved for future use. Our user payload is a pair of flat files
+    (StemForge.amxd + StemForge.als) staged to /tmp and relocated by the
+    postinstall script. No bundle, so no component plist required. Regenerate
+    via `pkgbuild --analyze` if this changes.
+-->
+<plist version="1.0">
+<array/>
+</plist>

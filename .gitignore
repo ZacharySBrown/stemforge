@@ -27,3 +27,8 @@ v0/build/**
 !v0/build/entitlements.plist
 !v0/build/include/
 !v0/build/include/stemforge.h
+# Track E artifacts — installer scripts (the .pkg itself is release-only).
+!v0/build/build-pkg.sh
+!v0/build/install.sh
+!v0/build/uninstall.sh
+!v0/build/sign-notarize-pkg.sh
