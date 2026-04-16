@@ -1,0 +1,25 @@
+{
+  "track": "D",
+  "deliverable": "StemForge.als",
+  "path": "v0/build/StemForge.als",
+  "size_bytes": 8027,
+  "sha256": "58d6fc438fd7ea0289ec02b725ca3a9b0458a46133044bf03d9004ec42cf380b",
+  "builder_command": "PYTHONPATH=v0/src/als-builder uv run python v0/src/als-builder/builder.py",
+  "inputs": {
+    "skeleton": "v0/assets/skeleton.als",
+    "tracks_yaml": "v0/interfaces/tracks.yaml",
+    "vst3_lookup": "v0/src/als-builder/vst3_lookup.yaml"
+  },
+  "live_version": "12.2.7",
+  "track_count": 7,
+  "track_names": [
+    "SF | Drums Raw",
+    "SF | Drums Crushed",
+    "SF | Bass",
+    "SF | Texture Verb",
+    "SF | Texture Crystallized",
+    "SF | Vocals",
+    "SF | Beat Chop Simpler"
+  ],
+  "built_at": "2026-04-16T19:05:00Z"
+}

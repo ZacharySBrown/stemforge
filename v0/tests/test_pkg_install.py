@@ -263,6 +263,19 @@ def test_user_staging_has_no_data_sidecar(user_staging: Path) -> None:
     )
 
 
+def test_user_staging_has_als(user_staging: Path) -> None:
+    """W6 — StemForge.als is present in staging and is a valid gzipped Ableton set."""
+    als = user_staging / "StemForge.als"
+    assert als.exists(), "StemForge.als missing from staging"
+    assert als.stat().st_size > 512, f"implausibly small: {als.stat().st_size}"
+    import gzip
+    import xml.etree.ElementTree as ET
+    with gzip.open(als, "rb") as f:
+        tree = ET.parse(f)
+    root_tag = tree.getroot().tag.rsplit("}", 1)[-1]
+    assert root_tag == "Ableton", f"unexpected root: {root_tag}"
+
+
 def test_postinstall_present_and_executable(user_scripts: Path) -> None:
     """W4.12 — postinstall script exists, is +x, and has expected logic."""
     postinstall = user_scripts / "postinstall"
