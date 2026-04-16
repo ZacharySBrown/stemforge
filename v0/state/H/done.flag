@@ -1,0 +1,7 @@
+W4 — Fresh-install validation harness complete.
+
+Tests: v0/tests/test_pkg_install.py (12 tier-1 + 1 tier-2 gated e2e)
+Tier 1 result: 12/12 passed (~3 s wall).
+Full v0 suite: 23 passed, 6 skipped, 0 failed.
+Pkg-under-test sha256: 52dbf77fbf66b9906f094014de16d351ae160eb70af93edc46f09588228d6910
+Fused ONNX sha256 verified: 71828190efe191a622f9c9273471de1458fe0e108f277872d43c5c81cbe29ce9
