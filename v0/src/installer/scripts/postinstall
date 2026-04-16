@@ -42,10 +42,40 @@ mkdir -p "$HOME/stemforge/processed"
 mkdir -p "$HOME/stemforge/logs"
 
 STAGING=/tmp/stemforge-staging
+AMXD_DEST="$LIB/Presets/Audio Effects/Max Audio Effect"
 if [ -f "$STAGING/StemForge.amxd" ]; then
-    cp "$STAGING/StemForge.amxd" "$LIB/Presets/Audio Effects/Max Audio Effect/"
+    cp "$STAGING/StemForge.amxd" "$AMXD_DEST/"
 else
     echo "WARNING: StemForge.amxd missing from staging; device will not appear in Ableton" >&2
+fi
+
+# Node-for-Max bridge + loader JS — must sit in the same directory as
+# StemForge.amxd so the device's embedded node.script can resolve them.
+for js in stemforge_bridge.v0.js stemforge_loader.v0.js; do
+    if [ -f "$STAGING/$js" ]; then
+        cp "$STAGING/$js" "$AMXD_DEST/"
+    else
+        echo "WARNING: $js missing from staging; M4L device child process will fail to start" >&2
+    fi
+done
+
+# Models — staged into /tmp under the user component, relocated here into the
+# target user's Application Support tree. v0 ships only the default-path model
+# (htdemucs_ft_fused) + manifest.json; fused .onnx is an inline ~697 MB file
+# (CoreML EP cannot consume an external-weight .data sidecar).
+MODELS_DEST="$HOME/Library/Application Support/StemForge/models"
+if [ -d "$STAGING/models" ]; then
+    # Clear any stale contents (e.g. prior install or symlink) to avoid
+    # shadowing new files with an old version. Preserve the dir itself.
+    if [ -L "$MODELS_DEST" ]; then
+        rm -f "$MODELS_DEST"
+        mkdir -p "$MODELS_DEST"
+    fi
+    # Copy rather than mv so we tolerate cross-device staging roots and so
+    # failures leave staging intact for retry. Use -R to preserve layout.
+    cp -R "$STAGING/models/." "$MODELS_DEST/"
+else
+    echo "WARNING: models/ missing from staging; first split will fail to load htdemucs_ft_fused" >&2
 fi
 
 if [ -f "$STAGING/StemForge.als" ]; then
@@ -58,7 +88,9 @@ fi
 if [ "$(id -u)" = "0" ] && [ -n "${USER:-}" ] && [ "$USER" != "root" ]; then
     chown -R "$USER" "$HOME/Library/Application Support/StemForge" \
                     "$HOME/stemforge" \
-                    "$LIB/Presets/Audio Effects/Max Audio Effect/StemForge.amxd" \
+                    "$AMXD_DEST/StemForge.amxd" \
+                    "$AMXD_DEST/stemforge_bridge.v0.js" \
+                    "$AMXD_DEST/stemforge_loader.v0.js" \
                     "$LIB/Templates/StemForge.als" 2>/dev/null || true
 fi
 
