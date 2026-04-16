@@ -1,0 +1,86 @@
+[
+  {
+    "path": "/Users/zak/Library/Application Support/StemForge/bin",
+    "is_symlink": false,
+    "target": null,
+    "lstat_mtime_iso": "2026-04-15T13:13:53.199211Z",
+    "size": 128
+  },
+  {
+    "path": "/Users/zak/Library/Application Support/StemForge/models",
+    "is_symlink": false,
+    "target": null,
+    "lstat_mtime_iso": "2026-04-15T11:07:34.059209Z",
+    "size": 320
+  },
+  {
+    "path": "/Users/zak/Library/Application Support/StemForge/bin/libonnxruntime.1.24.4.dylib",
+    "is_symlink": true,
+    "target": "/Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-aeafbfd6/v0/build/libonnxruntime.1.24.4.dylib",
+    "lstat_mtime_iso": "2026-04-15T13:13:53.199208Z",
+    "size": 104
+  },
+  {
+    "path": "/Users/zak/Library/Application Support/StemForge/bin/stemforge-native",
+    "is_symlink": true,
+    "target": "/Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-aeafbfd6/v0/build/stemforge-native",
+    "lstat_mtime_iso": "2026-04-15T13:13:53.199110Z",
+    "size": 93
+  },
+  {
+    "path": "/Users/zak/Library/Application Support/StemForge/models/ast",
+    "is_symlink": true,
+    "target": "/Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a74b3cc1/v0/build/models/ast",
+    "lstat_mtime_iso": "2026-04-15T11:07:34.045989Z",
+    "size": 87
+  },
+  {
+    "path": "/Users/zak/Library/Application Support/StemForge/models/clap",
+    "is_symlink": true,
+    "target": "/Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a74b3cc1/v0/build/models/clap",
+    "lstat_mtime_iso": "2026-04-15T11:07:34.047873Z",
+    "size": 88
+  },
+  {
+    "path": "/Users/zak/Library/Application Support/StemForge/models/clap_genre_embeddings.json",
+    "is_symlink": true,
+    "target": "/Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a74b3cc1/v0/build/models/clap_genre_embeddings.json",
+    "lstat_mtime_iso": "2026-04-15T11:07:34.059206Z",
+    "size": 110
+  },
+  {
+    "path": "/Users/zak/Library/Application Support/StemForge/models/htdemucs",
+    "is_symlink": true,
+    "target": "/Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a74b3cc1/v0/build/models/htdemucs",
+    "lstat_mtime_iso": "2026-04-15T11:07:34.049667Z",
+    "size": 92
+  },
+  {
+    "path": "/Users/zak/Library/Application Support/StemForge/models/htdemucs_6s",
+    "is_symlink": true,
+    "target": "/Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a74b3cc1/v0/build/models/htdemucs_6s",
+    "lstat_mtime_iso": "2026-04-15T11:07:34.051476Z",
+    "size": 95
+  },
+  {
+    "path": "/Users/zak/Library/Application Support/StemForge/models/htdemucs_ft",
+    "is_symlink": true,
+    "target": "/Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a74b3cc1/v0/build/models/htdemucs_ft",
+    "lstat_mtime_iso": "2026-04-15T11:07:34.053259Z",
+    "size": 95
+  },
+  {
+    "path": "/Users/zak/Library/Application Support/StemForge/models/manifest.json",
+    "is_symlink": true,
+    "target": "/Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a74b3cc1/v0/build/models/manifest.json",
+    "lstat_mtime_iso": "2026-04-15T11:07:34.057290Z",
+    "size": 97
+  },
+  {
+    "path": "/Users/zak/Library/Application Support/StemForge/models/ort_cache",
+    "is_symlink": true,
+    "target": "/Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a74b3cc1/v0/build/models/ort_cache",
+    "lstat_mtime_iso": "2026-04-15T11:07:34.055472Z",
+    "size": 93
+  }
+]

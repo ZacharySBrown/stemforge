@@ -33,3 +33,5 @@ v0/build/**
 !v0/build/install.sh
 !v0/build/uninstall.sh
 !v0/build/sign-notarize-pkg.sh
+# Track C output — Max for Live device (small, checked in as source-of-truth).
+!v0/build/StemForge.amxd

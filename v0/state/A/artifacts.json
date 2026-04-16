@@ -47,8 +47,29 @@
       "size_bytes_each": 174266705,
       "sha256_first12": ["be575fc0960f", "e815682b8fda", "3a49d5b3c4c6", "2320d950ba42"],
       "notes": "static-shape, 4 heads for the fine-tuned bag"
+    },
+    {
+      "path": "v0/build/StemForge.amxd",
+      "size_bytes": 11346,
+      "sha256": "0b58ea2a8da4ee69c448a76e1593f84ad29fc637c6e138ba2238e5494d3f2132",
+      "notes": "Built Max for Live device — canonicalized into main worktree per W1 (copied from .claude/worktrees/agent-a02a5a81/v0/build/StemForge.amxd). References stemforge_bridge.v0.js."
     }
   ],
+  "w1_refresh": {
+    "completed_at": "2026-04-16T14:44:00Z",
+    "branch": "feat/v0-ship-w1-canonicalize",
+    "baseline_commit": "3450539",
+    "spec": "docs/v0-ship-spec.md §W1",
+    "actions": [
+      "Copied StemForge.amxd from sibling worktree into v0/build/ (canonical)",
+      "Confirmed v0/src/m4l-js/ and v0/src/maxpat-builder/ are already present at spec commit",
+      "Rewrote production symlinks under ~/Library/Application Support/StemForge/ to point at /Users/zak/zacharysbrown/stemforge/v0/build/ (main repo, not worktree)",
+      "Removed stale symlinks for ast, clap, clap_genre_embeddings.json, htdemucs, htdemucs_6s, ort_cache (not shipped in v0)",
+      "Verified stemforge-native --version prints 0.0.0 via symlink",
+      "v0/tests pytest: 10 passed, 6 skipped, 0 failed — five test_amxd_* all PASS"
+    ],
+    "pre_symlink_state": "v0/state/A/pre-symlink-state.json"
+  },
   "tests": {
     "unit_total": 13,
     "unit_passed": "unverified_this_session",
