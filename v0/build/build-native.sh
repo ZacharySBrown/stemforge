@@ -141,11 +141,14 @@ if [[ -n "${CODESIGN_ID:-}" ]]; then
     --sign "$CODESIGN_ID" "$OUT_BIN"
 else
   echo ">> ad-hoc codesign (dev build)"
+  # Dev path uses entitlements-dev.plist — adds disable-library-validation
+  # because hardened runtime + ad-hoc sign rejects mixed-identity dylib loads.
+  DEV_ENT="$BUILD_OUT/entitlements-dev.plist"
   codesign --force --options runtime \
-    --entitlements "$BUILD_OUT/entitlements.plist" \
+    --entitlements "$DEV_ENT" \
     --sign - "$BUILD_OUT/libonnxruntime.${ORT_VERSION}.dylib" 2>/dev/null || true
   codesign --force --options runtime \
-    --entitlements "$BUILD_OUT/entitlements.plist" \
+    --entitlements "$DEV_ENT" \
     --sign - "$OUT_BIN"
 fi
 

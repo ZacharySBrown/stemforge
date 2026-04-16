@@ -25,6 +25,7 @@ v0/build/**
 !v0/build/.gitignore
 !v0/build/build-native.sh
 !v0/build/entitlements.plist
+!v0/build/entitlements-dev.plist
 !v0/build/include/
 !v0/build/include/stemforge.h
 # Track E artifacts — installer scripts (the .pkg itself is release-only).

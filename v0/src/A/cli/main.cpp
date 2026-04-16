@@ -44,8 +44,9 @@ void print_help() {
         "Usage:\n"
         "  stemforge-native split <input.wav> [--out DIR] [--json-events]\n"
         "                                    [--threads N] [--cpu-only]\n"
-        "                                    [--variant ft|6s|fast]\n"
+        "                                    [--variant ft-fused|ft|6s|fast]\n"
         "  stemforge-native forge <input.wav> [--json-events]\n"
+        "  stemforge-native warmup            [--variant ...] [--json-events]\n"
         "  stemforge-native --version\n"
         "\n"
         "Env:\n"
@@ -68,6 +69,7 @@ int parse(int argc, char **argv, Args &a) {
         if (arg == "--variant" && i + 1 < argc) {
             std::string v = argv[++i];
             if (v == "ft") a.variant = SF_DEMUCS_FT;
+            else if (v == "ft-fused") a.variant = SF_DEMUCS_FT_FUSED;
             else if (v == "6s") a.variant = SF_DEMUCS_6S;
             else if (v == "fast") a.variant = SF_DEMUCS_FAST;
             else { std::fprintf(stderr, "unknown variant: %s\n", v.c_str()); return 2; }
@@ -105,12 +107,12 @@ int main(int argc, char **argv) {
     if (a.print_version) { std::printf("%s\n", sf_version()); return 0; }
     if (a.print_help || a.subcommand.empty()) { print_help(); return 0; }
 
-    if (a.subcommand != "split" && a.subcommand != "forge") {
+    if (a.subcommand != "split" && a.subcommand != "forge" && a.subcommand != "warmup") {
         std::fprintf(stderr, "unknown subcommand: %s\n", a.subcommand.c_str());
         print_help();
         return 2;
     }
-    if (a.input.empty()) {
+    if (a.subcommand != "warmup" && a.input.empty()) {
         std::fprintf(stderr, "input file required\n");
         return 2;
     }
@@ -138,8 +140,15 @@ int main(int argc, char **argv) {
             } else out = "./processed";
         }
         st = sf_split(h, a.input.c_str(), out.c_str(), cb, nullptr);
-    } else {
+    } else if (a.subcommand == "forge") {
         st = sf_forge(h, a.input.c_str(), nullptr, cb, nullptr);
+    } else { // warmup
+        std::fprintf(stderr,
+            "Initializing StemForge neural engine (one-time setup, ~2-3 min)...\n");
+        st = sf_warmup(h, cb, nullptr);
+        if (st == SF_OK && !a.json_events) {
+            std::fprintf(stderr, "Neural engine ready.\n");
+        }
     }
 
     if (st != SF_OK && !a.json_events) {

@@ -156,14 +156,22 @@ def fuse_ft(head_paths: list[Path], dst_onnx: Path) -> onnx.ModelProto:
     g.node.extend(picker_nodes)
 
     # Replace graph outputs with two combined outputs.
-    time_shape = _dims_of(next(vi for vi in g.output if vi.name == "h0__time_out"))
-    zcac_shape = _dims_of(next(vi for vi in g.output if vi.name == "h0__zout_cac"))
-    # shape is (1, 4, 2, N) / (1, 4, 4, F, T) — after per-head gather axis=1 keepdim
-    # becomes (1, 1, 2, N) / (1, 1, 4, F, T), concat along axis=1 rebuilds (1, 4, …).
+    #
+    # Derive concrete static shapes from the (already-static) graph inputs.
+    # The per-head time_out shape inside the upstream subgraph carries a
+    # dim_param on the channel axis, which would propagate into time_out_stacked
+    # and cause CoreML EP's GetCapability to refuse the entire graph (silent
+    # CPU fallback). Hardcoding the output value_info from the static input
+    # dims avoids that — the upstream Gather+Concat are mathematically equivalent
+    # to (batch, 4 sources, mix_channels, mix_samples).
+    mix_dims = _dims_of(mix_vi)        # (1, 2, 343980)
+    zcac_dims = _dims_of(zcac_vi)      # (1, 4, 2048, 336)
+    time_shape_static = [mix_dims[0], 4, mix_dims[1], mix_dims[2]]
+    zcac_shape_static = [zcac_dims[0], 4, zcac_dims[1], zcac_dims[2], zcac_dims[3]]
     new_time = helper.make_tensor_value_info(
-        "time_out_stacked", TensorProto.FLOAT, time_shape)
+        "time_out_stacked", TensorProto.FLOAT, time_shape_static)
     new_zcac = helper.make_tensor_value_info(
-        "zout_cac_stacked", TensorProto.FLOAT, zcac_shape)
+        "zout_cac_stacked", TensorProto.FLOAT, zcac_shape_static)
     del g.output[:]
     g.output.extend([new_time, new_zcac])
 
@@ -171,20 +179,31 @@ def fuse_ft(head_paths: list[Path], dst_onnx: Path) -> onnx.ModelProto:
     fused.producer_name = "stemforge.fuse_ft"
     fused.producer_version = "0.1"
 
+    # NOTE: We deliberately do NOT call onnx.shape_inference.infer_shapes here.
+    # The fused graph carries dim_param leaks on internal time-branch
+    # value_infos (e.g. h{i}__time_out has channel-axis "?unk__N"), but the
+    # graph-level outputs above are pinned to concrete static shapes — that is
+    # the only thing CoreML EP's GetCapability checks. Running infer_shapes
+    # bloats the .data file 2-3x by inlining propagated initializers without
+    # eliminating the dim_param origin. ORT emits a one-shot lenient-merge
+    # warning at session-load and then accepts the graph; this is fine.
     try:
         onnx.checker.check_model(fused, full_check=False)
     except Exception as e:
         print(f"warning: onnx.checker.check_model: {e!s}", file=sys.stderr)
 
     dst_onnx.parent.mkdir(parents=True, exist_ok=True)
-    onnx.save(
-        fused,
-        str(dst_onnx),
-        save_as_external_data=True,
-        all_tensors_to_one_file=True,
-        location=dst_onnx.name + ".data",
-        size_threshold=1024,
-    )
+    # Save inline (no external-data sidecar). CoreML EP MLProgram compile
+    # rejects ONNX models that load weights from external .data files —
+    # SystemError 20 / silent CPU fallback at session load. Inline is required
+    # for CoreML acceleration. Sidecar would only matter if we hit the 2 GB
+    # protobuf limit; htdemucs_ft fused is ~700 MB inline, comfortably under.
+    # If a stale .data sidecar exists from a previous external-mode save,
+    # remove it so consumers don't pick up wrong weights.
+    dst_data = dst_onnx.with_name(dst_onnx.name + ".data")
+    if dst_data.exists():
+        dst_data.unlink()
+    onnx.save(fused, str(dst_onnx))
     return fused
 
 
@@ -220,17 +239,12 @@ def main(argv: list[str] | None = None) -> int:
         return 3
     dt = time.perf_counter() - t0
 
-    data_path = out_path.with_name(out_path.name + ".data")
     onnx_size = out_path.stat().st_size
-    data_size = data_path.stat().st_size if data_path.exists() else 0
     sha = _sha256(out_path)
 
     result = {
         "fused_path": str(out_path),
-        "fused_data_path": str(data_path),
-        "onnx_size_bytes": onnx_size,
-        "data_size_bytes": data_size,
-        "total_size_bytes": onnx_size + data_size,
+        "size_bytes": onnx_size,
         "sha256": sha,
         "elapsed_sec": round(dt, 3),
     }

@@ -47,7 +47,7 @@ constexpr int   kDemucsSR = 44100;
 constexpr int   kDemucsSegmentSamples = 343980; // 7.8 s @ 44.1 kHz
 constexpr float kOverlap = 0.25f;
 
-enum class DemucsVariant { Default, FT, SixSource, Fast };
+enum class DemucsVariant { Default, FT, SixSource, Fast, FTFused };
 
 struct DemucsConfig {
     DemucsVariant variant = DemucsVariant::FT;
@@ -113,6 +113,7 @@ DemucsRunner::canonical_sources(DemucsVariant v) {
             return {"drums", "bass", "other", "vocals", "guitar", "piano"};
         case DemucsVariant::Fast:
         case DemucsVariant::FT:
+        case DemucsVariant::FTFused:
         case DemucsVariant::Default:
         default:
             return {"drums", "bass", "other", "vocals"};
@@ -219,7 +220,18 @@ inline DemucsRunner::DemucsRunner(const ModelManifest &mm,
     };
 
     std::vector<const ModelEntry *> picks;
-    if (cfg_.variant == DemucsVariant::FT || cfg_.variant == DemucsVariant::Default) {
+    if (cfg_.variant == DemucsVariant::FTFused || cfg_.variant == DemucsVariant::Default) {
+        // Single fused graph: the I_4 specialist permutation is baked in via
+        // Gather+Concat at fusion time (v0/src/A0/fuse_ft.py), so output
+        // dim=1 already holds canonical-order stems. One Ort::Session, one
+        // CoreML MLProgram compile, one Run per segment.
+        const auto *e = find("htdemucs_ft_fused");
+        if (!e) throw std::runtime_error("htdemucs_ft_fused missing from manifest");
+        picks.push_back(e);
+        // Trivial bag weights: head 0 contributes 1 to every source slot, and
+        // since there's only one head the per-source denom is also 1.
+        bag_weights_ = {{1, 1, 1, 1}};
+    } else if (cfg_.variant == DemucsVariant::FT) {
         for (int i = 0; i < 4; ++i) {
             const auto *e = find("htdemucs_ft_head" + std::to_string(i));
             if (!e) throw std::runtime_error("htdemucs_ft.head" + std::to_string(i) + " missing");

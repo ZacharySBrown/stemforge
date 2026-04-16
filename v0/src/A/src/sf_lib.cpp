@@ -80,11 +80,12 @@ std::string slugify(const std::string &in) {
 
 sf::DemucsVariant to_cpp_variant(sf_demucs_variant v) {
     switch (v) {
-        case SF_DEMUCS_6S:   return sf::DemucsVariant::SixSource;
-        case SF_DEMUCS_FAST: return sf::DemucsVariant::Fast;
-        case SF_DEMUCS_FT:   return sf::DemucsVariant::FT;
+        case SF_DEMUCS_6S:       return sf::DemucsVariant::SixSource;
+        case SF_DEMUCS_FAST:     return sf::DemucsVariant::Fast;
+        case SF_DEMUCS_FT:       return sf::DemucsVariant::FT;
+        case SF_DEMUCS_FT_FUSED: return sf::DemucsVariant::FTFused;
         case SF_DEMUCS_DEFAULT:
-        default:             return sf::DemucsVariant::FT;
+        default:                 return sf::DemucsVariant::FTFused;
     }
 }
 
@@ -170,6 +171,25 @@ static sf::DemucsRunner &ensure_demucs(sf_handle h, sf::EventEmitter &emit) {
 // ────────────────────────────────────────────────────────────────────────────
 // sf_split — full stem + slice + manifest pipeline.
 // ────────────────────────────────────────────────────────────────────────────
+
+extern "C" sf_status sf_warmup(sf_handle h, sf_event_cb cb, void *user) {
+    if (!h) return SF_ERR_INVALID_ARG;
+    sf::EventEmitter emit(cb, user);
+    try {
+        emit.progress("warmup", 0, "constructing Demucs session (one-time CoreML compile, ~2-3 min)");
+        ensure_demucs(h, emit);
+        emit.progress("warmup", 100, "Demucs session ready");
+        return SF_OK;
+    } catch (const std::exception &e) {
+        h->last_error = std::string("warmup: ") + e.what();
+        emit.error("warmup", h->last_error, true);
+        return SF_ERR_MODEL_LOAD;
+    } catch (...) {
+        h->last_error = "warmup: unknown exception";
+        emit.error("warmup", h->last_error, true);
+        return SF_ERR_MODEL_LOAD;
+    }
+}
 
 extern "C" sf_status sf_split(sf_handle h, const char *input_wav,
                               const char *out_dir_c, sf_event_cb cb,

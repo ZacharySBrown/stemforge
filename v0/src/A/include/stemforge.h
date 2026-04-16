@@ -57,12 +57,13 @@ typedef enum sf_log_level {
     SF_LOG_FATAL   = 4
 } sf_log_level;
 
-/* Demucs variant. Defaults to htdemucs_ft (the A0-validated primary). */
+/* Demucs variant. Defaults to htdemucs_ft fused (single-session CoreML path). */
 typedef enum sf_demucs_variant {
-    SF_DEMUCS_DEFAULT = 0, /* htdemucs_ft (4-stem, fine-tuned, primary) */
-    SF_DEMUCS_FT      = 1, /* htdemucs_ft explicit */
-    SF_DEMUCS_6S      = 2, /* htdemucs_6s (6-stem) */
-    SF_DEMUCS_FAST    = 3  /* htdemucs (base 4-stem, speed fallback) */
+    SF_DEMUCS_DEFAULT  = 0, /* htdemucs_ft fused (single-session CoreML, ~5s/seg) */
+    SF_DEMUCS_FT       = 1, /* htdemucs_ft 4-head bag (legacy, ~50s/seg cold) */
+    SF_DEMUCS_6S       = 2, /* htdemucs_6s (6-stem) */
+    SF_DEMUCS_FAST     = 3, /* htdemucs (base 4-stem, speed fallback) */
+    SF_DEMUCS_FT_FUSED = 4  /* htdemucs_ft fused explicit (same as DEFAULT) */
 } sf_demucs_variant;
 
 typedef struct sf_config {
@@ -142,6 +143,13 @@ sf_status sf_forge(sf_handle h,
  * The in-flight call returns SF_ERR_CANCELLED when the next chunk boundary
  * is reached. */
 void sf_cancel(sf_handle h);
+
+/* Eagerly construct the Demucs session for the configured variant,
+ * triggering CoreML EP MLProgram compile. Used as a one-shot warmup so the
+ * first user-facing sf_split doesn't pay the ~125s cold compile cost.
+ * Returns SF_OK on success, SF_ERR_MODEL_LOAD if the session fails to
+ * construct. Safe to call repeatedly — subsequent calls are no-ops. */
+sf_status sf_warmup(sf_handle h, sf_event_cb cb, void *user);
 
 #ifdef __cplusplus
 } /* extern "C" */

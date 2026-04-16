@@ -63,4 +63,22 @@ if [ "$(id -u)" = "0" ] && [ -n "${USER:-}" ] && [ "$USER" != "root" ]; then
 fi
 
 rm -rf "$STAGING"
+
+# Pre-warm the CoreML MLProgram cache so the first user-facing `split` does
+# not pause for ~2-3 min on the cold compile. Must run as the target user
+# (not root) so the cache lands in the user's ~/Library/Caches/onnxruntime.
+# Non-fatal: log warnings but never fail the install on warmup errors.
+NATIVE=/usr/local/bin/stemforge-native
+if [ -x "$NATIVE" ]; then
+    echo "==> Pre-warming neural engine (one-time, may take 2-3 min)"
+    if [ "$(id -u)" = "0" ] && [ -n "${USER:-}" ] && [ "$USER" != "root" ]; then
+        # Drop privileges so CoreML cache lands in the target user's Library.
+        sudo -u "$USER" -H "$NATIVE" warmup 2>&1 | sed 's/^/    /' || \
+            echo "    (warmup failed — first split will pay the cold compile cost)"
+    else
+        "$NATIVE" warmup 2>&1 | sed 's/^/    /' || \
+            echo "    (warmup failed — first split will pay the cold compile cost)"
+    fi
+fi
+
 exit 0
