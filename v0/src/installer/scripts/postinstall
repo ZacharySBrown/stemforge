@@ -65,14 +65,12 @@ done
 # (CoreML EP cannot consume an external-weight .data sidecar).
 MODELS_DEST="$HOME/Library/Application Support/StemForge/models"
 if [ -d "$STAGING/models" ]; then
-    # Clear any stale contents (e.g. prior install or symlink) to avoid
-    # shadowing new files with an old version. Preserve the dir itself.
-    if [ -L "$MODELS_DEST" ]; then
-        rm -f "$MODELS_DEST"
-        mkdir -p "$MODELS_DEST"
-    fi
-    # Copy rather than mv so we tolerate cross-device staging roots and so
-    # failures leave staging intact for retry. Use -R to preserve layout.
+    # Wipe any prior contents (symlinks from dev-mode, stale model files,
+    # or a dangling symlink AS the dir itself). cp -R follows symlinks on
+    # write and chokes when the target is a symlink to a dir ("Not a
+    # directory") or a permission-denied repo file. Safest to start clean.
+    rm -rf "$MODELS_DEST"
+    mkdir -p "$MODELS_DEST"
     cp -R "$STAGING/models/." "$MODELS_DEST/"
 else
     echo "WARNING: models/ missing from staging; first split will fail to load htdemucs_ft_fused" >&2
