@@ -35,3 +35,5 @@ v0/build/**
 !v0/build/sign-notarize-pkg.sh
 # Track C output — Max for Live device (small, checked in as source-of-truth).
 !v0/build/StemForge.amxd
+# Track D output — Ableton Live Set template (small, checked in as build artifact).
+!v0/build/StemForge.als
