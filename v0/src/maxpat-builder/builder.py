@@ -142,7 +142,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             numinlets=1,
             numoutlets=2,
             outlettype=["", "int"],
-            extras={"types": list(fd.get("accepts", [])), "fontsize": 11.0},
+            extras={"fontsize": 11.0},
         )
     )
     # Message box to store the last-dropped file path (string). Dropfile's
@@ -280,75 +280,95 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         )
     )
 
-    # --- "pack split" message builder that turns a bang + 4 args into
-    #     `split <path> <pipeline> <backend> <slice>` for node.script ---
+    # --- Command builder: assemble shell command + redirect stdout to file ---
+    # [shell] mangles JSON through Max's message parser, so we redirect stdout
+    # to a temp file and have the [js] parser poll it directly.
+    OBJ_CMD_FMT = "obj-cmd-fmt"
     boxes.append(
         _box(
-            OBJ_PACK_SPLIT,
+            OBJ_CMD_FMT,
             "newobj",
-            (size["width"] - 300, sb["pos"]["y"] + 40, 240.0, 22.0),
-            numinlets=5,
+            (size["width"] - 300, sb["pos"]["y"] + 40, 480.0, 22.0),
+            numinlets=1,
             numoutlets=1,
-            outlettype=["list"],
-            extras={"text": "pak split symbol symbol symbol int"},
+            outlettype=[""],
+            extras={"text": 'sprintf symout /usr/local/bin/stemforge-native forge \\"%s\\" --json-events --variant ft-fused > /tmp/sf_events.ndjson 2>&1'},
         )
     )
-    # The user clicks the button → send captured file path into pak inlet 1
-    # (so the pak holds the latest path). Button then sends a bang to pak
-    # inlet 0 so it emits the whole list.
-    lines.append(_line(OBJ_SPLIT_BUTTON, 0, OBJ_PACK_SPLIT, 0))
-    lines.append(_line(OBJ_FILE_PATH_MSG, 0, OBJ_PACK_SPLIT, 1))
-    lines.append(_line(OBJ_PIPELINE_MENU, 1, OBJ_PACK_SPLIT, 2))
-    lines.append(_line(OBJ_BACKEND_MENU, 1, OBJ_PACK_SPLIT, 3))
-    lines.append(_line(OBJ_SLICE_TOGGLE, 0, OBJ_PACK_SPLIT, 4))
+    lines.append(_line(OBJ_FILE_PATH_MSG, 0, OBJ_CMD_FMT, 0))
 
-    # --- node.script bridge ---
+    # --- [shell] object — spawns stemforge-native ---
     boxes.append(
         _box(
             OBJ_BRIDGE,
             "newobj",
-            (16.0, sb["pos"]["y"] + 72, 280.0, 22.0),
+            (16.0, sb["pos"]["y"] + 72, 80.0, 22.0),
             numinlets=1,
             numoutlets=2,
-            outlettype=["", ""],
+            outlettype=["", "bang"],
+            extras={"text": "shell"},
+        )
+    )
+    lines.append(_line(OBJ_CMD_FMT, 0, OBJ_BRIDGE, 0))
+    lines.append(_line(OBJ_SPLIT_BUTTON, 0, OBJ_FILE_PATH_MSG, 0))
+
+    # --- NDJSON parser (classic [js] — polls /tmp/sf_events.ndjson) ---
+    OBJ_NDJSON_PARSER = "obj-ndjson-parser"
+    boxes.append(
+        _box(
+            OBJ_NDJSON_PARSER,
+            "newobj",
+            (16.0, sb["pos"]["y"] + 102, 240.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
             extras={
-                "text": "node.script stemforge_bridge.v0.js @autostart 1 @log_path /tmp/n4m-stemforge.log",
+                "text": "js stemforge_ndjson_parser.v0.js",
                 "saved_object_attributes": {
-                    "autostart": 1,
-                    "defer": 0,
-                    "watch": 0,
-                },
-                "textfile": {
-                    "filename": "stemforge_bridge.v0.js",
-                    "flags": 0,
-                    "embed": 0,
-                    "autowatch": 1,
+                    "filename": "stemforge_ndjson_parser.v0.js",
+                    "parameter_enable": 0,
                 },
             },
         )
     )
-    lines.append(_line(OBJ_PACK_SPLIT, 0, OBJ_BRIDGE, 0))
+    # "start" message to parser when command is sent → begins file polling
+    OBJ_START_MSG = "obj-start-msg"
+    boxes.append(
+        _box(
+            OBJ_START_MSG,
+            "message",
+            (120.0, sb["pos"]["y"] + 72, 50.0, 22.0),
+            numinlets=2,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "start"},
+        )
+    )
+    lines.append(_line(OBJ_CMD_FMT, 0, OBJ_START_MSG, 0))
+    lines.append(_line(OBJ_START_MSG, 0, OBJ_NDJSON_PARSER, 0))
+    # bang from [shell] outlet 1 (process done) → parser's bang handler
+    lines.append(_line(OBJ_BRIDGE, 1, OBJ_NDJSON_PARSER, 0))
 
-    # --- route events from bridge by event-type symbol ---
+    # --- route events from parser by event-type symbol ---
     boxes.append(
         _box(
             OBJ_ROUTE_EVENTS,
             "newobj",
-            (16.0, sb["pos"]["y"] + 102, 360.0, 22.0),
+            (16.0, sb["pos"]["y"] + 132, 360.0, 22.0),
             numinlets=1,
             numoutlets=6,
             outlettype=["", "", "", "", "", ""],
             extras={"text": "route progress stem bpm slice_dir complete error"},
         )
     )
-    lines.append(_line(OBJ_BRIDGE, 0, OBJ_ROUTE_EVENTS, 0))
+    lines.append(_line(OBJ_NDJSON_PARSER, 0, OBJ_ROUTE_EVENTS, 0))
 
     # progress → unpack → progress bar (first outlet = pct)
     boxes.append(
         _box(
             OBJ_PROGRESS_ROUTE,
             "newobj",
-            (16.0, sb["pos"]["y"] + 132, 160.0, 22.0),
+            (16.0, sb["pos"]["y"] + 162, 160.0, 22.0),
             numinlets=1,
             numoutlets=2,
             outlettype=["float", "symbol"],
@@ -362,7 +382,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         _box(
             "obj-phase-prepend",
             "newobj",
-            (180.0, sb["pos"]["y"] + 132, 80.0, 22.0),
+            (180.0, sb["pos"]["y"] + 162, 80.0, 22.0),
             numinlets=1,
             numoutlets=1,
             outlettype=["", "list"],
@@ -377,7 +397,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         _box(
             OBJ_ERROR_FMT,
             "newobj",
-            (300.0, sb["pos"]["y"] + 132, 160.0, 22.0),
+            (300.0, sb["pos"]["y"] + 162, 160.0, 22.0),
             numinlets=1,
             numoutlets=1,
             outlettype=[""],
@@ -392,7 +412,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         _box(
             OBJ_LOADER,
             "newobj",
-            (16.0, sb["pos"]["y"] + 162, 240.0, 22.0),
+            (16.0, sb["pos"]["y"] + 192, 240.0, 22.0),
             numinlets=1,
             numoutlets=2,
             outlettype=["", ""],
@@ -410,7 +430,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         _box(
             "obj-complete-prepend",
             "newobj",
-            (16.0, sb["pos"]["y"] + 192, 140.0, 22.0),
+            (16.0, sb["pos"]["y"] + 222, 140.0, 22.0),
             numinlets=1,
             numoutlets=1,
             outlettype=[""],
@@ -424,7 +444,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         _box(
             "obj-bpm-prepend",
             "newobj",
-            (180.0, sb["pos"]["y"] + 192, 120.0, 22.0),
+            (180.0, sb["pos"]["y"] + 222, 120.0, 22.0),
             numinlets=1,
             numoutlets=1,
             outlettype=[""],
@@ -439,7 +459,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         _box(
             OBJ_CONSOLE_PRINT,
             "newobj",
-            (320.0, sb["pos"]["y"] + 162, 120.0, 22.0),
+            (320.0, sb["pos"]["y"] + 192, 120.0, 22.0),
             numinlets=1,
             numoutlets=0,
             extras={"text": "print StemForge"},
@@ -471,8 +491,6 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         )
     )
     lines.append(_line("obj-loadbang", 0, "obj-diag-print", 0))
-    # Also send script start to node.script on loadbang as belt-and-suspenders
-    lines.append(_line("obj-loadbang", 0, OBJ_BRIDGE, 0))
 
     # --- Audio passthrough (required for M4L audio effects) ---
     boxes.append(
