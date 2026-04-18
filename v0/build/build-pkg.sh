@@ -10,7 +10,7 @@
 # bundle the template.
 set -euo pipefail
 
-VERSION="${STEMFORGE_VERSION:-0.0.0}"
+VERSION="${STEMFORGE_VERSION:-0.0.1}"
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "$REPO_ROOT"
 

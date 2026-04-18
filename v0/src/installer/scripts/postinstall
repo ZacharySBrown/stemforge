@@ -41,6 +41,13 @@ mkdir -p "$HOME/stemforge/inbox"
 mkdir -p "$HOME/stemforge/processed"
 mkdir -p "$HOME/stemforge/logs"
 
+# Dylib symlink: the binary uses @executable_path/libonnxruntime.1.24.4.dylib
+# which resolves to /usr/local/bin/ — but the .pkg installs the dylib to
+# /usr/local/lib/. Symlink so the binary can find it.
+if [ -f /usr/local/lib/libonnxruntime.1.24.4.dylib ] && [ ! -e /usr/local/bin/libonnxruntime.1.24.4.dylib ]; then
+    ln -sf /usr/local/lib/libonnxruntime.1.24.4.dylib /usr/local/bin/libonnxruntime.1.24.4.dylib
+fi
+
 STAGING=/tmp/stemforge-staging
 AMXD_DEST="$LIB/Presets/Audio Effects/Max Audio Effect"
 if [ -f "$STAGING/StemForge.amxd" ]; then

@@ -1,6 +1,6 @@
 {
   "name": "StemForge",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "ONNX-native stem separation bridge for StemForge M4L device",
   "author": "Raindog",
   "os": {

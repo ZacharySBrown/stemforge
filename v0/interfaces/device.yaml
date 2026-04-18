@@ -8,7 +8,7 @@ device:
   name: "StemForge"
   short_name: "SF"
   bundle_identifier: "com.stemforge.m4l.v0"
-  version: "0.0.0"  # replaced at build time with git tag
+  version: "0.0.1"
 
 # UI elements in the .amxd patch. Compact horizontal layout for M4L strip.
 ui:
