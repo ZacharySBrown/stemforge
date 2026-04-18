@@ -1,0 +1,105 @@
+# StemForge v0 — M4L device UI + binary-resolution contract
+# Track C reads this to generate StemForge.amxd.
+# Track E reads this for install paths.
+
+version: 1
+
+device:
+  name: "StemForge"
+  short_name: "SF"
+  bundle_identifier: "com.stemforge.m4l.v0"
+  version: "0.0.0"  # replaced at build time with git tag
+
+# UI elements in the .amxd patch. Compact horizontal layout for M4L strip.
+ui:
+  size: { width: 400, height: 140 }
+
+  elements:
+    - id: title
+      type: label
+      text: "StemForge"
+      pos: { x: 8, y: 4 }
+      style: { font_size: 14, weight: bold }
+
+    - id: audio_in
+      type: file_drop
+      label: "Browse..."
+      accepts: [wav, mp3, aiff, m4a, flac, ogg]
+      pos: { x: 8, y: 28 }
+      size: { width: 80, height: 24 }
+
+    - id: progress_bar
+      type: progress
+      pos: { x: 8, y: 60 }
+      size: { width: 384, height: 16 }
+
+    - id: status_text
+      type: status
+      pos: { x: 8, y: 80 }
+
+    - id: backend
+      type: dropdown
+      label: "Backend"
+      options: [auto, demucs, lalal, musicai]
+      default: auto
+      pos: { x: 8, y: 108 }
+
+    - id: pipeline
+      type: dropdown
+      label: "Pipeline"
+      options: [default, idm_crushed, glitch, ambient]
+      default: default
+      pos: { x: 152, y: 108 }
+
+    - id: slice
+      type: toggle
+      label: "Slice beats"
+      default: true
+      pos: { x: 300, y: 108 }
+
+    - id: split_button
+      type: button
+      label: "Split"
+      action: spawn_native
+      pos: { x: 336, y: 108 }
+
+# How the M4L device finds the native binary at runtime.
+# First match wins.
+binary:
+  executable_name: stemforge-native
+  search_paths:
+    - "$AMXD_DIR/../bin/stemforge-native"                    # co-installed bundle
+    - "~/Library/Application Support/StemForge/bin/stemforge-native"  # user install
+    - "/usr/local/bin/stemforge-native"                      # system install (pkg default)
+    - "/opt/homebrew/bin/stemforge-native"                   # apple silicon brew
+  protocol: ndjson-stdio
+  schema: "v0/interfaces/ndjson.schema.json"
+
+# Arguments passed to the binary.
+invocation:
+  subcommand: forge
+  flags:
+    "--json-events": true
+    "--pipeline": "$pipeline"
+    "--backend": "$backend"
+    "--output": "~/stemforge/processed"
+
+# Runtime behavior after completion.
+post_complete:
+  read_manifest: "~/stemforge/processed/$track/stems.json"
+  actions:
+    - set_tempo_from_manifest
+    - duplicate_template_tracks   # per tracks.yaml stem_target mappings
+    - load_clips_into_tracks
+    - load_beat_slices_into_simpler
+
+# Where files live on disk (must match installer layout).
+paths:
+  inbox:             "~/stemforge/inbox"
+  processed:         "~/stemforge/processed"
+  logs:              "~/stemforge/logs"
+  support:           "~/Library/Application Support/StemForge"
+  models:            "~/Library/Application Support/StemForge/models"
+  ableton_user_lib:  "~/Music/Ableton/User Library"  # postinstall detects actual
+  amxd_install:      "$ableton_user_lib/Presets/Audio Effects/Max Audio Effect/StemForge.amxd"
+  als_install:       "$ableton_user_lib/Templates/StemForge.als"

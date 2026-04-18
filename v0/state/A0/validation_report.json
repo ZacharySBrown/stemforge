@@ -1,0 +1,157 @@
+{
+  "models": [
+    {
+      "model": "ast_audioset",
+      "fixtures": [
+        {
+          "torch_top5": [
+            407,
+            515,
+            408,
+            63,
+            496
+          ],
+          "onnx_top5": [
+            407,
+            515,
+            408,
+            63,
+            496
+          ],
+          "labels_match": true,
+          "max_logit_diff": 2.2e-05,
+          "passed": true,
+          "fixture": "drum_loop_10s"
+        },
+        {
+          "torch_top5": [
+            501,
+            503,
+            158,
+            496,
+            505
+          ],
+          "onnx_top5": [
+            501,
+            503,
+            158,
+            496,
+            505
+          ],
+          "labels_match": true,
+          "max_logit_diff": 2.4e-05,
+          "passed": true,
+          "fixture": "full_mix_30s"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "model": "clap_htsat_unfused",
+      "fixtures": [
+        {
+          "fixture": "drum_loop_10s",
+          "cosine": 0.999998,
+          "passed": true
+        },
+        {
+          "fixture": "full_mix_30s",
+          "cosine": 0.999998,
+          "passed": true
+        }
+      ],
+      "passed": true
+    },
+    {
+      "model": "htdemucs_ft",
+      "passed": true,
+      "fixtures": [
+        {
+          "fixture": "drum_loop_10s",
+          "model_key": "htdemucs_ft",
+          "segment_samples": 343980,
+          "max_abs_err": 3.9969124794006348,
+          "max_rel_err": 7404.612305629979,
+          "residual_rms_dbfs": -38.83802658853571,
+          "rel_peak": 0.1367061732866611,
+          "passed": false
+        },
+        {
+          "fixture": "full_mix_30s",
+          "model_key": "htdemucs_ft",
+          "segment_samples": 343980,
+          "max_abs_err": 0.002905578352510929,
+          "max_rel_err": 28.946821583062427,
+          "residual_rms_dbfs": -99.27979839789356,
+          "rel_peak": 0.0049506489717562,
+          "passed": true
+        }
+      ],
+      "heads": [
+        "v0/build/models/htdemucs_ft/htdemucs_ft.head0.onnx",
+        "v0/build/models/htdemucs_ft/htdemucs_ft.head1.onnx",
+        "v0/build/models/htdemucs_ft/htdemucs_ft.head2.onnx",
+        "v0/build/models/htdemucs_ft/htdemucs_ft.head3.onnx"
+      ]
+    },
+    {
+      "model": "htdemucs_6s",
+      "passed": true,
+      "fixtures": [
+        {
+          "fixture": "drum_loop_10s",
+          "model_key": "htdemucs_6s",
+          "segment_samples": 343980,
+          "max_abs_err": 1.1237056851387024,
+          "max_rel_err": 2351.289824929425,
+          "residual_rms_dbfs": -46.01428768279444,
+          "rel_peak": 0.45398989158561337,
+          "passed": false
+        },
+        {
+          "fixture": "full_mix_30s",
+          "model_key": "htdemucs_6s",
+          "segment_samples": 343980,
+          "max_abs_err": 5.642883479595184e-05,
+          "max_rel_err": 1.3538969281543538,
+          "residual_rms_dbfs": -130.11395525258013,
+          "rel_peak": 0.00010558873672554922,
+          "passed": true
+        }
+      ],
+      "heads": [
+        "v0/build/models/htdemucs_6s/htdemucs_6s.onnx"
+      ]
+    },
+    {
+      "model": "htdemucs",
+      "passed": true,
+      "fixtures": [
+        {
+          "fixture": "drum_loop_10s",
+          "model_key": "htdemucs",
+          "segment_samples": 343980,
+          "max_abs_err": 10.632289290428162,
+          "max_rel_err": 44556.456881777674,
+          "residual_rms_dbfs": -25.846845531148702,
+          "rel_peak": 0.35582108311313065,
+          "passed": false
+        },
+        {
+          "fixture": "full_mix_30s",
+          "model_key": "htdemucs",
+          "segment_samples": 343980,
+          "max_abs_err": 0.00017330050468444824,
+          "max_rel_err": 7.7714212238788605,
+          "residual_rms_dbfs": -103.40525087517383,
+          "rel_peak": 0.0002665673071219358,
+          "passed": true
+        }
+      ],
+      "heads": [
+        "v0/build/models/htdemucs/htdemucs.onnx"
+      ]
+    }
+  ],
+  "passed": true
+}

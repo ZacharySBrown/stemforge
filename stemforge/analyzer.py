@@ -155,10 +155,21 @@ _clap_pipeline = None
 _ast_pipeline = None
 
 
+_ANALYZER_EXTRAS_HINT = (
+    "The analyzer requires the 'analyzer' extras (transformers + CLAP).\n"
+    "  Install with:  pip install 'stemforge[analyzer]'\n"
+    "Note: this also pulls torch via transformers; on macOS you may prefer\n"
+    "  pip install 'stemforge[native,analyzer]'  to share the torch install."
+)
+
+
 def _get_clap():
     global _clap_pipeline
     if _clap_pipeline is None:
-        from transformers import pipeline
+        try:
+            from transformers import pipeline
+        except ImportError as e:
+            raise RuntimeError(_ANALYZER_EXTRAS_HINT) from e
         _clap_pipeline = pipeline(
             "zero-shot-audio-classification",
             model="laion/clap-htsat-unfused",
@@ -170,7 +181,10 @@ def _get_clap():
 def _get_ast():
     global _ast_pipeline
     if _ast_pipeline is None:
-        from transformers import pipeline
+        try:
+            from transformers import pipeline
+        except ImportError as e:
+            raise RuntimeError(_ANALYZER_EXTRAS_HINT) from e
         _ast_pipeline = pipeline(
             "audio-classification",
             model="MIT/ast-finetuned-audioset-10-10-0.4593",

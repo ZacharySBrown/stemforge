@@ -1,0 +1,26 @@
+{
+  "track": "A0",
+  "status": "complete",
+  "artifacts": [
+    {"path": "v0/build/models/manifest.json"},
+    {"path": "v0/build/models/ast/ast_audioset.onnx"},
+    {"path": "v0/build/models/clap/clap.fp16.onnx"},
+    {"path": "v0/build/models/clap_genre_embeddings.json"},
+    {"path": "v0/build/models/htdemucs/htdemucs.onnx"},
+    {"path": "v0/build/models/htdemucs_6s/htdemucs_6s.onnx"},
+    {"path": "v0/build/models/htdemucs_ft/htdemucs_ft.head0.onnx"},
+    {"path": "v0/build/models/htdemucs_ft/htdemucs_ft.head1.onnx"},
+    {"path": "v0/build/models/htdemucs_ft/htdemucs_ft.head2.onnx"},
+    {"path": "v0/build/models/htdemucs_ft/htdemucs_ft.head3.onnx"}
+  ],
+  "duration_sec": 0,
+  "results": {
+    "ast_audioset": true,
+    "clap_htsat_unfused": true,
+    "htdemucs": true,
+    "htdemucs_6s": true,
+    "htdemucs_ft": true
+  },
+  "parity_gating": "full_mix_30s strict; drum_loop_10s advisory (synthetic-transient informational only).",
+  "notes": "A0.1 resolved the Demucs ONNX blocker via stemforge/_vendor/demucs_patched.py (vendored HTDemucs with forward_from_spec_cac). External STFT/iSTFT contract locked in demucs_export.stft_params(). See v0/src/A0/README.md for caller pipeline."
+}

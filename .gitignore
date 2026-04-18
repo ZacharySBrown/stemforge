@@ -10,3 +10,31 @@ build/
 *.flac
 .DS_Store
 test_musicai_output/
+
+# v0 build tree — ONNX weights live here (large binary artifacts).
+# The build/ glob above already excludes them; explicit rules below
+# ensure the manifest + human-readable metadata are tracked even when
+# the weights themselves are not.
+v0/build/**
+!v0/build/
+!v0/build/README.md
+!v0/build/models/
+!v0/build/models/manifest.json
+!v0/build/models/clap_genre_embeddings.json
+# Track A artifacts — scripts + headers only, not built binaries.
+!v0/build/.gitignore
+!v0/build/build-native.sh
+!v0/build/entitlements.plist
+!v0/build/entitlements-dev.plist
+!v0/build/include/
+!v0/build/include/stemforge.h
+# Track E artifacts — installer scripts (the .pkg itself is release-only).
+!v0/build/build-pkg.sh
+!v0/build/install.sh
+!v0/build/uninstall.sh
+!v0/build/sign-notarize-pkg.sh
+# Track C output — Max for Live device (small, checked in as source-of-truth).
+!v0/build/StemForge.amxd
+!v0/build/stemforge-debug.maxpat
+# Track D output — Ableton Live Set template (small, checked in as build artifact).
+!v0/build/StemForge.als

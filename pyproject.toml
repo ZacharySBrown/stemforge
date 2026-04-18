@@ -8,6 +8,8 @@ version = "0.2.0"
 description = "Stem splitting + beat slicing pipeline for Ableton Live IDM production"
 requires-python = ">=3.11"
 dependencies = [
+    # Core: lightweight only. No torch, no transformers.
+    # Cloud backends (LALAL.AI, Music.AI) + librosa DSP + CLI + manifest.
     "requests>=2.31.0",
     "librosa>=0.10.2",
     "soundfile>=0.12.1",
@@ -19,7 +21,37 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-local = ["torch>=2.1.0", "torchaudio>=2.1.0", "demucs>=4.0.1"]
+# Local Demucs stem separation (heavy — pulls torch).
+native = [
+    "torch>=2.1.0",
+    "torchaudio>=2.1.0",
+    "demucs>=4.0.1",
+]
+# Audio classification (genre via CLAP, instruments via AST).
+analyzer = [
+    "transformers>=4.40",
+    "laion-clap>=1.1",
+]
+# ONNX Runtime + conversion tooling (required for native M4L binary per PIVOT).
+onnx = [
+    "onnx>=1.16",
+    "onnxruntime>=1.18",
+    "onnxconverter-common>=1.14",
+    "optimum[onnxruntime]>=1.20",
+    "onnxscript>=0.1",
+]
+# Everything above + test/lint/build tooling.
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+    "pyinstaller>=6.5",
+]
+# Deprecated alias for `native` — kept for backward compatibility.
+local = [
+    "torch>=2.1.0",
+    "torchaudio>=2.1.0",
+    "demucs>=4.0.1",
+]
 
 [project.scripts]
 stemforge = "stemforge.cli:cli"
@@ -27,3 +59,14 @@ stemforge = "stemforge.cli:cli"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["stemforge*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# Keep current style permissive — project uses multi-import lines.
+ignore = ["E401", "E402", "E701", "E702"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

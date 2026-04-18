@@ -1,0 +1,17 @@
+# Binary products — produced by build-native.sh; checked in only when
+# a release snapshot is desired. For dev branches we keep them out of git.
+stemforge-native
+libstemforge.a
+libonnxruntime*.dylib
+cmake-arm64/
+cmake-x86_64/
+lib/
+tmp/
+
+# Installer output — produced by build-pkg.sh. Release-signed pkgs are
+# attached to GitHub releases by Track F, not committed here.
+StemForge-*.pkg
+
+# Keep: manifest.json, entitlements.plist, build-native.sh, build-pkg.sh,
+# install.sh, uninstall.sh, sign-notarize-pkg.sh, README.md, include/,
+# models/ (A0 artifacts — tracked separately by A0's lane).

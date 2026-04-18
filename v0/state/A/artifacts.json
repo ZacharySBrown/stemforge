@@ -1,0 +1,175 @@
+{
+  "track": "A",
+  "status": "done",
+  "branch": "feat/v0-coreml-opt",
+  "supersedes": "feat/v0-A-validator",
+  "artifacts": [
+    {
+      "path": "v0/build/stemforge-native",
+      "arch": "arm64",
+      "notes": "rebuilt with sf_demucs.hpp session-options fix (no-cache-with-coreml, ModelCacheDirectory, RequireStaticInputShapes=1, EnableOnSubgraphs=1)"
+    },
+    {
+      "path": "v0/build/libonnxruntime.1.24.4.v2.dylib",
+      "size_bytes": 35230784,
+      "notes": "adhoc-signed with new filename to bypass amfid cache. install_name_tool retargeted the binary to @executable_path/libonnxruntime.1.24.4.v2.dylib"
+    },
+    {
+      "path": "v0/build/libstemforge.a",
+      "notes": "static library — same C ABI as before"
+    },
+    {
+      "path": "v0/build/include/stemforge.h",
+      "notes": "unchanged"
+    },
+    {
+      "path": "v0/tests/fixtures/short_loop.wav",
+      "size_bytes": 1764044,
+      "sample_rate": 44100,
+      "channels": 2,
+      "duration_sec": 10.0,
+      "format": "PCM_16"
+    },
+    {
+      "path": "v0/build/models/htdemucs/htdemucs_static.onnx",
+      "size_bytes": 174266705,
+      "sha256": "9938e9460cb3...",
+      "notes": "static-shape ONNX — batch=1, channels=2, samples=343980, frames=336 baked"
+    },
+    {
+      "path": "v0/build/models/htdemucs_6s/htdemucs_6s_static.onnx",
+      "size_bytes": 114562239,
+      "sha256": "2b3c5b6d8032...",
+      "notes": "static-shape"
+    },
+    {
+      "path": "v0/build/models/htdemucs_ft/htdemucs_ft.head{0..3}_static.onnx",
+      "size_bytes_each": 174266705,
+      "sha256_first12": ["be575fc0960f", "e815682b8fda", "3a49d5b3c4c6", "2320d950ba42"],
+      "notes": "static-shape, 4 heads for the fine-tuned bag"
+    },
+    {
+      "path": "v0/build/StemForge.amxd",
+      "size_bytes": 11346,
+      "sha256": "0b58ea2a8da4ee69c448a76e1593f84ad29fc637c6e138ba2238e5494d3f2132",
+      "notes": "Built Max for Live device — canonicalized into main worktree per W1 (copied from .claude/worktrees/agent-a02a5a81/v0/build/StemForge.amxd). References stemforge_bridge.v0.js."
+    }
+  ],
+  "w1_refresh": {
+    "completed_at": "2026-04-16T14:44:00Z",
+    "branch": "feat/v0-ship-w1-canonicalize",
+    "baseline_commit": "3450539",
+    "spec": "docs/v0-ship-spec.md §W1",
+    "actions": [
+      "Copied StemForge.amxd from sibling worktree into v0/build/ (canonical)",
+      "Confirmed v0/src/m4l-js/ and v0/src/maxpat-builder/ are already present at spec commit",
+      "Rewrote production symlinks under ~/Library/Application Support/StemForge/ to point at /Users/zak/zacharysbrown/stemforge/v0/build/ (main repo, not worktree)",
+      "Removed stale symlinks for ast, clap, clap_genre_embeddings.json, htdemucs, htdemucs_6s, ort_cache (not shipped in v0)",
+      "Verified stemforge-native --version prints 0.0.0 via symlink",
+      "v0/tests pytest: 10 passed, 6 skipped, 0 failed — five test_amxd_* all PASS"
+    ],
+    "pre_symlink_state": "v0/state/A/pre-symlink-state.json"
+  },
+  "tests": {
+    "unit_total": 13,
+    "unit_passed": "unverified_this_session",
+    "ndjson_schema_valid": true,
+    "end_to_end_inference": true,
+    "e2e_runs": {
+      "htdemucs_ft_cold": 215.25,
+      "htdemucs_ft_warm": 50.33,
+      "htdemucs_fast_cold": 52.90,
+      "htdemucs_fast_warm": 10.92,
+      "htdemucs_6s_cold": 31.87,
+      "htdemucs_6s_warm": 7.31
+    }
+  },
+  "runtime": {
+    "coreml_ep_active": true,
+    "coreml_partitions": 32,
+    "coreml_nodes_assigned": 1446,
+    "coreml_nodes_total": 1500,
+    "coreml_partition_pct": 96.4,
+    "demucs_per_segment_latency_cpu_sec": 2.20,
+    "demucs_per_segment_latency_coreml_sec": 0.544,
+    "demucs_per_segment_speedup_vs_cpu": "4.04x",
+    "ort_version": "1.24.4",
+    "cpu_ep_threads": "hardware_concurrency - 1",
+    "coreml_options": {
+      "MLComputeUnits": "ALL",
+      "ModelFormat": "MLProgram",
+      "RequireStaticInputShapes": "1",
+      "EnableOnSubgraphs": "1",
+      "ModelCacheDirectory": "v0/build/models/ort_cache/<variant>/coreml_cache"
+    },
+    "notes": "Warm-cache numbers are what ship in the M4L device (v2) use case where sessions outlive the split. CLI cold-run is slower for htdemucs_ft due to 4 session-setup hits; single-head variants hit the ≤12 s wall-clock target."
+  },
+  "c_abi_version": "0.0.0",
+  "c_abi_header": "v0/build/include/stemforge.h",
+  "arch": "arm64",
+  "universal2": false,
+  "codesigned_adhoc": true,
+  "hardened_runtime": false,
+  "coreml_ep_active": true,
+  "demucs_latency_sec": {
+    "per_segment_cpu": 2.20,
+    "per_segment_coreml": 0.544,
+    "per_segment_speedup": 4.04,
+    "end_to_end_cold_htdemucs_ft": 215.25,
+    "end_to_end_warm_htdemucs_ft": 50.33,
+    "end_to_end_warm_htdemucs_6s": 7.31,
+    "end_to_end_warm_htdemucs": 10.92,
+    "baseline_end_to_end_cpu_htdemucs_ft": 22.11
+  },
+  "notes": "End-to-end validated on v0/tests/fixtures/short_loop.wav. CoreML EP IS ACTIVE — ORT logs confirm 1446/1500 nodes assigned to CoreMLExecutionProvider for every Demucs head. Per-segment Demucs inference drops 4x. Cold-cache wall-clock regresses for htdemucs_ft because each of 4 heads pays ~50 s compile cost; warm-cache wall-clock for htdemucs_ft is 50 s (session-setup dominated) vs 22 s CPU baseline — known trade-off for v0 CLI, inverts for v2 M4L where sessions persist. Single-head variants already meet the target. See v0/state/A/coreml_report.md for full analysis.",
+
+  "fusion_followup": {
+    "status": "aborted",
+    "branch": "feat/v0-demucs-ft-fused",
+    "date": "2026-04-15",
+    "report": "v0/state/A/fusion_aborted.md",
+    "verbose_log": "v0/state/A/fusion_coreml_verbose.log",
+    "artifacts": {
+      "htdemucs_ft_fused.onnx": {
+        "path": "v0/build/models/htdemucs_ft/htdemucs_ft_fused.onnx",
+        "data_path": "v0/build/models/htdemucs_ft/htdemucs_ft_fused.onnx.data",
+        "onnx_body_bytes": 25834724,
+        "external_data_bytes": 671522816,
+        "total_bytes": 697357540,
+        "sha256": "4a6f1d7861a83bd2162137fe67b353665b38a71b60c8a2a9c3090ec8e1b17621",
+        "ships_in_manifest": false,
+        "notes": "built and on disk; NOT added to manifest until CoreML MLProgram compile is fixed"
+      }
+    },
+    "scripts": [
+      "v0/src/A0/fusion_smoke.py",
+      "v0/src/A0/fuse_ft.py",
+      "v0/src/A0/fusion_parity.py"
+    ],
+    "coverage": {
+      "total_nodes_fused_4head": 5944,
+      "coreml_supported_nodes_fused_4head": 5728,
+      "coreml_partitions_fused_4head": 32,
+      "coreml_partition_pct_fused_4head": 96.4,
+      "gate_coverage_ge_90pct": "PASS"
+    },
+    "parity_vs_unfused_bag_cpu": {
+      "max_abs_time_branch": 0.0,
+      "max_abs_zcac_branch": 0.0,
+      "residual_rms_dbfs_time": -240.0,
+      "gate_rms_le_minus_60_dbfs": "PASS (bit-exact)"
+    },
+    "cpu_inference_sec_per_segment_fused": 7.60,
+    "cpu_inference_sec_per_segment_unfused_bag_sequential": 10.44,
+    "cpu_fusion_speedup_x": 1.37,
+    "coreml_mlprogram_compile": {
+      "result": "FAIL",
+      "error": "SystemError : 20 (ENOTDIR)",
+      "fallback_behavior": "ORT silently falls back to CPUExecutionProvider",
+      "gate_coreml_loaded": "FAIL"
+    },
+    "coreml_latency_sec_per_segment_fused": null,
+    "coreml_warm_wall_clock_sec_fused": null,
+    "recommendation": "See fusion_aborted.md §Recommendation. Three options: (1) keep unfused bag (status quo, accept 50 s warm for v0 CLI), (2) swap default_variant to htdemucs_6s (7.3 s warm, 6 stems, quality tradeoff for user), (3) debug CoreML MLProgram compile on fused graph (unlocks ~10-12 s warm if fixable). No binary or manifest defaults were changed in this session."
+  }
+}

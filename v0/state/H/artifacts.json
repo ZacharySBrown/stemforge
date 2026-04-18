@@ -1,0 +1,29 @@
+{
+  "workstream": "W4",
+  "track": "H",
+  "role": "engineer",
+  "branch": "feat/v0-ship-w4-install-validation",
+  "base_commit": "f1fc704",
+  "gh_issue": 13,
+  "artifacts": {
+    "test_suite": "v0/tests/test_pkg_install.py",
+    "readme_update": "v0/tests/README.md"
+  },
+  "pkg_under_test": {
+    "path": "v0/build/StemForge-0.0.0.pkg",
+    "size_bytes": 409131814,
+    "sha256": "52dbf77fbf66b9906f094014de16d351ae160eb70af93edc46f09588228d6910",
+    "built_from": "bash v0/build/build-pkg.sh (W2 pipeline, commit e8274c0)"
+  },
+  "fused_onnx_contract": {
+    "path_in_pkg": "user.pkg/Payload/tmp/stemforge-staging/models/htdemucs_ft/htdemucs_ft_fused.onnx",
+    "expected_sha256": "71828190efe191a622f9c9273471de1458fe0e108f277872d43c5c81cbe29ce9",
+    "verified": true,
+    "note": "Single inline ONNX, no external .data sidecar — CoreML EP requirement."
+  },
+  "test_results": {
+    "tier1": {"passed": 12, "skipped": 0, "failed": 0},
+    "tier2_e2e": {"skipped_by_default": true, "env_gate": "STEMFORGE_INSTALL_E2E=1"},
+    "full_v0_suite": {"passed": 23, "skipped": 6, "failed": 0}
+  }
+}

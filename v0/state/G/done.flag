@@ -1,0 +1,25 @@
+{
+  "completed_at": "2026-04-14T00:00:00Z",
+  "branch": "feat/v0-G-integration",
+  "test_files": ["test_binary.py", "test_amxd.py", "test_als.py"],
+  "tests_passed": 6,
+  "tests_skipped": 10,
+  "tests_failed": 0,
+  "als_tests_conditional": true,
+  "run_command": "uv run --active --with jsonschema pytest v0/tests/ -v",
+  "binary_resolved_from": "~/Library/Application Support/StemForge/bin/stemforge-native",
+  "binary_in_tree_present": false,
+  "amxd_in_tree_present": false,
+  "als_in_tree_present": false,
+  "notes": "Binary was resolved via the installed symlink (C's symlink into agent-a133b5f9's build output). All 6 binary tests passed end-to-end against stemforge-native (~30s per demucs run, ~3 inferences total → ~3 min suite). amxd + als tests skip cleanly because this worktree's v0/build/ does not contain those artifacts (C and D produce them in their own worktrees). During development, amxd tests were proven green by copying StemForge.amxd from agent-a02a5a81's build output into v0/build/; that copy was removed before commit. als tests will begin running once v0/assets/skeleton.als is human-authored and Track D regenerates StemForge.als.",
+  "discrepancies": {
+    "cli_flag_corrected": "Track G brief specifies --output DIR; actual CLI (v0/src/A/cli/main.cpp:67) accepts --out DIR. Tests use --out.",
+    "stems_json_shape_corrected": "Track G brief implied stems.json has stems as a dict ({drums: {...}}); actual schema (v0/src/A/src/sf_manifest.hpp:55) is stems as an array of StemEntry objects. expected_stems.json + tests written to the real array shape.",
+    "jsonschema_env": "uv run --with jsonschema alone spawns an ephemeral venv that lacks project pytest plugins; must use uv run --active --with jsonschema to layer the dep onto the project venv. Documented in v0/tests/README.md."
+  },
+  "fixtures": {
+    "short_loop_wav_reused_from_A_validator": true,
+    "expected_stems_json_derived_from_sf_manifest_hpp": true,
+    "generate_loop_py_is_documentation_only": true
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "completed_at": "2026-04-16T16:00:00Z",
+  "workstream": "W2",
+  "branch": "feat/v0-ship-w2-installer-rebuild",
+  "pkg_path": "v0/build/StemForge-0.0.0.pkg",
+  "pkg_size_bytes": 409131828,
+  "pkg_size_gb": 0.38,
+  "pkg_sha256": "c94c838704409d1df2e98cbecacb0d2742274f7ca63f8016ce9a22ae984d2edf",
+  "fused_onnx_sha256": "71828190efe191a622f9c9273471de1458fe0e108f277872d43c5c81cbe29ce9",
+  "fused_onnx_size_bytes": 697251672,
+  "has_data_sidecar": false,
+  "models_included": true,
+  "m4l_js_included": true,
+  "als_included": false,
+  "signed": false,
+  "notarized": false,
+  "verification_pkgutil_expand_full": "PASS"
+}

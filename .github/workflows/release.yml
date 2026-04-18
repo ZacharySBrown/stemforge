@@ -1,0 +1,335 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+# Release pipeline: convert ONNX -> build native (arm64 + x86_64) ->
+# lipo universal2 + sign/notarize -> build amxd/als in parallel ->
+# assemble + sign + notarize .pkg -> publish GitHub release.
+#
+# Per v0/PIVOT.md, the PyInstaller path is dead. We build a C++ host that
+# links ONNX Runtime with CoreML EP. Track A0 owns model conversion,
+# Track A owns the native binary, Track C/D own .amxd/.als, Track E the .pkg.
+#
+# Skeleton phase: many build scripts referenced here don't exist yet
+# (Track A, C, D, E in flight). Tagging `v0.0.0-test` will fail until they land.
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write  # needed to publish release
+  id-token: write  # reserved for future OIDC flows
+
+jobs:
+  # --------------------------------------------------------------------------
+  # A0 — Convert PyTorch / HF checkpoints to ONNX, validate numerical parity.
+  # NEW under ONNX-first pivot. Gates Track A.
+  # --------------------------------------------------------------------------
+  convert-onnx:
+    name: Convert + validate ONNX models
+    runs-on: macos-14
+    timeout-minutes: 90
+    outputs:
+      manifest-sha: ${{ steps.manifest.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install conversion + validation deps
+        run: |
+          pip install uv
+          # Track A0 pins exact versions in v0/src/A0/requirements.txt once it
+          # lands. Until then, install a reasonable superset.
+          uv pip install --system \
+            torch torchaudio demucs \
+            onnx onnxruntime onnxconverter-common \
+            'optimum[exporters]' transformers \
+            librosa soundfile numpy pyyaml
+
+      - name: Convert models (Track A0)
+        # References v0/src/A0/convert.py per A0 brief.
+        # Produces: v0/build/models/{htdemucs_ft,htdemucs_6s,htdemucs,clap_htsat_unfused,ast_audioset}.onnx
+        run: |
+          if [ -f v0/src/A0/convert.py ]; then
+            python v0/src/A0/convert.py --out v0/build/models/
+          else
+            echo "::error::v0/src/A0/convert.py missing — Track A0 not landed"
+            exit 1
+          fi
+
+      - name: Validate parity (Track A0)
+        run: |
+          python v0/src/A0/validate.py --models v0/build/models/ --report v0/state/A0/validation_report.json
+
+      - name: CoreML EP smoke test
+        run: |
+          python v0/src/A0/validate.py --coreml-smoke --models v0/build/models/
+
+      - name: Compute manifest sha
+        id: manifest
+        run: |
+          sha=$(shasum -a 256 v0/build/models/manifest.json | awk '{print $1}')
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: onnx-models
+          path: |
+            v0/build/models/*.onnx
+            v0/build/models/manifest.json
+            v0/build/models/clap_genre_embeddings.json
+          if-no-files-found: error
+          retention-days: 30
+
+  # --------------------------------------------------------------------------
+  # Track A — Native ONNX host binary, per architecture.
+  # --------------------------------------------------------------------------
+  build-native-arm64:
+    name: Build native (arm64)
+    needs: convert-onnx
+    runs-on: macos-14  # Apple Silicon
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download ONNX models
+        uses: actions/download-artifact@v4
+        with:
+          name: onnx-models
+          path: v0/build/models/
+
+      - name: Install CMake + build toolchain
+        run: |
+          brew update
+          brew install cmake ninja nlohmann-json libsndfile libsamplerate
+
+      - name: Build libstemforge.a + stemforge-native (arm64)
+        env:
+          STEMFORGE_MODEL_DIR: ${{ github.workspace }}/v0/build/models
+        run: |
+          bash v0/build/build-native.sh --arch arm64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stemforge-native-arm64
+          path: |
+            v0/build/stemforge-native-arm64
+            v0/build/libstemforge-arm64.a
+            v0/build/include/stemforge.h
+          if-no-files-found: error
+
+  build-native-x86_64:
+    name: Build native (x86_64)
+    needs: convert-onnx
+    runs-on: macos-13  # Intel
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download ONNX models
+        uses: actions/download-artifact@v4
+        with:
+          name: onnx-models
+          path: v0/build/models/
+
+      - name: Install CMake + build toolchain
+        run: |
+          brew update
+          brew install cmake ninja nlohmann-json libsndfile libsamplerate
+
+      - name: Build libstemforge.a + stemforge-native (x86_64)
+        env:
+          STEMFORGE_MODEL_DIR: ${{ github.workspace }}/v0/build/models
+        run: |
+          bash v0/build/build-native.sh --arch x86_64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stemforge-native-x86_64
+          path: |
+            v0/build/stemforge-native-x86_64
+            v0/build/libstemforge-x86_64.a
+            v0/build/include/stemforge.h
+          if-no-files-found: error
+
+  # --------------------------------------------------------------------------
+  # Lipo + codesign + notarize the universal2 binary.
+  # --------------------------------------------------------------------------
+  merge-universal2:
+    name: Merge universal2 + sign/notarize
+    needs: [build-native-arm64, build-native-x86_64]
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: stemforge-native-arm64
+          path: arm64/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: stemforge-native-x86_64
+          path: x86_64/
+
+      - name: Lipo universal2
+        uses: ./.github/actions/lipo-merge
+        with:
+          arm64-binary: arm64/stemforge-native-arm64
+          x86_64-binary: x86_64/stemforge-native-x86_64
+          out-binary: v0/build/stemforge-native
+
+      - name: Codesign + notarize
+        uses: ./.github/actions/notarize
+        with:
+          artifact: v0/build/stemforge-native
+          entitlements: v0/build/entitlements.plist
+          codesign-id: ${{ secrets.CODESIGN_ID }}
+          codesign-cert-p12-b64: ${{ secrets.CODESIGN_CERT_P12_B64 }}
+          codesign-cert-pw: ${{ secrets.CODESIGN_CERT_PW }}
+          apple-id: ${{ secrets.APPLE_ID }}
+          apple-team-id: ${{ secrets.APPLE_TEAM_ID }}
+          apple-app-pw: ${{ secrets.APPLE_APP_PW }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stemforge-native-universal2
+          path: v0/build/stemforge-native
+          if-no-files-found: error
+
+  # --------------------------------------------------------------------------
+  # Track C — .amxd. Runs in parallel with native build; signing happens
+  # at the .pkg level in Track E, not here.
+  # --------------------------------------------------------------------------
+  build-amxd:
+    name: Build .amxd
+    runs-on: macos-14
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build deps
+        run: |
+          pip install uv
+          uv pip install --system pyyaml
+
+      - name: Build .amxd
+        run: |
+          python v0/src/maxpat-builder/builder.py \
+            --device v0/interfaces/device.yaml \
+            --events v0/interfaces/ndjson.schema.json \
+            --out v0/build/StemForge.amxd
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: amxd
+          path: v0/build/StemForge.amxd
+          if-no-files-found: error
+
+  # --------------------------------------------------------------------------
+  # Track D — .als.
+  # --------------------------------------------------------------------------
+  build-als:
+    name: Build .als
+    runs-on: macos-14
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build deps
+        run: |
+          pip install uv
+          uv pip install --system lxml pyyaml
+
+      - name: Build .als
+        run: |
+          python v0/src/als-builder/builder.py \
+            --tracks v0/interfaces/tracks.yaml \
+            --skeleton v0/assets/skeleton.als \
+            --out v0/build/StemForge.als
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: als
+          path: v0/build/StemForge.als
+          if-no-files-found: error
+
+  # --------------------------------------------------------------------------
+  # Track E — Assemble, sign, notarize .pkg. Publish release.
+  # --------------------------------------------------------------------------
+  package:
+    name: Package + publish release
+    needs: [merge-universal2, build-amxd, build-als, convert-onnx]
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download native binary
+        uses: actions/download-artifact@v4
+        with:
+          name: stemforge-native-universal2
+          path: v0/build/
+
+      - name: Download .amxd
+        uses: actions/download-artifact@v4
+        with:
+          name: amxd
+          path: v0/build/
+
+      - name: Download .als
+        uses: actions/download-artifact@v4
+        with:
+          name: als
+          path: v0/build/
+
+      - name: Download ONNX models
+        uses: actions/download-artifact@v4
+        with:
+          name: onnx-models
+          path: v0/build/models/
+
+      - name: Resolve release version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build .pkg
+        env:
+          STEMFORGE_VERSION: ${{ steps.version.outputs.version }}
+        run: bash v0/src/installer/build-pkg.sh
+
+      - name: Sign + notarize .pkg
+        uses: ./.github/actions/notarize
+        with:
+          artifact: v0/build/StemForge-${{ steps.version.outputs.version }}.pkg
+          kind: installer
+          codesign-id: ${{ secrets.INSTALLER_ID }}
+          codesign-cert-p12-b64: ${{ secrets.INSTALLER_CERT_P12_B64 }}
+          codesign-cert-pw: ${{ secrets.CODESIGN_CERT_PW }}
+          apple-id: ${{ secrets.APPLE_ID }}
+          apple-team-id: ${{ secrets.APPLE_TEAM_ID }}
+          apple-app-pw: ${{ secrets.APPLE_APP_PW }}
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            v0/build/StemForge-${{ steps.version.outputs.version }}.pkg
+            v0/build/install.sh
+          generate_release_notes: true
+          fail_on_unmatched_files: true

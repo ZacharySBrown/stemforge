@@ -1,0 +1,128 @@
+#!/bin/bash
+# StemForge postinstall — runs after the .pkg lays down system files.
+# Relocates user-local payload from /tmp/stemforge-staging into the Ableton
+# User Library, then creates the per-user support directories.
+#
+# Runs as root when the .pkg is installed via `sudo installer`, so we resolve
+# $HOME via the installed-for user ($USER at install time is set by
+# Installer.app to the target user; we fall back to $HOME if unset).
+set -e
+
+# When the .pkg is installed for a specific user, macOS sets $HOME to that
+# user's home. If somehow unset (e.g. manual `installer` run as root with no
+# login session), derive it from the logged-in console user.
+if [ -z "${HOME:-}" ] || [ "$HOME" = "/var/root" ]; then
+    CONSOLE_USER=$(stat -f "%Su" /dev/console 2>/dev/null || echo "$USER")
+    HOME=$(dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
+    export HOME
+fi
+
+detect_ableton_lib() {
+    local prefs
+    prefs=$(ls -1d "$HOME/Library/Preferences/Ableton/Live "* 2>/dev/null | sort -V | tail -1)
+    if [ -n "$prefs" ] && [ -f "$prefs/Preferences.cfg" ]; then
+        local lib
+        lib=$(grep -oE '"UserLibraryFolder"[^"]*"[^"]+"' "$prefs/Preferences.cfg" \
+              | tail -1 | grep -oE '"[^"]+"$' | tr -d '"')
+        if [ -n "$lib" ]; then
+            echo "$lib"
+            return 0
+        fi
+    fi
+    echo "$HOME/Music/Ableton/User Library"
+}
+
+LIB=$(detect_ableton_lib)
+mkdir -p "$LIB/Presets/Audio Effects/Max Audio Effect"
+mkdir -p "$LIB/Templates"
+mkdir -p "$HOME/Library/Application Support/StemForge/models"
+mkdir -p "$HOME/Library/Application Support/StemForge/bin"
+mkdir -p "$HOME/stemforge/inbox"
+mkdir -p "$HOME/stemforge/processed"
+mkdir -p "$HOME/stemforge/logs"
+
+STAGING=/tmp/stemforge-staging
+AMXD_DEST="$LIB/Presets/Audio Effects/Max Audio Effect"
+if [ -f "$STAGING/StemForge.amxd" ]; then
+    cp "$STAGING/StemForge.amxd" "$AMXD_DEST/"
+else
+    echo "WARNING: StemForge.amxd missing from staging; device will not appear in Ableton" >&2
+fi
+
+# Max Package — node.script resolves JS by bare filename via Max's search path.
+# The StemForge package puts JS into ~/Documents/Max 9/Packages/StemForge/javascript/
+# which Max auto-scans at launch. This is the same pattern Cycling '74 uses for
+# Node for Max, RNBO, and BEAP. No mx@c freeze step needed.
+MAX_PKG_DEST="$HOME/Documents/Max 9/Packages/StemForge"
+if [ -d "$STAGING/m4l-package/StemForge" ]; then
+    rm -rf "$MAX_PKG_DEST"
+    mkdir -p "$MAX_PKG_DEST"
+    cp -R "$STAGING/m4l-package/StemForge/." "$MAX_PKG_DEST/"
+    echo "Max Package deployed to $MAX_PKG_DEST"
+else
+    # Fallback: copy JS next to .amxd (works if Max searches the device dir)
+    echo "WARNING: Max Package missing from staging; falling back to JS-next-to-amxd" >&2
+    for js in stemforge_bridge.v0.js stemforge_loader.v0.js; do
+        if [ -f "$STAGING/$js" ]; then
+            cp "$STAGING/$js" "$AMXD_DEST/"
+        fi
+    done
+fi
+
+# Models — staged into /tmp under the user component, relocated here into the
+# target user's Application Support tree. v0 ships only the default-path model
+# (htdemucs_ft_fused) + manifest.json; fused .onnx is an inline ~697 MB file
+# (CoreML EP cannot consume an external-weight .data sidecar).
+MODELS_DEST="$HOME/Library/Application Support/StemForge/models"
+if [ -d "$STAGING/models" ]; then
+    # Wipe any prior contents (symlinks from dev-mode, stale model files,
+    # or a dangling symlink AS the dir itself). cp -R follows symlinks on
+    # write and chokes when the target is a symlink to a dir ("Not a
+    # directory") or a permission-denied repo file. Safest to start clean.
+    rm -rf "$MODELS_DEST"
+    mkdir -p "$MODELS_DEST"
+    cp -R "$STAGING/models/." "$MODELS_DEST/"
+else
+    echo "WARNING: models/ missing from staging; first split will fail to load htdemucs_ft_fused" >&2
+fi
+
+if [ -f "$STAGING/StemForge.als" ]; then
+    cp "$STAGING/StemForge.als" "$LIB/Templates/"
+else
+    echo "StemForge.als not bundled in this build (skeleton.als pending); template skipped"
+fi
+
+# Chown anything we created as root back to the target user.
+# Resolve the actual target user — $USER may be "root" inside installer sandbox.
+TARGET_USER="${USER:-}"
+if [ "$TARGET_USER" = "root" ] || [ -z "$TARGET_USER" ]; then
+    TARGET_USER=$(stat -f "%Su" /dev/console 2>/dev/null || true)
+fi
+if [ "$(id -u)" = "0" ] && [ -n "$TARGET_USER" ] && [ "$TARGET_USER" != "root" ]; then
+    chown -R "$TARGET_USER" "$HOME/Library/Application Support/StemForge" \
+                    "$HOME/stemforge" \
+                    "$AMXD_DEST/StemForge.amxd" \
+                    "$MAX_PKG_DEST" \
+                    "$LIB/Templates/StemForge.als" 2>/dev/null || true
+fi
+
+rm -rf "$STAGING"
+
+# Pre-warm the CoreML MLProgram cache so the first user-facing `split` does
+# not pause for ~2-3 min on the cold compile. Must run as the target user
+# (not root) so the cache lands in the user's ~/Library/Caches/onnxruntime.
+# Non-fatal: log warnings but never fail the install on warmup errors.
+NATIVE=/usr/local/bin/stemforge-native
+if [ -x "$NATIVE" ]; then
+    echo "==> Pre-warming neural engine (one-time, may take 2-3 min)"
+    if [ "$(id -u)" = "0" ] && [ -n "${USER:-}" ] && [ "$USER" != "root" ]; then
+        # Drop privileges so CoreML cache lands in the target user's Library.
+        sudo -u "$USER" -H "$NATIVE" warmup 2>&1 | sed 's/^/    /' || \
+            echo "    (warmup failed — first split will pay the cold compile cost)"
+    else
+        "$NATIVE" warmup 2>&1 | sed 's/^/    /' || \
+            echo "    (warmup failed — first split will pay the cold compile cost)"
+    fi
+fi
+
+exit 0

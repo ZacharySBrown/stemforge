@@ -1,0 +1,19 @@
+{
+  "completed_at": "2026-04-14T00:00:00Z",
+  "branch": "feat/v0-C-amxd",
+  "path_chosen": "path-1",
+  "amxd_built": true,
+  "amxd_path": "v0/build/StemForge.amxd",
+  "amxd_size_bytes": 11346,
+  "amxd_box_count": 19,
+  "amxd_patchline_count": 20,
+  "amxd_opens_in_live": "manual-check-pending",
+  "bridge_js_unit_tests_pass": true,
+  "builder_unit_tests_pass": true,
+  "amxd_container_unit_tests_pass": true,
+  "unit_tests_total": 26,
+  "unit_tests_passed": 26,
+  "integration_tested": false,
+  "integration_reason": "Track A's done.flag not yet present (validator agent still running in parallel per session prompt). Bridge JS unit tests cover the NDJSON-to-outlet translation contract which is Track C's surface. End-to-end inference against the binary is an acceptance-test concern (Track G) once A is unblocked.",
+  "notes": "Path 1 via reverse-engineered .amxd container format. Format is documented in v0/state/C/path-chosen.md. Round-trip verified against m4l/StemForgeTemplateBuilder.amxd. Binary symlink present at ~/Library/Application Support/StemForge/bin/stemforge-native (resolves to Track A's build output in agent-a133b5f9 worktree); bridge will find it via device.yaml search path #2."
+}

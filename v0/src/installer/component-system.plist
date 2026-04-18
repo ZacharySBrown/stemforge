@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Reserved for future use. Our system payload is a plain Mach-O binary +
+    dylib, not a relocatable bundle, so pkgbuild does not require a component
+    plist. If we ever wrap stemforge-native into a `.app` (e.g. to host a
+    LaunchAgent or preference pane), regenerate this file via:
+        pkgbuild --analyze --root payload-system component-system.plist
+    and set BundleIsRelocatable=false before re-invoking pkgbuild.
+-->
+<plist version="1.0">
+<array/>
+</plist>

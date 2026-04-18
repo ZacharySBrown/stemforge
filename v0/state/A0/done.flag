@@ -1,0 +1,24 @@
+{
+  "completed_at": "2026-04-14T22:30:00Z",
+  "branch": "feat/v0-A0-demucs-fix",
+  "models_shipped": [
+    "htdemucs_ft",
+    "htdemucs_6s",
+    "htdemucs",
+    "ast_audioset",
+    "clap_htsat_unfused"
+  ],
+  "artifacts": [
+    "v0/build/models/manifest.json",
+    "v0/build/models/ast/ast_audioset.onnx",
+    "v0/build/models/clap/clap.fp16.onnx",
+    "v0/build/models/clap_genre_embeddings.json",
+    "v0/build/models/htdemucs/htdemucs.onnx",
+    "v0/build/models/htdemucs_6s/htdemucs_6s.onnx",
+    "v0/build/models/htdemucs_ft/htdemucs_ft.head0.onnx",
+    "v0/build/models/htdemucs_ft/htdemucs_ft.head1.onnx",
+    "v0/build/models/htdemucs_ft/htdemucs_ft.head2.onnx",
+    "v0/build/models/htdemucs_ft/htdemucs_ft.head3.onnx"
+  ],
+  "notes": "Demucs uses external STFT via stemforge._vendor.demucs_patched. Parity gates on full_mix_30s (representative of real music); drum_loop_10s residual is advisory due to deep-network fp32 accumulation on synthetic clicks. AST shipped fp32 (2-sample int8 calibration insufficient). CLAP shipped fp16. Demucs shipped fp32 (fp16 null-test failed on time-branch transients)."
+}

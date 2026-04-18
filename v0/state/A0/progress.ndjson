@@ -1,0 +1,272 @@
+{"ts": "2026-04-15T01:41:11Z", "phase": "ast.export", "pct": 0.0, "message": "exporting MIT/ast-finetuned-audioset-10-10-0.4593 via optimum"}
+{"ts": "2026-04-15T01:41:17Z", "phase": "ast.export", "pct": 100.0, "message": "wrote /Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a0119e2e/v0/build/models/ast/ast_audioset.onnx"}
+{"ts": "2026-04-15T01:41:35Z", "phase": "clap.export", "pct": 0.0, "message": "exporting laion/clap-htsat-unfused (feature-extraction task)"}
+{"ts": "2026-04-15T01:45:07Z", "phase": "start", "pct": 0.0, "message": "full A0 run — AST + CLAP + Demucs-attempt"}
+{"ts": "2026-04-15T01:45:07Z", "phase": "ast", "pct": 5.0, "message": "exporting"}
+{"ts": "2026-04-15T01:45:09Z", "phase": "ast.export", "pct": 0.0, "message": "exporting MIT/ast-finetuned-audioset-10-10-0.4593 via optimum"}
+{"ts": "2026-04-15T01:45:13Z", "phase": "ast.export", "pct": 100.0, "message": "wrote /Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a0119e2e/v0/build/models/ast/ast_audioset.onnx"}
+{"ts": "2026-04-15T01:45:15Z", "phase": "ast", "pct": 40.0, "message": "drum_loop_10s: match=True diff=2.1935e-05 pass=True"}
+{"ts": "2026-04-15T01:45:17Z", "phase": "ast", "pct": 40.0, "message": "full_mix_30s: match=True diff=2.3842e-05 pass=True"}
+{"ts": "2026-04-15T01:45:20Z", "phase": "ast", "pct": 60.0, "message": "coreml loaded=False fallback_ops=[] cpu_lat=1.04s coreml_lat=Nones"}
+{"ts": "2026-04-15T01:45:27Z", "phase": "ast.fp16", "pct": 75.0, "message": "passed=False residuals=[{'model_name': 'ast_audioset', 'fixture': 'drum_loop_10s', 'rms_dbfs': -51.236, 'peak_abs': 0.01018, 'passed': False, 'threshold_dbfs': -60.0}, {'model_name': 'ast_audioset', 'fixture': 'full_mix_30s', 'rms_dbfs': -53.807, 'peak_abs': 0.007251, 'passed': False, 'threshold_dbfs': -60.0}]"}
+{"ts": "2026-04-15T01:45:27Z", "phase": "ast", "pct": 100.0, "message": "done precision=fp32 pass=True"}
+{"ts": "2026-04-15T01:45:27Z", "phase": "clap", "pct": 5.0, "message": "exporting (direct torch.onnx.export, optimum lacks CLAP config)"}
+{"ts": "2026-04-15T01:45:27Z", "phase": "clap.export", "pct": 5.0, "message": "loading laion/clap-htsat-unfused"}
+{"ts": "2026-04-15T01:45:28Z", "phase": "clap.export", "pct": 40.0, "message": "torch.onnx.export — audio branch only"}
+{"ts": "2026-04-15T01:45:30Z", "phase": "clap.export", "pct": 100.0, "message": "wrote /Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a0119e2e/v0/build/models/clap/clap_htsat_unfused.onnx"}
+{"ts": "2026-04-15T01:45:30Z", "phase": "clap.bake", "pct": 0.0, "message": "computing text embeddings for 13 prompts"}
+{"ts": "2026-04-15T01:45:31Z", "phase": "clap.bake", "pct": 100.0, "message": "wrote /Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a0119e2e/v0/build/models/clap_genre_embeddings.json"}
+{"ts": "2026-04-15T01:45:33Z", "phase": "clap", "pct": 40.0, "message": "drum_loop_10s: cos=1.000000 pass=True"}
+{"ts": "2026-04-15T01:45:34Z", "phase": "clap", "pct": 40.0, "message": "full_mix_30s: cos=0.972755 pass=False"}
+{"ts": "2026-04-15T01:45:37Z", "phase": "clap", "pct": 60.0, "message": "coreml loaded=False cpu_lat=0.0939s coreml_lat=Nones"}
+{"ts": "2026-04-15T01:45:46Z", "phase": "clap.fp16", "pct": 75.0, "message": "passed=False"}
+{"ts": "2026-04-15T01:45:46Z", "phase": "clap", "pct": 100.0, "message": "done precision=fp32 pass=False"}
+{"ts": "2026-04-15T01:45:46Z", "phase": "demucs", "pct": 5.0, "message": "attempt in-graph torch.onnx.export (expected to fail)"}
+{"ts": "2026-04-15T01:45:46Z", "phase": "demucs.htdemucs_ft", "pct": 10.0, "message": "loading torch ref htdemucs_ft"}
+{"ts": "2026-04-15T01:45:50Z", "phase": "demucs.export.in_graph", "pct": 0.0, "message": "dynamo=False: SymbolicValueError: STFT does not currently support complex types  [Caused by the value '634 defined in (%634 : Float(*, *, strides=[351232, 1], requires_grad=0, device=cpu) = onnx::Reshape[allowzero=0](%624, %633), scope: demucs.htdemucs.HTDemucs:: # /Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/torch/functional.py:680:0\n)' (type 'Tensor') in the TorchScript graph. The containing node has kind 'onnx::Reshape'.] \n    (node defined in /Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/torch/functional.py(680): stft\n/Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/demucs/spec.py(17): spectro\n/Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/demucs/htdemucs.py(437): _spec\n/Users/zak/zacharysbrown"}
+{"ts": "2026-04-15T01:45:51Z", "phase": "demucs.export.in_graph", "pct": 0.0, "message": "dynamo=True: TorchExportError: Failed to export the model with torch.export. \u001b[96mThis is step 1/3\u001b[0m of exporting the model to ONNX. Next steps:\n- Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.\n- Debug `torch.export.export` and submit a PR to PyTorch.\n- Create an issue in the PyTorch GitHub repository against the \u001b[96m*torch.export*\u001b[0m component and attach the full error stack as well as reproduction scripts.\n\n## Exception summary\n\n<class 'torch.fx.experimental.symbolic_shapes.GuardOnDataDependentSymNode'>: Could not guard on data-dependent expression Eq(u1, 1) (unhinted: Eq(u1, 1)).  (Size-like symbols: none)\n\nconsider using data-dependent friendly APIs such as guard_or_false, guar"}
+{"ts": "2026-04-15T01:45:51Z", "phase": "demucs.htdemucs_ft", "pct": 50.0, "message": "in-graph: ok=False err=dynamo=True: TorchExportError: Failed to export the model with torch.export. \u001b[96mThis is step 1/3\u001b[0m of exporting the model to ONNX. Next steps:\n- M"}
+{"ts": "2026-04-15T01:45:51Z", "phase": "demucs.htdemucs_6s", "pct": 10.0, "message": "loading torch ref htdemucs_6s"}
+{"ts": "2026-04-15T01:45:56Z", "phase": "demucs.export.in_graph", "pct": 0.0, "message": "dynamo=False: SymbolicValueError: STFT does not currently support complex types  [Caused by the value '626 defined in (%626 : Float(*, *, strides=[351232, 1], requires_grad=0, device=cpu) = onnx::Reshape[allowzero=0](%616, %625), scope: demucs.htdemucs.HTDemucs:: # /Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/torch/functional.py:680:0\n)' (type 'Tensor') in the TorchScript graph. The containing node has kind 'onnx::Reshape'.] \n    (node defined in /Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/torch/functional.py(680): stft\n/Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/demucs/spec.py(17): spectro\n/Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/demucs/htdemucs.py(437): _spec\n/Users/zak/zacharysbrown"}
+{"ts": "2026-04-15T01:45:56Z", "phase": "demucs.export.in_graph", "pct": 0.0, "message": "dynamo=True: TorchExportError: Failed to export the model with torch.export. \u001b[96mThis is step 1/3\u001b[0m of exporting the model to ONNX. Next steps:\n- Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.\n- Debug `torch.export.export` and submit a PR to PyTorch.\n- Create an issue in the PyTorch GitHub repository against the \u001b[96m*torch.export*\u001b[0m component and attach the full error stack as well as reproduction scripts.\n\n## Exception summary\n\n<class 'torch.fx.experimental.symbolic_shapes.GuardOnDataDependentSymNode'>: Could not guard on data-dependent expression Eq(u1, 1) (unhinted: Eq(u1, 1)).  (Size-like symbols: none)\n\nconsider using data-dependent friendly APIs such as guard_or_false, guar"}
+{"ts": "2026-04-15T01:45:56Z", "phase": "demucs.htdemucs_6s", "pct": 50.0, "message": "in-graph: ok=False err=dynamo=True: TorchExportError: Failed to export the model with torch.export. \u001b[96mThis is step 1/3\u001b[0m of exporting the model to ONNX. Next steps:\n- M"}
+{"ts": "2026-04-15T01:45:56Z", "phase": "demucs.htdemucs", "pct": 10.0, "message": "loading torch ref htdemucs"}
+{"ts": "2026-04-15T01:46:00Z", "phase": "demucs.export.in_graph", "pct": 0.0, "message": "dynamo=False: SymbolicValueError: STFT does not currently support complex types  [Caused by the value '634 defined in (%634 : Float(*, *, strides=[351232, 1], requires_grad=0, device=cpu) = onnx::Reshape[allowzero=0](%624, %633), scope: demucs.htdemucs.HTDemucs:: # /Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/torch/functional.py:680:0\n)' (type 'Tensor') in the TorchScript graph. The containing node has kind 'onnx::Reshape'.] \n    (node defined in /Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/torch/functional.py(680): stft\n/Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/demucs/spec.py(17): spectro\n/Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/demucs/htdemucs.py(437): _spec\n/Users/zak/zacharysbrown"}
+{"ts": "2026-04-15T01:46:00Z", "phase": "demucs.export.in_graph", "pct": 0.0, "message": "dynamo=True: TorchExportError: Failed to export the model with torch.export. \u001b[96mThis is step 1/3\u001b[0m of exporting the model to ONNX. Next steps:\n- Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.\n- Debug `torch.export.export` and submit a PR to PyTorch.\n- Create an issue in the PyTorch GitHub repository against the \u001b[96m*torch.export*\u001b[0m component and attach the full error stack as well as reproduction scripts.\n\n## Exception summary\n\n<class 'torch.fx.experimental.symbolic_shapes.GuardOnDataDependentSymNode'>: Could not guard on data-dependent expression Eq(u1, 1) (unhinted: Eq(u1, 1)).  (Size-like symbols: none)\n\nconsider using data-dependent friendly APIs such as guard_or_false, guar"}
+{"ts": "2026-04-15T01:46:00Z", "phase": "demucs.htdemucs", "pct": 50.0, "message": "in-graph: ok=False err=dynamo=True: TorchExportError: Failed to export the model with torch.export. \u001b[96mThis is step 1/3\u001b[0m of exporting the model to ONNX. Next steps:\n- M"}
+{"ts": "2026-04-15T01:46:00Z", "phase": "manifest", "pct": 95.0, "message": "writing manifest.json + validation_report.json"}
+{"ts": "2026-04-15T01:46:00Z", "phase": "done", "pct": 100.0, "message": "ast=True clap=False demucs=BLOCKED (see blocker.md). Wall-clock: 53.6s"}
+{"ts": "2026-04-15T01:47:05Z", "phase": "start", "pct": 0.0, "message": "full A0 run — AST + CLAP + Demucs-attempt"}
+{"ts": "2026-04-15T01:47:05Z", "phase": "ast", "pct": 5.0, "message": "exporting"}
+{"ts": "2026-04-15T01:47:07Z", "phase": "ast.export", "pct": 0.0, "message": "exporting MIT/ast-finetuned-audioset-10-10-0.4593 via optimum"}
+{"ts": "2026-04-15T01:47:12Z", "phase": "ast.export", "pct": 100.0, "message": "wrote /Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a0119e2e/v0/build/models/ast/ast_audioset.onnx"}
+{"ts": "2026-04-15T01:47:14Z", "phase": "ast", "pct": 40.0, "message": "drum_loop_10s: match=True diff=2.1935e-05 pass=True"}
+{"ts": "2026-04-15T01:47:16Z", "phase": "ast", "pct": 40.0, "message": "full_mix_30s: match=True diff=2.3842e-05 pass=True"}
+{"ts": "2026-04-15T01:47:18Z", "phase": "ast", "pct": 60.0, "message": "coreml loaded=False fallback_ops=[] cpu_lat=1.0678s coreml_lat=Nones"}
+{"ts": "2026-04-15T01:47:25Z", "phase": "ast.fp16", "pct": 75.0, "message": "passed=False residuals=[{'model_name': 'ast_audioset', 'fixture': 'drum_loop_10s', 'rms_dbfs': -51.236, 'peak_abs': 0.01018, 'passed': False, 'threshold_dbfs': -60.0}, {'model_name': 'ast_audioset', 'fixture': 'full_mix_30s', 'rms_dbfs': -53.807, 'peak_abs': 0.007251, 'passed': False, 'threshold_dbfs': -60.0}]"}
+{"ts": "2026-04-15T01:47:26Z", "phase": "ast", "pct": 100.0, "message": "done precision=fp32 pass=True"}
+{"ts": "2026-04-15T01:47:26Z", "phase": "clap", "pct": 5.0, "message": "exporting (direct torch.onnx.export, optimum lacks CLAP config)"}
+{"ts": "2026-04-15T01:47:26Z", "phase": "clap.export", "pct": 5.0, "message": "loading laion/clap-htsat-unfused"}
+{"ts": "2026-04-15T01:47:26Z", "phase": "clap.export", "pct": 40.0, "message": "torch.onnx.export — audio branch only"}
+{"ts": "2026-04-15T01:47:28Z", "phase": "clap.export", "pct": 100.0, "message": "wrote /Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a0119e2e/v0/build/models/clap/clap_htsat_unfused.onnx"}
+{"ts": "2026-04-15T01:47:29Z", "phase": "clap.bake", "pct": 0.0, "message": "computing text embeddings for 13 prompts"}
+{"ts": "2026-04-15T01:47:29Z", "phase": "clap.bake", "pct": 100.0, "message": "wrote /Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a0119e2e/v0/build/models/clap_genre_embeddings.json"}
+{"ts": "2026-04-15T01:47:31Z", "phase": "clap", "pct": 40.0, "message": "drum_loop_10s: cos=1.000000 pass=True"}
+{"ts": "2026-04-15T01:47:33Z", "phase": "clap", "pct": 40.0, "message": "full_mix_30s: cos=1.000000 pass=True"}
+{"ts": "2026-04-15T01:47:35Z", "phase": "clap", "pct": 60.0, "message": "coreml loaded=False cpu_lat=0.1039s coreml_lat=Nones"}
+{"ts": "2026-04-15T01:47:44Z", "phase": "clap.fp16", "pct": 75.0, "message": "passed=False"}
+{"ts": "2026-04-15T01:47:44Z", "phase": "clap", "pct": 100.0, "message": "done precision=fp32 pass=True"}
+{"ts": "2026-04-15T01:47:44Z", "phase": "demucs", "pct": 5.0, "message": "attempt in-graph torch.onnx.export (expected to fail)"}
+{"ts": "2026-04-15T01:47:44Z", "phase": "demucs.htdemucs_ft", "pct": 10.0, "message": "loading torch ref htdemucs_ft"}
+{"ts": "2026-04-15T01:47:48Z", "phase": "demucs.export.in_graph", "pct": 0.0, "message": "dynamo=False: SymbolicValueError: STFT does not currently support complex types  [Caused by the value '634 defined in (%634 : Float(*, *, strides=[351232, 1], requires_grad=0, device=cpu) = onnx::Reshape[allowzero=0](%624, %633), scope: demucs.htdemucs.HTDemucs:: # /Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/torch/functional.py:680:0\n)' (type 'Tensor') in the TorchScript graph. The containing node has kind 'onnx::Reshape'.] \n    (node defined in /Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/torch/functional.py(680): stft\n/Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/demucs/spec.py(17): spectro\n/Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/demucs/htdemucs.py(437): _spec\n/Users/zak/zacharysbrown"}
+{"ts": "2026-04-15T01:47:49Z", "phase": "demucs.export.in_graph", "pct": 0.0, "message": "dynamo=True: TorchExportError: Failed to export the model with torch.export. \u001b[96mThis is step 1/3\u001b[0m of exporting the model to ONNX. Next steps:\n- Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.\n- Debug `torch.export.export` and submit a PR to PyTorch.\n- Create an issue in the PyTorch GitHub repository against the \u001b[96m*torch.export*\u001b[0m component and attach the full error stack as well as reproduction scripts.\n\n## Exception summary\n\n<class 'torch.fx.experimental.symbolic_shapes.GuardOnDataDependentSymNode'>: Could not guard on data-dependent expression Eq(u1, 1) (unhinted: Eq(u1, 1)).  (Size-like symbols: none)\n\nconsider using data-dependent friendly APIs such as guard_or_false, guar"}
+{"ts": "2026-04-15T01:47:49Z", "phase": "demucs.htdemucs_ft", "pct": 50.0, "message": "in-graph: ok=False err=dynamo=True: TorchExportError: Failed to export the model with torch.export. \u001b[96mThis is step 1/3\u001b[0m of exporting the model to ONNX. Next steps:\n- M"}
+{"ts": "2026-04-15T01:47:49Z", "phase": "demucs.htdemucs_6s", "pct": 10.0, "message": "loading torch ref htdemucs_6s"}
+{"ts": "2026-04-15T01:47:52Z", "phase": "demucs.export.in_graph", "pct": 0.0, "message": "dynamo=False: SymbolicValueError: STFT does not currently support complex types  [Caused by the value '626 defined in (%626 : Float(*, *, strides=[351232, 1], requires_grad=0, device=cpu) = onnx::Reshape[allowzero=0](%616, %625), scope: demucs.htdemucs.HTDemucs:: # /Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/torch/functional.py:680:0\n)' (type 'Tensor') in the TorchScript graph. The containing node has kind 'onnx::Reshape'.] \n    (node defined in /Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/torch/functional.py(680): stft\n/Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/demucs/spec.py(17): spectro\n/Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/demucs/htdemucs.py(437): _spec\n/Users/zak/zacharysbrown"}
+{"ts": "2026-04-15T01:47:53Z", "phase": "demucs.export.in_graph", "pct": 0.0, "message": "dynamo=True: TorchExportError: Failed to export the model with torch.export. \u001b[96mThis is step 1/3\u001b[0m of exporting the model to ONNX. Next steps:\n- Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.\n- Debug `torch.export.export` and submit a PR to PyTorch.\n- Create an issue in the PyTorch GitHub repository against the \u001b[96m*torch.export*\u001b[0m component and attach the full error stack as well as reproduction scripts.\n\n## Exception summary\n\n<class 'torch.fx.experimental.symbolic_shapes.GuardOnDataDependentSymNode'>: Could not guard on data-dependent expression Eq(u1, 1) (unhinted: Eq(u1, 1)).  (Size-like symbols: none)\n\nconsider using data-dependent friendly APIs such as guard_or_false, guar"}
+{"ts": "2026-04-15T01:47:53Z", "phase": "demucs.htdemucs_6s", "pct": 50.0, "message": "in-graph: ok=False err=dynamo=True: TorchExportError: Failed to export the model with torch.export. \u001b[96mThis is step 1/3\u001b[0m of exporting the model to ONNX. Next steps:\n- M"}
+{"ts": "2026-04-15T01:47:53Z", "phase": "demucs.htdemucs", "pct": 10.0, "message": "loading torch ref htdemucs"}
+{"ts": "2026-04-15T01:47:56Z", "phase": "demucs.export.in_graph", "pct": 0.0, "message": "dynamo=False: SymbolicValueError: STFT does not currently support complex types  [Caused by the value '634 defined in (%634 : Float(*, *, strides=[351232, 1], requires_grad=0, device=cpu) = onnx::Reshape[allowzero=0](%624, %633), scope: demucs.htdemucs.HTDemucs:: # /Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/torch/functional.py:680:0\n)' (type 'Tensor') in the TorchScript graph. The containing node has kind 'onnx::Reshape'.] \n    (node defined in /Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/torch/functional.py(680): stft\n/Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/demucs/spec.py(17): spectro\n/Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/demucs/htdemucs.py(437): _spec\n/Users/zak/zacharysbrown"}
+{"ts": "2026-04-15T01:47:56Z", "phase": "demucs.export.in_graph", "pct": 0.0, "message": "dynamo=True: TorchExportError: Failed to export the model with torch.export. \u001b[96mThis is step 1/3\u001b[0m of exporting the model to ONNX. Next steps:\n- Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.\n- Debug `torch.export.export` and submit a PR to PyTorch.\n- Create an issue in the PyTorch GitHub repository against the \u001b[96m*torch.export*\u001b[0m component and attach the full error stack as well as reproduction scripts.\n\n## Exception summary\n\n<class 'torch.fx.experimental.symbolic_shapes.GuardOnDataDependentSymNode'>: Could not guard on data-dependent expression Eq(u1, 1) (unhinted: Eq(u1, 1)).  (Size-like symbols: none)\n\nconsider using data-dependent friendly APIs such as guard_or_false, guar"}
+{"ts": "2026-04-15T01:47:56Z", "phase": "demucs.htdemucs", "pct": 50.0, "message": "in-graph: ok=False err=dynamo=True: TorchExportError: Failed to export the model with torch.export. \u001b[96mThis is step 1/3\u001b[0m of exporting the model to ONNX. Next steps:\n- M"}
+{"ts": "2026-04-15T01:47:56Z", "phase": "manifest", "pct": 95.0, "message": "writing manifest.json + validation_report.json"}
+{"ts": "2026-04-15T01:47:56Z", "phase": "done", "pct": 100.0, "message": "ast=True clap=True demucs=BLOCKED (see blocker.md). Wall-clock: 51.0s"}
+{"ts": "2026-04-15T01:49:33Z", "phase": "start", "pct": 0.0, "message": "full A0 run — AST + CLAP + Demucs-attempt"}
+{"ts": "2026-04-15T01:49:33Z", "phase": "ast", "pct": 5.0, "message": "exporting"}
+{"ts": "2026-04-15T01:49:35Z", "phase": "ast.export", "pct": 0.0, "message": "exporting MIT/ast-finetuned-audioset-10-10-0.4593 via optimum"}
+{"ts": "2026-04-15T01:49:40Z", "phase": "ast.export", "pct": 100.0, "message": "wrote /Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a0119e2e/v0/build/models/ast/ast_audioset.onnx"}
+{"ts": "2026-04-15T01:49:42Z", "phase": "ast", "pct": 40.0, "message": "drum_loop_10s: match=True diff=2.1935e-05 pass=True"}
+{"ts": "2026-04-15T01:49:44Z", "phase": "ast", "pct": 40.0, "message": "full_mix_30s: match=True diff=2.3842e-05 pass=True"}
+{"ts": "2026-04-15T01:49:46Z", "phase": "ast", "pct": 60.0, "message": "coreml loaded=False fallback_ops=[] cpu_lat=1.0552s coreml_lat=Nones"}
+{"ts": "2026-04-15T01:49:53Z", "phase": "ast.fp16", "pct": 75.0, "message": "passed=False residuals=[{'model_name': 'ast_audioset', 'fixture': 'drum_loop_10s', 'rms_dbfs': -51.236, 'peak_abs': 0.01018, 'passed': False, 'threshold_dbfs': -60.0}, {'model_name': 'ast_audioset', 'fixture': 'full_mix_30s', 'rms_dbfs': -53.807, 'peak_abs': 0.007251, 'passed': False, 'threshold_dbfs': -60.0}]"}
+{"ts": "2026-04-15T01:49:54Z", "phase": "ast", "pct": 100.0, "message": "done precision=fp32 pass=True"}
+{"ts": "2026-04-15T01:49:54Z", "phase": "clap", "pct": 5.0, "message": "exporting (direct torch.onnx.export, optimum lacks CLAP config)"}
+{"ts": "2026-04-15T01:49:54Z", "phase": "clap.export", "pct": 5.0, "message": "loading laion/clap-htsat-unfused"}
+{"ts": "2026-04-15T01:49:54Z", "phase": "clap.export", "pct": 40.0, "message": "torch.onnx.export — audio branch only"}
+{"ts": "2026-04-15T01:49:56Z", "phase": "clap.export", "pct": 100.0, "message": "wrote /Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a0119e2e/v0/build/models/clap/clap_htsat_unfused.onnx"}
+{"ts": "2026-04-15T01:49:57Z", "phase": "clap.bake", "pct": 0.0, "message": "computing text embeddings for 13 prompts"}
+{"ts": "2026-04-15T01:49:57Z", "phase": "clap.bake", "pct": 100.0, "message": "wrote /Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a0119e2e/v0/build/models/clap_genre_embeddings.json"}
+{"ts": "2026-04-15T01:49:59Z", "phase": "clap", "pct": 40.0, "message": "drum_loop_10s: cos=1.000000 pass=True"}
+{"ts": "2026-04-15T01:50:01Z", "phase": "clap", "pct": 40.0, "message": "full_mix_30s: cos=1.000000 pass=True"}
+{"ts": "2026-04-15T01:50:03Z", "phase": "clap", "pct": 60.0, "message": "coreml loaded=False cpu_lat=0.1004s coreml_lat=Nones"}
+{"ts": "2026-04-15T01:50:12Z", "phase": "clap.fp16", "pct": 75.0, "message": "passed=False"}
+{"ts": "2026-04-15T01:50:12Z", "phase": "clap", "pct": 100.0, "message": "done precision=fp32 pass=True"}
+{"ts": "2026-04-15T01:50:12Z", "phase": "demucs", "pct": 5.0, "message": "attempt in-graph torch.onnx.export (expected to fail)"}
+{"ts": "2026-04-15T01:50:12Z", "phase": "demucs.htdemucs_ft", "pct": 10.0, "message": "loading torch ref htdemucs_ft"}
+{"ts": "2026-04-15T01:50:16Z", "phase": "demucs.export.in_graph", "pct": 0.0, "message": "dynamo=False: SymbolicValueError: STFT does not currently support complex types  [Caused by the value '634 defined in (%634 : Float(*, *, strides=[351232, 1], requires_grad=0, device=cpu) = onnx::Reshape[allowzero=0](%624, %633), scope: demucs.htdemucs.HTDemucs:: # /Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/torch/functional.py:680:0\n)' (type 'Tensor') in the TorchScript graph. The containing node has kind 'onnx::Reshape'.] \n    (node defined in /Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/torch/functional.py(680): stft\n/Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/demucs/spec.py(17): spectro\n/Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/demucs/htdemucs.py(437): _spec\n/Users/zak/zacharysbrown"}
+{"ts": "2026-04-15T01:50:17Z", "phase": "demucs.export.in_graph", "pct": 0.0, "message": "dynamo=True: TorchExportError: Failed to export the model with torch.export. \u001b[96mThis is step 1/3\u001b[0m of exporting the model to ONNX. Next steps:\n- Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.\n- Debug `torch.export.export` and submit a PR to PyTorch.\n- Create an issue in the PyTorch GitHub repository against the \u001b[96m*torch.export*\u001b[0m component and attach the full error stack as well as reproduction scripts.\n\n## Exception summary\n\n<class 'torch.fx.experimental.symbolic_shapes.GuardOnDataDependentSymNode'>: Could not guard on data-dependent expression Eq(u1, 1) (unhinted: Eq(u1, 1)).  (Size-like symbols: none)\n\nconsider using data-dependent friendly APIs such as guard_or_false, guar"}
+{"ts": "2026-04-15T01:50:17Z", "phase": "demucs.htdemucs_ft", "pct": 50.0, "message": "in-graph: ok=False err=dynamo=True: TorchExportError: Failed to export the model with torch.export. \u001b[96mThis is step 1/3\u001b[0m of exporting the model to ONNX. Next steps:\n- M"}
+{"ts": "2026-04-15T01:50:17Z", "phase": "demucs.htdemucs_6s", "pct": 10.0, "message": "loading torch ref htdemucs_6s"}
+{"ts": "2026-04-15T01:50:21Z", "phase": "demucs.export.in_graph", "pct": 0.0, "message": "dynamo=False: SymbolicValueError: STFT does not currently support complex types  [Caused by the value '626 defined in (%626 : Float(*, *, strides=[351232, 1], requires_grad=0, device=cpu) = onnx::Reshape[allowzero=0](%616, %625), scope: demucs.htdemucs.HTDemucs:: # /Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/torch/functional.py:680:0\n)' (type 'Tensor') in the TorchScript graph. The containing node has kind 'onnx::Reshape'.] \n    (node defined in /Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/torch/functional.py(680): stft\n/Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/demucs/spec.py(17): spectro\n/Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/demucs/htdemucs.py(437): _spec\n/Users/zak/zacharysbrown"}
+{"ts": "2026-04-15T01:50:22Z", "phase": "demucs.export.in_graph", "pct": 0.0, "message": "dynamo=True: TorchExportError: Failed to export the model with torch.export. \u001b[96mThis is step 1/3\u001b[0m of exporting the model to ONNX. Next steps:\n- Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.\n- Debug `torch.export.export` and submit a PR to PyTorch.\n- Create an issue in the PyTorch GitHub repository against the \u001b[96m*torch.export*\u001b[0m component and attach the full error stack as well as reproduction scripts.\n\n## Exception summary\n\n<class 'torch.fx.experimental.symbolic_shapes.GuardOnDataDependentSymNode'>: Could not guard on data-dependent expression Eq(u1, 1) (unhinted: Eq(u1, 1)).  (Size-like symbols: none)\n\nconsider using data-dependent friendly APIs such as guard_or_false, guar"}
+{"ts": "2026-04-15T01:50:22Z", "phase": "demucs.htdemucs_6s", "pct": 50.0, "message": "in-graph: ok=False err=dynamo=True: TorchExportError: Failed to export the model with torch.export. \u001b[96mThis is step 1/3\u001b[0m of exporting the model to ONNX. Next steps:\n- M"}
+{"ts": "2026-04-15T01:50:22Z", "phase": "demucs.htdemucs", "pct": 10.0, "message": "loading torch ref htdemucs"}
+{"ts": "2026-04-15T01:50:25Z", "phase": "demucs.export.in_graph", "pct": 0.0, "message": "dynamo=False: SymbolicValueError: STFT does not currently support complex types  [Caused by the value '634 defined in (%634 : Float(*, *, strides=[351232, 1], requires_grad=0, device=cpu) = onnx::Reshape[allowzero=0](%624, %633), scope: demucs.htdemucs.HTDemucs:: # /Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/torch/functional.py:680:0\n)' (type 'Tensor') in the TorchScript graph. The containing node has kind 'onnx::Reshape'.] \n    (node defined in /Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/torch/functional.py(680): stft\n/Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/demucs/spec.py(17): spectro\n/Users/zak/zacharysbrown/stemforge/.venv/lib/python3.13/site-packages/demucs/htdemucs.py(437): _spec\n/Users/zak/zacharysbrown"}
+{"ts": "2026-04-15T01:50:26Z", "phase": "demucs.export.in_graph", "pct": 0.0, "message": "dynamo=True: TorchExportError: Failed to export the model with torch.export. \u001b[96mThis is step 1/3\u001b[0m of exporting the model to ONNX. Next steps:\n- Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.\n- Debug `torch.export.export` and submit a PR to PyTorch.\n- Create an issue in the PyTorch GitHub repository against the \u001b[96m*torch.export*\u001b[0m component and attach the full error stack as well as reproduction scripts.\n\n## Exception summary\n\n<class 'torch.fx.experimental.symbolic_shapes.GuardOnDataDependentSymNode'>: Could not guard on data-dependent expression Eq(u1, 1) (unhinted: Eq(u1, 1)).  (Size-like symbols: none)\n\nconsider using data-dependent friendly APIs such as guard_or_false, guar"}
+{"ts": "2026-04-15T01:50:26Z", "phase": "demucs.htdemucs", "pct": 50.0, "message": "in-graph: ok=False err=dynamo=True: TorchExportError: Failed to export the model with torch.export. \u001b[96mThis is step 1/3\u001b[0m of exporting the model to ONNX. Next steps:\n- M"}
+{"ts": "2026-04-15T01:50:26Z", "phase": "manifest", "pct": 95.0, "message": "writing manifest.json + validation_report.json"}
+{"ts": "2026-04-15T01:50:26Z", "phase": "done", "pct": 100.0, "message": "ast=True clap=True demucs=BLOCKED (see blocker.md). Wall-clock: 52.6s"}
+{"ts": "2026-04-15T02:02:50Z", "phase": "demucs.start", "pct": 0.0, "message": "variants=['htdemucs']"}
+{"ts": "2026-04-15T02:02:50Z", "phase": "demucs.htdemucs", "pct": 5.0, "message": "loading torch reference"}
+{"ts": "2026-04-15T02:02:50Z", "phase": "demucs.htdemucs", "pct": 10.0, "message": "exporting head 1/1 → htdemucs.onnx"}
+{"ts": "2026-04-15T02:02:54Z", "phase": "demucs.htdemucs", "pct": 0.0, "message": "uncaught error: RuntimeError: shape '[1, 4, -1, 2049, 336]' is invalid for input of size 11010048"}
+{"ts": "2026-04-15T02:02:54Z", "phase": "demucs.done", "pct": 100.0, "message": "results={'htdemucs': False} duration=3.7s"}
+{"ts": "2026-04-15T02:03:28Z", "phase": "demucs.start", "pct": 0.0, "message": "variants=['htdemucs']"}
+{"ts": "2026-04-15T02:03:28Z", "phase": "demucs.htdemucs", "pct": 5.0, "message": "loading torch reference"}
+{"ts": "2026-04-15T02:03:28Z", "phase": "demucs.htdemucs", "pct": 10.0, "message": "exporting head 1/1 → htdemucs.onnx"}
+{"ts": "2026-04-15T02:03:32Z", "phase": "demucs.htdemucs", "pct": 0.0, "message": "uncaught error: UnsupportedOperatorError: Exporting the operator 'aten::complex' to ONNX opset version 17 is not supported"}
+{"ts": "2026-04-15T02:03:32Z", "phase": "demucs.done", "pct": 100.0, "message": "results={'htdemucs': False} duration=4.2s"}
+{"ts": "2026-04-15T02:06:12Z", "phase": "demucs.start", "pct": 0.0, "message": "variants=['htdemucs']"}
+{"ts": "2026-04-15T02:06:12Z", "phase": "demucs.htdemucs", "pct": 5.0, "message": "loading torch reference"}
+{"ts": "2026-04-15T02:06:13Z", "phase": "demucs.htdemucs", "pct": 10.0, "message": "exporting head 1/1 → htdemucs.onnx"}
+{"ts": "2026-04-15T02:06:13Z", "phase": "demucs.htdemucs", "pct": 0.0, "message": "uncaught error: AttributeError: 'HTDemucs' object has no attribute 'forward_from_spec_cac'"}
+{"ts": "2026-04-15T02:06:13Z", "phase": "demucs.done", "pct": 100.0, "message": "results={'htdemucs': False} duration=0.3s"}
+{"ts": "2026-04-15T02:06:25Z", "phase": "demucs.start", "pct": 0.0, "message": "variants=['htdemucs']"}
+{"ts": "2026-04-15T02:06:25Z", "phase": "demucs.htdemucs", "pct": 5.0, "message": "loading torch reference"}
+{"ts": "2026-04-15T02:06:25Z", "phase": "demucs.htdemucs", "pct": 10.0, "message": "exporting head 1/1 → htdemucs.onnx"}
+{"ts": "2026-04-15T02:06:30Z", "phase": "demucs.htdemucs", "pct": 15.0, "message": "exported htdemucs.onnx (160.9 MB)"}
+{"ts": "2026-04-15T02:06:30Z", "phase": "demucs.htdemucs", "pct": 40.0, "message": "running parity validation"}
+{"ts": "2026-04-15T02:06:35Z", "phase": "demucs.htdemucs", "pct": 50.0, "message": "parity drum_loop_10s: max_abs=1.063e+01 max_rel=4.456e+04 pass=False"}
+{"ts": "2026-04-15T02:06:40Z", "phase": "demucs.htdemucs", "pct": 50.0, "message": "parity full_mix_30s: max_abs=1.733e-04 max_rel=7.771e+00 pass=False"}
+{"ts": "2026-04-15T02:06:47Z", "phase": "demucs.htdemucs", "pct": 65.0, "message": "fp16 fallback fp32"}
+{"ts": "2026-04-15T02:06:54Z", "phase": "demucs.htdemucs", "pct": 80.0, "message": "coreml_loaded=False cpu_lat=2.0674 cml_lat=None fallback=[]"}
+{"ts": "2026-04-15T02:06:54Z", "phase": "demucs.htdemucs", "pct": 100.0, "message": "done, precision=fp32, parity_pass=False"}
+{"ts": "2026-04-15T02:06:54Z", "phase": "demucs.done", "pct": 100.0, "message": "results={'htdemucs': False} duration=28.5s"}
+{"ts": "2026-04-15T02:14:23Z", "phase": "demucs.start", "pct": 0.0, "message": "variants=['htdemucs']"}
+{"ts": "2026-04-15T02:14:23Z", "phase": "demucs.htdemucs", "pct": 5.0, "message": "loading torch reference"}
+{"ts": "2026-04-15T02:14:23Z", "phase": "demucs.htdemucs", "pct": 10.0, "message": "exporting head 1/1 → htdemucs.onnx"}
+{"ts": "2026-04-15T02:14:26Z", "phase": "demucs.htdemucs", "pct": 0.0, "message": "uncaught error: UnsupportedOperatorError: Exporting the operator 'aten::_native_multi_head_attention' to ONNX opset version 17 is not supported"}
+{"ts": "2026-04-15T02:14:26Z", "phase": "demucs.done", "pct": 100.0, "message": "results={'htdemucs': False} duration=3.2s"}
+{"ts": "2026-04-15T02:14:30Z", "phase": "demucs.start", "pct": 0.0, "message": "variants=['htdemucs']"}
+{"ts": "2026-04-15T02:14:30Z", "phase": "demucs.htdemucs", "pct": 5.0, "message": "loading torch reference"}
+{"ts": "2026-04-15T02:14:30Z", "phase": "demucs.htdemucs", "pct": 10.0, "message": "exporting head 1/1 → htdemucs.onnx"}
+{"ts": "2026-04-15T02:14:33Z", "phase": "demucs.htdemucs", "pct": 0.0, "message": "uncaught error: UnsupportedOperatorError: Exporting the operator 'aten::_native_multi_head_attention' to ONNX opset version 17 is not supported"}
+{"ts": "2026-04-15T02:14:33Z", "phase": "demucs.done", "pct": 100.0, "message": "results={'htdemucs': False} duration=3.0s"}
+{"ts": "2026-04-15T02:14:40Z", "phase": "demucs.start", "pct": 0.0, "message": "variants=['htdemucs']"}
+{"ts": "2026-04-15T02:14:40Z", "phase": "demucs.htdemucs", "pct": 5.0, "message": "loading torch reference"}
+{"ts": "2026-04-15T02:14:40Z", "phase": "demucs.htdemucs", "pct": 10.0, "message": "exporting head 1/1 → htdemucs.onnx"}
+{"ts": "2026-04-15T02:14:43Z", "phase": "demucs.htdemucs", "pct": 0.0, "message": "uncaught error: UnsupportedOperatorError: Exporting the operator 'aten::_native_multi_head_attention' to ONNX opset version 17 is not supported"}
+{"ts": "2026-04-15T02:14:43Z", "phase": "demucs.done", "pct": 100.0, "message": "results={'htdemucs': False} duration=3.1s"}
+{"ts": "2026-04-15T02:14:57Z", "phase": "demucs.start", "pct": 0.0, "message": "variants=['htdemucs']"}
+{"ts": "2026-04-15T02:14:57Z", "phase": "demucs.htdemucs", "pct": 5.0, "message": "loading torch reference"}
+{"ts": "2026-04-15T02:14:58Z", "phase": "demucs.htdemucs", "pct": 10.0, "message": "exporting head 1/1 → htdemucs.onnx"}
+{"ts": "2026-04-15T02:15:02Z", "phase": "demucs.htdemucs", "pct": 15.0, "message": "exported htdemucs.onnx (160.9 MB)"}
+{"ts": "2026-04-15T02:15:02Z", "phase": "demucs.htdemucs", "pct": 40.0, "message": "running parity validation"}
+{"ts": "2026-04-15T02:15:07Z", "phase": "demucs.htdemucs", "pct": 50.0, "message": "parity drum_loop_10s: max_abs=1.063e+01 max_rel=4.456e+04 pass=False"}
+{"ts": "2026-04-15T02:15:12Z", "phase": "demucs.htdemucs", "pct": 50.0, "message": "parity full_mix_30s: max_abs=1.733e-04 max_rel=7.771e+00 pass=True"}
+{"ts": "2026-04-15T02:15:19Z", "phase": "demucs.htdemucs", "pct": 65.0, "message": "fp16 fallback fp32"}
+{"ts": "2026-04-15T02:15:26Z", "phase": "demucs.htdemucs", "pct": 80.0, "message": "coreml_loaded=False cpu_lat=2.1449 cml_lat=None fallback=[]"}
+{"ts": "2026-04-15T02:15:26Z", "phase": "demucs.htdemucs", "pct": 100.0, "message": "done, precision=fp32, parity_pass=False"}
+{"ts": "2026-04-15T02:15:26Z", "phase": "demucs.done", "pct": 100.0, "message": "results={'htdemucs': False} duration=28.9s"}
+{"ts": "2026-04-15T02:16:30Z", "phase": "demucs.start", "pct": 0.0, "message": "variants=['htdemucs']"}
+{"ts": "2026-04-15T02:16:30Z", "phase": "demucs.htdemucs", "pct": 5.0, "message": "loading torch reference"}
+{"ts": "2026-04-15T02:16:30Z", "phase": "demucs.htdemucs", "pct": 10.0, "message": "exporting head 1/1 → htdemucs.onnx"}
+{"ts": "2026-04-15T02:16:34Z", "phase": "demucs.htdemucs", "pct": 15.0, "message": "exported htdemucs.onnx (160.9 MB)"}
+{"ts": "2026-04-15T02:16:34Z", "phase": "demucs.htdemucs", "pct": 40.0, "message": "running parity validation"}
+{"ts": "2026-04-15T02:16:39Z", "phase": "demucs.htdemucs", "pct": 50.0, "message": "parity drum_loop_10s: max_abs=1.063e+01 rms=-25.8dBFS rel_peak=3.558e-01 pass=False"}
+{"ts": "2026-04-15T02:16:44Z", "phase": "demucs.htdemucs", "pct": 50.0, "message": "parity full_mix_30s: max_abs=1.733e-04 rms=-103.4dBFS rel_peak=2.666e-04 pass=True"}
+{"ts": "2026-04-15T02:16:51Z", "phase": "demucs.htdemucs", "pct": 65.0, "message": "fp16 fallback fp32"}
+{"ts": "2026-04-15T02:16:58Z", "phase": "demucs.htdemucs", "pct": 80.0, "message": "coreml_loaded=False cpu_lat=2.0311 cml_lat=None fallback=[]"}
+{"ts": "2026-04-15T02:16:58Z", "phase": "demucs.htdemucs", "pct": 100.0, "message": "done, precision=fp32, parity_pass=True"}
+{"ts": "2026-04-15T02:16:58Z", "phase": "demucs.done", "pct": 100.0, "message": "results={'htdemucs': True} duration=28.2s"}
+{"ts": "2026-04-15T02:17:04Z", "phase": "demucs.start", "pct": 0.0, "message": "variants=['htdemucs_6s', 'htdemucs_ft']"}
+{"ts": "2026-04-15T02:17:04Z", "phase": "demucs.htdemucs_6s", "pct": 5.0, "message": "loading torch reference"}
+{"ts": "2026-04-15T02:17:04Z", "phase": "demucs.htdemucs_6s", "pct": 10.0, "message": "exporting head 1/1 → htdemucs_6s.onnx"}
+{"ts": "2026-04-15T02:17:08Z", "phase": "demucs.htdemucs_6s", "pct": 15.0, "message": "exported htdemucs_6s.onnx (105.3 MB)"}
+{"ts": "2026-04-15T02:17:08Z", "phase": "demucs.htdemucs_6s", "pct": 40.0, "message": "running parity validation"}
+{"ts": "2026-04-15T02:17:13Z", "phase": "demucs.htdemucs_6s", "pct": 50.0, "message": "parity drum_loop_10s: max_abs=1.124e+00 rms=-46.0dBFS rel_peak=4.540e-01 pass=False"}
+{"ts": "2026-04-15T02:17:17Z", "phase": "demucs.htdemucs_6s", "pct": 50.0, "message": "parity full_mix_30s: max_abs=5.643e-05 rms=-130.1dBFS rel_peak=1.056e-04 pass=True"}
+{"ts": "2026-04-15T02:17:24Z", "phase": "demucs.htdemucs_6s", "pct": 65.0, "message": "fp16 fallback fp32"}
+{"ts": "2026-04-15T02:17:30Z", "phase": "demucs.htdemucs_6s", "pct": 80.0, "message": "coreml_loaded=False cpu_lat=1.7723 cml_lat=None fallback=[]"}
+{"ts": "2026-04-15T02:17:30Z", "phase": "demucs.htdemucs_6s", "pct": 100.0, "message": "done, precision=fp32, parity_pass=True"}
+{"ts": "2026-04-15T02:17:30Z", "phase": "demucs.htdemucs_ft", "pct": 5.0, "message": "loading torch reference"}
+{"ts": "2026-04-15T02:17:31Z", "phase": "demucs.htdemucs_ft", "pct": 10.0, "message": "exporting head 1/4 → htdemucs_ft.head0.onnx"}
+{"ts": "2026-04-15T02:17:36Z", "phase": "demucs.htdemucs_ft", "pct": 15.0, "message": "exported htdemucs_ft.head0.onnx (160.9 MB)"}
+{"ts": "2026-04-15T02:17:36Z", "phase": "demucs.htdemucs_ft", "pct": 15.0, "message": "exporting head 2/4 → htdemucs_ft.head1.onnx"}
+{"ts": "2026-04-15T02:17:41Z", "phase": "demucs.htdemucs_ft", "pct": 20.0, "message": "exported htdemucs_ft.head1.onnx (160.9 MB)"}
+{"ts": "2026-04-15T02:17:41Z", "phase": "demucs.htdemucs_ft", "pct": 20.0, "message": "exporting head 3/4 → htdemucs_ft.head2.onnx"}
+{"ts": "2026-04-15T02:17:46Z", "phase": "demucs.htdemucs_ft", "pct": 25.0, "message": "exported htdemucs_ft.head2.onnx (160.9 MB)"}
+{"ts": "2026-04-15T02:17:46Z", "phase": "demucs.htdemucs_ft", "pct": 25.0, "message": "exporting head 4/4 → htdemucs_ft.head3.onnx"}
+{"ts": "2026-04-15T02:17:52Z", "phase": "demucs.htdemucs_ft", "pct": 30.0, "message": "exported htdemucs_ft.head3.onnx (160.9 MB)"}
+{"ts": "2026-04-15T02:17:52Z", "phase": "demucs.htdemucs_ft", "pct": 40.0, "message": "running parity validation"}
+{"ts": "2026-04-15T02:18:11Z", "phase": "demucs.htdemucs_ft", "pct": 50.0, "message": "parity drum_loop_10s: max_abs=2.194e+01 rms=-17.9dBFS rel_peak=7.506e-01 pass=False"}
+{"ts": "2026-04-15T02:18:30Z", "phase": "demucs.htdemucs_ft", "pct": 50.0, "message": "parity full_mix_30s: max_abs=3.226e-01 rms=-40.6dBFS rel_peak=5.496e-01 pass=False"}
+{"ts": "2026-04-15T02:18:37Z", "phase": "demucs.htdemucs_ft", "pct": 65.0, "message": "fp16 fallback fp32"}
+{"ts": "2026-04-15T02:18:44Z", "phase": "demucs.htdemucs_ft", "pct": 80.0, "message": "coreml_loaded=False cpu_lat=2.0985 cml_lat=None fallback=[]"}
+{"ts": "2026-04-15T02:18:45Z", "phase": "demucs.htdemucs_ft", "pct": 100.0, "message": "done, precision=fp32, parity_pass=False"}
+{"ts": "2026-04-15T02:18:45Z", "phase": "demucs.done", "pct": 100.0, "message": "results={'htdemucs_6s': True, 'htdemucs_ft': False} duration=100.6s"}
+{"ts": "2026-04-15T02:20:33Z", "phase": "start", "pct": 0.0, "message": "A0 convert models=['ast', 'clap']"}
+{"ts": "2026-04-15T02:20:33Z", "phase": "ast", "pct": 10.0, "message": "downloading + exporting"}
+{"ts": "2026-04-15T02:20:36Z", "phase": "ast.export", "pct": 0.0, "message": "exporting MIT/ast-finetuned-audioset-10-10-0.4593 via optimum"}
+{"ts": "2026-04-15T02:20:41Z", "phase": "ast.export", "pct": 100.0, "message": "wrote /Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a74b3cc1/v0/build/models/ast/ast_audioset.onnx"}
+{"ts": "2026-04-15T02:20:44Z", "phase": "ast", "pct": 30.0, "message": "parity drum_loop_10s: logit_diff=2.1935e-05 labels_match=True pass=True"}
+{"ts": "2026-04-15T02:20:46Z", "phase": "ast", "pct": 30.0, "message": "parity full_mix_30s: logit_diff=2.3842e-05 labels_match=True pass=True"}
+{"ts": "2026-04-15T02:20:55Z", "phase": "ast", "pct": 60.0, "message": "fp16 fallback to fp32"}
+{"ts": "2026-04-15T02:21:02Z", "phase": "ast", "pct": 75.0, "message": "int8 shipped"}
+{"ts": "2026-04-15T02:21:02Z", "phase": "ast", "pct": 100.0, "message": "done, precision=int8-dynamic"}
+{"ts": "2026-04-15T02:21:02Z", "phase": "clap", "pct": 10.0, "message": "downloading + exporting"}
+{"ts": "2026-04-15T02:21:02Z", "phase": "clap.export", "pct": 5.0, "message": "loading laion/clap-htsat-unfused"}
+{"ts": "2026-04-15T02:21:03Z", "phase": "clap.export", "pct": 40.0, "message": "torch.onnx.export — audio branch only"}
+{"ts": "2026-04-15T02:21:05Z", "phase": "clap.export", "pct": 100.0, "message": "wrote /Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a74b3cc1/v0/build/models/clap/clap_htsat_unfused.onnx"}
+{"ts": "2026-04-15T02:21:05Z", "phase": "clap.bake", "pct": 0.0, "message": "computing text embeddings for 13 prompts"}
+{"ts": "2026-04-15T02:21:06Z", "phase": "clap.bake", "pct": 100.0, "message": "wrote /Users/zak/zacharysbrown/stemforge/.claude/worktrees/agent-a74b3cc1/v0/build/models/clap_genre_embeddings.json"}
+{"ts": "2026-04-15T02:21:08Z", "phase": "clap", "pct": 30.0, "message": "parity drum_loop_10s: cos=1.000000 pass=True"}
+{"ts": "2026-04-15T02:21:09Z", "phase": "clap", "pct": 30.0, "message": "parity full_mix_30s: cos=1.000000 pass=True"}
+{"ts": "2026-04-15T02:21:21Z", "phase": "clap", "pct": 60.0, "message": "fp16 shipped"}
+{"ts": "2026-04-15T02:21:21Z", "phase": "clap", "pct": 100.0, "message": "done, precision=fp16"}
+{"ts": "2026-04-15T02:21:21Z", "phase": "done", "pct": 100.0, "message": "results={'ast': True, 'clap': True} ok=True"}
+{"ts": "2026-04-15T02:21:26Z", "phase": "demucs.start", "pct": 0.0, "message": "variants=['htdemucs', 'htdemucs_6s', 'htdemucs_ft']"}
+{"ts": "2026-04-15T02:21:26Z", "phase": "demucs.htdemucs", "pct": 5.0, "message": "loading torch reference"}
+{"ts": "2026-04-15T02:21:26Z", "phase": "demucs.htdemucs", "pct": 10.0, "message": "exporting head 1/1 → htdemucs.onnx"}
+{"ts": "2026-04-15T02:21:30Z", "phase": "demucs.htdemucs", "pct": 15.0, "message": "exported htdemucs.onnx (160.9 MB)"}
+{"ts": "2026-04-15T02:21:30Z", "phase": "demucs.htdemucs", "pct": 40.0, "message": "running parity validation"}
+{"ts": "2026-04-15T02:21:35Z", "phase": "demucs.htdemucs", "pct": 50.0, "message": "parity drum_loop_10s: max_abs=1.063e+01 rms=-25.8dBFS rel_peak=3.558e-01 pass=False"}
+{"ts": "2026-04-15T02:21:40Z", "phase": "demucs.htdemucs", "pct": 50.0, "message": "parity full_mix_30s: max_abs=1.733e-04 rms=-103.4dBFS rel_peak=2.666e-04 pass=True"}
+{"ts": "2026-04-15T02:21:47Z", "phase": "demucs.htdemucs", "pct": 65.0, "message": "fp16 fallback fp32"}
+{"ts": "2026-04-15T02:21:54Z", "phase": "demucs.htdemucs", "pct": 80.0, "message": "coreml_loaded=False cpu_lat=2.1421 cml_lat=None fallback=[]"}
+{"ts": "2026-04-15T02:21:54Z", "phase": "demucs.htdemucs", "pct": 100.0, "message": "done, precision=fp32, parity_pass=True"}
+{"ts": "2026-04-15T02:21:54Z", "phase": "demucs.htdemucs_6s", "pct": 5.0, "message": "loading torch reference"}
+{"ts": "2026-04-15T02:21:54Z", "phase": "demucs.htdemucs_6s", "pct": 10.0, "message": "exporting head 1/1 → htdemucs_6s.onnx"}
+{"ts": "2026-04-15T02:21:59Z", "phase": "demucs.htdemucs_6s", "pct": 15.0, "message": "exported htdemucs_6s.onnx (105.3 MB)"}
+{"ts": "2026-04-15T02:21:59Z", "phase": "demucs.htdemucs_6s", "pct": 40.0, "message": "running parity validation"}
+{"ts": "2026-04-15T02:22:03Z", "phase": "demucs.htdemucs_6s", "pct": 50.0, "message": "parity drum_loop_10s: max_abs=1.124e+00 rms=-46.0dBFS rel_peak=4.540e-01 pass=False"}
+{"ts": "2026-04-15T02:22:08Z", "phase": "demucs.htdemucs_6s", "pct": 50.0, "message": "parity full_mix_30s: max_abs=5.643e-05 rms=-130.1dBFS rel_peak=1.056e-04 pass=True"}
+{"ts": "2026-04-15T02:22:14Z", "phase": "demucs.htdemucs_6s", "pct": 65.0, "message": "fp16 fallback fp32"}
+{"ts": "2026-04-15T02:22:20Z", "phase": "demucs.htdemucs_6s", "pct": 80.0, "message": "coreml_loaded=False cpu_lat=1.8091 cml_lat=None fallback=[]"}
+{"ts": "2026-04-15T02:22:20Z", "phase": "demucs.htdemucs_6s", "pct": 100.0, "message": "done, precision=fp32, parity_pass=True"}
+{"ts": "2026-04-15T02:22:20Z", "phase": "demucs.htdemucs_ft", "pct": 5.0, "message": "loading torch reference"}
+{"ts": "2026-04-15T02:22:21Z", "phase": "demucs.htdemucs_ft", "pct": 10.0, "message": "exporting head 1/4 → htdemucs_ft.head0.onnx"}
+{"ts": "2026-04-15T02:22:26Z", "phase": "demucs.htdemucs_ft", "pct": 15.0, "message": "exported htdemucs_ft.head0.onnx (160.9 MB)"}
+{"ts": "2026-04-15T02:22:26Z", "phase": "demucs.htdemucs_ft", "pct": 15.0, "message": "exporting head 2/4 → htdemucs_ft.head1.onnx"}
+{"ts": "2026-04-15T02:22:31Z", "phase": "demucs.htdemucs_ft", "pct": 20.0, "message": "exported htdemucs_ft.head1.onnx (160.9 MB)"}
+{"ts": "2026-04-15T02:22:31Z", "phase": "demucs.htdemucs_ft", "pct": 20.0, "message": "exporting head 3/4 → htdemucs_ft.head2.onnx"}
+{"ts": "2026-04-15T02:22:36Z", "phase": "demucs.htdemucs_ft", "pct": 25.0, "message": "exported htdemucs_ft.head2.onnx (160.9 MB)"}
+{"ts": "2026-04-15T02:22:36Z", "phase": "demucs.htdemucs_ft", "pct": 25.0, "message": "exporting head 4/4 → htdemucs_ft.head3.onnx"}
+{"ts": "2026-04-15T02:22:41Z", "phase": "demucs.htdemucs_ft", "pct": 30.0, "message": "exported htdemucs_ft.head3.onnx (160.9 MB)"}
+{"ts": "2026-04-15T02:22:41Z", "phase": "demucs.htdemucs_ft", "pct": 40.0, "message": "running parity validation"}
+{"ts": "2026-04-15T02:23:01Z", "phase": "demucs.htdemucs_ft", "pct": 50.0, "message": "parity drum_loop_10s: max_abs=3.997e+00 rms=-38.8dBFS rel_peak=1.367e-01 pass=False"}
+{"ts": "2026-04-15T02:23:20Z", "phase": "demucs.htdemucs_ft", "pct": 50.0, "message": "parity full_mix_30s: max_abs=2.906e-03 rms=-99.3dBFS rel_peak=4.951e-03 pass=True"}
+{"ts": "2026-04-15T02:23:27Z", "phase": "demucs.htdemucs_ft", "pct": 65.0, "message": "fp16 fallback fp32"}
+{"ts": "2026-04-15T02:23:34Z", "phase": "demucs.htdemucs_ft", "pct": 80.0, "message": "coreml_loaded=False cpu_lat=2.0095 cml_lat=None fallback=[]"}
+{"ts": "2026-04-15T02:23:34Z", "phase": "demucs.htdemucs_ft", "pct": 100.0, "message": "done, precision=fp32, parity_pass=True"}
+{"ts": "2026-04-15T02:23:34Z", "phase": "demucs.done", "pct": 100.0, "message": "results={'htdemucs': True, 'htdemucs_6s': True, 'htdemucs_ft': True} duration=128.1s"}
+{"ts": "2026-04-15T02:25:02Z", "phase": "validate.ast", "pct": 50.0, "message": "drum_loop_10s: labels_match=False max_diff=4.2063e-01 pass=False"}
+{"ts": "2026-04-15T02:25:04Z", "phase": "validate.ast", "pct": 50.0, "message": "full_mix_30s: labels_match=False max_diff=6.0962e-01 pass=False"}
+{"ts": "2026-04-15T02:25:06Z", "phase": "validate.clap", "pct": 50.0, "message": "drum_loop_10s: cos=0.999998 pass=True"}
+{"ts": "2026-04-15T02:25:07Z", "phase": "validate.clap", "pct": 50.0, "message": "full_mix_30s: cos=0.999998 pass=True"}
+{"ts": "2026-04-15T02:25:28Z", "phase": "validate.demucs", "pct": 50.0, "message": "htdemucs_ft drum_loop_10s: rms=-38.8dBFS pass=False"}
+{"ts": "2026-04-15T02:25:46Z", "phase": "validate.demucs", "pct": 50.0, "message": "htdemucs_ft full_mix_30s: rms=-99.3dBFS pass=True"}
+{"ts": "2026-04-15T02:25:51Z", "phase": "validate.demucs", "pct": 50.0, "message": "htdemucs_6s drum_loop_10s: rms=-46.0dBFS pass=False"}
+{"ts": "2026-04-15T02:25:55Z", "phase": "validate.demucs", "pct": 50.0, "message": "htdemucs_6s full_mix_30s: rms=-130.1dBFS pass=True"}
+{"ts": "2026-04-15T02:26:00Z", "phase": "validate.demucs", "pct": 50.0, "message": "htdemucs drum_loop_10s: rms=-25.8dBFS pass=False"}
+{"ts": "2026-04-15T02:26:05Z", "phase": "validate.demucs", "pct": 50.0, "message": "htdemucs full_mix_30s: rms=-103.4dBFS pass=True"}
+{"ts": "2026-04-15T02:26:44Z", "phase": "validate.ast", "pct": 50.0, "message": "drum_loop_10s: labels_match=True max_diff=2.1935e-05 pass=True"}
+{"ts": "2026-04-15T02:26:46Z", "phase": "validate.ast", "pct": 50.0, "message": "full_mix_30s: labels_match=True max_diff=2.3842e-05 pass=True"}
+{"ts": "2026-04-15T02:26:48Z", "phase": "validate.clap", "pct": 50.0, "message": "drum_loop_10s: cos=0.999998 pass=True"}
+{"ts": "2026-04-15T02:26:50Z", "phase": "validate.clap", "pct": 50.0, "message": "full_mix_30s: cos=0.999998 pass=True"}
+{"ts": "2026-04-15T02:27:10Z", "phase": "validate.demucs", "pct": 50.0, "message": "htdemucs_ft drum_loop_10s: rms=-38.8dBFS pass=False"}
+{"ts": "2026-04-15T02:27:29Z", "phase": "validate.demucs", "pct": 50.0, "message": "htdemucs_ft full_mix_30s: rms=-99.3dBFS pass=True"}
+{"ts": "2026-04-15T02:27:34Z", "phase": "validate.demucs", "pct": 50.0, "message": "htdemucs_6s drum_loop_10s: rms=-46.0dBFS pass=False"}
+{"ts": "2026-04-15T02:27:38Z", "phase": "validate.demucs", "pct": 50.0, "message": "htdemucs_6s full_mix_30s: rms=-130.1dBFS pass=True"}
+{"ts": "2026-04-15T02:27:44Z", "phase": "validate.demucs", "pct": 50.0, "message": "htdemucs drum_loop_10s: rms=-25.8dBFS pass=False"}
+{"ts": "2026-04-15T02:27:48Z", "phase": "validate.demucs", "pct": 50.0, "message": "htdemucs full_mix_30s: rms=-103.4dBFS pass=True"}

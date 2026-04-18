@@ -1,0 +1,59 @@
+{
+  "completed_at": "2026-04-15T09:20:00Z",
+  "branch": "feat/v0-coreml-opt",
+  "supersedes": "feat/v0-A-validator@done.flag",
+  "binary_path": "v0/build/stemforge-native",
+  "binary_arch": "arm64",
+  "universal2": false,
+  "codesigned": "ad-hoc",
+  "coreml_ep_active": true,
+  "coreml_partitions": 32,
+  "coreml_nodes_assigned": 1446,
+  "coreml_nodes_total": 1500,
+  "coreml_partition_pct": 96.4,
+  "demucs_per_segment_latency_cpu_sec": 2.20,
+  "demucs_per_segment_latency_coreml_sec": 0.544,
+  "demucs_per_segment_speedup_vs_cpu_x": 4.04,
+  "tests_pass": "warm-cache htdemucs and htdemucs_6s meet ≤12s target; htdemucs_ft cold regresses pending session-persistence (v2)",
+  "stems_json_schema_compat": true,
+  "ndjson_schema_valid": true,
+  "validation": {
+    "fixture": "v0/tests/fixtures/short_loop.wav",
+    "fixture_sr": 44100,
+    "fixture_duration_sec": 10.0,
+    "fixture_channels": 2,
+    "wall_clock_sec": {
+      "htdemucs_ft_cold": 215.25,
+      "htdemucs_ft_warm": 50.33,
+      "htdemucs_fast_cold": 52.90,
+      "htdemucs_fast_warm": 10.92,
+      "htdemucs_6s_cold": 31.87,
+      "htdemucs_6s_warm": 7.31
+    },
+    "ndjson_events_emitted": 21,
+    "output_dir_examples": ["/tmp/sf_coreml_test_new/short_loop",
+                            "/tmp/sf_fast_warm/short_loop",
+                            "/tmp/sf_6s_warm/short_loop"],
+    "stems_written_default_variant": ["drums.wav", "bass.wav",
+                                       "other.wav", "vocals.wav"],
+    "stems_written_6s_variant": ["drums.wav", "bass.wav", "other.wav",
+                                 "vocals.wav", "guitar.wav", "piano.wav"],
+    "bpm_detected": 117.45,
+    "beats_detected": 20,
+    "coreml_runtime_log_evidence": "CoreMLExecutionProvider::GetCapability, number of partitions supported by CoreML: 32 number of nodes in the graph: 1500 number of nodes supported by CoreML: 1446",
+    "parity_check": {
+      "dynamic_vs_static_onnx_residual_rms_dbfs": -151.0,
+      "coreml_vs_cpu_reference_residual_rms_dbfs": -113.0,
+      "threshold_inaudibility_dbfs": -60.0
+    }
+  },
+  "manifest_flag_flips": {
+    "htdemucs": "coreml_ep_supported: false → true",
+    "htdemucs_6s": "coreml_ep_supported: false → true",
+    "htdemucs_ft_head0": "coreml_ep_supported: false → true",
+    "htdemucs_ft_head1": "coreml_ep_supported: false → true",
+    "htdemucs_ft_head2": "coreml_ep_supported: false → true",
+    "htdemucs_ft_head3": "coreml_ep_supported: false → true"
+  },
+  "report": "v0/state/A/coreml_report.md"
+}

@@ -1,0 +1,7 @@
+{
+  "completed_at": "2026-04-14T00:00:00Z",
+  "branch": "feat/v0-B-package-split",
+  "core_install_succeeds": true,
+  "native_install_succeeds": true,
+  "torch_absent_from_core": true
+}
