@@ -145,16 +145,35 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             extras={"fontsize": 11.0},
         )
     )
-    # Message box to store the last-dropped file path (string). Dropfile's
-    # outlet 0 emits a symbol; we capture it in a message box so the split
-    # button can re-send it without re-dropping.
+    # Path conversion: dropfile emits HFS paths ("Macintosh HD:/Users/...").
+    # regexp strips the volume prefix to get a POSIX path for stemforge-native.
+    OBJ_PATH_CONVERT = "obj-path-convert"
+    boxes.append(
+        _box(
+            OBJ_PATH_CONVERT,
+            "newobj",
+            (
+                fd["pos"]["x"],
+                fd["pos"]["y"] + fd["size"]["height"] + 4,
+                220.0,
+                22.0,
+            ),
+            numinlets=1,
+            numoutlets=5,
+            outlettype=["", "", "", "", ""],
+            extras={"text": "regexp (.+):(/.*) @substitute %2"},
+        )
+    )
+    lines.append(_line(OBJ_FILE_DROP, 0, OBJ_PATH_CONVERT, 0))
+
+    # Message box stores the POSIX path for re-triggering via Split button
     boxes.append(
         _box(
             OBJ_FILE_PATH_MSG,
             "message",
             (
                 fd["pos"]["x"],
-                fd["pos"]["y"] + fd["size"]["height"] + 4,
+                fd["pos"]["y"] + fd["size"]["height"] + 30,
                 fd["size"]["width"],
                 20.0,
             ),
@@ -164,7 +183,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             extras={"text": ""},
         )
     )
-    lines.append(_line(OBJ_FILE_DROP, 0, OBJ_FILE_PATH_MSG, 0))
+    lines.append(_line(OBJ_PATH_CONVERT, 0, OBJ_FILE_PATH_MSG, 0))
 
     # --- Backend dropdown (umenu) ---
     be = elements_by_id["backend"]
@@ -280,9 +299,9 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         )
     )
 
-    # --- Command builder: assemble shell command + redirect stdout to file ---
-    # [shell] mangles JSON through Max's message parser, so we redirect stdout
-    # to a temp file and have the [js] parser poll it directly.
+    # --- Command builder: sprintf (no symout!) builds the shell command ---
+    # symout wraps output as a single quoted symbol which [shell] can't parse.
+    # Without symout, sprintf outputs a list of atoms that [shell] joins correctly.
     OBJ_CMD_FMT = "obj-cmd-fmt"
     boxes.append(
         _box(
@@ -292,9 +311,26 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             numinlets=1,
             numoutlets=1,
             outlettype=[""],
-            extras={"text": 'sprintf symout /usr/local/bin/stemforge-native forge \\"%s\\" --json-events --variant ft-fused > /tmp/sf_events.ndjson 2>&1'},
+            extras={"text": "sprintf /usr/local/bin/stemforge-native split %s --json-events --variant ft-fused"},
         )
     )
+    # Drop auto-fires: path → sprintf → shell
+    lines.append(_line(OBJ_PATH_CONVERT, 0, OBJ_CMD_FMT, 0))
+    # Split button re-fires: button → [t b] → message box (bang outputs stored path) → sprintf
+    OBJ_TRIGGER_BANG = "obj-trigger-bang"
+    boxes.append(
+        _box(
+            OBJ_TRIGGER_BANG,
+            "newobj",
+            (sb["pos"]["x"] + 80, sb["pos"]["y"] + 4, 30.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=["bang"],
+            extras={"text": "t b"},
+        )
+    )
+    lines.append(_line(OBJ_SPLIT_BUTTON, 0, OBJ_TRIGGER_BANG, 0))
+    lines.append(_line(OBJ_TRIGGER_BANG, 0, OBJ_FILE_PATH_MSG, 0))
     lines.append(_line(OBJ_FILE_PATH_MSG, 0, OBJ_CMD_FMT, 0))
 
     # --- [shell] object — spawns stemforge-native ---
@@ -310,9 +346,8 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         )
     )
     lines.append(_line(OBJ_CMD_FMT, 0, OBJ_BRIDGE, 0))
-    lines.append(_line(OBJ_SPLIT_BUTTON, 0, OBJ_FILE_PATH_MSG, 0))
 
-    # --- NDJSON parser (classic [js] — polls /tmp/sf_events.ndjson) ---
+    # --- NDJSON parser (classic [js] — parses Max-mangled JSON from [shell]) ---
     OBJ_NDJSON_PARSER = "obj-ndjson-parser"
     boxes.append(
         _box(
@@ -331,22 +366,8 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             },
         )
     )
-    # "start" message to parser when command is sent → begins file polling
-    OBJ_START_MSG = "obj-start-msg"
-    boxes.append(
-        _box(
-            OBJ_START_MSG,
-            "message",
-            (120.0, sb["pos"]["y"] + 72, 50.0, 22.0),
-            numinlets=2,
-            numoutlets=1,
-            outlettype=[""],
-            extras={"text": "start"},
-        )
-    )
-    lines.append(_line(OBJ_CMD_FMT, 0, OBJ_START_MSG, 0))
-    lines.append(_line(OBJ_START_MSG, 0, OBJ_NDJSON_PARSER, 0))
-    # bang from [shell] outlet 1 (process done) → parser's bang handler
+    # [shell] stdout → parser, [shell] done bang → parser
+    lines.append(_line(OBJ_BRIDGE, 0, OBJ_NDJSON_PARSER, 0))
     lines.append(_line(OBJ_BRIDGE, 1, OBJ_NDJSON_PARSER, 0))
 
     # --- route events from parser by event-type symbol ---
