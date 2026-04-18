@@ -131,52 +131,67 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         )
     )
 
-    # --- File drop (dropfile) ---
+    # --- Browse button + file dialog (replaces dropfile for M4L compatibility) ---
     fd = elements_by_id["audio_in"]
+    OBJ_BROWSE_BTN = "obj-browse-btn"
     boxes.append(
         _box(
-            OBJ_FILE_DROP,
-            "dropfile",
+            OBJ_BROWSE_BTN,
+            "textbutton",
             (fd["pos"]["x"], fd["pos"]["y"], fd["size"]["width"], fd["size"]["height"]),
             presentation=True,
             numinlets=1,
-            numoutlets=2,
-            outlettype=["", "int"],
-            extras={"fontsize": 11.0},
+            numoutlets=3,
+            outlettype=["", "", "int"],
+            extras={
+                "text": fd.get("label", "Browse..."),
+                "fontsize": 11.0,
+            },
         )
     )
-    # Path conversion: dropfile emits HFS paths ("Macintosh HD:/Users/...").
+    OBJ_OPENDIALOG = "obj-opendialog"
+    boxes.append(
+        _box(
+            OBJ_OPENDIALOG,
+            "newobj",
+            (fd["pos"]["x"], fd["pos"]["y"] + fd["size"]["height"] + 4, 150.0, 22.0),
+            numinlets=1,
+            numoutlets=2,
+            outlettype=["", "bang"],
+            extras={"text": "opendialog sound"},
+        )
+    )
+    lines.append(_line(OBJ_BROWSE_BTN, 0, OBJ_OPENDIALOG, 0))
+
+    # Path conversion: opendialog emits HFS paths ("Macintosh HD:/Users/...").
     # regexp strips the volume prefix to get a POSIX path for stemforge-native.
     OBJ_PATH_CONVERT = "obj-path-convert"
     boxes.append(
         _box(
             OBJ_PATH_CONVERT,
             "newobj",
-            (
-                fd["pos"]["x"],
-                fd["pos"]["y"] + fd["size"]["height"] + 4,
-                220.0,
-                22.0,
-            ),
+            (fd["pos"]["x"], fd["pos"]["y"] + fd["size"]["height"] + 30, 220.0, 22.0),
             numinlets=1,
             numoutlets=5,
             outlettype=["", "", "", "", ""],
             extras={"text": "regexp (.+):(/.*) @substitute %2"},
         )
     )
-    lines.append(_line(OBJ_FILE_DROP, 0, OBJ_PATH_CONVERT, 0))
+    lines.append(_line(OBJ_OPENDIALOG, 0, OBJ_PATH_CONVERT, 0))
 
-    # Message box stores the POSIX path for re-triggering via Split button
+    # Message box displays the selected file path
     boxes.append(
         _box(
             OBJ_FILE_PATH_MSG,
             "message",
             (
                 fd["pos"]["x"],
-                fd["pos"]["y"] + fd["size"]["height"] + 30,
+                fd["pos"]["y"] + fd["size"]["height"] + 56,
                 fd["size"]["width"],
                 20.0,
             ),
+            presentation=True,
+            presentation_rect=(fd["pos"]["x"], fd["pos"]["y"] + fd["size"]["height"] + 4, fd["size"]["width"], 20.0),
             numinlets=2,
             numoutlets=1,
             outlettype=[""],
@@ -245,7 +260,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         )
     )
 
-    # --- Progress bar (live.gain~ would be audio; use live.slider in bar style) ---
+    # --- Progress bar (live.slider for visual feedback) ---
     pb = elements_by_id["progress_bar"]
     boxes.append(
         _box(
@@ -257,26 +272,38 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             numoutlets=2,
             outlettype=["", "float"],
             extras={
-                "_parameter_range": [0.0, 100.0],
-                "orientation": 2,  # horizontal
+                "saved_attribute_attributes": {
+                    "valueof": {
+                        "parameter_longname": "StemForge Progress",
+                        "parameter_shortname": "Progress",
+                        "parameter_type": 0,
+                        "parameter_mmin": 0.0,
+                        "parameter_mmax": 100.0,
+                        "parameter_initial_enable": 1,
+                        "parameter_initial": [0],
+                    }
+                },
+                "orientation": 0,
                 "parameter_enable": 1,
-                "parameter_shortname": "progress",
-                "parameter_longname": "progress",
             },
         )
     )
 
-    # --- Status text ---
+    # --- Status text (live.comment updates dynamically, unlike comment) ---
     st = elements_by_id["status_text"]
     boxes.append(
         _box(
             OBJ_STATUS_TEXT,
-            "comment",
+            "live.comment",
             (st["pos"]["x"], st["pos"]["y"], size["width"] - 24, 22.0),
             presentation=True,
             numinlets=1,
             numoutlets=0,
-            extras={"text": "idle", "fontsize": 11.0},
+            extras={
+                "text": "idle",
+                "fontsize": 11.0,
+                "textcolor": [0.9, 0.9, 0.9, 1.0],
+            },
         )
     )
 

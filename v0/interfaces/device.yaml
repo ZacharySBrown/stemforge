@@ -10,59 +10,58 @@ device:
   bundle_identifier: "com.stemforge.m4l.v0"
   version: "0.0.0"  # replaced at build time with git tag
 
-# UI elements in the .amxd patch. Positions are relative (grid units, 8px each).
-# Track C's .maxpat generator turns this into Max objects.
+# UI elements in the .amxd patch. Compact horizontal layout for M4L strip.
 ui:
-  size: { width: 400, height: 260 }
+  size: { width: 400, height: 140 }
 
   elements:
     - id: title
       type: label
       text: "StemForge"
-      pos: { x: 12, y: 8 }
-      style: { font_size: 18, weight: bold }
+      pos: { x: 8, y: 4 }
+      style: { font_size: 14, weight: bold }
 
     - id: audio_in
       type: file_drop
-      label: "Drop audio here"
+      label: "Browse..."
       accepts: [wav, mp3, aiff, m4a, flac, ogg]
-      pos: { x: 12, y: 40 }
-      size: { width: 376, height: 60 }
+      pos: { x: 8, y: 28 }
+      size: { width: 80, height: 24 }
+
+    - id: progress_bar
+      type: progress
+      pos: { x: 8, y: 60 }
+      size: { width: 384, height: 16 }
+
+    - id: status_text
+      type: status
+      pos: { x: 8, y: 80 }
 
     - id: backend
       type: dropdown
       label: "Backend"
       options: [auto, demucs, lalal, musicai]
       default: auto
-      pos: { x: 12, y: 112 }
+      pos: { x: 8, y: 108 }
 
     - id: pipeline
       type: dropdown
       label: "Pipeline"
       options: [default, idm_crushed, glitch, ambient]
       default: default
-      pos: { x: 160, y: 112 }
+      pos: { x: 152, y: 108 }
 
     - id: slice
       type: toggle
       label: "Slice beats"
       default: true
-      pos: { x: 308, y: 112 }
-
-    - id: progress_bar
-      type: progress
-      pos: { x: 12, y: 160 }
-      size: { width: 376, height: 20 }
-
-    - id: status_text
-      type: status
-      pos: { x: 12, y: 188 }
+      pos: { x: 300, y: 108 }
 
     - id: split_button
       type: button
       label: "Split"
       action: spawn_native
-      pos: { x: 320, y: 220 }
+      pos: { x: 336, y: 108 }
 
 # How the M4L device finds the native binary at runtime.
 # First match wins.
