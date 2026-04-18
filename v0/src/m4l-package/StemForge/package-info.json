@@ -1,0 +1,14 @@
+{
+  "name": "StemForge",
+  "version": "0.0.0",
+  "description": "ONNX-native stem separation bridge for StemForge M4L device",
+  "author": "Raindog",
+  "os": {
+    "macintosh": {
+      "platform": ["x64", "arm64"]
+    }
+  },
+  "max_version_min": "9.0.0",
+  "homepatcher": "",
+  "forcerestart": 1
+}

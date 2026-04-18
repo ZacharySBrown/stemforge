@@ -195,11 +195,20 @@ chmod 0755 "$SYS_ROOT/usr/local/bin/stemforge-uninstall"
 
 cp "$AMXD" "$USR_ROOT/tmp/stemforge-staging/StemForge.amxd"
 
-# Node-for-Max bridge + loader — must be copied alongside the .amxd so the
-# device's embedded node.script finds them. postinstall relocates them into
-# the Ableton User Library next to StemForge.amxd.
-cp "$BRIDGE_JS" "$USR_ROOT/tmp/stemforge-staging/stemforge_bridge.v0.js"
-cp "$LOADER_JS" "$USR_ROOT/tmp/stemforge-staging/stemforge_loader.v0.js"
+# Max Package — node.script resolves JS by bare filename via Max's search path.
+# The StemForge package (v0/src/m4l-package/StemForge/) ships JS in javascript/.
+# postinstall deploys the package to ~/Documents/Max 9/Packages/StemForge/.
+M4L_PKG_SRC="$REPO_ROOT/v0/src/m4l-package/StemForge"
+if [ -d "$M4L_PKG_SRC" ]; then
+    mkdir -p "$USR_ROOT/tmp/stemforge-staging/m4l-package"
+    cp -R "$M4L_PKG_SRC" "$USR_ROOT/tmp/stemforge-staging/m4l-package/"
+    echo "    Max Package            : $M4L_PKG_SRC (staged)"
+else
+    echo "WARNING: Max Package source not found at $M4L_PKG_SRC" >&2
+    # Fallback: stage loose JS files next to .amxd
+    cp "$BRIDGE_JS" "$USR_ROOT/tmp/stemforge-staging/stemforge_bridge.v0.js"
+    cp "$LOADER_JS" "$USR_ROOT/tmp/stemforge-staging/stemforge_loader.v0.js"
+fi
 
 # Models — approach 1 (see v0-ship-spec §3 W2): stage under user-component
 # staging, then postinstall mv's the tree into the target user's

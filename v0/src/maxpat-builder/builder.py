@@ -50,6 +50,8 @@ OBJ_PROGRESS_ROUTE = "obj-progress-route"
 OBJ_ERROR_FMT = "obj-error-fmt"
 OBJ_CONSOLE_PRINT = "obj-console-print"
 OBJ_PACK_SPLIT = "obj-pack-split"
+OBJ_PLUGIN_IN = "obj-plugin-in"
+OBJ_PLUGOUT = "obj-plugout"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -176,7 +178,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             numoutlets=3,
             outlettype=["int", "", ""],
             extras={
-                "items": ", ".join(be["options"]),
+                "items": " ".join(be["options"]),
                 "arrow": 1,
                 "autopopulate": 1,
                 "prefix": "Backend: ",
@@ -196,7 +198,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             numoutlets=3,
             outlettype=["int", "", ""],
             extras={
-                "items": ", ".join(pl["options"]),
+                "items": " ".join(pl["options"]),
                 "arrow": 1,
                 "autopopulate": 1,
                 "prefix": "Pipeline: ",
@@ -305,11 +307,24 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         _box(
             OBJ_BRIDGE,
             "newobj",
-            (16.0, sb["pos"]["y"] + 72, 260.0, 22.0),
+            (16.0, sb["pos"]["y"] + 72, 280.0, 22.0),
             numinlets=1,
-            numoutlets=1,
-            outlettype=[""],
-            extras={"text": "node.script stemforge_bridge.v0.js"},
+            numoutlets=2,
+            outlettype=["", ""],
+            extras={
+                "text": "node.script stemforge_bridge.v0.js @autostart 1 @log_path /tmp/n4m-stemforge.log",
+                "saved_object_attributes": {
+                    "autostart": 1,
+                    "defer": 0,
+                    "watch": 0,
+                },
+                "textfile": {
+                    "filename": "stemforge_bridge.v0.js",
+                    "flags": 0,
+                    "embed": 0,
+                    "autowatch": 1,
+                },
+            },
         )
     )
     lines.append(_line(OBJ_PACK_SPLIT, 0, OBJ_BRIDGE, 0))
@@ -433,6 +448,55 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     lines.append(_line(OBJ_ROUTE_EVENTS, 1, OBJ_CONSOLE_PRINT, 0))
     lines.append(_line(OBJ_ROUTE_EVENTS, 3, OBJ_CONSOLE_PRINT, 0))
 
+    # --- Diagnostic: loadbang → print to verify patcher loads ---
+    boxes.append(
+        _box(
+            "obj-loadbang",
+            "newobj",
+            (500.0, 20.0, 60.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=["bang"],
+            extras={"text": "loadbang"},
+        )
+    )
+    boxes.append(
+        _box(
+            "obj-diag-print",
+            "newobj",
+            (500.0, 50.0, 180.0, 22.0),
+            numinlets=1,
+            numoutlets=0,
+            extras={"text": "print [StemForge-v0-loaded]"},
+        )
+    )
+    lines.append(_line("obj-loadbang", 0, "obj-diag-print", 0))
+    # Also send script start to node.script on loadbang as belt-and-suspenders
+    lines.append(_line("obj-loadbang", 0, OBJ_BRIDGE, 0))
+
+    # --- Audio passthrough (required for M4L audio effects) ---
+    boxes.append(
+        _box(
+            OBJ_PLUGIN_IN,
+            "newobj",
+            (20.0, 20.0, 80.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            extras={"text": "plugin~ 2", "outlettype": ["signal"]},
+        )
+    )
+    boxes.append(
+        _box(
+            OBJ_PLUGOUT,
+            "newobj",
+            (20.0, 60.0, 80.0, 22.0),
+            numinlets=1,
+            numoutlets=0,
+            extras={"text": "plugout~ 2"},
+        )
+    )
+    lines.append(_line(OBJ_PLUGIN_IN, 0, OBJ_PLUGOUT, 0))
+
     # --- Top-level patcher wrapper ---
     patcher = {
         "patcher": {
@@ -478,6 +542,37 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
                 },
             ],
             "autosave": 0,
+            "project": {
+                "version": 1,
+                "creationdate": 3590052493,
+                "modificationdate": 3590052493,
+                "viewrect": [0.0, 0.0, 300.0, 500.0],
+                "autoorganize": 1,
+                "hideprojectwindow": 1,
+                "showdependencies": 1,
+                "autolocalize": 0,
+                "contents": {"patchers": {}, "code": {}},
+                "layout": {},
+                "searchpath": {},
+                "detailsvisible": 0,
+                "amxdtype": 1633771873,
+                "readonly": 0,
+                "devpathtype": 0,
+                "devpath": ".",
+                "sortmode": 0,
+                "viewmode": 0,
+                "includepackages": 0,
+            },
+            "parameters": {
+                "parameterbanks": {
+                    "0": {
+                        "index": 0,
+                        "name": "",
+                        "parameters": ["-", "-", "-", "-", "-", "-", "-", "-"],
+                    }
+                },
+                "inherited_shortname": 1,
+            },
         }
     }
     return patcher

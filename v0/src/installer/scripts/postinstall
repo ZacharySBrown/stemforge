@@ -49,15 +49,25 @@ else
     echo "WARNING: StemForge.amxd missing from staging; device will not appear in Ableton" >&2
 fi
 
-# Node-for-Max bridge + loader JS — must sit in the same directory as
-# StemForge.amxd so the device's embedded node.script can resolve them.
-for js in stemforge_bridge.v0.js stemforge_loader.v0.js; do
-    if [ -f "$STAGING/$js" ]; then
-        cp "$STAGING/$js" "$AMXD_DEST/"
-    else
-        echo "WARNING: $js missing from staging; M4L device child process will fail to start" >&2
-    fi
-done
+# Max Package — node.script resolves JS by bare filename via Max's search path.
+# The StemForge package puts JS into ~/Documents/Max 9/Packages/StemForge/javascript/
+# which Max auto-scans at launch. This is the same pattern Cycling '74 uses for
+# Node for Max, RNBO, and BEAP. No mx@c freeze step needed.
+MAX_PKG_DEST="$HOME/Documents/Max 9/Packages/StemForge"
+if [ -d "$STAGING/m4l-package/StemForge" ]; then
+    rm -rf "$MAX_PKG_DEST"
+    mkdir -p "$MAX_PKG_DEST"
+    cp -R "$STAGING/m4l-package/StemForge/." "$MAX_PKG_DEST/"
+    echo "Max Package deployed to $MAX_PKG_DEST"
+else
+    # Fallback: copy JS next to .amxd (works if Max searches the device dir)
+    echo "WARNING: Max Package missing from staging; falling back to JS-next-to-amxd" >&2
+    for js in stemforge_bridge.v0.js stemforge_loader.v0.js; do
+        if [ -f "$STAGING/$js" ]; then
+            cp "$STAGING/$js" "$AMXD_DEST/"
+        fi
+    done
+fi
 
 # Models — staged into /tmp under the user component, relocated here into the
 # target user's Application Support tree. v0 ships only the default-path model
@@ -83,12 +93,16 @@ else
 fi
 
 # Chown anything we created as root back to the target user.
-if [ "$(id -u)" = "0" ] && [ -n "${USER:-}" ] && [ "$USER" != "root" ]; then
-    chown -R "$USER" "$HOME/Library/Application Support/StemForge" \
+# Resolve the actual target user — $USER may be "root" inside installer sandbox.
+TARGET_USER="${USER:-}"
+if [ "$TARGET_USER" = "root" ] || [ -z "$TARGET_USER" ]; then
+    TARGET_USER=$(stat -f "%Su" /dev/console 2>/dev/null || true)
+fi
+if [ "$(id -u)" = "0" ] && [ -n "$TARGET_USER" ] && [ "$TARGET_USER" != "root" ]; then
+    chown -R "$TARGET_USER" "$HOME/Library/Application Support/StemForge" \
                     "$HOME/stemforge" \
                     "$AMXD_DEST/StemForge.amxd" \
-                    "$AMXD_DEST/stemforge_bridge.v0.js" \
-                    "$AMXD_DEST/stemforge_loader.v0.js" \
+                    "$MAX_PKG_DEST" \
                     "$LIB/Templates/StemForge.als" 2>/dev/null || true
 fi
 

@@ -37,7 +37,7 @@ from typing import Any
 
 AMPF_MAGIC = b"ampf"
 AMPF_VERSION = 4  # u32 LE — v4 is what Live 12 / Max 9 writes.
-IIII_SENTINEL = b"iiii"
+AAAA_SENTINEL = b"aaaa"
 META_TAG = b"meta"
 PTCH_TAG = b"ptch"
 
@@ -46,24 +46,46 @@ PTCH_TAG = b"ptch"
 #   7 — audio effect with additional JS/Node project resources
 #       (StemForgeLoader.amxd, which embeds its loader .js after the JSON)
 # We default to 1; Live 12 rewrites on save if it needs more features.
-DEFAULT_DEVICE_TYPE = 1
+DEFAULT_DEVICE_TYPE = 7
+
+MX_AT_C_MAGIC = b"mx@c"
 
 
 def _u32_le(value: int) -> bytes:
     return struct.pack("<I", value)
 
 
-def _build_patch_chunk(patcher_json: str) -> bytes:
-    """Encode patch JSON + trailing null pad into the `ptch` chunk body.
+def _u32_be(value: int) -> bytes:
+    return struct.pack(">I", value)
 
-    Max writes a trailing b'\\x00' after the JSON in simple audio-effect
-    devices. We replicate that behavior. Final payload is the raw bytes the
-    length field refers to.
+
+def _build_patch_chunk(patcher_json: str, embed_files: list[tuple[str, bytes]] | None = None) -> bytes:
+    """Encode patch JSON + optional embedded JS resources into the ptch body.
+
+    M4L project-type devices (device_type=7) embed JS files after the JSON
+    inside the ptch chunk, prefixed by an ``mx@c`` header. This is how
+    node.script finds its scripts without requiring external files on disk.
     """
-    data = patcher_json.encode("utf-8")
-    if not data.endswith(b"\x00"):
-        data = data + b"\x00"
-    return data
+    json_bytes = patcher_json.encode("utf-8")
+    if not json_bytes.endswith(b"\x00"):
+        json_bytes = json_bytes + b"\x00"
+
+    if not embed_files:
+        return json_bytes
+
+    resources = b""
+    for _name, content in embed_files:
+        resources += content
+
+    body_after_header = json_bytes + resources
+    total_with_header = 16 + len(body_after_header)
+
+    header = MX_AT_C_MAGIC
+    header += _u32_be(16)
+    header += _u32_be(0)
+    header += _u32_be(total_with_header)
+
+    return header + body_after_header
 
 
 def pack_amxd(
@@ -72,6 +94,7 @@ def pack_amxd(
     *,
     device_type: int = DEFAULT_DEVICE_TYPE,
     pretty: bool = True,
+    embed_files: list[tuple[str, bytes]] | None = None,
 ) -> Path:
     """Serialize a patcher dict (or pre-serialized JSON string) to an .amxd.
 
@@ -79,9 +102,12 @@ def pack_amxd(
         patcher: Either a dict matching the Max patcher schema
                  ({"patcher": {...}}), or a JSON string of same.
         out_path: Destination file path.
-        device_type: Meta chunk value. Default 1 = audio effect.
+        device_type: Meta chunk value. 7 = project device with embedded resources.
         pretty: If True and `patcher` is a dict, indent JSON with tabs to
                 mimic Max's output style.
+        embed_files: Optional list of (filename, bytes) tuples to embed
+                     after the JSON in the ptch chunk. Required for node.script
+                     to find JS files in M4L context.
 
     Returns:
         Path of the written file.
@@ -96,13 +122,13 @@ def pack_amxd(
     else:
         raise TypeError(f"patcher must be dict or str, got {type(patcher)}")
 
-    ptch_body = _build_patch_chunk(patcher_json)
+    ptch_body = _build_patch_chunk(patcher_json, embed_files=embed_files)
 
     # Header layout
     blob = bytearray()
     blob += AMPF_MAGIC
     blob += _u32_le(AMPF_VERSION)
-    blob += IIII_SENTINEL
+    blob += AAAA_SENTINEL
     blob += META_TAG
     blob += _u32_le(4)
     blob += _u32_le(int(device_type))
@@ -131,7 +157,7 @@ def unpack_amxd(path: str | Path) -> dict[str, Any]:
         pass
 
     # Expect 'iiii' at offset 8
-    if raw[8:12] != IIII_SENTINEL:
+    if raw[8:12] != AAAA_SENTINEL:
         raise ValueError(f"missing iiii sentinel at offset 8: {raw[8:12]!r}")
 
     # Expect 'meta' at offset 12

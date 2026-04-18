@@ -26,6 +26,9 @@ REPO_ROOT = HERE.parent.parent.parent  # maxpat-builder → src → v0 → repo-
 
 DEFAULT_DEVICE_YAML = REPO_ROOT / "v0" / "interfaces" / "device.yaml"
 DEFAULT_OUT = REPO_ROOT / "v0" / "build" / "StemForge.amxd"
+M4L_JS_DIR = REPO_ROOT / "v0" / "src" / "m4l-js"
+
+JS_FILES = ["stemforge_bridge.v0.js", "stemforge_loader.v0.js"]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -35,13 +38,23 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--device-type",
         type=int,
-        default=1,
-        help="amxd meta value (1=audio effect, 7=with project resources)",
+        default=7,
+        help="amxd meta value (7=project device with embedded JS resources)",
     )
     args = ap.parse_args(argv)
 
+    embed_files = []
+    for name in JS_FILES:
+        js_path = M4L_JS_DIR / name
+        if js_path.exists():
+            embed_files.append((name, js_path.read_bytes()))
+            print(f"  embed: {name} ({js_path.stat().st_size} bytes)")
+        else:
+            print(f"  WARNING: {js_path} not found, skipping embed")
+
     patcher = build_patcher(args.device_yaml)
-    path = pack_amxd(patcher, args.out, device_type=args.device_type)
+    path = pack_amxd(patcher, args.out, device_type=args.device_type,
+                     embed_files=embed_files if embed_files else None)
     size = path.stat().st_size
     print(f"wrote {path} ({size} bytes)")
     return 0
