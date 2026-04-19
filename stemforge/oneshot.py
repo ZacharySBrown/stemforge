@@ -21,6 +21,153 @@ import soundfile as sf
 from .config import StemCurationConfig
 
 
+# ── LarsNet drum sub-stem separation ─────────────────────────────────────
+
+def extract_drum_oneshots_via_larsnet(
+    drums_path: Path,
+    output_dir: Path,
+    config: StemCurationConfig | None = None,
+    device: str = "auto",
+) -> list["OneshotProfile"]:
+    """
+    Extract drum one-shots using LarsNet sub-stem separation.
+
+    Instead of onset detection on a mixed drum stem, LarsNet separates
+    into kick/snare/hihat/toms/cymbals sub-stems first. Then simple
+    onset detection on each clean sub-stem produces high-quality one-shots
+    with correct classification for free.
+
+    Returns list of OneshotProfile with classification already set.
+    """
+    from .drum_separator import separate_drums, is_available
+
+    if not is_available():
+        return []  # fall back to spectral heuristic path
+
+    if config is None:
+        config = StemCurationConfig()
+
+    # Step 1: Separate drum stem into sub-stems
+    substem_dir = output_dir / "drum_substems"
+    substems = separate_drums(drums_path, substem_dir, device=device)
+
+    # Step 2: Simple onset detection + extraction on each clean sub-stem
+    all_profiles: list[OneshotProfile] = []
+
+    # Map LarsNet stem names to our classification labels
+    stem_to_class = {
+        "kick": "kick",
+        "snare": "snare",
+        "hihat": "hat_closed",  # will refine by duration
+        "toms": "perc",
+        "cymbals": "hat_open",  # cymbals → open hat category
+    }
+
+    # Tighter windows for clean sub-stems (no bleed = can be more precise)
+    substem_params = {
+        "kick":    {"max_window_ms": 250, "min_gap_ms": 80},
+        "snare":   {"max_window_ms": 200, "min_gap_ms": 60},
+        "hihat":   {"max_window_ms": 150, "min_gap_ms": 40},
+        "toms":    {"max_window_ms": 300, "min_gap_ms": 100},
+        "cymbals": {"max_window_ms": 400, "min_gap_ms": 100},
+    }
+
+    for stem_name, wav_path in substems.items():
+        if not wav_path.exists():
+            continue
+
+        params = substem_params.get(stem_name, {"max_window_ms": 300, "min_gap_ms": 80})
+        classification = stem_to_class.get(stem_name, "perc")
+
+        # Load sub-stem
+        y, sr = librosa.load(str(wav_path), sr=None, mono=True)
+        rms_total = float(np.sqrt(np.mean(y ** 2)))
+
+        # Skip if sub-stem is too quiet (not present in this track)
+        if rms_total < 0.003:
+            continue
+
+        # Simple onset detection (clean signal = reliable)
+        onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+        hop_length = 512
+        wait = max(1, int(params["min_gap_ms"] * sr / (1000 * hop_length)))
+        onsets = librosa.onset.onset_detect(
+            onset_envelope=onset_env, sr=sr,
+            hop_length=hop_length, wait=wait, backtrack=True,
+        )
+        onset_times = librosa.frames_to_time(onsets, sr=sr, hop_length=hop_length)
+
+        # Load stereo for extraction
+        y_stereo, sr = sf.read(str(wav_path), always_2d=True)
+        y_stereo = y_stereo.T  # (samples, channels) → (channels, samples)
+        total_samples = y_stereo.shape[-1]
+
+        max_window = _ms_to_samples(params["max_window_ms"], sr)
+        pre_attack = _ms_to_samples(PRE_ATTACK_MS, sr)
+
+        for i, onset_sec in enumerate(onset_times):
+            onset_sample = int(onset_sec * sr)
+            start = max(0, onset_sample - pre_attack)
+
+            if i + 1 < len(onset_times):
+                next_onset = int(onset_times[i + 1] * sr)
+                end = min(start + max_window, next_onset, total_samples)
+            else:
+                end = min(start + max_window, total_samples)
+
+            if end - start < _ms_to_samples(MIN_DURATION_MS, sr):
+                continue
+
+            chunk = y_stereo[:, start:end]
+            chunk = _apply_fades(chunk, sr)
+
+            # Peak normalize
+            peak = float(np.max(np.abs(chunk)))
+            if peak > 0:
+                chunk = chunk * (0.891 / peak)
+
+            chunk_mono = chunk.mean(axis=0)
+            rms = float(np.sqrt(np.mean(chunk_mono ** 2)))
+
+            if rms < config.rms_floor:
+                continue
+
+            peak_val = float(np.max(np.abs(chunk_mono)))
+            crest = peak_val / (rms + 1e-10)
+            peak_idx = int(np.argmax(np.abs(chunk_mono)))
+            attack_time = peak_idx / sr
+            duration = (end - start) / sr
+            spec = _spectral_features(chunk_mono, sr)
+
+            # Refine hi-hat classification by duration
+            cls = classification
+            if stem_name == "hihat":
+                cls = "hat_closed" if duration < 0.12 else "hat_open"
+
+            out_path = output_dir / f"{stem_name}_oneshots" / f"{stem_name}_os_{i + 1:03d}.wav"
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            write_data = chunk.T if chunk.ndim > 1 else chunk
+            sf.write(str(out_path), write_data, sr, subtype="PCM_24")
+
+            profile = OneshotProfile(
+                path=out_path,
+                index=i + 1,
+                onset_time=onset_sec,
+                duration=duration,
+                spectral_centroid=spec["centroid"],
+                spectral_bandwidth=spec["bandwidth"],
+                spectral_flatness=spec["flatness"],
+                crest_factor=crest,
+                attack_time=attack_time,
+                rms=rms,
+                classification=cls,
+            )
+            profile.feature_vector = _oneshot_feature_vector(profile).tolist()
+            all_profiles.append(profile)
+
+    return all_profiles
+
+
 # ── Per-stem extraction parameters ───────────────────────────────────────
 
 STEM_PARAMS = {

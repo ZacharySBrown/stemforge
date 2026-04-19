@@ -31,7 +31,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from stemforge.slicer import detect_bpm_and_beats, slice_at_bars, group_bars_into_phrases
 from stemforge.curator import curate, section_stratified_select
 from stemforge.config import load_curation_config, CurationConfig
-from stemforge.oneshot import extract_oneshots, extract_kicks_from_bass, select_diverse_oneshots
+from stemforge.oneshot import extract_oneshots, extract_kicks_from_bass, select_diverse_oneshots, extract_drum_oneshots_via_larsnet
 from stemforge.drum_classifier import classify_and_assign, arrange_drum_pads
 from stemforge.layout import build_stems_layout, layout_to_manifest
 
@@ -386,17 +386,29 @@ def run(
                 "message": f"{stem_name}: extracting one-shots",
             })
 
-        # Extract one-shots from the stem
-        os_profiles = extract_oneshots(stem_path, curated_root, stem_name, config=sc)
+        # Extract one-shots — try LarsNet first for drums (clean sub-stem separation)
+        os_profiles = []
+        if stem_name == "drums":
+            from stemforge.drum_separator import is_available as _larsnet_ok
+            if _larsnet_ok():
+                if json_events:
+                    emit({"event": "progress", "phase": "oneshots", "pct": 81,
+                          "message": "drums: using LarsNet sub-stem separation (kick/snare/hihat/toms/cymbals)"})
+                os_profiles = extract_drum_oneshots_via_larsnet(
+                    stem_path, curated_root, config=sc)
 
-        # For drums: also extract kicks from bass stem (htdemucs bleed)
-        if stem_name == "drums" and "bass" in stems:
-            kicks = extract_kicks_from_bass(stems["bass"], curated_root, config=sc)
-            os_profiles.extend(kicks)
+        if not os_profiles:
+            # Fallback: spectral heuristic extraction
+            os_profiles = extract_oneshots(stem_path, curated_root, stem_name, config=sc)
 
-        # Classify drum hits
-        if stem_name == "drums" and sc.oneshot_mode == "classify":
-            classify_and_assign(os_profiles)
+            # For drums: also extract kicks from bass stem (htdemucs bleed)
+            if stem_name == "drums" and "bass" in stems:
+                kicks = extract_kicks_from_bass(stems["bass"], curated_root, config=sc)
+                os_profiles.extend(kicks)
+
+            # Classify drum hits via spectral heuristics
+            if stem_name == "drums" and sc.oneshot_mode == "classify":
+                classify_and_assign(os_profiles)
 
         # Select diverse subset
         selected_os = select_diverse_oneshots(os_profiles, n=sc.oneshot_count)
