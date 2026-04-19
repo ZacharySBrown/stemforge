@@ -402,6 +402,8 @@ def section_stratified_select(
 
         # Build temp dir for this section's files
         section_pool = Path(tempfile.mkdtemp(prefix=f"sf_sect_{section}_"))
+        # Map temp filenames back to originals
+        original_by_name = {f.name: f for f in section_files}
         for f in section_files:
             shutil.copy2(f, section_pool / f.name)
 
@@ -410,7 +412,11 @@ def section_stratified_select(
             rms_floor=rms_floor, crest_min=crest_min,
             distance_weights=distance_weights,
         )
-        selected.extend(section_selected)
+        # Map temp paths back to original source paths
+        for sp in section_selected:
+            original = original_by_name.get(sp.name)
+            if original:
+                selected.append(original)
         shutil.rmtree(section_pool, ignore_errors=True)
 
     return selected[:n_bars]
