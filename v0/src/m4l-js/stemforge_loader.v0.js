@@ -306,10 +306,160 @@ function loadFromDict() {
     _loadCuratedManifest(mf);
 }
 
+// ── v2 Quadrant Loader (Drum Rack mode) ──────────────────────────────────────
+// Creates 4 MIDI tracks with Drum Racks, loads samples into Simpler pads.
+// Each stem gets a 4×4 quadrant: loops on pads 8-15, one-shots on pads 0-7.
+
+var RACK_TEMPLATES = {
+    drums:  "SF | Drums Rack",
+    bass:   "SF | Bass Rack",
+    vocals: "SF | Vocals Rack",
+    other:  "SF | Other Rack"
+};
+
+function createMidiTrack(insertIdx) {
+    new LiveAPI("live_set").call("create_midi_track", insertIdx);
+    return insertIdx;
+}
+
+function loadSimplerSample(trackIdx, padIdx, wavPath, loopEnabled) {
+    // Navigate: track → Drum Rack (device 0) → chain (pad) → Simpler (device 0)
+    var chainPath = "live_set tracks " + trackIdx + " devices 0 chains " + padIdx + " devices 0";
+    try {
+        var simpler = new LiveAPI(chainPath);
+        if (simpler.id === "0") {
+            status("  pad " + padIdx + ": no Simpler found at " + chainPath);
+            return false;
+        }
+        // Load sample
+        simpler.call("sample", toMaxPath(wavPath));
+        // Set playback mode
+        if (loopEnabled) {
+            try { simpler.set("playback_mode", 0); } catch (_) {} // classic
+            try { simpler.set("looping", 1); } catch (_) {}
+        } else {
+            try { simpler.set("playback_mode", 1); } catch (_) {} // one-shot
+            try { simpler.set("looping", 0); } catch (_) {}
+        }
+        return true;
+    } catch (e) {
+        status("  loadSimpler error pad " + padIdx + ": " + e);
+        return false;
+    }
+}
+
+function _loadCuratedV2(mf) {
+    if (mf.bpm) {
+        try { new LiveAPI("live_set").set("tempo", Number(mf.bpm)); } catch (_) {}
+        status("tempo → " + mf.bpm + " BPM");
+    }
+
+    // Check for quadrants (v2 layout manifest) or stems (v2 curated manifest)
+    var stemData = mf.quadrants || mf.stems;
+    if (!stemData) { status("v2 manifest has no stems or quadrants"); return; }
+
+    var loaded = 0;
+    for (var si = 0; si < BAR_TRACK_ORDER.length; si++) {
+        var stemName = BAR_TRACK_ORDER[si];
+        var data = stemData[stemName];
+        if (!data) continue;
+
+        // Find or create MIDI track with Drum Rack
+        var templateName = RACK_TEMPLATES[stemName];
+        var templateIdx = templateName ? findTrackByName(templateName) : -1;
+
+        var trackIdx;
+        if (templateIdx >= 0) {
+            // Duplicate the template
+            trackIdx = duplicateTrack(templateIdx);
+            var label = stemName + " Rack | " + (mf.track || "stemforge");
+            renameTrack(trackIdx, label, BAR_TRACK_COLORS[stemName]);
+        } else {
+            // No template — create a bare MIDI track
+            trackIdx = trackCount();
+            createMidiTrack(trackIdx);
+            renameTrack(trackIdx, "[SF] " + stemName.charAt(0).toUpperCase() + stemName.slice(1) + " Rack",
+                        BAR_TRACK_COLORS[stemName]);
+            status("  " + stemName + ": no Drum Rack template — created bare MIDI track");
+        }
+
+        // Load pads from quadrant data (layout manifest format)
+        if (data.pads) {
+            for (var pi = 0; pi < data.pads.length; pi++) {
+                var pad = data.pads[pi];
+                if (!pad.file || pad.type === "empty") continue;
+                if (loadSimplerSample(trackIdx, pad.pad_index, pad.file, pad.loop)) {
+                    loaded++;
+                }
+            }
+        }
+        // Load from v2 curated manifest format (loops + oneshots)
+        else {
+            var loops = data.loops || data;
+            var oneshots = data.oneshots || [];
+
+            // Loops → pads 8-15 (top 2 rows)
+            if (Array.isArray(loops)) {
+                for (var li = 0; li < loops.length && li < 8; li++) {
+                    var loop = loops[li];
+                    if (loop && loop.file) {
+                        var loopPad = 8 + li;  // pads 8-15
+                        if (loadSimplerSample(trackIdx, loopPad, loop.file, true)) {
+                            loaded++;
+                        }
+                    }
+                }
+            }
+
+            // One-shots → pads 0-7 (bottom 2 rows)
+            for (var oi = 0; oi < oneshots.length && oi < 8; oi++) {
+                var os = oneshots[oi];
+                if (os && os.file) {
+                    if (loadSimplerSample(trackIdx, oi, os.file, false)) {
+                        loaded++;
+                    }
+                }
+            }
+        }
+
+        status("  " + stemName + " rack: pads loaded");
+    }
+
+    status("v2 loader: " + loaded + " pads loaded across " + BAR_TRACK_ORDER.length + " racks");
+    outlet(1, "bang");
+}
+
+function loadCuratedV2() {
+    var manifestPath = arrayfromargs(messagename, arguments).slice(1).join(" ");
+    if (!manifestPath) { status("loadCuratedV2: missing path"); return; }
+
+    var raw = readFileContents(manifestPath);
+    if (!raw) { status("cannot read v2 manifest: " + manifestPath); return; }
+    var mf;
+    try { mf = JSON.parse(raw); }
+    catch (e) { status("v2 manifest JSON parse: " + e); return; }
+
+    _loadCuratedV2(mf);
+}
+
+function loadV2FromDict() {
+    var dictName = arrayfromargs(messagename, arguments).slice(1).join(" ") || "sf_manifest";
+    var d;
+    try { d = new Dict(dictName); }
+    catch (e) { status("loadV2FromDict: cannot open dict " + dictName + ": " + e); return; }
+
+    var mf;
+    try { mf = JSON.parse(d.stringify()); }
+    catch (e) { status("loadV2FromDict: parse error: " + e); return; }
+
+    status("loaded v2 manifest from dict: " + dictName);
+    _loadCuratedV2(mf);
+}
+
 // ── Entry points from Max ─────────────────────────────────────────────────────
 // These aren't stored on `globalThis`; Max's classic [js] object scans for
 // top-level functions automatically. Keep names exactly as handlers used in
-// builder.py (`setBpm`, `loadManifest`, `loadCuratedBars`).
+// builder.py (`setBpm`, `loadManifest`, `loadCuratedBars`, `loadCuratedV2`).
 
 // Eslint-friendly re-exports — tests import the file as CommonJS via a shim.
 if (typeof module !== "undefined" && module.exports) {
@@ -317,6 +467,7 @@ if (typeof module !== "undefined" && module.exports) {
         STEM_TARGETS: STEM_TARGETS,
         SIMPLER_TEMPLATE: SIMPLER_TEMPLATE,
         BAR_TRACK_ORDER: BAR_TRACK_ORDER,
-        BAR_TRACK_COLORS: BAR_TRACK_COLORS
+        BAR_TRACK_COLORS: BAR_TRACK_COLORS,
+        RACK_TEMPLATES: RACK_TEMPLATES
     };
 }
