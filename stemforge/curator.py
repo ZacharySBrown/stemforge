@@ -193,15 +193,19 @@ def greedy_diverse_select(profiles: list[BeatProfile], n: int,
 
 # ── Feature-vector-based selection (primary path used by `curate`) ──
 
-def _feature_vector(p: BeatProfile) -> np.ndarray:
+def _feature_vector(p: BeatProfile, weights: dict[str, float] | None = None) -> np.ndarray:
+    if weights is None:
+        weights = {"rhythm": 0.5, "spectral": 0.25, "energy": 0.25}
+    w_r = weights.get("rhythm", 0.5)
+    w_s = weights.get("spectral", 0.25)
+    w_e = weights.get("energy", 0.25)
+
     fp = np.array(p.rhythm_fingerprint, dtype=float) if p.rhythm_fingerprint else np.zeros(16)
-    base = np.array([
-        p.spectral_centroid,
-        p.spectral_bandwidth,
-        p.crest_factor,
-        p.onset_density,
-    ], dtype=float)
-    return np.concatenate([base, fp])
+    # Scale feature groups by their weights so GFP respects the balance
+    spectral = np.array([p.spectral_centroid, p.spectral_bandwidth], dtype=float) * w_s
+    transient = np.array([p.crest_factor, p.onset_density], dtype=float) * w_e
+    rhythm = fp * w_r
+    return np.concatenate([spectral, transient, rhythm])
 
 
 def _znorm(matrix: np.ndarray) -> np.ndarray:
@@ -233,6 +237,7 @@ def curate(
     strategy: str = "max-diversity",
     rms_floor: float = 0.005,
     crest_min: float = 4.0,
+    distance_weights: dict[str, float] | None = None,
 ) -> list[Path]:
     """
     Analyze every WAV in `beat_dir`, filter by rms_floor and crest_min,
@@ -261,10 +266,10 @@ def curate(
 
     if len(filtered) <= n_bars:
         selected = filtered
-        feature_matrix = np.array([_feature_vector(p) for p in filtered]) if filtered else np.zeros((0, 20))
+        feature_matrix = np.array([_feature_vector(p, distance_weights) for p in filtered]) if filtered else np.zeros((0, 20))
         selected_idx = list(range(len(filtered)))
     else:
-        feature_matrix = _znorm(np.array([_feature_vector(p) for p in filtered]))
+        feature_matrix = _znorm(np.array([_feature_vector(p, distance_weights) for p in filtered]))
         seed = int(np.argmax([p.crest_factor for p in filtered]))
         selected_idx = _greedy_farthest_point(feature_matrix, seed, n_bars)
         selected = [filtered[i] for i in selected_idx]

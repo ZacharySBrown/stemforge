@@ -180,3 +180,52 @@ def slice_at_bars(
         y, sr, bar_samples, output_dir, stem_name,
         silence_threshold=silence_threshold, normalize=normalize,
     )
+
+
+def group_bars_into_phrases(
+    bar_dir: Path,
+    stem_name: str,
+    phrase_bars: int,
+    output_dir: Path | None = None,
+) -> list[Path]:
+    """
+    Concatenate adjacent bars into multi-bar phrases.
+
+    Takes single-bar WAVs from bar_dir, groups them in order into phrases
+    of `phrase_bars` length, and writes phrase WAVs.
+
+    Output: {output_dir or bar_dir.parent}/{stem_name}_phrases/
+    Returns list of created phrase paths.
+    """
+    if phrase_bars <= 1:
+        return sorted(bar_dir.glob(f"{stem_name}_bar_*.wav"))
+
+    bar_files = sorted(bar_dir.glob(f"{stem_name}_bar_*.wav"))
+    if not bar_files:
+        return []
+
+    out_dir = (output_dir or bar_dir.parent) / f"{stem_name}_phrases"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    phrases: list[Path] = []
+    n_phrases = len(bar_files) // phrase_bars
+
+    for pi in range(n_phrases):
+        group = bar_files[pi * phrase_bars : (pi + 1) * phrase_bars]
+        chunks = []
+        sr = None
+        for bf in group:
+            data, file_sr = sf.read(str(bf), always_2d=True)
+            if sr is None:
+                sr = file_sr
+            chunks.append(data)
+
+        if not chunks or sr is None:
+            continue
+
+        combined = np.concatenate(chunks, axis=0)
+        out_path = out_dir / f"{stem_name}_phrase_{pi + 1:03d}.wav"
+        sf.write(str(out_path), combined, sr, subtype="PCM_24")
+        phrases.append(out_path)
+
+    return phrases

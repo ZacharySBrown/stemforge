@@ -1,0 +1,128 @@
+# StemForge Curation Engine v2 — Per-stem curation config
+#
+# Controls how bars/phrases/one-shots are selected and laid out
+# on the Launchpad / Push pad grid. Separate from pipeline effects
+# (pipelines/default.yaml) — curation governs WHAT gets selected,
+# pipelines govern HOW it sounds.
+#
+# Usage:
+#   uv run python v0/src/stemforge_curate_bars.py \
+#     --stems-dir ~/stemforge/processed/track \
+#     --curation pipelines/curation.yaml --json-events
+
+version: 2
+
+# ── Layout Mode ──────────────────────────────────────────────────────────
+# stems    = quadrant 8×8 (4 stems × 4×4 pads, Drum Racks)
+# dj       = DJ single-deck (base + subloops + oneshots per quadrant)
+# dual-deck = two Launchpad Pros, one song each
+# session  = v0 compat (4 audio tracks × 16 clip slots)
+layout:
+  mode: stems
+  pad_grid: 8x8
+  quadrant_size: 4x4
+
+# ── Per-Stem Curation ────────────────────────────────────────────────────
+stems:
+  drums:
+    phrase_bars: 1            # single-bar chops
+    loop_count: 8             # top 2 rows of quadrant
+    oneshot_count: 8          # bottom 2 rows — classified drum hits
+    strategy: max-diversity
+    oneshot_mode: classify    # classify | diverse | loudest
+    chromatic: false
+    midi_extract: false
+    rms_floor: 0.005
+    crest_min: 4.0
+    distance_weights:
+      rhythm: 0.6
+      spectral: 0.2
+      energy: 0.2
+    processing:
+      - pipeline: default
+
+  bass:
+    phrase_bars: 2            # 2-bar grooves
+    loop_count: 4
+    oneshot_count: 4
+    strategy: max-diversity
+    oneshot_mode: diverse
+    midi_extract: true        # pitch detection → Sampler + MIDI clips
+    midi_quantize: "1/16"
+    chromatic: true
+    chromatic_root: auto      # auto-detect from pyin, or specify e.g. "C2"
+    rms_floor: 0.003
+    crest_min: 2.0
+    distance_weights:
+      rhythm: 0.3
+      spectral: 0.4
+      energy: 0.3
+    processing:
+      - pipeline: default
+
+  vocals:
+    phrase_bars: 4            # 4-bar melodic phrases
+    loop_count: 12
+    oneshot_count: 4          # vocal stabs, ad-libs
+    strategy: sectional       # prefer structurally significant sections
+    oneshot_mode: diverse
+    midi_extract: false
+    chromatic: false
+    rms_floor: 0.008
+    crest_min: 3.0
+    distance_weights:
+      rhythm: 0.2
+      spectral: 0.5
+      energy: 0.3
+    processing:
+      - pipeline: default
+
+  other:
+    phrase_bars: 2
+    loop_count: 10
+    oneshot_count: 6
+    strategy: max-diversity
+    oneshot_mode: diverse
+    midi_extract: false
+    chromatic: false
+    rms_floor: 0.003
+    crest_min: 2.0
+    distance_weights:
+      rhythm: 0.3
+      spectral: 0.4
+      energy: 0.3
+    processing:
+      - pipeline: default
+      - pipeline: glitch
+
+# ── Song Structure Detection ─────────────────────────────────────────────
+song:
+  boundary_method: recurrence   # recurrence | novelty
+  min_segment_bars: 4
+  max_segments: 8
+  prefer_transitions: true
+  transition_window_bars: 2
+
+# ── DJ Layout Overrides ──────────────────────────────────────────────────
+dj:
+  base_position: top_left
+  subloop_axis: vertical
+  oneshot_axis: horizontal
+  subloop_divisions: [1, 0.5, 0.5, 0.25]
+  fill_mode: combo              # combo | empty | subloop_only
+
+# ── Defaults (inherited by any stem not listed above) ────────────────────
+defaults:
+  phrase_bars: 1
+  loop_count: 8
+  oneshot_count: 8
+  strategy: max-diversity
+  oneshot_mode: diverse
+  chromatic: false
+  midi_extract: false
+  rms_floor: 0.005
+  crest_min: 4.0
+  distance_weights:
+    rhythm: 0.5
+    spectral: 0.25
+    energy: 0.25
