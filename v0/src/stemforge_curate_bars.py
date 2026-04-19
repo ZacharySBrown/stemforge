@@ -74,11 +74,16 @@ def run(
     if curation_config is None:
         curation_config = CurationConfig()
 
-    # loops-only mode: override all stems to 16 loops, 0 oneshots
-    is_loops_only = curation_config.layout.mode == "loops-only"
+    layout_mode = curation_config.layout.mode
+    is_loops_only = layout_mode == "loops-only"
+    is_production = layout_mode == "production"
+
     if is_loops_only and json_events:
         emit({"event": "progress", "phase": "config", "pct": 0,
               "message": "loops-only mode: 16 bar loops per stem, no one-shots"})
+    if is_production and json_events:
+        emit({"event": "progress", "phase": "config", "pct": 0,
+              "message": "production mode: 16 loops per stem + drum one-shots"})
 
     if not stems:
         if json_events:
@@ -141,17 +146,21 @@ def run(
     # Check if all stems share the same phrase_bars — enables mirroring
     stem_configs = {s: curation_config.for_stem(s) for s in stems}
 
-    # In loops-only mode, override all stems to 16 loops, 0 one-shots
-    if is_loops_only:
+    # In loops-only and production modes, override loop/oneshot counts
+    if is_loops_only or is_production:
         from stemforge.config import StemCurationConfig
         for s in stem_configs:
             sc = stem_configs[s]
+            # Production mode: 16 loops for all stems, plus 8 drum one-shots
+            # Loops-only: 16 loops, 0 one-shots for all stems
+            os_count = 8 if (is_production and s == "drums") else 0
+            os_mode = "classify" if s == "drums" else "diverse"
             stem_configs[s] = StemCurationConfig(
                 phrase_bars=sc.phrase_bars,
                 loop_count=16,
-                oneshot_count=0,
+                oneshot_count=os_count,
                 strategy=sc.strategy,
-                oneshot_mode="diverse",
+                oneshot_mode=os_mode,
                 chromatic=False,
                 midi_extract=False,
                 rms_floor=sc.rms_floor,
@@ -353,14 +362,18 @@ def run(
 
             curated_manifest["stems"][stem_name] = stem_bars
 
-    # Step 5: Extract one-shots per stem (if configured, skip in loops-only mode)
+    # Step 5: Extract one-shots per stem (if configured)
+    # loops-only: skip all one-shots
+    # production: only extract drum one-shots
     if is_loops_only and json_events:
         emit({"event": "progress", "phase": "oneshots", "pct": 80,
               "message": "loops-only mode: skipping one-shot extraction"})
 
     for stem_name, stem_path in stems.items():
         if is_loops_only:
-            continue  # skip one-shots entirely
+            continue
+        if is_production and stem_name != "drums":
+            continue  # production mode: only drum one-shots
         sc = stem_configs[stem_name]
         if sc.oneshot_count <= 0:
             continue

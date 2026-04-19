@@ -19,7 +19,7 @@ version: 2
 # session  = v0 compat (4 audio tracks × 16 clip slots)
 # Active layout — switch between modes here
 layout:
-  mode: loops-only          # loops-only | stems | dj | dual-deck | session
+  mode: production          # production | loops-only | stems | dj | dual-deck | session
   pad_grid: 8x8
   quadrant_size: 4x4
 

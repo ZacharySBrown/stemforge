@@ -322,13 +322,154 @@ function loadFromDict() {
         }
     }
 
-    if (isV2) {
+    // Check for production mode (has layout_mode field)
+    if (mf.layout_mode === "production") {
+        status("detected production manifest → 5-track group loader");
+        _loadProductionMode(mf);
+    } else if (isV2) {
         status("detected v2 manifest (loops+oneshots) → Drum Rack loader");
         _loadCuratedV2(mf);
     } else {
         status("detected v1 manifest (flat bars) → clip slot loader");
         _loadCuratedManifest(mf);
     }
+}
+
+// ── Production Mode Loader ───────────────────────────────────────────────────
+// Creates a 5-track group per song:
+//   1. Drums Loops   — audio track, 16 clip slots
+//   2. Drums Rack    — MIDI track, Drum Rack with classified one-shots
+//   3. Bass Loops    — audio track, 16 clip slots
+//   4. Vocals Loops  — audio track, 16 clip slots
+//   5. Other Loops   — audio track, 16 clip slots
+
+var PRODUCTION_STEM_ORDER = ["drums", "bass", "vocals", "other"];
+
+function _loadProductionMode(mf) {
+    if (mf.bpm) {
+        try { new LiveAPI("live_set").set("tempo", Number(mf.bpm)); } catch (_) {}
+        status("tempo → " + mf.bpm + " BPM");
+    }
+
+    var stemData = mf.stems;
+    if (!stemData) { status("production manifest has no stems"); return; }
+
+    var songName = mf.track || "stemforge";
+    var loaded = 0;
+
+    // Try to duplicate the SF | Templates group for organization
+    var templateGroupIdx = findTrackByName("SF | Templates");
+    var groupCreated = false;
+
+    if (templateGroupIdx >= 0) {
+        var countBefore = trackCount();
+        var newGroupIdx = duplicateTrack(templateGroupIdx);
+        var countAfter = trackCount();
+
+        // Rename group to song name
+        renameTrack(newGroupIdx, songName, null);
+
+        // Delete all duplicated child tracks (we'll create our own)
+        // Children are the tracks between newGroupIdx+1 and newGroupIdx+(countAfter-countBefore)-1
+        var childCount = countAfter - countBefore - 1;
+        for (var d = 0; d < childCount; d++) {
+            try {
+                new LiveAPI("live_set").call("delete_track", newGroupIdx + 1);
+            } catch (e) {
+                status("  could not delete child track: " + e);
+            }
+        }
+        groupCreated = true;
+        status("created song group: " + songName);
+    }
+
+    // Track 1: Drums Loops (audio track with clip slots)
+    var drumsData = stemData["drums"];
+    if (drumsData) {
+        var drumsLoops = Array.isArray(drumsData) ? drumsData : (drumsData.loops || []);
+        var drumsTrackIdx = trackCount();
+        createAudioTrack(drumsTrackIdx);
+        renameTrack(drumsTrackIdx, "Drums Loops | " + songName, BAR_TRACK_COLORS["drums"]);
+
+        for (var i = 0; i < drumsLoops.length && i < 16; i++) {
+            var loop = drumsLoops[i];
+            if (loop && loop.file) {
+                var clipName = "drums bar " + (loop.position || (i + 1));
+                if (loadClip(drumsTrackIdx, i, loop.file, clipName)) loaded++;
+            }
+        }
+        status("  Drums Loops: " + Math.min(drumsLoops.length, 16) + " clips");
+    }
+
+    // Track 2: Drums Rack (MIDI track with one-shots in Drum Rack)
+    var drumsOneshots = [];
+    if (drumsData && typeof drumsData === "object" && !Array.isArray(drumsData)) {
+        drumsOneshots = drumsData.oneshots || [];
+    }
+
+    if (drumsOneshots.length > 0) {
+        // Find Drum Rack template and duplicate
+        var drumRackTemplate = findTrackByName("SF | Drums Rack");
+        var drumRackIdx;
+        if (drumRackTemplate >= 0) {
+            drumRackIdx = duplicateTrack(drumRackTemplate);
+            renameTrack(drumRackIdx, "Drums Rack | " + songName, BAR_TRACK_COLORS["drums"]);
+
+            // Load one-shots into Simpler pads
+            for (var oi = 0; oi < drumsOneshots.length && oi < 16; oi++) {
+                var os = drumsOneshots[oi];
+                if (os && os.file) {
+                    if (loadSimplerSample(drumRackIdx, oi, os.file, false)) loaded++;
+                }
+            }
+            status("  Drums Rack: " + Math.min(drumsOneshots.length, 16) + " one-shots");
+        } else {
+            // No template — create bare MIDI track
+            drumRackIdx = trackCount();
+            createMidiTrack(drumRackIdx);
+            renameTrack(drumRackIdx, "Drums Rack | " + songName + " (no template)", BAR_TRACK_COLORS["drums"]);
+            status("  Drums Rack: no SF | Drums Rack template found");
+        }
+    }
+
+    // Tracks 3-5: Bass, Vocals, Other loops (audio tracks with clip slots)
+    var loopStems = ["bass", "vocals", "other"];
+    for (var si = 0; si < loopStems.length; si++) {
+        var stemName = loopStems[si];
+        var data = stemData[stemName];
+        if (!data) continue;
+
+        var loops = Array.isArray(data) ? data : (data.loops || []);
+        var stemTrackIdx = trackCount();
+        createAudioTrack(stemTrackIdx);
+
+        var stemCap = stemName.charAt(0).toUpperCase() + stemName.slice(1);
+        renameTrack(stemTrackIdx, stemCap + " Loops | " + songName, BAR_TRACK_COLORS[stemName]);
+
+        var warpMode = BAR_WARP_MODES[stemName] || 0;
+        for (var li = 0; li < loops.length && li < 16; li++) {
+            var item = loops[li];
+            if (item && item.file) {
+                var name = stemName + " bar " + (item.position || (li + 1));
+                if (loadClip(stemTrackIdx, li, item.file, name)) {
+                    // Set warp mode
+                    try {
+                        var clipApi = new LiveAPI(
+                            "live_set tracks " + stemTrackIdx + " clip_slots " + li + " clip"
+                        );
+                        if (clipApi.id !== "0") {
+                            clipApi.set("warp_mode", warpMode);
+                        }
+                    } catch (_) {}
+                    loaded++;
+                }
+            }
+        }
+        status("  " + stemCap + " Loops: " + Math.min(loops.length, 16) + " clips");
+    }
+
+    status("production loader: " + loaded + " items loaded (5 tracks)");
+    outlet(1, "bang");
 }
 
 // ── v2 Quadrant Loader (Drum Rack mode) ──────────────────────────────────────

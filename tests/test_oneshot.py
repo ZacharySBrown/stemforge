@@ -211,7 +211,7 @@ class TestCurationConfig:
     def test_load_default_config(self):
         cfg = load_curation_config()
         assert cfg.version == 2
-        assert cfg.layout.mode in ("stems", "loops-only", "dj", "dual-deck", "session")
+        assert cfg.layout.mode in ("stems", "loops-only", "production", "dj", "dual-deck", "session")
         assert "drums" in cfg.stems
         assert cfg.stems["drums"].phrase_bars == 1
 
