@@ -31,6 +31,9 @@ sys.path.insert(0, str(REPO_ROOT))
 from stemforge.slicer import detect_bpm_and_beats, slice_at_bars, group_bars_into_phrases
 from stemforge.curator import curate
 from stemforge.config import load_curation_config, CurationConfig
+from stemforge.oneshot import extract_oneshots, extract_kicks_from_bass, select_diverse_oneshots
+from stemforge.drum_classifier import classify_and_assign, arrange_drum_pads
+from stemforge.layout import build_stems_layout, layout_to_manifest
 
 
 STEM_NAMES = ["drums", "bass", "vocals", "other"]
@@ -286,6 +289,82 @@ def run(
 
             curated_manifest["stems"][stem_name] = stem_bars
 
+    # Step 5: Extract one-shots per stem (if configured)
+    for stem_name, stem_path in stems.items():
+        sc = stem_configs[stem_name]
+        if sc.oneshot_count <= 0:
+            continue
+
+        if json_events:
+            emit({
+                "event": "progress",
+                "phase": "oneshots",
+                "pct": 80,
+                "message": f"{stem_name}: extracting one-shots",
+            })
+
+        # Extract one-shots from the stem
+        os_profiles = extract_oneshots(stem_path, curated_root, stem_name, config=sc)
+
+        # For drums: also extract kicks from bass stem (htdemucs bleed)
+        if stem_name == "drums" and "bass" in stems:
+            kicks = extract_kicks_from_bass(stems["bass"], curated_root, config=sc)
+            os_profiles.extend(kicks)
+
+        # Classify drum hits
+        if stem_name == "drums" and sc.oneshot_mode == "classify":
+            classify_and_assign(os_profiles)
+
+        # Select diverse subset
+        selected_os = select_diverse_oneshots(os_profiles, n=sc.oneshot_count)
+
+        # For drums, reclassify after diversity selection and arrange into pad layout
+        if stem_name == "drums" and sc.oneshot_mode == "classify":
+            classify_and_assign(selected_os)
+            pads = arrange_drum_pads(selected_os, n_pads=sc.oneshot_count)
+            selected_os = [p for p in pads if p is not None]
+
+        # Copy selected one-shots to curated dir
+        stem_os_dir = curated_root / stem_name / "oneshots"
+        stem_os_dir.mkdir(parents=True, exist_ok=True)
+
+        oneshot_entries = []
+        for oi, profile in enumerate(selected_os):
+            if profile is None or profile.path is None:
+                continue
+            dst = stem_os_dir / f"os_{oi + 1:03d}.wav"
+            shutil.copy2(profile.path, dst)
+            oneshot_entries.append({
+                "position": oi + 1,
+                "file": str(dst),
+                "classification": profile.classification,
+                "spectral": {
+                    "centroid_hz": round(profile.spectral_centroid, 1),
+                    "brightness": round(min(profile.spectral_centroid / 10000, 1.0), 3),
+                },
+                "duration_ms": round(profile.duration * 1000, 1),
+                "rms": round(profile.rms, 4),
+                "crest_factor": round(profile.crest_factor, 2),
+            })
+
+        # Upgrade manifest stem entry to v2 format (loops + oneshots)
+        existing = curated_manifest["stems"].get(stem_name, [])
+        if isinstance(existing, list):
+            curated_manifest["stems"][stem_name] = {
+                "loops": existing,
+                "oneshots": oneshot_entries,
+            }
+        elif isinstance(existing, dict):
+            existing["oneshots"] = oneshot_entries
+
+        if json_events:
+            emit({
+                "event": "progress",
+                "phase": "oneshots",
+                "pct": 85,
+                "message": f"{stem_name}: {len(oneshot_entries)} one-shots selected",
+            })
+
     # Write curated manifest
     manifest_path = curated_root / "manifest.json"
     manifest_path.write_text(json.dumps(curated_manifest, indent=2))
@@ -306,9 +385,16 @@ def run(
         }
         main_manifest.write_text(json.dumps(main_data, indent=2))
 
-    # Summary counts from manifest
-    total_items = sum(len(v) for v in curated_manifest["stems"].values())
-    items_per_stem = {k: len(v) for k, v in curated_manifest["stems"].items()}
+    # Summary counts from manifest (handles both v1 list and v2 dict formats)
+    def _count_items(v):
+        if isinstance(v, list):
+            return len(v)
+        if isinstance(v, dict):
+            return len(v.get("loops", [])) + len(v.get("oneshots", []))
+        return 0
+
+    total_items = sum(_count_items(v) for v in curated_manifest["stems"].values())
+    items_per_stem = {k: _count_items(v) for k, v in curated_manifest["stems"].items()}
 
     if json_events:
         emit({
