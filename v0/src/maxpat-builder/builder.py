@@ -52,6 +52,15 @@ OBJ_CONSOLE_PRINT = "obj-console-print"
 OBJ_PACK_SPLIT = "obj-pack-split"
 OBJ_PLUGIN_IN = "obj-plugin-in"
 OBJ_PLUGOUT = "obj-plugout"
+OBJ_LOAD_BTN = "obj-load-btn"
+OBJ_LOAD_TRIGGER = "obj-load-trigger"
+OBJ_LOAD_DICT = "obj-load-dict"
+OBJ_LOAD_READ_MSG = "obj-load-read-msg"
+OBJ_LOAD_DICT_MSG = "obj-load-dict-msg"
+OBJ_COMPLETE_UNPACK = "obj-complete-unpack"
+OBJ_STEMS_DIR_EXTRACT = "obj-stems-dir-extract"
+OBJ_CURATE_CMD = "obj-curate-cmd"
+OBJ_CURATED_PREPEND = "obj-curated-prepend"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -199,6 +208,92 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         )
     )
     lines.append(_line(OBJ_PATH_CONVERT, 0, OBJ_FILE_PATH_MSG, 0))
+
+    # --- Load Session button (browse to existing curated manifest) ---
+    lb = elements_by_id["load_button"]
+    boxes.append(
+        _box(
+            OBJ_LOAD_BTN,
+            "textbutton",
+            (lb["pos"]["x"], lb["pos"]["y"], lb["size"]["width"], lb["size"]["height"]),
+            presentation=True,
+            numinlets=1,
+            numoutlets=3,
+            outlettype=["", "", "int"],
+            extras={
+                "text": lb.get("label", "Load"),
+                "fontsize": 11.0,
+            },
+        )
+    )
+    # textbutton sends label text, not bang — use [t b] to extract bang
+    boxes.append(
+        _box(
+            OBJ_LOAD_TRIGGER,
+            "newobj",
+            (lb["pos"]["x"] + lb["size"]["width"] + 8, lb["pos"]["y"] + 4, 30.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=["bang"],
+            extras={"text": "t b"},
+        )
+    )
+    lines.append(_line(OBJ_LOAD_BTN, 0, OBJ_LOAD_TRIGGER, 0))
+    # [dict] read (no args) opens a native file browser that shows .json files.
+    # dict doesn't fire any outlet after read — we use [trigger b b] to sequence:
+    # right outlet sends "read" (modal dialog blocks), left outlet fires JS after.
+    OBJ_LOAD_SEQ = "obj-load-seq"
+    boxes.append(
+        _box(
+            OBJ_LOAD_SEQ,
+            "newobj",
+            (lb["pos"]["x"], lb["pos"]["y"] + lb["size"]["height"] + 4, 40.0, 22.0),
+            numinlets=1,
+            numoutlets=2,
+            outlettype=["bang", "bang"],
+            extras={"text": "t b b"},
+        )
+    )
+    lines.append(_line(OBJ_LOAD_TRIGGER, 0, OBJ_LOAD_SEQ, 0))
+    # Right outlet (fires first) → "read" → dict opens file dialog
+    boxes.append(
+        _box(
+            OBJ_LOAD_READ_MSG,
+            "message",
+            (lb["pos"]["x"] + 80, lb["pos"]["y"] + lb["size"]["height"] + 4, 60.0, 22.0),
+            numinlets=2,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "read"},
+        )
+    )
+    lines.append(_line(OBJ_LOAD_SEQ, 1, OBJ_LOAD_READ_MSG, 0))
+    boxes.append(
+        _box(
+            OBJ_LOAD_DICT,
+            "newobj",
+            (lb["pos"]["x"] + 80, lb["pos"]["y"] + lb["size"]["height"] + 30, 140.0, 22.0),
+            numinlets=2,
+            numoutlets=4,
+            outlettype=["dictionary", "", "", ""],
+            extras={"text": "dict sf_manifest"},
+        )
+    )
+    lines.append(_line(OBJ_LOAD_READ_MSG, 0, OBJ_LOAD_DICT, 0))
+    # Left outlet (fires second, after dialog closes) → trigger JS loader
+    boxes.append(
+        _box(
+            OBJ_LOAD_DICT_MSG,
+            "message",
+            (lb["pos"]["x"], lb["pos"]["y"] + lb["size"]["height"] + 30, 180.0, 22.0),
+            numinlets=2,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "loadFromDict sf_manifest"},
+        )
+    )
+    lines.append(_line(OBJ_LOAD_SEQ, 0, OBJ_LOAD_DICT_MSG, 0))
+    lines.append(_line(OBJ_LOAD_DICT_MSG, 0, OBJ_LOADER, 0))
 
     # --- Backend dropdown (umenu) ---
     be = elements_by_id["backend"]
@@ -398,15 +493,16 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     lines.append(_line(OBJ_BRIDGE, 1, OBJ_NDJSON_PARSER, 0))
 
     # --- route events from parser by event-type symbol ---
+    # Outlets: 0=progress 1=stem 2=bpm 3=slice_dir 4=complete 5=curated 6=error 7=unmatched
     boxes.append(
         _box(
             OBJ_ROUTE_EVENTS,
             "newobj",
-            (16.0, sb["pos"]["y"] + 132, 360.0, 22.0),
+            (16.0, sb["pos"]["y"] + 132, 420.0, 22.0),
             numinlets=1,
-            numoutlets=6,
-            outlettype=["", "", "", "", "", ""],
-            extras={"text": "route progress stem bpm slice_dir complete error"},
+            numoutlets=8,
+            outlettype=["", "", "", "", "", "", "", ""],
+            extras={"text": "route progress stem bpm slice_dir complete curated error"},
         )
     )
     lines.append(_line(OBJ_NDJSON_PARSER, 0, OBJ_ROUTE_EVENTS, 0))
@@ -452,7 +548,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             extras={"text": "sprintf set ERROR(%s): %s"},
         )
     )
-    lines.append(_line(OBJ_ROUTE_EVENTS, 5, OBJ_ERROR_FMT, 0))
+    lines.append(_line(OBJ_ROUTE_EVENTS, 6, OBJ_ERROR_FMT, 0))
     lines.append(_line(OBJ_ERROR_FMT, 0, OBJ_STATUS_TEXT, 0))
 
     # --- LOM loader (classic js, has LiveAPI access) ---
@@ -473,20 +569,83 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             },
         )
     )
-    # complete event → loader
+    # complete event → extract stems dir → curate command → [shell]
+    # complete emits: manifest_path bpm stem_count — unpack to get manifest path
     boxes.append(
         _box(
-            "obj-complete-prepend",
+            OBJ_COMPLETE_UNPACK,
             "newobj",
-            (16.0, sb["pos"]["y"] + 222, 140.0, 22.0),
+            (16.0, sb["pos"]["y"] + 222, 100.0, 22.0),
+            numinlets=1,
+            numoutlets=3,
+            outlettype=["", "float", "int"],
+            extras={"text": "unpack s 0. 0"},
+        )
+    )
+    lines.append(_line(OBJ_ROUTE_EVENTS, 4, OBJ_COMPLETE_UNPACK, 0))
+    # Extract directory from manifest path: /path/to/dir/stems.json → /path/to/dir
+    boxes.append(
+        _box(
+            OBJ_STEMS_DIR_EXTRACT,
+            "newobj",
+            (16.0, sb["pos"]["y"] + 248, 280.0, 22.0),
+            numinlets=1,
+            numoutlets=5,
+            outlettype=["", "", "", "", ""],
+            extras={"text": "regexp (.+)/[^/]+$ @substitute %1"},
+        )
+    )
+    lines.append(_line(OBJ_COMPLETE_UNPACK, 0, OBJ_STEMS_DIR_EXTRACT, 0))
+    # Build curate command with resolved paths
+    repo_root = Path(__file__).resolve().parents[3]
+    uv_path = Path.home() / ".local" / "bin" / "uv"
+    curate_script = repo_root / "v0" / "src" / "stemforge_curate_bars.py"
+    curate_fmt = (
+        f"sprintf {uv_path} run --project {repo_root}"
+        f" python {curate_script}"
+        " --stems-dir %s --n-bars 16 --json-events"
+    )
+    boxes.append(
+        _box(
+            OBJ_CURATE_CMD,
+            "newobj",
+            (16.0, sb["pos"]["y"] + 274, 700.0, 22.0),
             numinlets=1,
             numoutlets=1,
             outlettype=[""],
-            extras={"text": "prepend loadManifest"},
+            extras={"text": curate_fmt},
         )
     )
-    lines.append(_line(OBJ_ROUTE_EVENTS, 4, "obj-complete-prepend", 0))
-    lines.append(_line("obj-complete-prepend", 0, OBJ_LOADER, 0))
+    lines.append(_line(OBJ_STEMS_DIR_EXTRACT, 0, OBJ_CURATE_CMD, 0))
+    lines.append(_line(OBJ_CURATE_CMD, 0, OBJ_BRIDGE, 0))  # feed back into [shell]
+    # curated event → unpack to extract manifest path → loadCuratedBars → loader
+    # curated outlet emits: <manifest_path> <bars_per_stem> <bpm>
+    OBJ_CURATED_UNPACK = "obj-curated-unpack"
+    boxes.append(
+        _box(
+            OBJ_CURATED_UNPACK,
+            "newobj",
+            (16.0, sb["pos"]["y"] + 304, 100.0, 22.0),
+            numinlets=1,
+            numoutlets=3,
+            outlettype=["", "int", "float"],
+            extras={"text": "unpack s 0 0."},
+        )
+    )
+    lines.append(_line(OBJ_ROUTE_EVENTS, 5, OBJ_CURATED_UNPACK, 0))
+    boxes.append(
+        _box(
+            OBJ_CURATED_PREPEND,
+            "newobj",
+            (16.0, sb["pos"]["y"] + 330, 160.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "prepend loadCuratedBars"},
+        )
+    )
+    lines.append(_line(OBJ_CURATED_UNPACK, 0, OBJ_CURATED_PREPEND, 0))
+    lines.append(_line(OBJ_CURATED_PREPEND, 0, OBJ_LOADER, 0))
     # bpm event → loader (setBPM)
     boxes.append(
         _box(
@@ -515,6 +674,71 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     )
     lines.append(_line(OBJ_ROUTE_EVENTS, 1, OBJ_CONSOLE_PRINT, 0))
     lines.append(_line(OBJ_ROUTE_EVENTS, 3, OBJ_CONSOLE_PRINT, 0))
+
+    # --- Debug prints at key points in FORGE chain ---
+    boxes.append(
+        _box(
+            "obj-print-complete",
+            "newobj",
+            (120.0, sb["pos"]["y"] + 222, 140.0, 22.0),
+            numinlets=1,
+            numoutlets=0,
+            extras={"text": "print COMPLETE-EVENT"},
+        )
+    )
+    lines.append(_line(OBJ_ROUTE_EVENTS, 4, "obj-print-complete", 0))
+    boxes.append(
+        _box(
+            "obj-print-curated",
+            "newobj",
+            (180.0, sb["pos"]["y"] + 304, 140.0, 22.0),
+            numinlets=1,
+            numoutlets=0,
+            extras={"text": "print CURATED-EVENT"},
+        )
+    )
+    lines.append(_line(OBJ_ROUTE_EVENTS, 5, "obj-print-curated", 0))
+    boxes.append(
+        _box(
+            "obj-print-curate-cmd",
+            "newobj",
+            (16.0, sb["pos"]["y"] + 300, 140.0, 22.0),
+            numinlets=1,
+            numoutlets=0,
+            extras={"text": "print CURATE-CMD"},
+        )
+    )
+    lines.append(_line(OBJ_CURATE_CMD, 0, "obj-print-curate-cmd", 0))
+
+    # --- Test message boxes: simulate NDJSON events for debug ---
+    # Simulate a "complete" event (as if stemforge-native just finished splitting)
+    stems_dir = str(Path.home() / "stemforge" / "processed" / "the_champ_original_version")
+    boxes.append(
+        _box(
+            "obj-test-complete",
+            "message",
+            (500.0, sb["pos"]["y"] + 132, 300.0, 22.0),
+            numinlets=2,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": f"complete {stems_dir}/stems.json 112.35 4"},
+        )
+    )
+    lines.append(_line("obj-test-complete", 0, OBJ_ROUTE_EVENTS, 0))
+    # Simulate a "curated" event (as if the curate script just finished)
+    curated_manifest = stems_dir + "/curated/manifest.json"
+    boxes.append(
+        _box(
+            "obj-test-curated",
+            "message",
+            (500.0, sb["pos"]["y"] + 160, 300.0, 22.0),
+            numinlets=2,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": f"curated {curated_manifest} 16 112.35"},
+        )
+    )
+    lines.append(_line("obj-test-curated", 0, OBJ_ROUTE_EVENTS, 0))
 
     # --- Diagnostic: loadbang → print to verify patcher loads ---
     boxes.append(
@@ -595,7 +819,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             "lines": lines,
             "dependency_cache": [
                 {
-                    "name": "stemforge_bridge.v0.js",
+                    "name": "stemforge_ndjson_parser.v0.js",
                     "bootpath": "~/Music/Ableton/User Library/Presets/Audio Effects/Max Audio Effect",
                     "type": "TEXT",
                     "implicit": 1,

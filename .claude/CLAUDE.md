@@ -4,6 +4,10 @@
 
 Dual-mode audio production system: Python CLI for stem splitting + beat slicing, Max for Live devices for Ableton Live integration.
 
+## Required Reading
+
+**Before starting any M4L device work** (builder, loader, patcher, installer, .amxd, JS, Max Package, or debug harness changes), read the M4L Device Development Guide in memory: `memory/m4l_device_development_guide.md`. It documents 20 hard-won pitfalls from the v0.0.1 build — container format, [shell]+[js] architecture, Max Package distribution, installer patterns, and the correct test/deploy workflow. Skipping it will cost you hours.
+
 ## Architecture: 3-Zone Model
 
 | Zone | Path | Purpose |

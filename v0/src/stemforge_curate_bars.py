@@ -85,7 +85,13 @@ def run(
         emit({"event": "bpm", "bpm": bpm, "beat_count": len(beat_times)})
 
     # Step 2: Slice each stem into bars
+    # Clean existing bar dirs first to avoid stale files from previous runs
     stem_bar_dirs: dict[str, Path] = {}
+    for stem_name in stems:
+        bar_dir = stems_dir / f"{stem_name}_bars"
+        if bar_dir.exists():
+            shutil.rmtree(bar_dir)
+
     for i, (stem_name, stem_path) in enumerate(stems.items()):
         bar_paths = slice_at_bars(
             stem_path=stem_path,
@@ -107,23 +113,49 @@ def run(
                 "message": f"{stem_name}: {len(bar_paths)} bars",
             })
 
-    # Step 3: Curate from drums (or first available stem)
+    # Step 3: Find common bar indices across all stems, then curate from that set
+    # Shorter stems (e.g. vocals=36 bars vs drums=72) limit the mirrorable range
+    per_stem_indices: dict[str, set[int]] = {}
+    for stem_name, bar_dir in stem_bar_dirs.items():
+        indices = set()
+        for bf in bar_dir.glob(f"{stem_name}_bar_*.wav"):
+            m = re.search(r"_bar_(\d+)\.wav$", bf.name)
+            if m:
+                indices.add(int(m.group(1)))
+        per_stem_indices[stem_name] = indices
+
+    common_indices = set.intersection(*per_stem_indices.values()) if per_stem_indices else set()
+
     curation_source = "drums" if "drums" in stem_bar_dirs else next(iter(stem_bar_dirs))
     curation_bar_dir = stem_bar_dirs[curation_source]
+
+    # Build a temp dir with only the bars in the common range for curation
+    import tempfile
+    curation_pool = Path(tempfile.mkdtemp(prefix="sf_curate_"))
+    common_bar_paths = []
+    for bf in sorted(curation_bar_dir.glob(f"{curation_source}_bar_*.wav")):
+        m = re.search(r"_bar_(\d+)\.wav$", bf.name)
+        if m and int(m.group(1)) in common_indices:
+            dst = curation_pool / bf.name
+            shutil.copy2(bf, dst)
+            common_bar_paths.append(dst)
 
     if json_events:
         emit({
             "event": "progress",
             "phase": "curating",
             "pct": 55,
-            "message": f"Selecting {n_bars} most diverse bars from {curation_source}",
+            "message": f"Selecting {n_bars} most diverse bars from {curation_source} ({len(common_bar_paths)} mirrorable)",
         })
 
     selected_paths = curate(
-        curation_bar_dir,
+        curation_pool,
         n_bars=n_bars,
         strategy=strategy,
     )
+
+    # Clean up temp dir
+    shutil.rmtree(curation_pool, ignore_errors=True)
 
     if not selected_paths:
         if json_events:

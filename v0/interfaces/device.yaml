@@ -57,6 +57,13 @@ ui:
       default: true
       pos: { x: 300, y: 108 }
 
+    - id: load_button
+      type: button
+      label: "Load"
+      action: load_session
+      pos: { x: 96, y: 28 }
+      size: { width: 72, height: 24 }
+
     - id: split_button
       type: button
       label: "Split"

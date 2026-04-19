@@ -120,8 +120,13 @@ rm -rf "$STAGING"
 # (not root) so the cache lands in the user's ~/Library/Caches/onnxruntime.
 # Non-fatal: log warnings but never fail the install on warmup errors.
 NATIVE=/usr/local/bin/stemforge-native
-if [ -x "$NATIVE" ]; then
-    echo "==> Pre-warming neural engine (one-time, may take 2-3 min)"
+# Skip warmup if the CoreML cache already exists (model unchanged between installs).
+# The cache lives in ~/Library/Caches/onnxruntime/ and is keyed by model hash.
+COREML_CACHE="$HOME/Library/Caches/onnxruntime"
+if [ -x "$NATIVE" ] && [ ! -d "$COREML_CACHE" ]; then
+    echo "==> Pre-warming neural engine — compiling ONNX model for Apple Neural Engine"
+    echo "    This takes 2-3 minutes on first install. The installer will appear to hang"
+    echo "    at 'Running package scripts...' during this step. This is normal."
     if [ "$(id -u)" = "0" ] && [ -n "${USER:-}" ] && [ "$USER" != "root" ]; then
         # Drop privileges so CoreML cache lands in the target user's Library.
         sudo -u "$USER" -H "$NATIVE" warmup 2>&1 | sed 's/^/    /' || \
@@ -130,6 +135,8 @@ if [ -x "$NATIVE" ]; then
         "$NATIVE" warmup 2>&1 | sed 's/^/    /' || \
             echo "    (warmup failed — first split will pay the cold compile cost)"
     fi
+elif [ -x "$NATIVE" ]; then
+    echo "==> Neural engine cache exists, skipping warmup"
 fi
 
 exit 0

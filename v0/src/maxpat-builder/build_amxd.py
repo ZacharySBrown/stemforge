@@ -38,23 +38,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--device-type",
         type=int,
-        default=7,
-        help="amxd meta value (7=project device with embedded JS resources)",
+        default=1,
+        help="amxd meta value (1=plain audio effect, 7=project with embedded resources)",
     )
     args = ap.parse_args(argv)
 
-    embed_files = []
-    for name in JS_FILES:
-        js_path = M4L_JS_DIR / name
-        if js_path.exists():
-            embed_files.append((name, js_path.read_bytes()))
-            print(f"  embed: {name} ({js_path.stat().st_size} bytes)")
-        else:
-            print(f"  WARNING: {js_path} not found, skipping embed")
-
+    # JS files are distributed via Max Package (~/Documents/Max 9/Packages/StemForge/),
+    # NOT embedded in the .amxd. The mx@c embedding format has undocumented checksums
+    # that cause "error -1 making directory" on load. See m4l_device_development_guide.md.
     patcher = build_patcher(args.device_yaml)
-    path = pack_amxd(patcher, args.out, device_type=args.device_type,
-                     embed_files=embed_files if embed_files else None)
+    path = pack_amxd(patcher, args.out, device_type=args.device_type)
     size = path.stat().st_size
     print(f"wrote {path} ({size} bytes)")
     return 0
