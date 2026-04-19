@@ -348,16 +348,13 @@ function loadSimplerSample(trackIdx, padIdx, wavPath, loopEnabled) {
             status("  pad " + padIdx + ": no Simpler found at " + chainPath);
             return false;
         }
-        // Load sample
-        simpler.call("sample", toMaxPath(wavPath));
-        // Set playback mode
-        if (loopEnabled) {
-            try { simpler.set("playback_mode", 0); } catch (_) {} // classic
-            try { simpler.set("looping", 1); } catch (_) {}
-        } else {
-            try { simpler.set("playback_mode", 1); } catch (_) {} // one-shot
-            try { simpler.set("looping", 0); } catch (_) {}
-        }
+        // Load sample — Live 12 API: SimplerDevice.replace_sample(absolute_path)
+        // Uses POSIX path (NOT HFS/Max path)
+        simpler.call("replace_sample", String(wavPath));
+        // Set playback mode: 0=classic (loops), 1=one-shot (no loop)
+        try {
+            simpler.set("playback_mode", loopEnabled ? 0 : 1);
+        } catch (_) {}
         return true;
     } catch (e) {
         status("  loadSimpler error pad " + padIdx + ": " + e);
@@ -377,32 +374,85 @@ function _loadCuratedV2(mf) {
 
     var songName = mf.track || "stemforge";
     var loaded = 0;
-    var stemTrackIndices = [];
 
+    // Strategy: duplicate the "SF | Templates" group (creates a new group with
+    // all children), rename it to the song name, delete the duplicated Source
+    // track, then rename the rack tracks.
+    var templateGroupIdx = findTrackByName("SF | Templates");
+    var songTrackMap = {};  // stemName → trackIdx
+
+    if (templateGroupIdx >= 0) {
+        var countBefore = trackCount();
+        var newGroupIdx = duplicateTrack(templateGroupIdx);
+        var countAfter = trackCount();
+        var addedTracks = countAfter - countBefore;
+
+        // Rename the new group to the song name
+        renameTrack(newGroupIdx, songName, null);
+        status("  created song group: " + songName + " (" + addedTracks + " tracks)");
+
+        // Scan the new tracks (newGroupIdx+1 through newGroupIdx+addedTracks-1)
+        // and map them by matching template names
+        for (var ti = newGroupIdx + 1; ti < newGroupIdx + addedTracks; ti++) {
+            var tn = String(trackName(ti));
+
+            // Delete duplicated Source track (audio track with the device)
+            if (tn === "SF | Source") {
+                try {
+                    new LiveAPI("live_set").call("delete_track", ti);
+                    addedTracks--;
+                    // Indices shift after deletion, re-scan
+                    ti--;
+                } catch (e) {
+                    status("  could not delete duplicated Source: " + e);
+                }
+                continue;
+            }
+
+            // Match rack template names
+            for (var si2 = 0; si2 < BAR_TRACK_ORDER.length; si2++) {
+                var sn = BAR_TRACK_ORDER[si2];
+                if (tn === RACK_TEMPLATES[sn] && !(sn in songTrackMap)) {
+                    var cap = sn.charAt(0).toUpperCase() + sn.slice(1);
+                    renameTrack(ti, cap + " | " + songName, BAR_TRACK_COLORS[sn]);
+                    songTrackMap[sn] = ti;
+                    break;
+                }
+            }
+        }
+    }
+
+    // Fallback for any stems not found via group duplication
     for (var si = 0; si < BAR_TRACK_ORDER.length; si++) {
         var stemName = BAR_TRACK_ORDER[si];
+        if (stemName in songTrackMap) continue;
+
         var data = stemData[stemName];
         if (!data) continue;
 
-        // Find or create MIDI track with Drum Rack
+        var stemCapitalized = stemName.charAt(0).toUpperCase() + stemName.slice(1);
         var templateName = RACK_TEMPLATES[stemName];
         var templateIdx = templateName ? findTrackByName(templateName) : -1;
 
         var trackIdx;
         if (templateIdx >= 0) {
-            // Duplicate the template
             trackIdx = duplicateTrack(templateIdx);
-            var label = stemName + " Rack | " + songName;
-            renameTrack(trackIdx, label, BAR_TRACK_COLORS[stemName]);
+            renameTrack(trackIdx, stemCapitalized + " | " + songName, BAR_TRACK_COLORS[stemName]);
         } else {
-            // No template — create a bare MIDI track
             trackIdx = trackCount();
             createMidiTrack(trackIdx);
-            renameTrack(trackIdx, "[SF] " + stemName.charAt(0).toUpperCase() + stemName.slice(1) + " Rack",
-                        BAR_TRACK_COLORS[stemName]);
-            status("  " + stemName + ": no Drum Rack template — created bare MIDI track");
+            renameTrack(trackIdx, "[SF] " + stemCapitalized + " Rack", BAR_TRACK_COLORS[stemName]);
+            status("  " + stemName + ": no template — created bare MIDI track");
         }
-        stemTrackIndices.push(trackIdx);
+        songTrackMap[stemName] = trackIdx;
+    }
+
+    // Load samples into each stem's track
+    for (var si = 0; si < BAR_TRACK_ORDER.length; si++) {
+        var stemName = BAR_TRACK_ORDER[si];
+        var data = stemData[stemName];
+        if (!data || !(stemName in songTrackMap)) continue;
+        var trackIdx = songTrackMap[stemName];
 
         // Load pads from quadrant data (layout manifest format)
         if (data.pads) {
