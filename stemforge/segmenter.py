@@ -63,10 +63,11 @@ def _compute_novelty(recurrence: np.ndarray, kernel_size: int = 64) -> np.ndarra
         kernel_size = max(4, n // 2)
 
     half = kernel_size // 2
-    # Checkerboard kernel: +1 in opposite quadrants, -1 in same quadrants
-    kernel = np.ones((kernel_size, kernel_size))
-    kernel[:half, :half] = -1
-    kernel[half:, half:] = -1
+    # Checkerboard kernel: +1 on diagonal blocks (same section = high similarity),
+    # -1 on off-diagonal blocks (cross section = low similarity at boundary)
+    kernel = -np.ones((kernel_size, kernel_size))
+    kernel[:half, :half] = 1
+    kernel[half:, half:] = 1
 
     novelty = np.zeros(n)
     for i in range(half, n - half):
