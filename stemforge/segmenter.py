@@ -90,30 +90,50 @@ def _label_segments(
     chroma: np.ndarray,
     hop_length: int,
     sr: int,
+    mfcc: np.ndarray | None = None,
 ) -> list[str]:
-    """Label segments by mutual chroma similarity. Similar sections get the same letter."""
+    """Label segments by chroma + MFCC similarity.
+
+    Chroma captures harmonic content (key/chord changes).
+    MFCC captures timbral content (voice changes, instrument texture shifts).
+    Combined, they distinguish sections that share harmony but differ in
+    timbre (e.g., different rappers over the same beat).
+    """
     n_segments = len(boundaries) + 1
     if n_segments == 1:
         return ["A"]
 
-    # Compute mean chroma vector per segment
     all_bounds = [0] + boundaries + [total_frames]
-    mean_chromas = []
+
+    # Build per-segment feature vectors: chroma (12D) + optional MFCC (13D)
+    segment_features = []
     for i in range(n_segments):
         start_frame = all_bounds[i]
         end_frame = all_bounds[i + 1]
-        if start_frame < chroma.shape[1] and end_frame <= chroma.shape[1]:
-            segment_chroma = chroma[:, start_frame:end_frame].mean(axis=1)
-        else:
-            segment_chroma = np.zeros(12)
-        mean_chromas.append(segment_chroma)
 
-    mean_chromas = np.array(mean_chromas)
+        if start_frame < chroma.shape[1] and end_frame <= chroma.shape[1]:
+            seg_chroma = chroma[:, start_frame:end_frame].mean(axis=1)
+        else:
+            seg_chroma = np.zeros(12)
+
+        if mfcc is not None and start_frame < mfcc.shape[1] and end_frame <= mfcc.shape[1]:
+            seg_mfcc_mean = mfcc[:, start_frame:end_frame].mean(axis=1)
+            seg_mfcc_std = mfcc[:, start_frame:end_frame].std(axis=1)
+        else:
+            seg_mfcc_mean = np.zeros(13) if mfcc is not None else np.array([])
+            seg_mfcc_std = np.zeros(13) if mfcc is not None else np.array([])
+
+        # Concatenate: chroma (12D harmony) + MFCC mean (13D timbre) + MFCC std (13D variability)
+        # The std captures voice texture differences that mean alone washes out
+        feature = np.concatenate([seg_chroma, seg_mfcc_mean, seg_mfcc_std])
+        segment_features.append(feature)
+
+    segment_features = np.array(segment_features)
 
     # Cosine similarity between all pairs
-    norms = np.linalg.norm(mean_chromas, axis=1, keepdims=True)
+    norms = np.linalg.norm(segment_features, axis=1, keepdims=True)
     norms = np.where(norms < 1e-10, 1.0, norms)
-    normalized = mean_chromas / norms
+    normalized = segment_features / norms
     similarity = normalized @ normalized.T
 
     # Assign labels: first segment = "A", subsequent segments get the same
@@ -191,6 +211,7 @@ def detect_song_structure(
     # Compute chroma features
     hop_length = 512
     chroma = librosa.feature.chroma_stft(y=y, sr=sr, hop_length=hop_length)
+    mfcc = librosa.feature.mfcc(y=y, sr=sr, hop_length=hop_length, n_mfcc=13)
 
     # Build recurrence matrix
     rec = librosa.segment.recurrence_matrix(
@@ -252,6 +273,7 @@ def detect_song_structure(
         chroma,
         hop_length,
         sr,
+        mfcc=mfcc,
     )
 
     # Build segments
