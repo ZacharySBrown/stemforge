@@ -8,7 +8,7 @@ device:
   name: "StemForge"
   short_name: "SF"
   bundle_identifier: "com.stemforge.m4l.v0"
-  version: "0.0.0"  # replaced at build time with git tag
+  version: "0.0.1"
 
 # UI elements in the .amxd patch. Compact horizontal layout for M4L strip.
 ui:
@@ -56,6 +56,13 @@ ui:
       label: "Slice beats"
       default: true
       pos: { x: 300, y: 108 }
+
+    - id: load_button
+      type: button
+      label: "Load"
+      action: load_session
+      pos: { x: 96, y: 28 }
+      size: { width: 72, height: 24 }
 
     - id: split_button
       type: button

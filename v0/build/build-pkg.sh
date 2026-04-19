@@ -10,7 +10,7 @@
 # bundle the template.
 set -euo pipefail
 
-VERSION="${STEMFORGE_VERSION:-0.0.0}"
+VERSION="${STEMFORGE_VERSION:-0.0.1}"
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "$REPO_ROOT"
 
@@ -195,7 +195,20 @@ chmod 0755 "$SYS_ROOT/usr/local/bin/stemforge-uninstall"
 
 cp "$AMXD" "$USR_ROOT/tmp/stemforge-staging/StemForge.amxd"
 
-# Max Package — node.script resolves JS by bare filename via Max's search path.
+# Sync JS from v0/src/m4l-js/ into the Max Package source before staging.
+# v0/src/m4l-js/ is the editing location; the Max Package is the distribution
+# location. This sync ensures the installer always ships the latest JS.
+M4L_PKG_JS="$REPO_ROOT/v0/src/m4l-package/StemForge/javascript"
+M4L_JS_SRC="$REPO_ROOT/v0/src/m4l-js"
+if [ -d "$M4L_PKG_JS" ] && [ -d "$M4L_JS_SRC" ]; then
+    for js in "$M4L_JS_SRC"/*.js; do
+        [ -f "$js" ] || continue
+        cp "$js" "$M4L_PKG_JS/"
+    done
+    echo "    JS synced              : m4l-js/ → m4l-package/StemForge/javascript/"
+fi
+
+# Max Package — [js] resolves scripts by bare filename via Max's search path.
 # The StemForge package (v0/src/m4l-package/StemForge/) ships JS in javascript/.
 # postinstall deploys the package to ~/Documents/Max 9/Packages/StemForge/.
 M4L_PKG_SRC="$REPO_ROOT/v0/src/m4l-package/StemForge"

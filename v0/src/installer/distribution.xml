@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
-    <title>StemForge 0.0.0</title>
+    <title>StemForge 0.0.1</title>
     <organization>com.stemforge</organization>
     <options allow-external-scripts="no" hostArchitectures="x86_64,arm64" customize="never" require-scripts="false" rootVolumeOnly="true"/>
     <domains enable_localSystem="true" enable_currentUserHome="true"/>
@@ -19,9 +19,9 @@
     <choice id="com.stemforge.system" title="StemForge Native Binary" description="Installs stemforge-native and ONNX Runtime to /usr/local." enabled="false" selected="true">
         <pkg-ref id="com.stemforge.system"/>
     </choice>
-    <choice id="com.stemforge.user" title="Ableton Integration" description="Installs the Max for Live device and template into your Ableton User Library." enabled="false" selected="true">
+    <choice id="com.stemforge.user" title="Ableton Integration" description="Installs the Max for Live device, Max Package, and template into your Ableton User Library. After file installation, the Neural Engine cache is pre-warmed (2-3 minutes on first install) so your first stem split is fast." enabled="false" selected="true">
         <pkg-ref id="com.stemforge.user"/>
     </choice>
-    <pkg-ref id="com.stemforge.system" version="0.0.0" onConclusion="none">system.pkg</pkg-ref>
-    <pkg-ref id="com.stemforge.user" version="0.0.0" onConclusion="none">user.pkg</pkg-ref>
+    <pkg-ref id="com.stemforge.system" version="0.0.1" onConclusion="none">system.pkg</pkg-ref>
+    <pkg-ref id="com.stemforge.user" version="0.0.1" onConclusion="none">user.pkg</pkg-ref>
 </installer-gui-script>

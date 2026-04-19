@@ -431,7 +431,7 @@
       "precision": "fp32",
       "coreml_ep_supported": true,
       "cpu_fallback_ops": [],
-      "optimized_cache": "",
+      "optimized_cache": "v0/build/models/ort_cache/htdemucs_ft_fused/htdemucs_ft_fused.optimized.onnx",
       "notes": "FUSED 4-head graph \u2014 the I_4 specialist permutation (head i \u2192 source i) is baked in via Gather+Concat at fusion time, so output dim=1 is canonical-stem-order {drums, bass, other, vocals}. Saved INLINE (no .data sidecar) because CoreML EP MLProgram compile rejects models that load weights from external data files (SystemError 20 / silent CPU fallback). One Ort::Session, one CoreML compile (~125s cold), 4.54s warm per 10s segment vs 50s baseline = 11x speedup. See v0/state/A/fusion_succeeded.md.",
       "stft_params": {
         "n_fft": 4096,

@@ -209,15 +209,114 @@ function loadManifest() {
     outlet(1, "bang");
 }
 
+// ── Curated bars loader (Launchpad MVP) ──────────────────────────────────────
+// Creates 4 audio tracks × 16 clip slots from a curated manifest.
+// Each track maps to a Launchpad column in session clip launch mode.
+
+var BAR_TRACK_ORDER = ["drums", "bass", "vocals", "other"];
+var BAR_TRACK_COLORS = {
+    drums:  0xFF4444,   // red
+    bass:   0x4477FF,   // blue
+    vocals: 0xFFAA44,   // orange
+    other:  0x44DD77    // green
+};
+var BAR_WARP_MODES = {
+    drums:  0,  // Beats
+    bass:   0,  // Beats
+    vocals: 4,  // Complex
+    other:  4   // Complex
+};
+
+function createAudioTrack(insertIdx) {
+    new LiveAPI("live_set").call("create_audio_track", insertIdx);
+    return insertIdx;
+}
+
+function _loadCuratedManifest(mf) {
+    if (mf.bpm) {
+        try { new LiveAPI("live_set").set("tempo", Number(mf.bpm)); } catch (_) {}
+        status("tempo → " + mf.bpm + " BPM");
+    }
+
+    if (!mf.stems) { status("manifest has no stems object"); return; }
+
+    var loaded = 0;
+    for (var si = 0; si < BAR_TRACK_ORDER.length; si++) {
+        var stemName = BAR_TRACK_ORDER[si];
+        var bars = mf.stems[stemName];
+        if (!bars || !bars.length) {
+            status("  " + stemName + ": no bars in manifest, skipping");
+            continue;
+        }
+
+        var insertIdx = trackCount();
+        createAudioTrack(insertIdx);
+
+        var trackLabel = "[SF] " + stemName.charAt(0).toUpperCase() + stemName.slice(1) + " Bars";
+        renameTrack(insertIdx, trackLabel, BAR_TRACK_COLORS[stemName]);
+
+        var warpMode = BAR_WARP_MODES[stemName] || 0;
+
+        for (var bi = 0; bi < bars.length; bi++) {
+            var bar = bars[bi];
+            if (!bar.file) continue;
+            var clipName = stemName + " bar " + (bar.position || (bi + 1));
+            if (loadClip(insertIdx, bi, bar.file, clipName)) {
+                try {
+                    var clipApi = new LiveAPI(
+                        "live_set tracks " + insertIdx + " clip_slots " + bi + " clip"
+                    );
+                    if (clipApi.id !== "0") {
+                        clipApi.set("warp_mode", warpMode);
+                    }
+                } catch (_) {}
+                loaded++;
+            }
+        }
+        status("  " + trackLabel + ": " + bars.length + " bars loaded");
+    }
+    status("loader: " + loaded + " curated bars across " + BAR_TRACK_ORDER.length + " tracks");
+    outlet(1, "bang");
+}
+
+function loadCuratedBars() {
+    var manifestPath = arrayfromargs(messagename, arguments).slice(1).join(" ");
+    if (!manifestPath) { status("loadCuratedBars: missing path"); return; }
+
+    var raw = readFileContents(manifestPath);
+    if (!raw) { status("cannot read manifest: " + manifestPath); return; }
+    var mf;
+    try { mf = JSON.parse(raw); }
+    catch (e) { status("manifest JSON parse: " + e); return; }
+
+    _loadCuratedManifest(mf);
+}
+
+function loadFromDict() {
+    var dictName = arrayfromargs(messagename, arguments).slice(1).join(" ") || "sf_manifest";
+    var d;
+    try { d = new Dict(dictName); }
+    catch (e) { status("loadFromDict: cannot open dict " + dictName + ": " + e); return; }
+
+    var mf;
+    try { mf = JSON.parse(d.stringify()); }
+    catch (e) { status("loadFromDict: parse error: " + e); return; }
+
+    status("loaded manifest from dict: " + dictName);
+    _loadCuratedManifest(mf);
+}
+
 // ── Entry points from Max ─────────────────────────────────────────────────────
 // These aren't stored on `globalThis`; Max's classic [js] object scans for
 // top-level functions automatically. Keep names exactly as handlers used in
-// builder.py (`setBpm`, `loadManifest`).
+// builder.py (`setBpm`, `loadManifest`, `loadCuratedBars`).
 
 // Eslint-friendly re-exports — tests import the file as CommonJS via a shim.
 if (typeof module !== "undefined" && module.exports) {
     module.exports.__test__ = {
         STEM_TARGETS: STEM_TARGETS,
-        SIMPLER_TEMPLATE: SIMPLER_TEMPLATE
+        SIMPLER_TEMPLATE: SIMPLER_TEMPLATE,
+        BAR_TRACK_ORDER: BAR_TRACK_ORDER,
+        BAR_TRACK_COLORS: BAR_TRACK_COLORS
     };
 }

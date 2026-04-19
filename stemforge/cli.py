@@ -82,9 +82,9 @@ def cli():
 @cli.command()
 @click.argument("audio_file", type=click.Path(exists=True, path_type=Path))
 @click.option("--backend", "-b",
-              type=click.Choice(["lalal", "demucs", "musicai", "auto"]),
+              type=click.Choice(["lalal", "demucs", "musicai", "modal", "auto"]),
               default="auto",
-              help="'auto' uses LALAL if key is set, else Demucs. 'musicai' for Music.AI API.")
+              help="'auto' uses LALAL if key is set, else Demucs. 'modal' for Modal cloud GPU.")
 @click.option("--stems", "-s", default=None,
               help=f"[lalal] Preset ({', '.join(LALAL_PRESETS)}) or "
                    f"comma-separated stems. Default: {LALAL_DEFAULT_PRESET}")
@@ -112,6 +112,7 @@ def split(audio_file, backend, stems, model, pipeline, output, no_slice, no_norm
       stemforge split track.wav --stems chop             # drum+bass only (LALAL)
       stemforge split track.wav --model 6stem            # 6-stem Demucs model
       stemforge split track.wav --pipeline glitch        # use 'glitch' pipeline config
+      stemforge split track.wav --backend modal           # Modal cloud GPU (fast)
       stemforge split track.wav --no-slice               # full stems, no beat files
       stemforge split track.mp3                          # auto-converts to WAV
     """
@@ -134,6 +135,9 @@ def split(audio_file, backend, stems, model, pipeline, output, no_slice, no_norm
         be = LalalBackend()
     elif backend == "musicai":
         be = MusicAiBackend()
+    elif backend == "modal":
+        from .backends.modal_backend import ModalBackend
+        be = ModalBackend()
     else:
         be = DemucsBackend()
 

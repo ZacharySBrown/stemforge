@@ -32,6 +32,10 @@ analyzer = [
     "transformers>=4.40",
     "laion-clap>=1.1",
 ]
+# Modal cloud GPU backend.
+modal = [
+    "modal>=0.60",
+]
 # ONNX Runtime + conversion tooling (required for native M4L binary per PIVOT).
 onnx = [
     "onnx>=1.16",

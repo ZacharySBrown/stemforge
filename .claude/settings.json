@@ -79,6 +79,8 @@
       "Bash(rm -rf v0/build/cmake-*)",
       "Bash(rm -rf v0/build/models/htdemucs_ft/htdemucs_ft_fused*)",
       "Bash(rm -rf .claude/worktrees/agent-*)",
+      "Bash(rm -rf ~/stemforge/processed/*/curated)",
+      "Bash(rm -rf ~/stemforge/processed/*/*_bars)",
       "Bash(rm -rf /tmp/sf_*)",
       "Bash(rm -rf /tmp/stemforge-*)",
       "Bash(rm /tmp/*)",

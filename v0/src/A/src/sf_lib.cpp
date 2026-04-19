@@ -35,7 +35,7 @@ namespace {
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
-constexpr const char *kAbiVersion = "0.0.0";
+constexpr const char *kAbiVersion = "0.0.1";
 
 fs::path resolve_model_dir(const char *cfg_dir) {
     if (cfg_dir && cfg_dir[0]) return cfg_dir;
