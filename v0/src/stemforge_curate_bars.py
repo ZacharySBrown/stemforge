@@ -29,7 +29,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from stemforge.slicer import detect_bpm_and_beats, slice_at_bars, group_bars_into_phrases
-from stemforge.curator import curate
+from stemforge.curator import curate, section_stratified_select
 from stemforge.config import load_curation_config, CurationConfig
 from stemforge.oneshot import extract_oneshots, extract_kicks_from_bass, select_diverse_oneshots
 from stemforge.drum_classifier import classify_and_assign, arrange_drum_pads
@@ -268,14 +268,44 @@ def run(
                     "message": f"{stem_name}: selecting {sc.loop_count} {item_label}s from {n_available}",
                 })
 
-            selected = curate(
-                curation_dir,
-                n_bars=sc.loop_count,
-                strategy=sc.strategy,
-                rms_floor=sc.rms_floor,
-                crest_min=sc.crest_min,
-                distance_weights=sc.distance_weights,
-            )
+            # Use section-stratified selection for melodic mode when structure is available
+            song_structure = None
+            if sc.bottom_mode == "melodic" and sc.midi_extract:
+                # Detect song structure for section-aware loop selection
+                try:
+                    from stemforge.segmenter import detect_song_structure
+                    song_structure = detect_song_structure(
+                        stems.get(stem_name, next(iter(stems.values()))),
+                        beat_times=beat_times, bpm=bpm, time_sig=time_sig,
+                    )
+                    if json_events and song_structure.boundaries_bars:
+                        emit({
+                            "event": "progress",
+                            "phase": "curating",
+                            "pct": 55 + int((si / len(stem_bar_dirs)) * 35),
+                            "message": f"{stem_name}: form={song_structure.form}, selecting across sections",
+                        })
+                except Exception:
+                    pass  # fall back to regular curation
+
+            if song_structure and song_structure.boundaries_bars:
+                selected = section_stratified_select(
+                    curation_dir,
+                    n_bars=sc.loop_count,
+                    song_structure=song_structure,
+                    rms_floor=sc.rms_floor,
+                    crest_min=sc.crest_min,
+                    distance_weights=sc.distance_weights,
+                )
+            else:
+                selected = curate(
+                    curation_dir,
+                    n_bars=sc.loop_count,
+                    strategy=sc.strategy,
+                    rms_floor=sc.rms_floor,
+                    crest_min=sc.crest_min,
+                    distance_weights=sc.distance_weights,
+                )
 
             stem_bars = []
             for position, src in enumerate(selected):

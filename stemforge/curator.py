@@ -327,6 +327,95 @@ def _select_transition(
     return selected, features, selected_idx
 
 
+def section_stratified_select(
+    beat_dir: Path,
+    n_bars: int,
+    song_structure: "SongStructure",
+    bar_times: np.ndarray | None = None,
+    rms_floor: float = 0.005,
+    crest_min: float = 4.0,
+    distance_weights: dict[str, float] | None = None,
+) -> list[Path]:
+    """
+    Select N bars stratified across song sections for maximum representation.
+
+    Allocates slots proportional to section length, then diversity-selects
+    within each section's allocation. Ensures the selection covers different
+    parts of the song rather than clustering in one section.
+
+    Used by melodic bottom_mode to pick 4 representative loops.
+    """
+    beat_dir = Path(beat_dir)
+    all_files = sorted(beat_dir.glob("*.wav"))
+    if not all_files or not song_structure or not song_structure.segments:
+        # No structure — fall back to regular curate
+        return curate(beat_dir, n_bars=n_bars, rms_floor=rms_floor,
+                      crest_min=crest_min, distance_weights=distance_weights)
+
+    # Map each bar file to its section by index
+    # Bar files are named stem_bar_NNN.wav or stem_phrase_NNN.wav
+    import re
+    file_by_section: dict[str, list[Path]] = {}
+    for f in all_files:
+        m = re.search(r"_(?:bar|phrase)_(\d+)\.wav$", f.name)
+        if not m:
+            continue
+        bar_idx = int(m.group(1))
+        section = song_structure.section_for_bar(bar_idx)
+        if section is None:
+            section = "?"
+        file_by_section.setdefault(section, []).append(f)
+
+    if not file_by_section:
+        return curate(beat_dir, n_bars=n_bars, rms_floor=rms_floor,
+                      crest_min=crest_min, distance_weights=distance_weights)
+
+    # Allocate slots per section proportional to file count, at least 1 each
+    total_files = sum(len(fs) for fs in file_by_section.values())
+    remaining = n_bars
+    allocation: dict[str, int] = {}
+    for section in sorted(file_by_section.keys()):
+        count = len(file_by_section[section])
+        slots = max(1, round(count / total_files * n_bars))
+        allocation[section] = min(slots, remaining)
+        remaining -= allocation[section]
+        if remaining <= 0:
+            break
+
+    # Distribute any remaining slots to the largest sections
+    if remaining > 0:
+        for section in sorted(file_by_section.keys(), key=lambda s: -len(file_by_section[s])):
+            if remaining <= 0:
+                break
+            allocation[section] = allocation.get(section, 0) + 1
+            remaining -= 1
+
+    # Diversity-select within each section's allocation
+    import tempfile
+    selected: list[Path] = []
+    for section, slots in allocation.items():
+        if slots <= 0:
+            continue
+        section_files = file_by_section.get(section, [])
+        if not section_files:
+            continue
+
+        # Build temp dir for this section's files
+        section_pool = Path(tempfile.mkdtemp(prefix=f"sf_sect_{section}_"))
+        for f in section_files:
+            shutil.copy2(f, section_pool / f.name)
+
+        section_selected = curate(
+            section_pool, n_bars=slots,
+            rms_floor=rms_floor, crest_min=crest_min,
+            distance_weights=distance_weights,
+        )
+        selected.extend(section_selected)
+        shutil.rmtree(section_pool, ignore_errors=True)
+
+    return selected[:n_bars]
+
+
 def curate(
     beat_dir: Path,
     n_bars: int = 14,
