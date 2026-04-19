@@ -24,16 +24,11 @@ _CONFIG_PATH = _MODULE_DIR / "config.yaml"
 
 
 def _resolve_models_dir() -> Path:
-    """Find LarsNet model weights. Checks multiple locations."""
-    candidates = [
-        LARSNET_MODELS_DIR / "pretrained_larsnet_models",
-        Path("/tmp/larsnet/pretrained_larsnet_models"),
-        _MODULE_DIR / "pretrained_larsnet_models",
-    ]
-    for d in candidates:
-        if d.exists() and (d / "kick" / "pretrained_kick_unet.pth").exists():
-            return d
-    return candidates[0]  # default, will fail with clear error
+    """Find LarsNet model weights at the canonical install location."""
+    primary = LARSNET_MODELS_DIR / "pretrained_larsnet_models"
+    if primary.exists() and (primary / "kick" / "pretrained_kick_unet.pth").exists():
+        return primary
+    return primary  # return canonical path — will fail with clear download instructions
 
 
 def _make_config(models_dir: Path) -> Path:
@@ -49,7 +44,8 @@ def _make_config(models_dir: Path) -> Path:
         model_file = models_dir / stem / f"pretrained_{stem}_unet.pth"
         config["inference_models"][key] = str(model_file)
 
-    tmp_config = Path("/tmp/stemforge_larsnet_config.yaml")
+    import tempfile
+    tmp_config = Path(tempfile.mktemp(prefix="sf_larsnet_", suffix=".yaml"))
     with open(tmp_config, "w") as f:
         yaml.dump(config, f)
 
