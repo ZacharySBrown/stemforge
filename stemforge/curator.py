@@ -13,6 +13,10 @@ import shutil
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .segmenter import SongStructure
 
 import numpy as np
 import soundfile as sf
@@ -231,6 +235,98 @@ def _greedy_farthest_point(features: np.ndarray, seed_idx: int, n: int) -> list[
     return selected
 
 
+def _select_rhythm_taxonomy(
+    profiles: list[BeatProfile], n: int, weights: dict | None,
+) -> tuple[list[BeatProfile], np.ndarray, list[int]]:
+    """Cluster by rhythm fingerprint, then pick diverse variants per cluster."""
+    clusters = cluster_by_rhythm(profiles, threshold=0.25)
+
+    if not clusters:
+        # Fallback: treat all as one cluster
+        clusters = {(0,) * 16: profiles}
+
+    # Allocate slots proportional to cluster size, at least 1 per cluster
+    total = sum(len(c) for c in clusters.values())
+    allocation: dict[tuple, int] = {}
+    remaining = n
+    for key, members in sorted(clusters.items(), key=lambda x: -len(x[1])):
+        slots = max(1, round(len(members) / total * n))
+        allocation[key] = min(slots, remaining)
+        remaining -= allocation[key]
+        if remaining <= 0:
+            break
+
+    # Select variants from each cluster using spectral+energy diversity
+    selected: list[BeatProfile] = []
+    for key, members in clusters.items():
+        slots = allocation.get(key, 0)
+        if slots == 0:
+            continue
+        variants = select_variants_from_cluster(members, max_variants=slots)
+        selected.extend(variants)
+
+    selected = selected[:n]
+    feature_matrix = np.array([_feature_vector(p, weights) for p in selected]) if selected else np.zeros((0, 20))
+    selected_idx = list(range(len(selected)))
+    return selected, feature_matrix, selected_idx
+
+
+def _select_sectional(
+    profiles: list[BeatProfile], n: int, weights: dict | None,
+    song_structure: "SongStructure",
+) -> tuple[list[BeatProfile], np.ndarray, list[int]]:
+    """Weight bars by structural importance, then greedy-select with bias toward boundaries."""
+    if not profiles:
+        return [], np.zeros((0, 20)), []
+
+    features = _znorm(np.array([_feature_vector(p, weights) for p in profiles]))
+
+    # Compute importance-weighted distance: boost bars near boundaries
+    importance = np.array([
+        song_structure.importance_for_bar(p.index) for p in profiles
+    ])
+    # Add importance as an extra feature dimension (scaled to match others)
+    importance_col = (importance * 3.0).reshape(-1, 1)  # weight importance heavily
+    features_boosted = np.hstack([features, importance_col])
+
+    # Seed with the most important bar (nearest to a boundary)
+    seed = int(np.argmax(importance)) if np.max(importance) > 0 else int(np.argmax([p.crest_factor for p in profiles]))
+    selected_idx = _greedy_farthest_point(features_boosted, seed, n)
+    selected = [profiles[i] for i in selected_idx]
+    return selected, features, selected_idx
+
+
+def _select_transition(
+    profiles: list[BeatProfile], n: int, weights: dict | None,
+    song_structure: "SongStructure",
+) -> tuple[list[BeatProfile], np.ndarray, list[int]]:
+    """Select only bars near structural boundaries."""
+    if not profiles:
+        return [], np.zeros((0, 20)), []
+
+    # Filter to bars with importance > 0 (near boundaries)
+    transition_profiles = [
+        p for p in profiles
+        if song_structure.importance_for_bar(p.index) > 0
+    ]
+
+    if not transition_profiles:
+        # No transitions found — fall back to max-diversity on all bars
+        transition_profiles = profiles
+
+    if len(transition_profiles) <= n:
+        selected = transition_profiles
+        feature_matrix = np.array([_feature_vector(p, weights) for p in selected]) if selected else np.zeros((0, 20))
+        return selected, feature_matrix, list(range(len(selected)))
+
+    # Greedy-select diverse bars from the transition pool
+    features = _znorm(np.array([_feature_vector(p, weights) for p in transition_profiles]))
+    seed = int(np.argmax([p.crest_factor for p in transition_profiles]))
+    selected_idx = _greedy_farthest_point(features, seed, n)
+    selected = [transition_profiles[i] for i in selected_idx]
+    return selected, features, selected_idx
+
+
 def curate(
     beat_dir: Path,
     n_bars: int = 14,
@@ -238,23 +334,32 @@ def curate(
     rms_floor: float = 0.005,
     crest_min: float = 4.0,
     distance_weights: dict[str, float] | None = None,
+    song_structure: "SongStructure | None" = None,
 ) -> list[Path]:
     """
     Analyze every WAV in `beat_dir`, filter by rms_floor and crest_min,
-    then greedy-select `n_bars` most diverse bars. Writes `manifest.json`
-    into `beat_dir` with selected bar paths and their feature vectors.
+    then select `n_bars` bars using the specified strategy.
+
+    Strategies:
+      - max-diversity: Greedy farthest-point in feature space (default)
+      - rhythm-taxonomy: Cluster by rhythm fingerprint, pick diverse variants per cluster
+      - sectional: Weight bars by structural importance (needs song_structure)
+      - transition: Select only bars near structural boundaries (needs song_structure)
 
     Returns list of selected Paths in selection order.
     """
     beat_dir = Path(beat_dir)
-    if strategy in ("rhythm-taxonomy", "sectional"):
+    valid_strategies = ("max-diversity", "rhythm-taxonomy", "sectional", "transition")
+    if strategy not in valid_strategies:
+        raise ValueError(f"Unknown strategy: {strategy}. Valid: {valid_strategies}")
+
+    # Sectional/transition need song structure — fall back if missing
+    if strategy in ("sectional", "transition") and song_structure is None:
         warnings.warn(
-            f"Strategy '{strategy}' not yet implemented; falling back to max-diversity.",
+            f"Strategy '{strategy}' requires song_structure; falling back to max-diversity.",
             stacklevel=2,
         )
         strategy = "max-diversity"
-    if strategy != "max-diversity":
-        raise ValueError(f"Unknown strategy: {strategy}")
 
     profiles = analyze_all_beats(beat_dir)
     if not profiles:
@@ -264,15 +369,30 @@ def curate(
     if not filtered:
         filtered = [p for p in profiles if p.rms >= rms_floor] or profiles
 
-    if len(filtered) <= n_bars:
-        selected = filtered
-        feature_matrix = np.array([_feature_vector(p, distance_weights) for p in filtered]) if filtered else np.zeros((0, 20))
-        selected_idx = list(range(len(filtered)))
+    # ── Strategy dispatch ────────────────────────────────────────────────
+    if strategy == "rhythm-taxonomy":
+        selected, feature_matrix, selected_idx = _select_rhythm_taxonomy(
+            filtered, n_bars, distance_weights
+        )
+    elif strategy == "sectional":
+        selected, feature_matrix, selected_idx = _select_sectional(
+            filtered, n_bars, distance_weights, song_structure
+        )
+    elif strategy == "transition":
+        selected, feature_matrix, selected_idx = _select_transition(
+            filtered, n_bars, distance_weights, song_structure
+        )
     else:
-        feature_matrix = _znorm(np.array([_feature_vector(p, distance_weights) for p in filtered]))
-        seed = int(np.argmax([p.crest_factor for p in filtered]))
-        selected_idx = _greedy_farthest_point(feature_matrix, seed, n_bars)
-        selected = [filtered[i] for i in selected_idx]
+        # max-diversity (default)
+        if len(filtered) <= n_bars:
+            selected = filtered
+            feature_matrix = np.array([_feature_vector(p, distance_weights) for p in filtered]) if filtered else np.zeros((0, 20))
+            selected_idx = list(range(len(filtered)))
+        else:
+            feature_matrix = _znorm(np.array([_feature_vector(p, distance_weights) for p in filtered]))
+            seed = int(np.argmax([p.crest_factor for p in filtered]))
+            selected_idx = _greedy_farthest_point(feature_matrix, seed, n_bars)
+            selected = [filtered[i] for i in selected_idx]
 
     manifest = {
         "strategy": strategy,
