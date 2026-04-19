@@ -17,8 +17,9 @@ version: 2
 # dj       = DJ single-deck (base + subloops + oneshots per quadrant)
 # dual-deck = two Launchpad Pros, one song each
 # session  = v0 compat (4 audio tracks × 16 clip slots)
+# Active layout — switch between modes here
 layout:
-  mode: stems
+  mode: loops-only          # loops-only | stems | dj | dual-deck | session
   pad_grid: 8x8
   quadrant_size: 4x4
 

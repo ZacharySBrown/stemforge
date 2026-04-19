@@ -74,6 +74,12 @@ def run(
     if curation_config is None:
         curation_config = CurationConfig()
 
+    # loops-only mode: override all stems to 16 loops, 0 oneshots
+    is_loops_only = curation_config.layout.mode == "loops-only"
+    if is_loops_only and json_events:
+        emit({"event": "progress", "phase": "config", "pct": 0,
+              "message": "loops-only mode: 16 bar loops per stem, no one-shots"})
+
     if not stems:
         if json_events:
             emit({"event": "error", "phase": "curate", "message": f"No stems found in {stems_dir}"})
@@ -134,6 +140,25 @@ def run(
 
     # Check if all stems share the same phrase_bars — enables mirroring
     stem_configs = {s: curation_config.for_stem(s) for s in stems}
+
+    # In loops-only mode, override all stems to 16 loops, 0 one-shots
+    if is_loops_only:
+        from stemforge.config import StemCurationConfig
+        for s in stem_configs:
+            sc = stem_configs[s]
+            stem_configs[s] = StemCurationConfig(
+                phrase_bars=sc.phrase_bars,
+                loop_count=16,
+                oneshot_count=0,
+                strategy=sc.strategy,
+                oneshot_mode="diverse",
+                chromatic=False,
+                midi_extract=False,
+                rms_floor=sc.rms_floor,
+                crest_min=sc.crest_min,
+                distance_weights=sc.distance_weights,
+                processing=sc.processing,
+            )
     phrase_bars_set = {sc.phrase_bars for sc in stem_configs.values()}
     all_same_phrase = len(phrase_bars_set) == 1 and next(iter(phrase_bars_set)) == 1
 
@@ -319,8 +344,14 @@ def run(
 
             curated_manifest["stems"][stem_name] = stem_bars
 
-    # Step 5: Extract one-shots per stem (if configured)
+    # Step 5: Extract one-shots per stem (if configured, skip in loops-only mode)
+    if is_loops_only and json_events:
+        emit({"event": "progress", "phase": "oneshots", "pct": 80,
+              "message": "loops-only mode: skipping one-shot extraction"})
+
     for stem_name, stem_path in stems.items():
+        if is_loops_only:
+            continue  # skip one-shots entirely
         sc = stem_configs[stem_name]
         if sc.oneshot_count <= 0:
             continue

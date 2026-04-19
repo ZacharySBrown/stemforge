@@ -469,12 +469,23 @@ function _loadCuratedV2(mf) {
             var loops = data.loops || data;
             var oneshots = data.oneshots || [];
 
-            // Loops → pads 8-15 (top 2 rows)
-            if (Array.isArray(loops)) {
+            if (Array.isArray(loops) && oneshots.length === 0 && loops.length > 8) {
+                // Loops-only mode: spread all loops across all 16 pads
+                // Pad order: 0-3 (row 1), 4-7 (row 2), 8-11 (row 3), 12-15 (row 4)
+                for (var li = 0; li < loops.length && li < 16; li++) {
+                    var loop = loops[li];
+                    if (loop && loop.file) {
+                        if (loadSimplerSample(trackIdx, li, loop.file, true)) {
+                            loaded++;
+                        }
+                    }
+                }
+            } else if (Array.isArray(loops)) {
+                // Mixed mode: loops → pads 8-15 (top 2 rows)
                 for (var li = 0; li < loops.length && li < 8; li++) {
                     var loop = loops[li];
                     if (loop && loop.file) {
-                        var loopPad = 8 + li;  // pads 8-15
+                        var loopPad = 8 + li;
                         if (loadSimplerSample(trackIdx, loopPad, loop.file, true)) {
                             loaded++;
                         }
@@ -482,7 +493,7 @@ function _loadCuratedV2(mf) {
                 }
             }
 
-            // One-shots → pads 0-7 (bottom 2 rows)
+            // One-shots → pads 0-7 (bottom 2 rows) — only when present
             for (var oi = 0; oi < oneshots.length && oi < 8; oi++) {
                 var os = oneshots[oi];
                 if (os && os.file) {
