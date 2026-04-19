@@ -96,6 +96,7 @@ class StemCurationConfig:
     chromatic: bool = False
     midi_extract: bool = False
     midi_quantize: str = "1/16"
+    bottom_mode: str = "melodic"    # melodic | scale | reconstruct
     chromatic_root: str = "auto"
     rms_floor: float = 0.005
     crest_min: float = 4.0
@@ -170,6 +171,7 @@ def load_curation_config(path: str | Path | None = None) -> CurationConfig:
             chromatic=merged.get("chromatic", False),
             midi_extract=merged.get("midi_extract", False),
             midi_quantize=merged.get("midi_quantize", "1/16"),
+            bottom_mode=merged.get("bottom_mode", "melodic"),
             chromatic_root=merged.get("chromatic_root", "auto"),
             rms_floor=merged.get("rms_floor", 0.005),
             crest_min=merged.get("crest_min", 4.0),

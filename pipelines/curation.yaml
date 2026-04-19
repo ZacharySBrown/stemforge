@@ -44,11 +44,12 @@ stems:
   bass:
     phrase_bars: 2            # 2-bar grooves
     loop_count: 4
-    oneshot_count: 4
+    oneshot_count: 0          # bottom 12 pads used for chromatic/scale/MIDI
     strategy: max-diversity
     oneshot_mode: diverse
     midi_extract: true        # pitch detection → Sampler + MIDI clips
     midi_quantize: "1/16"
+    bottom_mode: melodic      # melodic (12 chromatic + 4 loops) | scale (8 in-key + 8 loops) | reconstruct (4 chrom + 4 MIDI + 8 loops)
     chromatic: true
     chromatic_root: auto      # auto-detect from pyin, or specify e.g. "C2"
     rms_floor: 0.003
