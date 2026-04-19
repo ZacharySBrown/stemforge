@@ -672,5 +672,63 @@ def forge(audio_file, analysis, backend, model, strategy, n_bars, time_sig, outp
          bars=len(selected_indices))
 
 
+@cli.command()
+@click.argument("input_path", type=click.Path(exists=True, path_type=Path))
+@click.option("--target", "-t", required=True,
+              type=click.Choice(["ep133", "chompi", "both"]),
+              help="Target device.")
+@click.option("--workflow", "-w", default="compose",
+              type=click.Choice(["compose", "perform"]),
+              help="compose=single track deep, perform=multi-track curated.")
+@click.option("--output", "-o", default=None, type=click.Path(path_type=Path),
+              help="Output directory.")
+@click.option("--budget", is_flag=True, default=False,
+              help="EP-133: render at 22050 Hz to double memory capacity.")
+@click.option("--firmware", default="tempo",
+              type=click.Choice(["tempo", "tape"]),
+              help="Chompi firmware variant.")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Show plan without writing files.")
+def export(input_path, target, workflow, output, budget, firmware, dry_run):
+    """
+    Export stems/slices for hardware samplers.
+
+    \b
+    Examples:
+      stemforge export track_dir/ --target ep133 --workflow compose
+      stemforge export processed/ --target chompi --workflow perform
+      stemforge export track_dir/ --target both --workflow compose
+      stemforge export track_dir/ --target ep133 --workflow compose --budget
+    """
+    from .exporters.ep133 import EP133Exporter
+    from .exporters.chompi import ChompiExporter
+
+    if output is None:
+        output = Path("./export")
+
+    is_single_track = (input_path / "drums.wav").exists()
+    targets = ["ep133", "chompi"] if target == "both" else [target]
+
+    for tgt in targets:
+        if tgt == "ep133":
+            exporter = EP133Exporter(budget=budget)
+        else:
+            exporter = ChompiExporter(firmware=firmware)
+
+        tgt_output = output / tgt
+        if dry_run:
+            console.print(f"[dim]DRY RUN: {tgt} {workflow} → {tgt_output}[/dim]")
+            continue
+
+        if workflow == "compose" and is_single_track:
+            manifest = exporter.export_compose(input_path, tgt_output)
+        elif workflow == "perform" or not is_single_track:
+            manifest = exporter.export_perform(input_path, tgt_output)
+        else:
+            manifest = exporter.export_compose(input_path, tgt_output)
+
+        console.print(f"  [green]OK[/green] {tgt}: {len(manifest.slots)} slots → {tgt_output}")
+
+
 if __name__ == "__main__":
     cli()
