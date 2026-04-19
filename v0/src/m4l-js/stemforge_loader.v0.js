@@ -303,7 +303,24 @@ function loadFromDict() {
     catch (e) { status("loadFromDict: parse error: " + e); return; }
 
     status("loaded manifest from dict: " + dictName);
-    _loadCuratedManifest(mf);
+
+    // Dispatch to v2 loader if manifest has v2 markers (oneshots, quadrants, or version=2)
+    var isV2 = mf.version === 2 || mf.quadrants;
+    if (!isV2 && mf.stems) {
+        // Check if any stem has loops/oneshots dict format (v2) vs flat array (v1)
+        for (var key in mf.stems) {
+            if (mf.stems[key] && typeof mf.stems[key] === "object" && !Array.isArray(mf.stems[key])) {
+                isV2 = true;
+                break;
+            }
+        }
+    }
+
+    if (isV2) {
+        _loadCuratedV2(mf);
+    } else {
+        _loadCuratedManifest(mf);
+    }
 }
 
 // ── v2 Quadrant Loader (Drum Rack mode) ──────────────────────────────────────
@@ -358,7 +375,10 @@ function _loadCuratedV2(mf) {
     var stemData = mf.quadrants || mf.stems;
     if (!stemData) { status("v2 manifest has no stems or quadrants"); return; }
 
+    var songName = mf.track || "stemforge";
     var loaded = 0;
+    var stemTrackIndices = [];
+
     for (var si = 0; si < BAR_TRACK_ORDER.length; si++) {
         var stemName = BAR_TRACK_ORDER[si];
         var data = stemData[stemName];
@@ -372,7 +392,7 @@ function _loadCuratedV2(mf) {
         if (templateIdx >= 0) {
             // Duplicate the template
             trackIdx = duplicateTrack(templateIdx);
-            var label = stemName + " Rack | " + (mf.track || "stemforge");
+            var label = stemName + " Rack | " + songName;
             renameTrack(trackIdx, label, BAR_TRACK_COLORS[stemName]);
         } else {
             // No template — create a bare MIDI track
@@ -382,6 +402,7 @@ function _loadCuratedV2(mf) {
                         BAR_TRACK_COLORS[stemName]);
             status("  " + stemName + ": no Drum Rack template — created bare MIDI track");
         }
+        stemTrackIndices.push(trackIdx);
 
         // Load pads from quadrant data (layout manifest format)
         if (data.pads) {
