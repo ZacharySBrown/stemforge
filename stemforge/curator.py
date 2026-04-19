@@ -39,6 +39,7 @@ class BeatProfile:
     spectral_flatness: float = 0.0
     rhythm_fingerprint: tuple = ()
     energy_curve: list = field(default_factory=list)
+    content_density: float = 0.0  # fraction of frames with energy above threshold
 
 
 def load_mono(path: Path) -> tuple[np.ndarray, int]:
@@ -96,6 +97,25 @@ def compute_energy_curve(audio: np.ndarray, n_segments: int = 8) -> list[float]:
     ]
 
 
+def compute_content_density(audio: np.ndarray, sr: int, rms_threshold: float = 0.01) -> float:
+    """Fraction of short frames (20ms) with RMS above threshold.
+
+    A bar that's 80% silence with one loud hit might have decent overall RMS
+    but low content density. This catches the "sparse stab in silence" pattern.
+    """
+    frame_len = max(1, int(0.02 * sr))  # 20ms frames
+    n_frames = len(audio) // frame_len
+    if n_frames == 0:
+        return 0.0
+    active = 0
+    for i in range(n_frames):
+        frame = audio[i * frame_len:(i + 1) * frame_len]
+        frame_rms = float(np.sqrt(np.mean(frame ** 2)))
+        if frame_rms >= rms_threshold:
+            active += 1
+    return active / n_frames
+
+
 def spectral_features(audio: np.ndarray, sr: int) -> dict:
     n_fft = min(2048, len(audio))
     if n_fft < 64:
@@ -127,6 +147,7 @@ def analyze_beat(path: Path, index: int) -> BeatProfile:
     spec = spectral_features(audio, sr)
     fingerprint = compute_rhythm_fingerprint(onsets, duration, grid_size=16)
     energy = compute_energy_curve(audio, n_segments=8)
+    density = compute_content_density(audio, sr)
 
     return BeatProfile(
         path=path, index=index,
@@ -140,6 +161,7 @@ def analyze_beat(path: Path, index: int) -> BeatProfile:
         spectral_flatness=spec["flatness"],
         rhythm_fingerprint=fingerprint,
         energy_curve=energy,
+        content_density=density,
     )
 
 
@@ -334,6 +356,7 @@ def section_stratified_select(
     bar_times: np.ndarray | None = None,
     rms_floor: float = 0.005,
     crest_min: float = 4.0,
+    content_density_min: float = 0.0,
     distance_weights: dict[str, float] | None = None,
 ) -> list[Path]:
     """
@@ -350,7 +373,8 @@ def section_stratified_select(
     if not all_files or not song_structure or not song_structure.segments:
         # No structure — fall back to regular curate
         return curate(beat_dir, n_bars=n_bars, rms_floor=rms_floor,
-                      crest_min=crest_min, distance_weights=distance_weights)
+                      crest_min=crest_min, content_density_min=content_density_min,
+                      distance_weights=distance_weights)
 
     # Map each bar file to its section by index
     # Bar files are named stem_bar_NNN.wav or stem_phrase_NNN.wav
@@ -368,7 +392,8 @@ def section_stratified_select(
 
     if not file_by_section:
         return curate(beat_dir, n_bars=n_bars, rms_floor=rms_floor,
-                      crest_min=crest_min, distance_weights=distance_weights)
+                      crest_min=crest_min, content_density_min=content_density_min,
+                      distance_weights=distance_weights)
 
     # Allocate slots per section proportional to file count, at least 1 each
     total_files = sum(len(fs) for fs in file_by_section.values())
@@ -410,6 +435,7 @@ def section_stratified_select(
         section_selected = curate(
             section_pool, n_bars=slots,
             rms_floor=rms_floor, crest_min=crest_min,
+            content_density_min=content_density_min,
             distance_weights=distance_weights,
         )
         # Map temp paths back to original source paths
@@ -428,12 +454,17 @@ def curate(
     strategy: str = "max-diversity",
     rms_floor: float = 0.005,
     crest_min: float = 4.0,
+    content_density_min: float = 0.0,
     distance_weights: dict[str, float] | None = None,
     song_structure: "SongStructure | None" = None,
 ) -> list[Path]:
     """
-    Analyze every WAV in `beat_dir`, filter by rms_floor and crest_min,
-    then select `n_bars` bars using the specified strategy.
+    Analyze every WAV in `beat_dir`, filter by rms_floor, crest_min, and
+    content_density_min, then select `n_bars` bars using the specified strategy.
+
+    content_density_min filters bars where less than this fraction of 20ms frames
+    have energy above the RMS threshold. Catches "sparse stab in silence" bars
+    that pass overall RMS but are mostly empty.
 
     Strategies:
       - max-diversity: Greedy farthest-point in feature space (default)
@@ -460,7 +491,15 @@ def curate(
     if not profiles:
         return []
 
-    filtered = [p for p in profiles if p.rms >= rms_floor and p.crest_factor >= crest_min]
+    filtered = [
+        p for p in profiles
+        if p.rms >= rms_floor
+        and p.crest_factor >= crest_min
+        and p.content_density >= content_density_min
+    ]
+    if not filtered:
+        # Relax content_density first, then crest, then take everything
+        filtered = [p for p in profiles if p.rms >= rms_floor and p.content_density >= content_density_min]
     if not filtered:
         filtered = [p for p in profiles if p.rms >= rms_floor] or profiles
 
@@ -494,6 +533,7 @@ def curate(
         "n_bars": n_bars,
         "rms_floor": rms_floor,
         "crest_min": crest_min,
+        "content_density_min": content_density_min,
         "total_analyzed": len(profiles),
         "total_after_filter": len(filtered),
         "bars": [
@@ -504,6 +544,7 @@ def curate(
                 "source_index": selected[i].index,
                 "feature_vector": feature_matrix[selected_idx[i]].tolist() if len(feature_matrix) else [],
                 "rms": round(selected[i].rms, 6),
+                "content_density": round(selected[i].content_density, 3),
                 "crest_factor": round(selected[i].crest_factor, 3),
                 "onset_count": selected[i].onset_count,
                 "onset_density": round(selected[i].onset_density, 3),

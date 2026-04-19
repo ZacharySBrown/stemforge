@@ -305,11 +305,17 @@ function loadFromDict() {
     status("loaded manifest from dict: " + dictName);
 
     // Dispatch to v2 loader if manifest has v2 markers (oneshots, quadrants, or version=2)
-    var isV2 = mf.version === 2 || mf.quadrants;
-    if (!isV2 && mf.stems) {
-        // Check if any stem has loops/oneshots dict format (v2) vs flat array (v1)
+    // Detect v2 format by stem DATA shape, not version number.
+    // v1: stems are flat arrays of {file, position, ...}
+    // v2: stems are dicts with {loops: [...], oneshots: [...]}
+    // quadrants field = always v2
+    var isV2 = false;
+    if (mf.quadrants) {
+        isV2 = true;
+    } else if (mf.stems) {
         for (var key in mf.stems) {
-            if (mf.stems[key] && typeof mf.stems[key] === "object" && !Array.isArray(mf.stems[key])) {
+            var val = mf.stems[key];
+            if (val && typeof val === "object" && !Array.isArray(val) && (val.loops || val.oneshots)) {
                 isV2 = true;
                 break;
             }
@@ -317,8 +323,10 @@ function loadFromDict() {
     }
 
     if (isV2) {
+        status("detected v2 manifest (loops+oneshots) → Drum Rack loader");
         _loadCuratedV2(mf);
     } else {
+        status("detected v1 manifest (flat bars) → clip slot loader");
         _loadCuratedManifest(mf);
     }
 }

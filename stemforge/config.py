@@ -100,6 +100,7 @@ class StemCurationConfig:
     chromatic_root: str = "auto"
     rms_floor: float = 0.005
     crest_min: float = 4.0
+    content_density_min: float = 0.0  # fraction of 20ms frames with energy above rms threshold
     distance_weights: dict = field(default_factory=lambda: {
         "rhythm": 0.5, "spectral": 0.25, "energy": 0.25
     })
@@ -175,6 +176,7 @@ def load_curation_config(path: str | Path | None = None) -> CurationConfig:
             chromatic_root=merged.get("chromatic_root", "auto"),
             rms_floor=merged.get("rms_floor", 0.005),
             crest_min=merged.get("crest_min", 4.0),
+            content_density_min=merged.get("content_density_min", 0.0),
             distance_weights=merged.get("distance_weights", defaults.get("distance_weights", {})),
             processing=merged.get("processing", [{"pipeline": "default"}]),
         )

@@ -33,8 +33,9 @@ stems:
     oneshot_mode: classify    # classify | diverse | loudest
     chromatic: false
     midi_extract: false
-    rms_floor: 0.005
+    rms_floor: 0.01
     crest_min: 4.0
+    content_density_min: 0.15  # drums are punchy; even sparse bars have some active frames
     distance_weights:
       rhythm: 0.6
       spectral: 0.2
@@ -43,7 +44,7 @@ stems:
       - pipeline: default
 
   bass:
-    phrase_bars: 2            # 2-bar grooves
+    phrase_bars: 1            # single bars — 2-bar phrases had too many half-silent second bars
     loop_count: 4
     oneshot_count: 0          # bottom 12 pads used for chromatic/scale/MIDI
     strategy: max-diversity
@@ -53,8 +54,9 @@ stems:
     bottom_mode: melodic      # melodic (12 chromatic + 4 loops) | scale (8 in-key + 8 loops) | reconstruct (4 chrom + 4 MIDI + 8 loops)
     chromatic: true
     chromatic_root: auto      # auto-detect from pyin, or specify e.g. "C2"
-    rms_floor: 0.003
+    rms_floor: 0.01
     crest_min: 2.0
+    content_density_min: 0.3  # bass is naturally sparse — but reject >70% silence
     distance_weights:
       rhythm: 0.3
       spectral: 0.4
@@ -70,8 +72,9 @@ stems:
     oneshot_mode: diverse
     midi_extract: false
     chromatic: false
-    rms_floor: 0.008
+    rms_floor: 0.02
     crest_min: 3.0
+    content_density_min: 0.3   # vocals must fill at least 30% of frames — reject instrumental sections
     distance_weights:
       rhythm: 0.2
       spectral: 0.5
@@ -87,8 +90,9 @@ stems:
     oneshot_mode: diverse
     midi_extract: false
     chromatic: false
-    rms_floor: 0.003
+    rms_floor: 0.015
     crest_min: 2.0
+    content_density_min: 0.2   # reject bars that are mostly ambient noise
     distance_weights:
       rhythm: 0.3
       spectral: 0.4
@@ -122,8 +126,9 @@ defaults:
   oneshot_mode: diverse
   chromatic: false
   midi_extract: false
-  rms_floor: 0.005
+  rms_floor: 0.01
   crest_min: 4.0
+  content_density_min: 0.15
   distance_weights:
     rhythm: 0.5
     spectral: 0.25

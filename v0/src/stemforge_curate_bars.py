@@ -160,7 +160,13 @@ def run(
                 processing=sc.processing,
             )
     phrase_bars_set = {sc.phrase_bars for sc in stem_configs.values()}
-    all_same_phrase = len(phrase_bars_set) == 1 and next(iter(phrase_bars_set)) == 1
+    # In loops-only mode, always use per-stem curation — mirroring from drums
+    # causes silent bars in non-drum stems (e.g. vocal bars from instrumental sections).
+    all_same_phrase = (
+        len(phrase_bars_set) == 1
+        and next(iter(phrase_bars_set)) == 1
+        and not is_loops_only
+    )
 
     curated_manifest = {
         "version": 2,
@@ -213,6 +219,7 @@ def run(
         selected_paths = curate(
             curation_pool, n_bars=n_bars, strategy=sc.strategy,
             rms_floor=sc.rms_floor, crest_min=sc.crest_min,
+            content_density_min=sc.content_density_min,
             distance_weights=sc.distance_weights,
         )
         shutil.rmtree(curation_pool, ignore_errors=True)
@@ -320,6 +327,7 @@ def run(
                     song_structure=song_structure,
                     rms_floor=sc.rms_floor,
                     crest_min=sc.crest_min,
+                    content_density_min=sc.content_density_min,
                     distance_weights=sc.distance_weights,
                 )
             else:
@@ -329,6 +337,7 @@ def run(
                     strategy=sc.strategy,
                     rms_floor=sc.rms_floor,
                     crest_min=sc.crest_min,
+                    content_density_min=sc.content_density_min,
                     distance_weights=sc.distance_weights,
                 )
 

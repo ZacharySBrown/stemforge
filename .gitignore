@@ -38,3 +38,7 @@ v0/build/**
 !v0/build/stemforge-debug.maxpat
 # Track D output — Ableton Live Set template (small, checked in as build artifact).
 !v0/build/StemForge.als
+grooves.zip
+grooves/
+.env
+zak@mini

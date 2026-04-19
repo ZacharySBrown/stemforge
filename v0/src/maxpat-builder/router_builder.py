@@ -55,7 +55,8 @@ def build_router_patcher() -> dict[str, Any]:
 
     boxes.append(_box(
         "obj-router", "newobj", (20, 60, 280, 22),
-        numinlets=1, numoutlets=1, outlettype=["int"],
+        numinlets=1, numoutlets=1,
+        outlettype=["int"],
         extras={
             "text": "js stemforge_quadrant_router.js",
             "saved_object_attributes": {
@@ -66,6 +67,8 @@ def build_router_patcher() -> dict[str, Any]:
     ))
     lines.append(_line("obj-midiin", 0, "obj-router", 0))
 
+    # Single outlet → midiout → downstream Instrument Rack splits by key zone
+    # Q1 (drums): notes 36-51, Q2 (bass): 52-67, Q3 (vocals): 68-83, Q4 (other): 84-99
     boxes.append(_box(
         "obj-midiout", "newobj", (20, 100, 80, 22),
         numinlets=1, numoutlets=0,
@@ -118,6 +121,27 @@ def build_router_patcher() -> dict[str, Any]:
             "gridsize": [8.0, 8.0],
             "boxes": boxes,
             "lines": lines,
+            "project": {
+                "version": 1,
+                "creationdate": 3590052493,
+                "modificationdate": 3590052493,
+                "viewrect": [0.0, 0.0, 300.0, 500.0],
+                "autoorganize": 1,
+                "hideprojectwindow": 1,
+                "showdependencies": 1,
+                "autolocalize": 0,
+                "contents": {"patchers": {}, "code": {}},
+                "layout": {},
+                "searchpath": {},
+                "detailsvisible": 0,
+                "amxdtype": 1633771873,
+                "readonly": 0,
+                "devpathtype": 0,
+                "devpath": ".",
+                "sortmode": 0,
+                "viewmode": 0,
+                "includepackages": 0,
+            },
             "dependency_cache": [
                 {
                     "name": "stemforge_quadrant_router.js",
