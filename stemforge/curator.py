@@ -233,9 +233,9 @@ def _feature_vector(p: BeatProfile, weights: dict[str, float] | None = None) -> 
     fp = np.array(p.rhythm_fingerprint, dtype=float) if p.rhythm_fingerprint else np.zeros(16)
     # Scale feature groups by their weights so GFP respects the balance
     spectral = np.array([p.spectral_centroid, p.spectral_bandwidth], dtype=float) * w_s
-    # Early onset bonus: bars starting with a hit score higher
+    # Mild early onset bonus: slightly prefer bars starting with a hit
     onset_ratio = min(p.first_onset_time / (p.duration + 1e-10), 1.0)
-    early_bonus = (1.0 - onset_ratio) * w_e  # scales with energy weight
+    early_bonus = (1.0 - onset_ratio) * w_e * 0.4  # 40% weight — diversity still dominates
     transient = np.array([p.crest_factor, p.onset_density, early_bonus], dtype=float) * w_e
     rhythm = fp * w_r
     return np.concatenate([spectral, transient, rhythm])
@@ -531,12 +531,11 @@ def curate(
             selected_idx = list(range(len(filtered)))
         else:
             feature_matrix = _znorm(np.array([_feature_vector(p, distance_weights) for p in filtered]))
-            # Seed with a bar that's punchy AND starts with a hit
-            # Score = crest_factor * early_onset_bonus (1.0 if onset at 0, decays with delay)
+            # Seed: mostly crest factor, mild early-onset tiebreaker
             def _seed_score(p):
                 onset_ratio = min(p.first_onset_time / (p.duration + 1e-10), 1.0)
-                early_bonus = 1.0 - onset_ratio  # 1.0 = starts immediately, 0.0 = all silence
-                return p.crest_factor * (0.5 + 0.5 * early_bonus)
+                early_bonus = 1.0 - onset_ratio
+                return p.crest_factor * (0.85 + 0.15 * early_bonus)
             seed = int(np.argmax([_seed_score(p) for p in filtered]))
             selected_idx = _greedy_farthest_point(feature_matrix, seed, n_bars)
             selected = [filtered[i] for i in selected_idx]
