@@ -113,7 +113,7 @@ function renameTrack(idx, name, color) {
     }
 }
 
-function loadClip(trackIdx, slotIdx, wavPath, clipName) {
+function loadClip(trackIdx, slotIdx, wavPath, clipName, startMarkerBeats) {
     var csPath = "live_set tracks " + trackIdx + " clip_slots " + slotIdx;
     var cs = new LiveAPI(csPath);
     try {
@@ -128,6 +128,13 @@ function loadClip(trackIdx, slotIdx, wavPath, clipName) {
             clip.set("name", String(clipName));
             clip.set("warping", 1);
             clip.set("looping", 1);
+            // Set start marker to first transient (skip leading silence)
+            if (startMarkerBeats && startMarkerBeats > 0.05) {
+                try {
+                    clip.set("start_marker", startMarkerBeats);
+                    clip.set("loop_start", startMarkerBeats);
+                } catch (_) {}
+            }
         }
     } catch (_) {}
     return true;
@@ -395,7 +402,8 @@ function _loadProductionMode(mf) {
             var loop = drumsLoops[i];
             if (loop && loop.file) {
                 var clipName = "drums bar " + (loop.position || (i + 1));
-                if (loadClip(drumsTrackIdx, i, loop.file, clipName)) loaded++;
+                var startBeat = loop.first_transient_beats || 0;
+                if (loadClip(drumsTrackIdx, i, loop.file, clipName, startBeat)) loaded++;
             }
         }
         status("  Drums Loops: " + Math.min(drumsLoops.length, 16) + " clips");
@@ -451,7 +459,8 @@ function _loadProductionMode(mf) {
             var item = loops[li];
             if (item && item.file) {
                 var name = stemName + " bar " + (item.position || (li + 1));
-                if (loadClip(stemTrackIdx, li, item.file, name)) {
+                var startBeat = item.first_transient_beats || 0;
+                if (loadClip(stemTrackIdx, li, item.file, name, startBeat)) {
                     // Set warp mode
                     try {
                         var clipApi = new LiveAPI(
