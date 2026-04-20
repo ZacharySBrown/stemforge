@@ -689,7 +689,11 @@ def forge(audio_file, analysis, backend, model, strategy, n_bars, time_sig, outp
               help="Chompi firmware variant.")
 @click.option("--dry-run", is_flag=True, default=False,
               help="Show plan without writing files.")
-def export(input_path, target, workflow, output, budget, firmware, dry_run):
+@click.option("--upload", is_flag=True, default=False,
+              help="EP-133: upload samples via USB-MIDI SysEx after export.")
+@click.option("--start-slot", default=1, type=int,
+              help="EP-133: starting sound slot for upload (default: 1).")
+def export(input_path, target, workflow, output, budget, firmware, dry_run, upload, start_slot):
     """
     Export stems/slices for hardware samplers.
 
@@ -728,6 +732,11 @@ def export(input_path, target, workflow, output, budget, firmware, dry_run):
             manifest = exporter.export_compose(input_path, tgt_output)
 
         console.print(f"  [green]OK[/green] {tgt}: {len(manifest.slots)} slots → {tgt_output}")
+
+        # Upload to EP-133 if requested
+        if upload and tgt == "ep133":
+            from .exporters.ep133_upload import upload_export
+            upload_export(tgt_output, start_slot=start_slot, dry_run=dry_run)
 
 
 if __name__ == "__main__":
