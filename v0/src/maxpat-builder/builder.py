@@ -295,6 +295,52 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     lines.append(_line(OBJ_LOAD_SEQ, 0, OBJ_LOAD_DICT_MSG, 0))
     lines.append(_line(OBJ_LOAD_DICT_MSG, 0, OBJ_LOADER, 0))
 
+    # --- Reload Templates button ---
+    rb = elements_by_id["reload_button"]
+    OBJ_RELOAD_BTN = "obj-reload-btn"
+    boxes.append(
+        _box(
+            OBJ_RELOAD_BTN,
+            "textbutton",
+            (rb["pos"]["x"], rb["pos"]["y"], rb["size"]["width"], rb["size"]["height"]),
+            presentation=True,
+            numinlets=1,
+            numoutlets=3,
+            outlettype=["", "", "int"],
+            extras={
+                "text": rb.get("label", "Reload"),
+                "fontsize": 11.0,
+            },
+        )
+    )
+    OBJ_RELOAD_TRIGGER = "obj-reload-trigger"
+    boxes.append(
+        _box(
+            OBJ_RELOAD_TRIGGER,
+            "newobj",
+            (rb["pos"]["x"] + rb["size"]["width"] + 8, rb["pos"]["y"] + 4, 30.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=["bang"],
+            extras={"text": "t b"},
+        )
+    )
+    lines.append(_line(OBJ_RELOAD_BTN, 0, OBJ_RELOAD_TRIGGER, 0))
+    OBJ_RELOAD_MSG = "obj-reload-msg"
+    boxes.append(
+        _box(
+            OBJ_RELOAD_MSG,
+            "message",
+            (rb["pos"]["x"], rb["pos"]["y"] + rb["size"]["height"] + 4, 120.0, 22.0),
+            numinlets=2,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "reloadTemplates"},
+        )
+    )
+    lines.append(_line(OBJ_RELOAD_TRIGGER, 0, OBJ_RELOAD_MSG, 0))
+    lines.append(_line(OBJ_RELOAD_MSG, 0, OBJ_LOADER, 0))
+
     # --- Backend dropdown (umenu) ---
     be = elements_by_id["backend"]
     boxes.append(

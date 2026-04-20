@@ -64,6 +64,13 @@ ui:
       pos: { x: 96, y: 28 }
       size: { width: 72, height: 24 }
 
+    - id: reload_button
+      type: button
+      label: "Reload"
+      action: reload_templates
+      pos: { x: 176, y: 28 }
+      size: { width: 72, height: 24 }
+
     - id: split_button
       type: button
       label: "Split"
