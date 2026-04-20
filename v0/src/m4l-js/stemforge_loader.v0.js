@@ -128,13 +128,9 @@ function loadClip(trackIdx, slotIdx, wavPath, clipName, startMarkerBeats) {
             clip.set("name", String(clipName));
             clip.set("warping", 1);
             clip.set("looping", 1);
-            // Set start marker to first transient (skip leading silence)
-            if (startMarkerBeats && startMarkerBeats > 0.05) {
-                try {
-                    clip.set("start_marker", startMarkerBeats);
-                    clip.set("loop_start", startMarkerBeats);
-                } catch (_) {}
-            }
+            // Note: start_marker adjustment removed — shifting clip start
+            // breaks sync. Instead, the curator now boosts bars with early
+            // transients during selection (prefer bars that start with a hit).
         }
     } catch (_) {}
     return true;

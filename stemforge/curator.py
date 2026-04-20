@@ -40,6 +40,7 @@ class BeatProfile:
     rhythm_fingerprint: tuple = ()
     energy_curve: list = field(default_factory=list)
     content_density: float = 0.0  # fraction of frames with energy above threshold
+    first_onset_time: float = 0.0  # seconds to first transient (0 = starts with a hit)
 
 
 def load_mono(path: Path) -> tuple[np.ndarray, int]:
@@ -149,6 +150,8 @@ def analyze_beat(path: Path, index: int) -> BeatProfile:
     energy = compute_energy_curve(audio, n_segments=8)
     density = compute_content_density(audio, sr)
 
+    first_onset = onsets[0] if onsets else duration  # no onsets = all silence
+
     return BeatProfile(
         path=path, index=index,
         duration=duration,
@@ -159,6 +162,7 @@ def analyze_beat(path: Path, index: int) -> BeatProfile:
         spectral_centroid=spec["centroid"],
         spectral_bandwidth=spec["bandwidth"],
         spectral_flatness=spec["flatness"],
+        first_onset_time=first_onset,
         rhythm_fingerprint=fingerprint,
         energy_curve=energy,
         content_density=density,
@@ -229,7 +233,10 @@ def _feature_vector(p: BeatProfile, weights: dict[str, float] | None = None) -> 
     fp = np.array(p.rhythm_fingerprint, dtype=float) if p.rhythm_fingerprint else np.zeros(16)
     # Scale feature groups by their weights so GFP respects the balance
     spectral = np.array([p.spectral_centroid, p.spectral_bandwidth], dtype=float) * w_s
-    transient = np.array([p.crest_factor, p.onset_density], dtype=float) * w_e
+    # Early onset bonus: bars starting with a hit score higher
+    onset_ratio = min(p.first_onset_time / (p.duration + 1e-10), 1.0)
+    early_bonus = (1.0 - onset_ratio) * w_e  # scales with energy weight
+    transient = np.array([p.crest_factor, p.onset_density, early_bonus], dtype=float) * w_e
     rhythm = fp * w_r
     return np.concatenate([spectral, transient, rhythm])
 
@@ -524,7 +531,13 @@ def curate(
             selected_idx = list(range(len(filtered)))
         else:
             feature_matrix = _znorm(np.array([_feature_vector(p, distance_weights) for p in filtered]))
-            seed = int(np.argmax([p.crest_factor for p in filtered]))
+            # Seed with a bar that's punchy AND starts with a hit
+            # Score = crest_factor * early_onset_bonus (1.0 if onset at 0, decays with delay)
+            def _seed_score(p):
+                onset_ratio = min(p.first_onset_time / (p.duration + 1e-10), 1.0)
+                early_bonus = 1.0 - onset_ratio  # 1.0 = starts immediately, 0.0 = all silence
+                return p.crest_factor * (0.5 + 0.5 * early_bonus)
+            seed = int(np.argmax([_seed_score(p) for p in filtered]))
             selected_idx = _greedy_farthest_point(feature_matrix, seed, n_bars)
             selected = [filtered[i] for i in selected_idx]
 
