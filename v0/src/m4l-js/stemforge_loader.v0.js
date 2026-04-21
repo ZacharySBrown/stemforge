@@ -28,7 +28,7 @@
 
 autowatch = 1;
 inlets = 1;
-outlets = 2;   // 0: status text, 1: bang on completion
+outlets = 3;   // 0: status text, 1: bang on completion, 2: preset umenu control
 
 var STEM_TARGETS = {
     // From v0/interfaces/tracks.yaml — mirrored in JS because the template
@@ -338,124 +338,6 @@ function loadFromDict() {
     }
 }
 
-// ── Production Mode Loader ───────────────────────────────────────────────────
-// Creates a 5-track group per song:
-//   1. Drums Loops   — audio track, 16 clip slots
-//   2. Drums Rack    — MIDI track, Drum Rack with classified one-shots
-//   3. Bass Loops    — audio track, 16 clip slots
-//   4. Vocals Loops  — audio track, 16 clip slots
-//   5. Other Loops   — audio track, 16 clip slots
-
-var PRODUCTION_STEM_ORDER = ["drums", "bass", "vocals", "other"];
-
-function _loadProductionMode(mf) {
-    if (mf.bpm) {
-        try { new LiveAPI("live_set").set("tempo", Number(mf.bpm)); } catch (_) {}
-        status("tempo → " + mf.bpm + " BPM");
-    }
-
-    var stemData = mf.stems;
-    if (!stemData) { status("production manifest has no stems"); return; }
-
-    var songName = mf.track || "stemforge";
-    var loaded = 0;
-
-    // Step 1: Duplicate the Drums Rack template FIRST (before creating audio tracks)
-    // This must happen while the template is still findable by name.
-    var drumRackIdx = -1;
-    var drumsData = stemData["drums"];
-    var drumsOneshots = [];
-    if (drumsData && typeof drumsData === "object" && !Array.isArray(drumsData)) {
-        drumsOneshots = drumsData.oneshots || [];
-    }
-
-    if (drumsOneshots.length > 0) {
-        var drumRackTemplate = findTrackByName("SF | Drums Rack");
-        if (drumRackTemplate >= 0) {
-            drumRackIdx = duplicateTrack(drumRackTemplate);
-            renameTrack(drumRackIdx, "Drums Rack | " + songName, BAR_TRACK_COLORS["drums"]);
-
-            // Load one-shots into Simpler pads
-            for (var oi = 0; oi < drumsOneshots.length && oi < 16; oi++) {
-                var os = drumsOneshots[oi];
-                if (os && os.file) {
-                    if (loadSimplerSample(drumRackIdx, oi, os.file, false)) loaded++;
-                }
-            }
-            status("  Drums Rack: " + Math.min(drumsOneshots.length, 16) + " one-shots");
-        } else {
-            drumRackIdx = trackCount();
-            createMidiTrack(drumRackIdx);
-            renameTrack(drumRackIdx, "Drums Rack | " + songName + " (no template)", BAR_TRACK_COLORS["drums"]);
-            status("  Drums Rack: no SF | Drums Rack template found");
-        }
-    }
-
-    // Step 2: Create all audio tracks at the END of the track list
-    // This ensures they land OUTSIDE the template group
-    var insertAt = trackCount();
-
-    // Track: Drums Loops
-    if (drumsData) {
-        var drumsLoops = Array.isArray(drumsData) ? drumsData : (drumsData.loops || []);
-        createAudioTrack(insertAt);
-        var drumsTrackIdx = insertAt;
-        renameTrack(drumsTrackIdx, "Drums Loops | " + songName, BAR_TRACK_COLORS["drums"]);
-        insertAt++;
-
-        for (var i = 0; i < drumsLoops.length && i < 16; i++) {
-            var loop = drumsLoops[i];
-            if (loop && loop.file) {
-                var clipName = "drums bar " + (loop.position || (i + 1));
-                var startBeat = loop.first_transient_beats || 0;
-                if (loadClip(drumsTrackIdx, i, loop.file, clipName, startBeat)) loaded++;
-            }
-        }
-        status("  Drums Loops: " + Math.min(drumsLoops.length, 16) + " clips");
-    }
-
-    // Tracks: Bass, Vocals, Other loops
-    var loopStems = ["bass", "vocals", "other"];
-    for (var si = 0; si < loopStems.length; si++) {
-        var stemName = loopStems[si];
-        var data = stemData[stemName];
-        if (!data) continue;
-
-        var loops = Array.isArray(data) ? data : (data.loops || []);
-        createAudioTrack(insertAt);
-        var stemTrackIdx = insertAt;
-        insertAt++;
-
-        var stemCap = stemName.charAt(0).toUpperCase() + stemName.slice(1);
-        renameTrack(stemTrackIdx, stemCap + " Loops | " + songName, BAR_TRACK_COLORS[stemName]);
-
-        var warpMode = BAR_WARP_MODES[stemName] || 0;
-        for (var li = 0; li < loops.length && li < 16; li++) {
-            var item = loops[li];
-            if (item && item.file) {
-                var name = stemName + " bar " + (item.position || (li + 1));
-                var startBeat = item.first_transient_beats || 0;
-                if (loadClip(stemTrackIdx, li, item.file, name, startBeat)) {
-                    // Set warp mode
-                    try {
-                        var clipApi = new LiveAPI(
-                            "live_set tracks " + stemTrackIdx + " clip_slots " + li + " clip"
-                        );
-                        if (clipApi.id !== "0") {
-                            clipApi.set("warp_mode", warpMode);
-                        }
-                    } catch (_) {}
-                    loaded++;
-                }
-            }
-        }
-        status("  " + stemCap + " Loops: " + Math.min(loops.length, 16) + " clips");
-    }
-
-    status("production loader: " + loaded + " items loaded (5 tracks)");
-    outlet(1, "bang");
-}
-
 // ── v2 Quadrant Loader (Drum Rack mode) ──────────────────────────────────────
 // Creates 4 MIDI tracks with Drum Racks, loads samples into Simpler pads.
 // Each stem gets a 4×4 quadrant: loops on pads 8-15, one-shots on pads 0-7.
@@ -671,33 +553,6 @@ function loadV2FromDict() {
     _loadCuratedV2(mf);
 }
 
-// ── Song Loader (spec: stemforge_song_loader.md) ─────────────────────────────
-// Phase 1 (templates present): Load Song button active
-// Phase 2 (song loaded): Reload Templates button active
-//
-// Load Song: duplicate racks → create audio tracks → load clips/samples → delete templates
-// Reload Templates: create MIDI tracks → load .adg presets via browser API
-
-var TEMPLATE_NAMES = ["SF | Drums Rack", "SF | Bass Rack", "SF | Vocals Rack", "SF | Other Rack"];
-var TEMPLATE_ADG_PATHS = {
-    "SF | Drums Rack":  "StemForge/Templates/SF_DrumsRack",
-    "SF | Bass Rack":   "StemForge/Templates/SF_BassRack",
-    "SF | Vocals Rack": "StemForge/Templates/SF_VocalsRack",
-    "SF | Other Rack":  "StemForge/Templates/SF_OtherRack",
-};
-
-function detectPhase() {
-    // Phase 1 = all template tracks present, Phase 2 = templates deleted (song loaded)
-    var found = 0;
-    for (var i = 0; i < TEMPLATE_NAMES.length; i++) {
-        if (findTrackByName(TEMPLATE_NAMES[i]) >= 0) found++;
-    }
-    var phase = (found === TEMPLATE_NAMES.length) ? 1 : 2;
-    status("phase " + phase + " (" + found + "/4 templates present)");
-    outlet(0, "set", "phase " + phase);
-    return phase;
-}
-
 function ensureScenes(n) {
     // Ensure at least N scenes exist (for clip slots 0..N-1)
     var song = new LiveAPI("live_set");
@@ -708,23 +563,408 @@ function ensureScenes(n) {
     }
 }
 
-function deleteTrackByName(name) {
-    var idx = findTrackByName(name);
-    if (idx >= 0) {
-        try {
-            new LiveAPI("live_set").call("delete_track", idx);
-            return true;
-        } catch (e) {
-            status("  could not delete " + name + ": " + e);
+// ── Config-driven song loader (Live 12.3+) ──────────────────────────────────
+// Per specs/processing_config_spec.md: each stem has N targets, each target
+// creates one track with a type (clips/rack) and an optional effect chain.
+// Chains are either all native `insert` devices or a single `template` track.
+
+// Default processing config — embedded for immediate testability.
+// Future: loaded from pipelines/production_idm.json via a [dict].
+var PROCESSING_CONFIG = {
+    drums: {
+        targets: [
+            {
+                name: "loops", type: "clips", color: 0xFF4444,
+                params: { phrase_bars: 1, loop_count: 16 },
+                chain: []
+            },
+            {
+                name: "rack", type: "rack", color: 0xFF4444,
+                params: { oneshot_count: 16, oneshot_mode: "classify" },
+                chain: [
+                    { insert: "Compressor", params: { Threshold: 0.55, Ratio: 0.75 } }
+                ]
+            },
+            {
+                name: "crushed", type: "clips", color: 0x882222,
+                params: { phrase_bars: 1, loop_count: 16 },
+                chain: [
+                    { template: "decapitator_drums", macros: { Drive: 0.7, Punish: 0.5, Style: 0, OutputTrim: 0.5 } }
+                ]
+            },
+            {
+                name: "repeat", type: "clips", color: 0xCC3333,
+                params: { phrase_bars: 1, loop_count: 16 },
+                chain: [
+                    { insert: "Beat Repeat", params: { Chance: 0.7, Grid: 7, Variation: 5, "Variation Type": 4, "Pitch Decay": 0.4, Decay: 0.3, "Mix Type": 2, Gate: 8 } },
+                    { insert: "Compressor", params: { Threshold: 0.5, Ratio: 0.8 } }
+                ]
+            },
+            {
+                name: "echo", type: "clips", color: 0xAA4444,
+                params: { phrase_bars: 1, loop_count: 16 },
+                chain: [
+                    { insert: "Echo", params: { "L Synced": -4, "R Synced": -3, "L Sync Mode": 2, Feedback: 0.45, "Noise On": 1, "Noise Amt": 0.3, "Wobble On": 1, "Wobble Amt": 0.25, "Reverb Level": 0.2, "Reverb Loc": 2, "Dry Wet": 0.5 } }
+                ]
+            },
+            {
+                name: "grain", type: "clips", color: 0x993333,
+                params: { phrase_bars: 1, loop_count: 16 },
+                chain: [
+                    { insert: "Grain Delay", params: { Pitch: -7, Spray: 0.4, Frequency: 0.6, Random: 0.3, Feedback: 0.35, DryWet: 0.6 } },
+                    { insert: "Reverb", params: { "Dry/Wet": 0.3 } }
+                ]
+            }
+        ]
+    },
+    bass: {
+        targets: [
+            {
+                name: "loops", type: "clips", color: 0x4477FF,
+                params: { phrase_bars: 2, loop_count: 16 },
+                chain: [
+                    { insert: "EQ Eight", params: {} },
+                    { insert: "Compressor", params: { Threshold: 0.6, Ratio: 0.65 } }
+                ]
+            }
+        ]
+    },
+    vocals: {
+        targets: [
+            {
+                name: "phrases", type: "clips", color: 0xFFAA44,
+                params: { phrase_bars: 4, loop_count: 16 },
+                chain: [
+                    { insert: "EQ Eight", params: {} },
+                    { insert: "Compressor", params: { Threshold: 0.65, Ratio: 0.6 } }
+                ]
+            }
+        ]
+    },
+    other: {
+        targets: [
+            {
+                name: "loops", type: "clips", color: 0x44DD77,
+                params: { phrase_bars: 2, loop_count: 16 },
+                chain: []
+            },
+            {
+                name: "grain", type: "clips", color: 0x338855,
+                params: { phrase_bars: 2, loop_count: 16 },
+                chain: [
+                    { insert: "Grain Delay", params: { Pitch: -5, Spray: 0.5, Frequency: 0.5, Random: 0.4, Feedback: 0.4, DryWet: 0.7 } },
+                    { insert: "Reverb", params: { "Dry/Wet": 0.4 } }
+                ]
+            },
+            {
+                name: "echo", type: "clips", color: 0x2D7744,
+                params: { phrase_bars: 2, loop_count: 16 },
+                chain: [
+                    { insert: "Echo", params: { "L Synced": -3, "R Synced": -2, "L Sync Mode": 2, Feedback: 0.5, "Noise On": 1, "Noise Amt": 0.25, "Wobble On": 1, "Wobble Amt": 0.2, "Reverb Level": 0.35, "Reverb Decay": 0.7, "Reverb Loc": 2, "Dry Wet": 0.55 } }
+                ]
+            }
+        ]
+    }
+};
+
+function applyParams(trackIdx, deviceIdx, params) {
+    if (!params) return;
+    var device = new LiveAPI("live_set tracks " + trackIdx + " devices " + deviceIdx);
+    // Force LOM to settle after insert_device
+    device.get("name");
+    var paramCount = device.getcount("parameters");
+
+    for (var paramName in params) {
+        var value = params[paramName];
+        var found = false;
+        for (var i = 0; i < paramCount; i++) {
+            var param = new LiveAPI("live_set tracks " + trackIdx + " devices " + deviceIdx + " parameters " + i);
+            var pName = param.get("name");
+            pName = (pName && typeof pName === "object") ? String(pName[0]) : String(pName);
+            if (pName === paramName) {
+                param.set("value", value);
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            status("    WARN: param \"" + paramName + "\" not found on device " + deviceIdx);
         }
     }
-    return false;
+}
+
+function applyInsertChain(trackIdx, chain) {
+    if (!chain || !chain.length) return;
+    var track = new LiveAPI("live_set tracks " + trackIdx);
+
+    for (var ci = 0; ci < chain.length; ci++) {
+        var effect = chain[ci];
+        if (!effect.insert) continue;
+
+        try {
+            var deviceCount = track.getcount("devices");
+            track.call("insert_device", effect.insert, deviceCount);
+            status("    + " + effect.insert);
+
+            if (effect.params && Object.keys(effect.params).length > 0) {
+                applyParams(trackIdx, deviceCount, effect.params);
+            }
+        } catch (e) {
+            status("    WARN: insert failed: " + effect.insert + " — " + e);
+        }
+    }
+}
+
+function applyTemplateChain(chain, songName, targetName, color) {
+    // Template chains create the track via duplication (no pre-created track).
+    // Returns the track index of the duplicated template.
+    if (!chain || !chain.length) return -1;
+    var effect = chain[0];  // v1: single template per chain
+    if (!effect.template) return -1;
+
+    var templateTrackName = "[TEMPLATE] " + effect.template;
+    var templateIdx = findTrackByName(templateTrackName);
+    if (templateIdx < 0) {
+        status("    WARN: template not found: " + templateTrackName);
+        return -1;
+    }
+
+    // Duplicate template track — all devices come along
+    var dupIdx = duplicateTrack(templateIdx);
+    renameTrack(dupIdx, targetName + " | " + songName, color);
+    status("    duplicated template: " + effect.template);
+
+    // Apply macros if specified — scale 0-1 config values to actual param range
+    if (effect.macros) {
+        var rackDevice = new LiveAPI("live_set tracks " + dupIdx + " devices 0");
+        var className = rackDevice.get("class_name");
+        className = (className && typeof className === "object") ? String(className[0]) : String(className);
+
+        if (className.indexOf("Rack") >= 0 || className.indexOf("Group") >= 0) {
+            var paramCount = rackDevice.getcount("parameters");
+            for (var macroName in effect.macros) {
+                var macroVal = effect.macros[macroName];
+                var found = false;
+                for (var mi = 0; mi < paramCount; mi++) {
+                    var mp = new LiveAPI("live_set tracks " + dupIdx + " devices 0 parameters " + mi);
+                    var mn = mp.get("name");
+                    mn = (mn && typeof mn === "object") ? String(mn[0]) : String(mn);
+                    if (mn === macroName) {
+                        var pMin = mp.get("min");
+                        pMin = (pMin && typeof pMin === "object") ? Number(pMin[0]) : Number(pMin);
+                        var pMax = mp.get("max");
+                        pMax = (pMax && typeof pMax === "object") ? Number(pMax[0]) : Number(pMax);
+                        var scaled = pMin + macroVal * (pMax - pMin);
+                        mp.set("value", scaled);
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    status("    WARN: macro \"" + macroName + "\" not found");
+                }
+            }
+        } else {
+            status("    WARN: first device is not a rack (" + className + "), macros skipped");
+        }
+    }
+
+    return dupIdx;
+}
+
+function buildDrumRack(trackIdx, oneshots) {
+    // Live 12.3+: insert Drum Rack from scratch, add chains with Simplers.
+    var track = new LiveAPI("live_set tracks " + trackIdx);
+    try {
+        track.call("insert_device", "Drum Rack", 0);
+    } catch (e) {
+        status("    ERROR inserting Drum Rack: " + e);
+        return 0;
+    }
+
+    var drumRack = new LiveAPI("live_set tracks " + trackIdx + " devices 0");
+    var loaded = 0;
+
+    for (var oi = 0; oi < oneshots.length && oi < 16; oi++) {
+        var os = oneshots[oi];
+        if (!os || !os.file) continue;
+
+        try {
+            drumRack.call("insert_chain", oi);
+            var chainPath = "live_set tracks " + trackIdx + " devices 0 chains " + oi;
+            var chain = new LiveAPI(chainPath);
+            chain.set("in_note", 36 + oi);
+            chain.set("name", os.classification || ("pad " + oi));
+            chain.call("insert_device", "Simpler", 0);
+
+            var simpler = new LiveAPI(chainPath + " devices 0");
+            simpler.call("replace_sample", String(os.file));
+            try { simpler.set("playback_mode", 1); } catch (_) {}
+            loaded++;
+        } catch (e) {
+            status("    pad " + oi + " error: " + e);
+        }
+    }
+    return loaded;
+}
+
+function loadClipsToTrack(trackIdx, loops, stemName) {
+    var warpMode = BAR_WARP_MODES[stemName] || 0;
+    var loaded = 0;
+
+    for (var li = 0; li < loops.length && li < 16; li++) {
+        var item = loops[li];
+        if (item && item.file) {
+            var clipName = stemName + " bar " + (item.position || (li + 1));
+            if (loadClip(trackIdx, li, item.file, clipName, 0)) {
+                try {
+                    var clipApi = new LiveAPI(
+                        "live_set tracks " + trackIdx + " clip_slots " + li + " clip"
+                    );
+                    if (clipApi.id !== "0") {
+                        clipApi.set("warp_mode", warpMode);
+                    }
+                } catch (_) {}
+                loaded++;
+            }
+        }
+    }
+    return loaded;
+}
+
+function parseColor(c) {
+    // Accept integer (0xFF4444) or hex string ("#FF4444") → integer for Live API
+    if (typeof c === "number") return c;
+    if (typeof c === "string" && c.charAt(0) === "#") {
+        return parseInt(c.substring(1), 16);
+    }
+    return null;
+}
+
+function isTemplateChain(chain) {
+    // v1 constraint: chains are homogeneous — all insert OR single template.
+    return chain && chain.length > 0 && chain[0].template;
+}
+
+// ── Preset system ────────────────────────────────────────────────────────────
+
+var PRESETS_DIR = null;
+
+function _getHomePath() {
+    var skip = { Shared: 1, Library: 1, Guest: 1, admin: 1 };
+    var f = new Folder("Macintosh HD:/Users/");
+    var dirs = [];
+    while (!f.end) {
+        var fn = String(f.filename);
+        if (f.filetype === "fold" && !skip[fn] && fn.charAt(0) !== ".") {
+            dirs.push(fn);
+        }
+        f.next();
+    }
+    f.close();
+    if (dirs.length === 1) return "/Users/" + dirs[0];
+    // Check which user has the Max 9 Packages directory
+    for (var i = 0; i < dirs.length; i++) {
+        var testPath = "Macintosh HD:/Users/" + dirs[i] + "/Documents/Max 9/Packages";
+        var tf = new Folder(testPath);
+        var hasEntries = !tf.end;
+        tf.close();
+        if (hasEntries) return "/Users/" + dirs[i];
+    }
+    return "/Users/" + (dirs[0] || "unknown");
+}
+
+function scanPresets() {
+    var home = _getHomePath();
+    // Try multiple possible locations for the presets directory
+    var candidates = [
+        home + "/Documents/Max 9/Packages/StemForge/presets",
+        home + "/Documents/Max 8/Packages/StemForge/presets"
+    ];
+
+    var presetsPath = null;
+    var folder = null;
+    for (var ci = 0; ci < candidates.length; ci++) {
+        var maxPath = toMaxPath(candidates[ci]);
+        try {
+            var f = new Folder(maxPath);
+            if (!f.end || f.filename) {
+                presetsPath = candidates[ci];
+                folder = f;
+                break;
+            }
+            f.close();
+        } catch (_) {}
+    }
+
+    if (!folder) {
+        status("presets dir not found");
+        return;
+    }
+
+    var presetNames = [];
+    while (!folder.end) {
+        var fn = String(folder.filename);
+        if (fn.length > 5 && fn.substring(fn.length - 5) === ".json") {
+            presetNames.push(fn.substring(0, fn.length - 5));
+        }
+        folder.next();
+    }
+    folder.close();
+
+    PRESETS_DIR = presetsPath;
+
+    // Populate umenu via outlet 2
+    outlet(2, "clear");
+    for (var i = 0; i < presetNames.length; i++) {
+        outlet(2, "append", presetNames[i]);
+    }
+
+    // Auto-select default preset
+    var defaultIdx = 0;
+    for (var i = 0; i < presetNames.length; i++) {
+        if (presetNames[i] === "idm_production") { defaultIdx = i; break; }
+    }
+    if (presetNames.length > 0) {
+        outlet(2, defaultIdx);
+    }
+
+    status("found " + presetNames.length + " presets");
+}
+
+function loadPreset() {
+    var name = arrayfromargs(messagename, arguments).slice(1).join(" ");
+    // Strip umenu prefix if present
+    name = name.replace(/^Preset:\s*/, "");
+    if (!name || !PRESETS_DIR) {
+        status("loadPreset: no name or presets dir");
+        return;
+    }
+
+    var jsonPath = PRESETS_DIR + "/" + name + ".json";
+    var raw = readFileContents(jsonPath);
+    if (!raw) {
+        status("cannot read preset: " + name);
+        return;
+    }
+
+    var preset;
+    try { preset = JSON.parse(raw); }
+    catch (e) { status("preset parse error: " + e); return; }
+
+    // Load into sf_preset dict
+    var d = new Dict("sf_preset");
+    d.parse(raw);
+
+    var meta = preset.preset || {};
+    status("preset: " + (meta.name || name) + " v" + (meta.version || "?"));
 }
 
 function loadSong() {
-    // Entry point: called from loadFromDict after manifest is parsed.
-    // Live 12.3+ song loader — builds all tracks from scratch.
-    // No templates, no .adg files, no duplication. Each load is independent.
+    // Config-driven song loader (Live 12.3+).
+    // Reads manifest content + processing config targets.
+    // For each stem: iterates targets, creates appropriate track, loads content,
+    // applies effect chain (native insert or template duplication).
     var dictName = "sf_manifest";
     var d;
     try { d = new Dict(dictName); }
@@ -745,157 +985,123 @@ function loadSong() {
         status("tempo → " + mf.bpm + " BPM");
     }
 
-    // Ensure enough scenes for 16 clips
     ensureScenes(16);
 
-    var liveSet = new LiveAPI("live_set");
+    // Priority chain: sf_preset dict → manifest embedding → hardcoded fallback
+    var pipelineConfig = null;
 
-    // Step 1: Build Drum Rack track from scratch (Live 12.3+ API)
-    var drumsData = stemData["drums"];
-    var drumsOneshots = [];
-    if (drumsData && typeof drumsData === "object" && !Array.isArray(drumsData)) {
-        drumsOneshots = drumsData.oneshots || [];
-    }
-
-    if (drumsOneshots.length > 0) {
-        var drumTrackIdx = trackCount();
-        liveSet.call("create_midi_track", drumTrackIdx);
-        renameTrack(drumTrackIdx, "Drums Rack | " + songName, BAR_TRACK_COLORS["drums"]);
-
-        // Insert empty Drum Rack onto the track
-        var drumTrack = new LiveAPI("live_set tracks " + drumTrackIdx);
-        try {
-            drumTrack.call("insert_device", "Drum Rack", 0);
-            status("  Drums Rack: inserted Drum Rack device");
-        } catch (e) {
-            status("  ERROR inserting Drum Rack: " + e);
-        }
-
-        var drumRack = new LiveAPI("live_set tracks " + drumTrackIdx + " devices 0");
-
-        // For each one-shot: add chain, set trigger note, add Simpler, load sample
-        for (var oi = 0; oi < drumsOneshots.length && oi < 16; oi++) {
-            var os = drumsOneshots[oi];
-            if (!os || !os.file) continue;
-
-            try {
-                // Insert a new chain
-                drumRack.call("insert_chain", oi);
-                var chainPath = "live_set tracks " + drumTrackIdx + " devices 0 chains " + oi;
-                var chain = new LiveAPI(chainPath);
-
-                // Set trigger note: pad 0→C1(36), pad 1→C#1(37), etc.
-                chain.set("in_note", 36 + oi);
-
-                // Name the chain
-                var padLabel = os.classification || ("pad " + oi);
-                chain.set("name", padLabel);
-
-                // Insert Simpler into the chain
-                chain.call("insert_device", "Simpler", 0);
-
-                // Load sample into the Simpler
-                var simplerPath = chainPath + " devices 0";
-                var simpler = new LiveAPI(simplerPath);
-                simpler.call("replace_sample", String(os.file));
-
-                // Set to one-shot mode
-                try { simpler.set("playback_mode", 1); } catch (_) {}
-
-                loaded++;
-            } catch (e) {
-                status("  pad " + oi + " error: " + e);
+    // 1. sf_preset dict (user selected preset in dropdown)
+    try {
+        var presetDict = new Dict("sf_preset");
+        var presetRaw = presetDict.stringify();
+        if (presetRaw && presetRaw !== "{}") {
+            var presetData = JSON.parse(presetRaw);
+            if (presetData.stems) {
+                pipelineConfig = presetData.stems;
             }
         }
-        status("  Drums Rack: " + loaded + " one-shots built from scratch");
+    } catch (_) {}
+
+    // 2. manifest-embedded processing_config (backward compat)
+    if (!pipelineConfig && mf.processing_config) {
+        pipelineConfig = mf.processing_config;
     }
 
-    // Step 2: Create audio tracks for loops
+    // 3. hardcoded fallback
+    if (!pipelineConfig) {
+        pipelineConfig = PROCESSING_CONFIG;
+    }
+
     var stemOrder = ["drums", "bass", "vocals", "other"];
+
     for (var si = 0; si < stemOrder.length; si++) {
         var stemName = stemOrder[si];
         var data = stemData[stemName];
         if (!data) continue;
 
-        var loops = Array.isArray(data) ? data : (data.loops || []);
-        var insertAt = trackCount();
-        createAudioTrack(insertAt);
-
         var stemCap = stemName.charAt(0).toUpperCase() + stemName.slice(1);
-        renameTrack(insertAt, stemCap + " Loops | " + songName, BAR_TRACK_COLORS[stemName]);
 
-        var warpMode = BAR_WARP_MODES[stemName] || 0;
-        for (var li = 0; li < loops.length && li < 16; li++) {
-            var item = loops[li];
-            if (item && item.file) {
-                var clipName = stemName + " bar " + (item.position || (li + 1));
-                if (loadClip(insertAt, li, item.file, clipName, 0)) {
-                    try {
-                        var clipApi = new LiveAPI(
-                            "live_set tracks " + insertAt + " clip_slots " + li + " clip"
-                        );
-                        if (clipApi.id !== "0") {
-                            clipApi.set("warp_mode", warpMode);
-                        }
-                    } catch (_) {}
-                    loaded++;
+        // Get content from manifest
+        var loops = Array.isArray(data) ? data : (data.loops || []);
+        var oneshots = (typeof data === "object" && !Array.isArray(data)) ? (data.oneshots || []) : [];
+
+        // Get targets from processing config
+        var stemConfig = pipelineConfig[stemName];
+        if (!stemConfig || !stemConfig.targets) {
+            // Fallback: create a simple clips track if we have loops
+            if (loops.length > 0) {
+                var fallbackIdx = trackCount();
+                createAudioTrack(fallbackIdx);
+                renameTrack(fallbackIdx, stemCap + " Loops | " + songName, BAR_TRACK_COLORS[stemName]);
+                loaded += loadClipsToTrack(fallbackIdx, loops, stemName);
+                status("  " + stemCap + " Loops: " + loops.length + " clips (no config)");
+            }
+            continue;
+        }
+
+        // Iterate targets from processing config
+        var targets = stemConfig.targets;
+        for (var ti = 0; ti < targets.length; ti++) {
+            var target = targets[ti];
+            var targetName = stemCap + " " + (target.name || "Track");
+            var targetColor = parseColor(target.color) || BAR_TRACK_COLORS[stemName];
+            var chain = target.chain || [];
+
+            status("  " + targetName + " (" + target.type + ")");
+
+            if (target.type === "clips") {
+                // ── Clips target: audio track with bar loops ──
+                if (loops.length === 0) {
+                    status("    skipped (no loops in manifest)");
+                    continue;
+                }
+
+                var clipsTrackIdx;
+
+                if (isTemplateChain(chain)) {
+                    // Template chain: duplicate creates the track
+                    clipsTrackIdx = applyTemplateChain(chain, songName, targetName, targetColor);
+                    if (clipsTrackIdx < 0) continue;
+                } else {
+                    // Native chain: create track, then insert devices
+                    clipsTrackIdx = trackCount();
+                    createAudioTrack(clipsTrackIdx);
+                    renameTrack(clipsTrackIdx, targetName + " | " + songName, targetColor);
+
+                    if (chain.length > 0) {
+                        applyInsertChain(clipsTrackIdx, chain);
+                    }
+                }
+
+                var clipsLoaded = loadClipsToTrack(clipsTrackIdx, loops, stemName);
+                loaded += clipsLoaded;
+                status("    " + clipsLoaded + " clips loaded");
+
+            } else if (target.type === "rack") {
+                // ── Rack target: MIDI track with Drum Rack ──
+                if (oneshots.length === 0) {
+                    status("    skipped (no oneshots in manifest)");
+                    continue;
+                }
+
+                var rackTrackIdx = trackCount();
+                new LiveAPI("live_set").call("create_midi_track", rackTrackIdx);
+                renameTrack(rackTrackIdx, targetName + " | " + songName, targetColor);
+
+                var rackLoaded = buildDrumRack(rackTrackIdx, oneshots);
+                loaded += rackLoaded;
+                status("    " + rackLoaded + " pads loaded");
+
+                // Apply chain AFTER Drum Rack (effects go on the track, after the rack)
+                if (chain.length > 0 && !isTemplateChain(chain)) {
+                    applyInsertChain(rackTrackIdx, chain);
                 }
             }
         }
-        status("  " + stemCap + " Loops: " + Math.min(loops.length, 16) + " clips");
     }
 
-    status("song loader: " + loaded + " items loaded for " + songName);
+    status("song loader: " + loaded + " items across " + stemOrder.length + " stems for \"" + songName + "\"");
     outlet(1, "bang");
-}
-
-function reloadTemplates() {
-    // Recreate template tracks by loading .adg presets from User Library
-    var phase = detectPhase();
-    if (phase === 1) {
-        status("Templates already present.");
-        return;
-    }
-
-    status("Reloading templates from User Library...");
-
-    for (var i = 0; i < TEMPLATE_NAMES.length; i++) {
-        var tmplName = TEMPLATE_NAMES[i];
-
-        // Skip if already exists
-        if (findTrackByName(tmplName) >= 0) continue;
-
-        // Create bare MIDI track
-        var idx = trackCount();
-        createMidiTrack(idx);
-        renameTrack(idx, tmplName, null);
-
-        // Select the track so browser load targets it
-        try {
-            var trackApi = new LiveAPI("live_set tracks " + idx);
-            new LiveAPI("live_set view").set("selected_track", "id", parseInt(trackApi.id));
-        } catch (e) {
-            status("  could not select track: " + e);
-        }
-
-        // Navigate browser to the .adg preset and load it
-        var adgPath = TEMPLATE_ADG_PATHS[tmplName];
-        if (adgPath) {
-            try {
-                // Browser navigation: User Library → StemForge → Templates → preset
-                var browser = new LiveAPI("live_app view browser");
-                // The browser API is limited in Max JS — this may need
-                // the live.path + live.object approach instead.
-                // For now, log what we'd do:
-                status("  " + tmplName + ": created MIDI track (load " + adgPath + ".adg manually for now)");
-            } catch (e) {
-                status("  browser load failed: " + e);
-            }
-        }
-    }
-
-    detectPhase();
-    status("Templates reloaded. Ready to load another song.");
 }
 
 // ── Entry points from Max ─────────────────────────────────────────────────────
@@ -910,6 +1116,6 @@ if (typeof module !== "undefined" && module.exports) {
         BAR_TRACK_ORDER: BAR_TRACK_ORDER,
         BAR_TRACK_COLORS: BAR_TRACK_COLORS,
         RACK_TEMPLATES: RACK_TEMPLATES,
-        TEMPLATE_NAMES: TEMPLATE_NAMES,
+        PROCESSING_CONFIG: PROCESSING_CONFIG,
     };
 }

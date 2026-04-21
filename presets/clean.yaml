@@ -1,0 +1,58 @@
+# StemForge Preset — Clean
+# Minimal processing: clips + drum rack, no effects.
+# 4 clips tracks + 1 drum rack = 5 tracks per song.
+
+preset:
+  name: "Clean"
+  version: "1.0.0"
+  description: "No effects — clean stems with clips and drum rack only"
+
+stems:
+  drums:
+    targets:
+      - name: "loops"
+        type: clips
+        color: "#FF4444"
+        params:
+          phrase_bars: 1
+          loop_count: 16
+        chain: []
+
+      - name: "rack"
+        type: rack
+        color: "#FF4444"
+        params:
+          oneshot_count: 16
+          oneshot_mode: classify
+          use_larsnet: true
+        chain: []
+
+  bass:
+    targets:
+      - name: "loops"
+        type: clips
+        color: "#4477FF"
+        params:
+          phrase_bars: 2
+          loop_count: 16
+        chain: []
+
+  vocals:
+    targets:
+      - name: "phrases"
+        type: clips
+        color: "#FFAA44"
+        params:
+          phrase_bars: 4
+          loop_count: 16
+        chain: []
+
+  other:
+    targets:
+      - name: "loops"
+        type: clips
+        color: "#44DD77"
+        params:
+          phrase_bars: 2
+          loop_count: 16
+        chain: []

@@ -61,6 +61,7 @@ def run(
     time_sig: int = 4,
     json_events: bool = True,
     curation_config: CurationConfig | None = None,
+    pipeline: Path | None = None,
 ) -> Path:
     """Run bar slicing + curation on stems in stems_dir.
 
@@ -460,6 +461,20 @@ def run(
                 "message": f"{stem_name}: {len(oneshot_entries)} one-shots selected",
             })
 
+    # Embed processing config (pipeline targets) into manifest for M4L loader
+    if pipeline and pipeline.exists():
+        import yaml
+        pipeline_data = yaml.safe_load(pipeline.read_text())
+        if "stems" in pipeline_data:
+            curated_manifest["processing_config"] = pipeline_data["stems"]
+    elif pipeline and not pipeline.exists():
+        # Try JSON variant (compiled from YAML)
+        json_pipeline = pipeline.with_suffix(".json")
+        if json_pipeline.exists():
+            pipeline_data = json.loads(json_pipeline.read_text())
+            if "stems" in pipeline_data:
+                curated_manifest["processing_config"] = pipeline_data["stems"]
+
     # Write curated manifest
     manifest_path = curated_root / "manifest.json"
     manifest_path.write_text(json.dumps(curated_manifest, indent=2))
@@ -523,6 +538,8 @@ def main():
                     help="Emit NDJSON events on stdout")
     ap.add_argument("--curation", type=Path, default=None,
                     help="Curation config YAML (default: pipelines/curation.yaml)")
+    ap.add_argument("--pipeline", type=Path, default=None,
+                    help="Processing pipeline YAML to embed in manifest (e.g. pipelines/production_idm.yaml)")
     args = ap.parse_args()
 
     curation_cfg = load_curation_config(args.curation) if args.curation else None
@@ -535,6 +552,7 @@ def main():
             time_sig=args.time_sig,
             json_events=args.json_events,
             curation_config=curation_cfg,
+            pipeline=args.pipeline,
         )
         if not args.json_events:
             print(f"Curated manifest: {manifest}")

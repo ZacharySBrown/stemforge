@@ -503,17 +503,31 @@ def clean_beats(threshold, target_dir, dry_run):
 @click.option("--pipeline-dir", default=None, type=click.Path(path_type=Path))
 def generate_pipeline_json(pipeline_dir):
     """
-    Convert pipelines/default.yaml → pipelines/default.json for M4L device.
-    Run this after editing default.yaml.
+    Compile YAML → JSON for M4L device.
+    Processes both pipelines/ and presets/ directories.
     """
     import yaml
-    p_dir = pipeline_dir or (Path(__file__).parent.parent / "pipelines")
+    repo_root = Path(__file__).parent.parent
+
+    # Process pipelines
+    p_dir = pipeline_dir or (repo_root / "pipelines")
     for yaml_file in p_dir.glob("*.yaml"):
         with open(yaml_file) as f:
             data = yaml.safe_load(f)
         json_file = yaml_file.with_suffix(".json")
         json_file.write_text(json.dumps(data, indent=2))
         console.print(f"[green]OK[/green] {yaml_file.name} → {json_file.name}")
+
+    # Process presets
+    pr_dir = repo_root / "presets"
+    if pr_dir.exists():
+        for yaml_file in pr_dir.glob("*.yaml"):
+            with open(yaml_file) as f:
+                data = yaml.safe_load(f)
+            json_file = yaml_file.with_suffix(".json")
+            json_file.write_text(json.dumps(data, indent=2))
+            console.print(f"[green]OK[/green] {yaml_file.name} → {json_file.name} [dim](preset)[/dim]")
+
     console.print("\nRestart or reload the M4L device to pick up changes.")
 
 

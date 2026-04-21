@@ -44,11 +44,11 @@ ui:
       default: auto
       pos: { x: 8, y: 108 }
 
-    - id: pipeline
+    - id: preset
       type: dropdown
-      label: "Pipeline"
-      options: [default, idm_crushed, glitch, ambient]
-      default: default
+      label: "Preset"
+      options: []
+      default: "idm_production"
       pos: { x: 152, y: 108 }
 
     - id: slice
@@ -62,13 +62,6 @@ ui:
       label: "Load"
       action: load_session
       pos: { x: 96, y: 28 }
-      size: { width: 72, height: 24 }
-
-    - id: reload_button
-      type: button
-      label: "Reload"
-      action: reload_templates
-      pos: { x: 176, y: 28 }
       size: { width: 72, height: 24 }
 
     - id: split_button

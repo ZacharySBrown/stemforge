@@ -37,17 +37,23 @@ def test_top_level_patcher_shape(patcher):
 def test_every_device_yaml_ui_element_is_represented(patcher):
     with open(DEVICE_YAML) as f:
         spec = yaml.safe_load(f)
-    # Collect box ids — both canonical "obj-<id>" and free-form.
     box_ids = {b["box"]["id"] for b in patcher["patcher"]["boxes"]}
+    # Some elements use variant IDs: audio_in → browse-btn, preset uses obj-preset
+    id_aliases = {
+        "audio_in": "obj-browse-btn",
+        "load_button": "obj-load-btn",
+        "split_button": "obj-split-button",
+        "progress_bar": "obj-progress-bar",
+        "status_text": "obj-status-text",
+    }
     for el in spec["ui"]["elements"]:
-        expected = f"obj-{el['id'].replace('_', '-')}"
+        expected = id_aliases.get(el["id"], f"obj-{el['id'].replace('_', '-')}")
         assert expected in box_ids, f"missing UI element {el['id']} (looked for {expected})"
 
 
-def test_bridge_node_script_is_present(patcher):
+def test_bridge_shell_is_present(patcher):
     texts = [b["box"].get("text", "") for b in patcher["patcher"]["boxes"]]
-    bridges = [t for t in texts if "node.script" in t and "stemforge_bridge.v0.js" in t]
-    assert bridges, "bridge node.script box missing"
+    assert any("shell" == t for t in texts), "shell bridge box missing"
 
 
 def test_loader_js_is_present(patcher):
@@ -65,21 +71,21 @@ def test_route_object_splits_event_types(patcher):
         assert needed in tokens, f"route object missing branch for {needed}"
 
 
-def test_dependency_cache_lists_both_js_files(patcher):
+def test_dependency_cache_lists_js_files(patcher):
     dep = {e["name"] for e in patcher["patcher"]["dependency_cache"]}
-    assert "stemforge_bridge.v0.js" in dep
     assert "stemforge_loader.v0.js" in dep
+    assert "stemforge_ndjson_parser.v0.js" in dep
 
 
-def test_patchline_connects_button_to_bridge(patcher):
+def test_patchline_connects_split_to_bridge(patcher):
     lines = patcher["patcher"]["lines"]
-    # split_button → pack-split → bridge chain must exist.
     sources = {
         (ln["patchline"]["source"][0], ln["patchline"]["destination"][0]) for ln in lines
     }
-    assert ("obj-split-button", "obj-pack-split") in sources
-    assert ("obj-pack-split", "obj-bridge") in sources
-    assert ("obj-bridge", "obj-route-events") in sources
+    # cmd fmt → shell bridge → ndjson parser → route events
+    assert ("obj-cmd-fmt", "obj-bridge") in sources
+    assert ("obj-bridge", "obj-ndjson-parser") in sources
+    assert ("obj-ndjson-parser", "obj-route-events") in sources
 
 
 def test_progress_pct_routed_to_progress_bar(patcher):
@@ -90,14 +96,47 @@ def test_progress_pct_routed_to_progress_bar(patcher):
     assert ("obj-progress-route", "obj-progress-bar") in sources
 
 
-def test_complete_routed_to_loader(patcher):
+def test_complete_routed_to_curate(patcher):
     lines = patcher["patcher"]["lines"]
-    # complete branch of the route → prepend loadManifest → loader js
+    # complete → unpack → stems dir extract → curate cmd → bridge
     sources = {
         (ln["patchline"]["source"][0], ln["patchline"]["destination"][0]) for ln in lines
     }
-    assert ("obj-route-events", "obj-complete-prepend") in sources
-    assert ("obj-complete-prepend", "obj-loader") in sources
+    assert ("obj-route-events", "obj-complete-unpack") in sources
+    assert ("obj-complete-unpack", "obj-stems-dir-extract") in sources
+
+
+def test_preset_dict_exists(patcher):
+    texts = [b["box"].get("text", "") for b in patcher["patcher"]["boxes"]]
+    assert any("dict sf_preset" in t for t in texts), "preset dict missing"
+
+
+def test_preset_umenu_wired_to_loader(patcher):
+    lines = patcher["patcher"]["lines"]
+    sources = {
+        (ln["patchline"]["source"][0], ln["patchline"]["destination"][0]) for ln in lines
+    }
+    assert ("obj-preset-prepend", "obj-loader") in sources
+
+
+def test_loadbang_triggers_scan_presets(patcher):
+    lines = patcher["patcher"]["lines"]
+    sources = {
+        (ln["patchline"]["source"][0], ln["patchline"]["destination"][0]) for ln in lines
+    }
+    assert ("obj-loadbang", "obj-scan-deferlow") in sources
+    assert ("obj-scan-deferlow", "obj-scan-presets-msg") in sources
+    assert ("obj-scan-presets-msg", "obj-loader") in sources
+
+
+def test_loader_outlet2_feeds_preset_umenu(patcher):
+    lines = patcher["patcher"]["lines"]
+    # Loader outlet 2 → preset umenu
+    for ln in lines:
+        pl = ln["patchline"]
+        if pl["source"] == ["obj-loader", 2] and pl["destination"][0] == "obj-preset":
+            return
+    pytest.fail("loader outlet 2 not wired to preset umenu")
 
 
 def test_device_width_matches_yaml(patcher):

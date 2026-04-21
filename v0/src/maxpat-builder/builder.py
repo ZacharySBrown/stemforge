@@ -38,7 +38,11 @@ OBJ_TITLE = "obj-title"
 OBJ_FILE_DROP = "obj-audio-in"
 OBJ_FILE_PATH_MSG = "obj-file-path-msg"
 OBJ_BACKEND_MENU = "obj-backend"
-OBJ_PIPELINE_MENU = "obj-pipeline"
+OBJ_PRESET_MENU = "obj-preset"
+OBJ_PRESET_DICT = "obj-preset-dict"
+OBJ_PRESET_PREPEND = "obj-preset-prepend"
+OBJ_SCAN_PRESETS_MSG = "obj-scan-presets-msg"
+OBJ_SCAN_DEFERLOW = "obj-scan-deferlow"
 OBJ_SLICE_TOGGLE = "obj-slice"
 OBJ_PROGRESS_BAR = "obj-progress-bar"
 OBJ_STATUS_TEXT = "obj-status-text"
@@ -295,52 +299,6 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     lines.append(_line(OBJ_LOAD_SEQ, 0, OBJ_LOAD_DICT_MSG, 0))
     lines.append(_line(OBJ_LOAD_DICT_MSG, 0, OBJ_LOADER, 0))
 
-    # --- Reload Templates button ---
-    rb = elements_by_id["reload_button"]
-    OBJ_RELOAD_BTN = "obj-reload-btn"
-    boxes.append(
-        _box(
-            OBJ_RELOAD_BTN,
-            "textbutton",
-            (rb["pos"]["x"], rb["pos"]["y"], rb["size"]["width"], rb["size"]["height"]),
-            presentation=True,
-            numinlets=1,
-            numoutlets=3,
-            outlettype=["", "", "int"],
-            extras={
-                "text": rb.get("label", "Reload"),
-                "fontsize": 11.0,
-            },
-        )
-    )
-    OBJ_RELOAD_TRIGGER = "obj-reload-trigger"
-    boxes.append(
-        _box(
-            OBJ_RELOAD_TRIGGER,
-            "newobj",
-            (rb["pos"]["x"] + rb["size"]["width"] + 8, rb["pos"]["y"] + 4, 30.0, 22.0),
-            numinlets=1,
-            numoutlets=1,
-            outlettype=["bang"],
-            extras={"text": "t b"},
-        )
-    )
-    lines.append(_line(OBJ_RELOAD_BTN, 0, OBJ_RELOAD_TRIGGER, 0))
-    OBJ_RELOAD_MSG = "obj-reload-msg"
-    boxes.append(
-        _box(
-            OBJ_RELOAD_MSG,
-            "message",
-            (rb["pos"]["x"], rb["pos"]["y"] + rb["size"]["height"] + 4, 120.0, 22.0),
-            numinlets=2,
-            numoutlets=1,
-            outlettype=[""],
-            extras={"text": "reloadTemplates"},
-        )
-    )
-    lines.append(_line(OBJ_RELOAD_TRIGGER, 0, OBJ_RELOAD_MSG, 0))
-    lines.append(_line(OBJ_RELOAD_MSG, 0, OBJ_LOADER, 0))
-
     # --- Backend dropdown (umenu) ---
     be = elements_by_id["backend"]
     boxes.append(
@@ -361,25 +319,76 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         )
     )
 
-    # --- Pipeline dropdown (umenu) ---
-    pl = elements_by_id["pipeline"]
+    # --- Preset dropdown (umenu) — populated dynamically by JS scanPresets ---
+    pr = elements_by_id["preset"]
     boxes.append(
         _box(
-            OBJ_PIPELINE_MENU,
+            OBJ_PRESET_MENU,
             "umenu",
-            (pl["pos"]["x"], pl["pos"]["y"], 136.0, 22.0),
+            (pr["pos"]["x"], pr["pos"]["y"], 136.0, 22.0),
             presentation=True,
             numinlets=1,
             numoutlets=3,
             outlettype=["int", "", ""],
             extras={
-                "items": " ".join(pl["options"]),
+                "items": "",
                 "arrow": 1,
-                "autopopulate": 1,
-                "prefix": "Pipeline: ",
+                "prefix": "Preset: ",
             },
         )
     )
+    # [dict sf_preset] — holds the currently selected preset JSON
+    boxes.append(
+        _box(
+            OBJ_PRESET_DICT,
+            "newobj",
+            (pr["pos"]["x"], pr["pos"]["y"] + 30, 140.0, 22.0),
+            numinlets=2,
+            numoutlets=4,
+            outlettype=["dictionary", "", "", ""],
+            extras={"text": "dict sf_preset"},
+        )
+    )
+    # umenu outlet 1 (symbol) → prepend loadPreset → JS loader
+    boxes.append(
+        _box(
+            OBJ_PRESET_PREPEND,
+            "newobj",
+            (pr["pos"]["x"] + 140, pr["pos"]["y"], 140.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "prepend loadPreset"},
+        )
+    )
+    lines.append(_line(OBJ_PRESET_MENU, 1, OBJ_PRESET_PREPEND, 0))
+    lines.append(_line(OBJ_PRESET_PREPEND, 0, OBJ_LOADER, 0))
+    # loadbang → deferlow → scanPresets → JS loader (populate umenu on device open)
+    boxes.append(
+        _box(
+            OBJ_SCAN_DEFERLOW,
+            "newobj",
+            (pr["pos"]["x"] + 140, pr["pos"]["y"] + 30, 60.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "deferlow"},
+        )
+    )
+    boxes.append(
+        _box(
+            OBJ_SCAN_PRESETS_MSG,
+            "message",
+            (pr["pos"]["x"] + 140, pr["pos"]["y"] + 56, 100.0, 22.0),
+            numinlets=2,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "scanPresets"},
+        )
+    )
+    lines.append(_line("obj-loadbang", 0, OBJ_SCAN_DEFERLOW, 0))
+    lines.append(_line(OBJ_SCAN_DEFERLOW, 0, OBJ_SCAN_PRESETS_MSG, 0))
+    lines.append(_line(OBJ_SCAN_PRESETS_MSG, 0, OBJ_LOADER, 0))
 
     # --- Slice toggle ---
     sl = elements_by_id["slice"]
@@ -598,14 +607,15 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     lines.append(_line(OBJ_ERROR_FMT, 0, OBJ_STATUS_TEXT, 0))
 
     # --- LOM loader (classic js, has LiveAPI access) ---
+    # Outlets: 0=status text, 1=bang on completion, 2=umenu control (preset dropdown)
     boxes.append(
         _box(
             OBJ_LOADER,
             "newobj",
             (16.0, sb["pos"]["y"] + 192, 240.0, 22.0),
             numinlets=1,
-            numoutlets=2,
-            outlettype=["", ""],
+            numoutlets=3,
+            outlettype=["", "", ""],
             extras={
                 "text": "js stemforge_loader.v0.js",
                 "saved_object_attributes": {
@@ -615,6 +625,8 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             },
         )
     )
+    # Loader outlet 2 → preset umenu (for dynamic population via scanPresets)
+    lines.append(_line(OBJ_LOADER, 2, OBJ_PRESET_MENU, 0))
     # complete event → extract stems dir → curate command → [shell]
     # complete emits: manifest_path bpm stem_count — unpack to get manifest path
     boxes.append(

@@ -1,0 +1,183 @@
+# StemForge Processing Config — IDM Production
+# Drives the song loader: per-stem targets with track types + effect chains.
+
+name: "IDM Production"
+version: 1
+
+global:
+  strategy: max-diversity
+  downbeat_correction: true
+
+stems:
+  drums:
+    targets:
+      - name: "loops"
+        type: clips
+        color: "#FF4444"
+        params:
+          phrase_bars: 1
+          loop_count: 16
+          strategy: rhythm-taxonomy
+        chain: []
+
+      - name: "rack"
+        type: rack
+        color: "#FF4444"
+        params:
+          oneshot_count: 16
+          oneshot_mode: classify
+          use_larsnet: true
+        chain:
+          - insert: "Compressor"
+            params: { Threshold: 0.55, Ratio: 0.75 }
+
+      - name: "crushed"
+        type: clips
+        color: "#882222"
+        params:
+          phrase_bars: 1
+          loop_count: 16
+        chain:
+          - template: "decapitator_drums"
+            macros: { Drive: 0.7, Punish: 0.5, Style: 0, OutputTrim: 0.5 }
+
+      - name: "repeat"
+        type: clips
+        color: "#CC3333"
+        params:
+          phrase_bars: 1
+          loop_count: 16
+        chain:
+          - insert: "Beat Repeat"
+            params:
+              Chance: 0.7             # probabilistic — not every bar stutters
+              Grid: 7                 # 1/16 repeats
+              Variation: 5            # randomize grid size
+              Variation Type: 4       # Auto
+              Pitch Decay: 0.4        # pitch drops on repeats — classic IDM
+              Decay: 0.3              # repeats fade out
+              Mix Type: 2             # Gate — cuts original during repeat
+              Gate: 8                 # repeat length
+          - insert: "Compressor"
+            params: { Threshold: 0.5, Ratio: 0.8 }
+
+      - name: "echo"
+        type: clips
+        color: "#AA4444"
+        params:
+          phrase_bars: 1
+          loop_count: 16
+        chain:
+          - insert: "Echo"
+            params:
+              L Synced: -4            # 1/16 note
+              R Synced: -3            # 1/8 note
+              L Sync Mode: 2          # Dotted
+              Feedback: 0.45          # moderate feedback trails
+              Noise On: 1             # analog noise character
+              Noise Amt: 0.3          # subtle noise
+              Wobble On: 1            # tape wobble
+              Wobble Amt: 0.25        # subtle wobble
+              Reverb Level: 0.2       # touch of built-in reverb
+              Reverb Loc: 2           # in feedback path
+              Dry Wet: 0.5
+
+      - name: "grain"
+        type: clips
+        color: "#993333"
+        params:
+          phrase_bars: 1
+          loop_count: 16
+        chain:
+          - insert: "Grain Delay"
+            params:
+              Pitch: -7               # pitched down for texture
+              Spray: 0.4              # grain scatter
+              Frequency: 0.6          # grain rate
+              Random: 0.3             # pitch randomization
+              Feedback: 0.35          # moderate feedback
+              DryWet: 0.6             # mostly wet
+          - insert: "Reverb"
+            params:
+              Dry/Wet: 0.3            # wash it out slightly
+
+  bass:
+    targets:
+      - name: "loops"
+        type: clips
+        color: "#4477FF"
+        params:
+          phrase_bars: 2
+          loop_count: 16
+          strategy: max-diversity
+        chain:
+          - insert: "EQ Eight"
+            params: {}
+          - insert: "Compressor"
+            params: { Threshold: 0.6, Ratio: 0.65 }
+
+  vocals:
+    targets:
+      - name: "phrases"
+        type: clips
+        color: "#FFAA44"
+        params:
+          phrase_bars: 4
+          loop_count: 16
+          strategy: sectional
+        chain:
+          - insert: "EQ Eight"
+            params: {}
+          - insert: "Compressor"
+            params: { Threshold: 0.65, Ratio: 0.6 }
+
+  other:
+    targets:
+      - name: "loops"
+        type: clips
+        color: "#44DD77"
+        params:
+          phrase_bars: 2
+          loop_count: 16
+        chain: []
+
+      - name: "grain"
+        type: clips
+        color: "#338855"
+        params:
+          phrase_bars: 2
+          loop_count: 16
+        chain:
+          - insert: "Grain Delay"
+            params:
+              Pitch: -5
+              Spray: 0.5
+              Frequency: 0.5
+              Random: 0.4
+              Feedback: 0.4
+              DryWet: 0.7
+          - insert: "Reverb"
+            params:
+              Dry/Wet: 0.4
+
+      - name: "echo"
+        type: clips
+        color: "#2D7744"
+        params:
+          phrase_bars: 2
+          loop_count: 16
+        chain:
+          - insert: "Echo"
+            params:
+              L Synced: -3            # 1/8 note
+              R Synced: -2            # 1/4 note
+              L Sync Mode: 2          # Dotted
+              Feedback: 0.5
+              Noise On: 1
+              Noise Amt: 0.25
+              Wobble On: 1
+              Wobble Amt: 0.2
+              Reverb Level: 0.35
+              Reverb Decay: 0.7
+              Reverb Loc: 2           # in feedback path
+              Dry Wet: 0.55

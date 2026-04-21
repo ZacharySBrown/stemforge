@@ -1,0 +1,274 @@
+{
+  "name": "IDM Production",
+  "version": 1,
+  "global": {
+    "strategy": "max-diversity",
+    "downbeat_correction": true
+  },
+  "stems": {
+    "drums": {
+      "targets": [
+        {
+          "name": "loops",
+          "type": "clips",
+          "color": "#FF4444",
+          "params": {
+            "phrase_bars": 1,
+            "loop_count": 16,
+            "strategy": "rhythm-taxonomy"
+          },
+          "chain": []
+        },
+        {
+          "name": "rack",
+          "type": "rack",
+          "color": "#FF4444",
+          "params": {
+            "oneshot_count": 16,
+            "oneshot_mode": "classify",
+            "use_larsnet": true
+          },
+          "chain": [
+            {
+              "insert": "Compressor",
+              "params": {
+                "Threshold": 0.55,
+                "Ratio": 0.75
+              }
+            }
+          ]
+        },
+        {
+          "name": "crushed",
+          "type": "clips",
+          "color": "#882222",
+          "params": {
+            "phrase_bars": 1,
+            "loop_count": 16
+          },
+          "chain": [
+            {
+              "template": "decapitator_drums",
+              "macros": {
+                "Drive": 0.7,
+                "Punish": 0.5,
+                "Style": 0,
+                "OutputTrim": 0.5
+              }
+            }
+          ]
+        },
+        {
+          "name": "repeat",
+          "type": "clips",
+          "color": "#CC3333",
+          "params": {
+            "phrase_bars": 1,
+            "loop_count": 16
+          },
+          "chain": [
+            {
+              "insert": "Beat Repeat",
+              "params": {
+                "Chance": 0.7,
+                "Grid": 7,
+                "Variation": 5,
+                "Variation Type": 4,
+                "Pitch Decay": 0.4,
+                "Decay": 0.3,
+                "Mix Type": 2,
+                "Gate": 8
+              }
+            },
+            {
+              "insert": "Compressor",
+              "params": {
+                "Threshold": 0.5,
+                "Ratio": 0.8
+              }
+            }
+          ]
+        },
+        {
+          "name": "echo",
+          "type": "clips",
+          "color": "#AA4444",
+          "params": {
+            "phrase_bars": 1,
+            "loop_count": 16
+          },
+          "chain": [
+            {
+              "insert": "Echo",
+              "params": {
+                "L Synced": -4,
+                "R Synced": -3,
+                "L Sync Mode": 2,
+                "Feedback": 0.45,
+                "Noise On": 1,
+                "Noise Amt": 0.3,
+                "Wobble On": 1,
+                "Wobble Amt": 0.25,
+                "Reverb Level": 0.2,
+                "Reverb Loc": 2,
+                "Dry Wet": 0.5
+              }
+            }
+          ]
+        },
+        {
+          "name": "grain",
+          "type": "clips",
+          "color": "#993333",
+          "params": {
+            "phrase_bars": 1,
+            "loop_count": 16
+          },
+          "chain": [
+            {
+              "insert": "Grain Delay",
+              "params": {
+                "Pitch": -7,
+                "Spray": 0.4,
+                "Frequency": 0.6,
+                "Random": 0.3,
+                "Feedback": 0.35,
+                "DryWet": 0.6
+              }
+            },
+            {
+              "insert": "Reverb",
+              "params": {
+                "Dry/Wet": 0.3
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "bass": {
+      "targets": [
+        {
+          "name": "loops",
+          "type": "clips",
+          "color": "#4477FF",
+          "params": {
+            "phrase_bars": 2,
+            "loop_count": 16,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "EQ Eight",
+              "params": {}
+            },
+            {
+              "insert": "Compressor",
+              "params": {
+                "Threshold": 0.6,
+                "Ratio": 0.65
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "vocals": {
+      "targets": [
+        {
+          "name": "phrases",
+          "type": "clips",
+          "color": "#FFAA44",
+          "params": {
+            "phrase_bars": 4,
+            "loop_count": 16,
+            "strategy": "sectional"
+          },
+          "chain": [
+            {
+              "insert": "EQ Eight",
+              "params": {}
+            },
+            {
+              "insert": "Compressor",
+              "params": {
+                "Threshold": 0.65,
+                "Ratio": 0.6
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "other": {
+      "targets": [
+        {
+          "name": "loops",
+          "type": "clips",
+          "color": "#44DD77",
+          "params": {
+            "phrase_bars": 2,
+            "loop_count": 16
+          },
+          "chain": []
+        },
+        {
+          "name": "grain",
+          "type": "clips",
+          "color": "#338855",
+          "params": {
+            "phrase_bars": 2,
+            "loop_count": 16
+          },
+          "chain": [
+            {
+              "insert": "Grain Delay",
+              "params": {
+                "Pitch": -5,
+                "Spray": 0.5,
+                "Frequency": 0.5,
+                "Random": 0.4,
+                "Feedback": 0.4,
+                "DryWet": 0.7
+              }
+            },
+            {
+              "insert": "Reverb",
+              "params": {
+                "Dry/Wet": 0.4
+              }
+            }
+          ]
+        },
+        {
+          "name": "echo",
+          "type": "clips",
+          "color": "#2D7744",
+          "params": {
+            "phrase_bars": 2,
+            "loop_count": 16
+          },
+          "chain": [
+            {
+              "insert": "Echo",
+              "params": {
+                "L Synced": -3,
+                "R Synced": -2,
+                "L Sync Mode": 2,
+                "Feedback": 0.5,
+                "Noise On": 1,
+                "Noise Amt": 0.25,
+                "Wobble On": 1,
+                "Wobble Amt": 0.2,
+                "Reverb Level": 0.35,
+                "Reverb Decay": 0.7,
+                "Reverb Loc": 2,
+                "Dry Wet": 0.55
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
