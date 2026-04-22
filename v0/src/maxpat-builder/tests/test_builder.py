@@ -39,14 +39,18 @@ def test_every_device_yaml_ui_element_is_represented(patcher):
         spec = yaml.safe_load(f)
     box_ids = {b["box"]["id"] for b in patcher["patcher"]["boxes"]}
     # Some elements use variant IDs: audio_in → browse-btn, preset uses obj-preset
+    # Some YAML ids map to different box ids in the builder
     id_aliases = {
-        "audio_in": "obj-browse-btn",
         "load_button": "obj-load-btn",
-        "split_button": "obj-split-button",
+        "forge_button": "obj-forge-button",
         "progress_bar": "obj-progress-bar",
         "status_text": "obj-status-text",
     }
+    # Elements removed from UI but may still be in yaml for config purposes
+    skip_ids = {"title"}  # Ableton device header shows the title
     for el in spec["ui"]["elements"]:
+        if el["id"] in skip_ids:
+            continue
         expected = id_aliases.get(el["id"], f"obj-{el['id'].replace('_', '-')}")
         assert expected in box_ids, f"missing UI element {el['id']} (looked for {expected})"
 
@@ -104,6 +108,11 @@ def test_complete_routed_to_curate(patcher):
     }
     assert ("obj-route-events", "obj-complete-unpack") in sources
     assert ("obj-complete-unpack", "obj-stems-dir-extract") in sources
+
+
+def test_version_label_exists(patcher):
+    box_ids = {b["box"]["id"] for b in patcher["patcher"]["boxes"]}
+    assert "version-label" in box_ids
 
 
 def test_preset_dict_exists(patcher):

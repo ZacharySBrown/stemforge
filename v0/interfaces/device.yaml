@@ -10,65 +10,52 @@ device:
   bundle_identifier: "com.stemforge.m4l.v0"
   version: "0.0.1"
 
-# UI elements in the .amxd patch. Compact horizontal layout for M4L strip.
+# UI — 169px height (M4L standard), 4px grid, dense.
+# No internal title — Ableton's device header shows the name.
 ui:
-  size: { width: 400, height: 140 }
+  size: { width: 296, height: 169 }
 
   elements:
-    - id: title
-      type: label
-      text: "StemForge"
-      pos: { x: 8, y: 4 }
-      style: { font_size: 14, weight: bold }
-
-    - id: audio_in
-      type: file_drop
-      label: "Browse..."
-      accepts: [wav, mp3, aiff, m4a, flac, ogg]
-      pos: { x: 8, y: 28 }
-      size: { width: 80, height: 24 }
-
-    - id: progress_bar
-      type: progress
-      pos: { x: 8, y: 60 }
-      size: { width: 384, height: 16 }
-
-    - id: status_text
-      type: status
-      pos: { x: 8, y: 80 }
-
-    - id: backend
-      type: dropdown
-      label: "Backend"
-      options: [auto, demucs, lalal, musicai]
-      default: auto
-      pos: { x: 8, y: 108 }
-
+    # ── Row 1 (y:4): Preset selector (primary) + Load button ──
     - id: preset
       type: dropdown
       label: "Preset"
       options: []
       default: "idm_production"
-      pos: { x: 152, y: 108 }
-
-    - id: slice
-      type: toggle
-      label: "Slice beats"
-      default: true
-      pos: { x: 300, y: 108 }
+      pos: { x: 4, y: 4 }
 
     - id: load_button
       type: button
       label: "Load"
       action: load_session
-      pos: { x: 96, y: 28 }
-      size: { width: 72, height: 24 }
+      pos: { x: 232, y: 4 }
+      size: { width: 56, height: 20 }
 
-    - id: split_button
+    # ── Row 2 (y:32): Backend + FORGE button ──
+    - id: backend
+      type: dropdown
+      label: "Backend"
+      options: [auto, demucs, lalal, musicai]
+      default: auto
+      pos: { x: 4, y: 32 }
+
+    - id: forge_button
       type: button
-      label: "Split"
+      label: "FORGE"
       action: spawn_native
-      pos: { x: 336, y: 108 }
+      pos: { x: 196, y: 28 }
+      size: { width: 96, height: 28 }
+
+    # ── Row 3 (y:60): Progress bar (full width, thin) ──
+    - id: progress_bar
+      type: progress
+      pos: { x: 4, y: 64 }
+      size: { width: 288, height: 8 }
+
+    # ── Row 4 (y:76): Status text + version ──
+    - id: status_text
+      type: status
+      pos: { x: 4, y: 76 }
 
 # How the M4L device finds the native binary at runtime.
 # First match wins.

@@ -32,6 +32,22 @@ from typing import Any
 
 import yaml
 
+# ── Color palette (from v3 UI spec, Max 0-1 RGBA) ────────────────────────────
+COLORS = {
+    "bg":        [0.055, 0.055, 0.055, 1.0],   # #0e0e0e
+    "surface":   [0.094, 0.094, 0.094, 1.0],   # #181818
+    "card":      [0.118, 0.118, 0.118, 1.0],   # #1e1e1e
+    "border":    [0.165, 0.165, 0.165, 1.0],   # #2a2a2a
+    "accent":    [0.753, 0.518, 0.988, 1.0],   # #c084fc violet
+    "accent2":   [0.506, 0.549, 0.973, 1.0],   # #818cf8 indigo
+    "accent_deep": [0.306, 0.145, 0.714, 1.0], # #4e25b6 deep violet
+    "text":      [0.878, 0.878, 0.878, 1.0],   # #e0e0e0
+    "dim":       [0.533, 0.533, 0.533, 1.0],   # #888888
+    "green":     [0.290, 0.871, 0.502, 1.0],   # #4ade80
+    "yellow":    [0.984, 0.749, 0.141, 1.0],   # #fbbf24
+    "red":       [0.973, 0.443, 0.443, 1.0],   # #f87171
+}
+
 # ── Object IDs ────────────────────────────────────────────────────────────────
 # Stable IDs keep diffs small between regenerations and make patchlines easy.
 OBJ_TITLE = "obj-title"
@@ -46,7 +62,7 @@ OBJ_SCAN_DEFERLOW = "obj-scan-deferlow"
 OBJ_SLICE_TOGGLE = "obj-slice"
 OBJ_PROGRESS_BAR = "obj-progress-bar"
 OBJ_STATUS_TEXT = "obj-status-text"
-OBJ_SPLIT_BUTTON = "obj-split-button"
+OBJ_FORGE_BUTTON = "obj-forge-button"
 OBJ_BRIDGE = "obj-bridge"
 OBJ_LOADER = "obj-loader"
 OBJ_ROUTE_EVENTS = "obj-route-events"
@@ -126,94 +142,66 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     boxes: list[dict[str, Any]] = []
     lines: list[dict[str, Any]] = []
 
-    # --- Title comment ---
-    title_el = elements_by_id.get("title", {"pos": {"x": 12, "y": 8}, "text": device_name})
+    device_version = spec["device"].get("version", "0.0.2")
+
+    # ── Visual panels ─────────────────────────────────────────────────────
+    # NOTE: Panels are added to a separate list and appended AFTER all
+    # interactive elements. In Max presentation mode, EARLIER items in
+    # the boxes array render BEHIND later items. We add panels last but
+    # they won't appear on top because we DON'T use panels for now —
+    # we'll add them incrementally once the base layout is confirmed.
+    #
+    # TODO: Re-enable background panels after confirming element layout.
+    # For now, the Ableton device view provides its own dark background.
+
+    # ── Title bar elements ────────────────────────────────────────────────
+
+    # No internal title — Ableton's device header shows it.
+    # Version label — bottom-right, part of status row
     boxes.append(
-        _box(
-            OBJ_TITLE,
-            "comment",
-            (title_el["pos"]["x"], title_el["pos"]["y"], 200.0, 22.0),
-            presentation=True,
-            numinlets=1,
-            numoutlets=0,
-            extras={
-                "text": title_el.get("text", device_name),
-                "fontsize": 16.0,
-                "textcolor": [0.753, 0.518, 0.988, 1.0],
-            },
-        )
+        _box("version-label", "comment",
+             (size["width"] - 48, 78, 44.0, 14.0),
+             presentation=True, numinlets=1, numoutlets=0,
+             extras={
+                 "text": f"v{device_version}",
+                 "fontsize": 9.0,
+                 "textcolor": COLORS["dim"],
+             })
     )
 
-    # --- Browse button + file dialog (replaces dropfile for M4L compatibility) ---
-    fd = elements_by_id["audio_in"]
+    # ── File dialog (hidden from presentation — used by Forge button) ─────
+
     OBJ_BROWSE_BTN = "obj-browse-btn"
-    boxes.append(
-        _box(
-            OBJ_BROWSE_BTN,
-            "textbutton",
-            (fd["pos"]["x"], fd["pos"]["y"], fd["size"]["width"], fd["size"]["height"]),
-            presentation=True,
-            numinlets=1,
-            numoutlets=3,
-            outlettype=["", "", "int"],
-            extras={
-                "text": fd.get("label", "Browse..."),
-                "fontsize": 11.0,
-            },
-        )
-    )
     OBJ_OPENDIALOG = "obj-opendialog"
+    OBJ_PATH_CONVERT = "obj-path-convert"
+
+    # Browse button — NOT in presentation, just wiring target
     boxes.append(
-        _box(
-            OBJ_OPENDIALOG,
-            "newobj",
-            (fd["pos"]["x"], fd["pos"]["y"] + fd["size"]["height"] + 4, 150.0, 22.0),
-            numinlets=1,
-            numoutlets=2,
-            outlettype=["", "bang"],
-            extras={"text": "opendialog sound"},
-        )
+        _box(OBJ_BROWSE_BTN, "textbutton",
+             (600, 20, 80, 24),  # offscreen in patcher, not in presentation
+             numinlets=1, numoutlets=3, outlettype=["", "", "int"],
+             extras={"text": "Browse..."})
+    )
+    boxes.append(
+        _box(OBJ_OPENDIALOG, "newobj", (600, 50, 150, 22),
+             numinlets=1, numoutlets=2, outlettype=["", "bang"],
+             extras={"text": "opendialog sound"})
     )
     lines.append(_line(OBJ_BROWSE_BTN, 0, OBJ_OPENDIALOG, 0))
-
-    # Path conversion: opendialog emits HFS paths ("Macintosh HD:/Users/...").
-    # regexp strips the volume prefix to get a POSIX path for stemforge-native.
-    OBJ_PATH_CONVERT = "obj-path-convert"
     boxes.append(
-        _box(
-            OBJ_PATH_CONVERT,
-            "newobj",
-            (fd["pos"]["x"], fd["pos"]["y"] + fd["size"]["height"] + 30, 220.0, 22.0),
-            numinlets=1,
-            numoutlets=5,
-            outlettype=["", "", "", "", ""],
-            extras={"text": "regexp (.+):(/.*) @substitute %2"},
-        )
+        _box(OBJ_PATH_CONVERT, "newobj", (600, 80, 220, 22),
+             numinlets=1, numoutlets=5, outlettype=["", "", "", "", ""],
+             extras={"text": "regexp (.+):(/.*) @substitute %2"})
     )
     lines.append(_line(OBJ_OPENDIALOG, 0, OBJ_PATH_CONVERT, 0))
-
-    # Message box displays the selected file path
     boxes.append(
-        _box(
-            OBJ_FILE_PATH_MSG,
-            "message",
-            (
-                fd["pos"]["x"],
-                fd["pos"]["y"] + fd["size"]["height"] + 56,
-                fd["size"]["width"],
-                20.0,
-            ),
-            presentation=True,
-            presentation_rect=(fd["pos"]["x"], fd["pos"]["y"] + fd["size"]["height"] + 4, fd["size"]["width"], 20.0),
-            numinlets=2,
-            numoutlets=1,
-            outlettype=[""],
-            extras={"text": ""},
-        )
+        _box(OBJ_FILE_PATH_MSG, "message", (600, 110, 200, 20),
+             numinlets=2, numoutlets=1, outlettype=[""],
+             extras={"text": ""})
     )
     lines.append(_line(OBJ_PATH_CONVERT, 0, OBJ_FILE_PATH_MSG, 0))
 
-    # --- Load Session button (browse to existing curated manifest) ---
+    # --- Load Session button ─────────────────────────────────────────────
     lb = elements_by_id["load_button"]
     boxes.append(
         _box(
@@ -226,7 +214,12 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             outlettype=["", "", "int"],
             extras={
                 "text": lb.get("label", "Load"),
-                "fontsize": 11.0,
+                "fontsize": 10.0,
+                "bgcolor": COLORS["accent_deep"],
+                "bgoncolor": COLORS["accent"],
+                "textcolor": COLORS["text"],
+                "textoncolor": [1.0, 1.0, 1.0, 1.0],
+                "rounded": 2.0,
             },
         )
     )
@@ -299,13 +292,13 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     lines.append(_line(OBJ_LOAD_SEQ, 0, OBJ_LOAD_DICT_MSG, 0))
     lines.append(_line(OBJ_LOAD_DICT_MSG, 0, OBJ_LOADER, 0))
 
-    # --- Backend dropdown (umenu) ---
+    # --- Backend dropdown — secondary ───────────────────────────────────
     be = elements_by_id["backend"]
     boxes.append(
         _box(
             OBJ_BACKEND_MENU,
             "umenu",
-            (be["pos"]["x"], be["pos"]["y"], 136.0, 22.0),
+            (be["pos"]["x"], be["pos"]["y"], 180.0, 20.0),
             presentation=True,
             numinlets=1,
             numoutlets=3,
@@ -315,17 +308,20 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
                 "arrow": 1,
                 "autopopulate": 1,
                 "prefix": "Backend: ",
+                "bgcolor": COLORS["surface"],
+                "textcolor": COLORS["dim"],
+                "fontsize": 10.0,
             },
         )
     )
 
-    # --- Preset dropdown (umenu) — populated dynamically by JS scanPresets ---
+    # --- Preset dropdown — primary selector, takes most of row 1 ────────
     pr = elements_by_id["preset"]
     boxes.append(
         _box(
             OBJ_PRESET_MENU,
             "umenu",
-            (pr["pos"]["x"], pr["pos"]["y"], 136.0, 22.0),
+            (pr["pos"]["x"], pr["pos"]["y"], 220.0, 20.0),
             presentation=True,
             numinlets=1,
             numoutlets=3,
@@ -334,6 +330,9 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
                 "items": "",
                 "arrow": 1,
                 "prefix": "Preset: ",
+                "bgcolor": COLORS["surface"],
+                "textcolor": COLORS["accent2"],
+                "fontsize": 11.0,
             },
         )
     )
@@ -390,27 +389,9 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     lines.append(_line(OBJ_SCAN_DEFERLOW, 0, OBJ_SCAN_PRESETS_MSG, 0))
     lines.append(_line(OBJ_SCAN_PRESETS_MSG, 0, OBJ_LOADER, 0))
 
-    # --- Slice toggle ---
-    sl = elements_by_id["slice"]
-    boxes.append(
-        _box(
-            OBJ_SLICE_TOGGLE,
-            "live.toggle",
-            (sl["pos"]["x"], sl["pos"]["y"], 22.0, 22.0),
-            presentation=True,
-            numinlets=1,
-            numoutlets=1,
-            outlettype=[""],
-            extras={
-                "parameter_enable": 1,
-                "saved_attribute_attributes": {
-                    "valueof": {"parameter_initial_enable": 1, "parameter_initial": [1 if sl.get("default", True) else 0]}
-                },
-            },
-        )
-    )
+    # Slice toggle removed from UI — always on in production mode.
 
-    # --- Progress bar (live.slider for visual feedback) ---
+    # --- Progress bar (thin, no label) ──────────────────────────────────
     pb = elements_by_id["progress_bar"]
     boxes.append(
         _box(
@@ -425,7 +406,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
                 "saved_attribute_attributes": {
                     "valueof": {
                         "parameter_longname": "StemForge Progress",
-                        "parameter_shortname": "Progress",
+                        "parameter_shortname": " ",
                         "parameter_type": 0,
                         "parameter_mmin": 0.0,
                         "parameter_mmax": 100.0,
@@ -435,43 +416,50 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
                 },
                 "orientation": 0,
                 "parameter_enable": 1,
+                "showname": 0,
+                "shownumber": 0,
             },
         )
     )
 
-    # --- Status text (live.comment updates dynamically, unlike comment) ---
+    # --- Status text — bottom row, muted ────────────────────────────────
     st = elements_by_id["status_text"]
     boxes.append(
         _box(
             OBJ_STATUS_TEXT,
             "live.comment",
-            (st["pos"]["x"], st["pos"]["y"], size["width"] - 24, 22.0),
+            (st["pos"]["x"], st["pos"]["y"], size["width"] - 56, 14.0),
             presentation=True,
             numinlets=1,
             numoutlets=0,
             extras={
-                "text": "idle",
-                "fontsize": 11.0,
-                "textcolor": [0.9, 0.9, 0.9, 1.0],
+                "text": "ready",
+                "fontsize": 9.0,
+                "textcolor": COLORS["dim"],
             },
         )
     )
 
-    # --- Split button ---
-    sb = elements_by_id["split_button"]
+    # --- Forge button ────────────────────────────────────────────────────
+    sb = elements_by_id["forge_button"]
     boxes.append(
         _box(
-            OBJ_SPLIT_BUTTON,
+            OBJ_FORGE_BUTTON,
             "textbutton",
-            (sb["pos"]["x"], sb["pos"]["y"], 72.0, 28.0),
+            (sb["pos"]["x"], sb["pos"]["y"], sb["size"]["width"], sb["size"]["height"]),
             presentation=True,
             numinlets=1,
             numoutlets=3,
             outlettype=["", "", "int"],
             extras={
-                "text": sb.get("label", "Split"),
-                "fontsize": 12.0,
-                "bgoncolor": [0.9, 0.35, 0.15, 1.0],
+                "text": sb.get("label", "FORGE"),
+                "fontsize": 10.0,
+                "fontface": 1,
+                "bgcolor": COLORS["accent_deep"],
+                "bgoncolor": COLORS["accent"],
+                "textcolor": COLORS["text"],
+                "textoncolor": [1.0, 1.0, 1.0, 1.0],
+                "rounded": 2.0,
             },
         )
     )
@@ -506,7 +494,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             extras={"text": "t b"},
         )
     )
-    lines.append(_line(OBJ_SPLIT_BUTTON, 0, OBJ_TRIGGER_BANG, 0))
+    lines.append(_line(OBJ_FORGE_BUTTON, 0, OBJ_TRIGGER_BANG, 0))
     lines.append(_line(OBJ_TRIGGER_BANG, 0, OBJ_FILE_PATH_MSG, 0))
     lines.append(_line(OBJ_FILE_PATH_MSG, 0, OBJ_CMD_FMT, 0))
 
