@@ -27,6 +27,11 @@ native = [
     "torchaudio>=2.1.0",
     "demucs>=4.0.1",
 ]
+# Neural downbeat detection via beat-this transformer (requires torch).
+beat = [
+    "beat-this>=1.1.0",
+    "torch>=2.1.0",
+]
 # Audio classification (genre via CLAP, instruments via AST).
 analyzer = [
     "transformers>=4.40",
@@ -35,6 +40,10 @@ analyzer = [
 # Modal cloud GPU backend.
 modal = [
     "modal>=0.60",
+]
+# EP-133 Playwright exporter (drives TE Sample Tool via browser).
+ep133 = [
+    "playwright>=1.45",
 ]
 # ONNX Runtime + conversion tooling (required for native M4L binary per PIVOT).
 onnx = [

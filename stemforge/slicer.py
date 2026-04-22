@@ -162,19 +162,26 @@ def slice_at_bars(
     silence_threshold: float = 1e-3,
     normalize: bool = True,
     beat_times: np.ndarray = None,
+    bar_start_times: np.ndarray = None,
 ) -> list[Path]:
     """
     Librosa-fallback bar slicer — detects beats then groups by numerator.
+
+    If bar_start_times is provided (e.g. from a neural downbeat detector),
+    those are used directly as bar boundaries instead of computing them
+    from beat_times[::time_sig_numerator].
     """
     y, sr = librosa.load(str(stem_path), sr=None, mono=False)
     if y.ndim == 1:
         y = y[np.newaxis, :]
 
-    if beat_times is None:
-        _, beat_times = detect_bpm_and_beats(stem_path)
-
-    beat_samples = librosa.time_to_samples(beat_times, sr=sr).astype(int)
-    bar_samples = beat_samples[::int(time_sig_numerator)]
+    if bar_start_times is not None and len(bar_start_times) > 0:
+        bar_samples = librosa.time_to_samples(bar_start_times, sr=sr).astype(int)
+    else:
+        if beat_times is None:
+            _, beat_times = detect_bpm_and_beats(stem_path)
+        beat_samples = librosa.time_to_samples(beat_times, sr=sr).astype(int)
+        bar_samples = beat_samples[::int(time_sig_numerator)]
 
     return _write_bar_slices(
         y, sr, bar_samples, output_dir, stem_name,

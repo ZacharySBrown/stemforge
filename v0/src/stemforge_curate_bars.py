@@ -24,11 +24,14 @@ import shutil
 import sys
 from pathlib import Path
 
+import numpy as np
+
 # Add repo root to path so we can import stemforge modules
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from stemforge.slicer import detect_bpm_and_beats, slice_at_bars, group_bars_into_phrases
+from stemforge.beat_align import find_best_downbeat_offset, apply_downbeat_offset, filter_ghost_beats
 from stemforge.curator import curate, section_stratified_select
 from stemforge.config import load_curation_config, CurationConfig
 from stemforge.oneshot import extract_oneshots, extract_kicks_from_bass, select_diverse_oneshots, extract_drum_oneshots_via_larsnet
@@ -99,9 +102,89 @@ def run(
             "message": f"Slicing {len(stems)} stems into bars (time sig: {time_sig}/4)",
         })
 
-    # Step 1: Detect BPM from drums (best rhythmic source)
+    # Step 1: Detect BPM and beats.
+    # beat-this (neural downbeat detection) needs the FULL MIX for harmonic
+    # context — it hallucinates half/double time on isolated drum stems.
+    # Librosa beat_track() works better on drums stems (onset-based).
     bpm_source = stems.get("drums", next(iter(stems.values())))
+
+    # Look for original source audio for beat-this
+    source_audio = None
+    source_manifest = stems_dir / "stems.json"
+    if source_manifest.exists():
+        try:
+            src_data = json.loads(source_manifest.read_text())
+            src_path = Path(src_data.get("source_file", ""))
+            if src_path.exists():
+                source_audio = src_path
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    # Try neural downbeat detection on full mix first.
+    # beat-this needs harmonic context — always prefer full mix over drums stem.
+    # Only keep neural results if bar CV is better than librosa fallback.
+    downbeat_times = None
+
+    # Always get librosa beats as baseline (fast, reliable on drums)
     bpm, beat_times = detect_bpm_and_beats(bpm_source)
+
+    try:
+        from stemforge.beat_detect import detect_beats_and_downbeats
+        bt_source = source_audio or bpm_source
+        bt_bpm, bt_beats, bt_downbeats = detect_beats_and_downbeats(bt_source)
+
+        if len(bt_downbeats) > 2:
+            # Compare bar CV: beat-this downbeats vs librosa stride
+            lib_bar_durs = np.diff(beat_times[::time_sig])
+            lib_cv = lib_bar_durs[:-1].std() / lib_bar_durs[:-1].mean() if len(lib_bar_durs) > 2 else 1
+            bt_bar_durs = np.diff(bt_downbeats)
+            bt_cv = bt_bar_durs[:-1].std() / bt_bar_durs[:-1].mean() if len(bt_bar_durs) > 2 else 1
+
+            if bt_cv < lib_cv:
+                bpm = bt_bpm
+                beat_times = bt_beats
+                downbeat_times = bt_downbeats
+                if json_events:
+                    src_label = "full mix" if source_audio else "drums stem"
+                    emit({"event": "progress", "phase": "alignment", "pct": 2,
+                          "message": f"beat-this ({src_label}): {len(downbeat_times)} downbeats, CV {bt_cv*100:.1f}% (librosa was {lib_cv*100:.1f}%)"})
+            elif json_events:
+                emit({"event": "progress", "phase": "alignment", "pct": 2,
+                      "message": f"beat-this CV {bt_cv*100:.1f}% > librosa {lib_cv*100:.1f}%, using librosa"})
+    except ImportError:
+        pass
+
+    if downbeat_times is None:
+        # Experimental: beat grid corrections (only needed without neural downbeats).
+        # Apply ghost filtering + downbeat offset, but only keep if bar CV improves.
+        # Some tracks (syncopated, odd-time) get worse with corrections — revert those.
+        def _bar_cv(beats, ts):
+            bars = np.diff(beats[::ts])
+            return bars[:-1].std() / bars[:-1].mean() if len(bars) > 2 else 0
+
+        original_cv = _bar_cv(beat_times, time_sig)
+        corrected = beat_times.copy()
+
+        # Step 1a: Ghost beat filtering
+        corrected, ghosts_removed = filter_ghost_beats(corrected)
+
+        # Step 1b: Downbeat offset
+        downbeat_offset = find_best_downbeat_offset(bpm_source, corrected, time_sig)
+        if downbeat_offset > 0:
+            corrected = apply_downbeat_offset(corrected, downbeat_offset)
+
+        # Only keep corrections if they improved bar regularity
+        corrected_cv = _bar_cv(corrected, time_sig)
+        if corrected_cv < original_cv and (ghosts_removed > 0 or downbeat_offset > 0):
+            beat_times = corrected
+            corrections = []
+            if ghosts_removed > 0:
+                corrections.append(f"removed {ghosts_removed} ghost beats")
+            if downbeat_offset > 0:
+                corrections.append(f"shifted {downbeat_offset} beat(s)")
+            if json_events:
+                emit({"event": "progress", "phase": "alignment", "pct": 2,
+                      "message": f"beat grid corrected: {', '.join(corrections)} (CV {original_cv*100:.1f}%→{corrected_cv*100:.1f}%)"})
 
     if json_events:
         emit({"event": "bpm", "bpm": bpm, "beat_count": len(beat_times)})
@@ -121,6 +204,7 @@ def run(
             stem_name=stem_name,
             time_sig_numerator=time_sig,
             beat_times=beat_times,
+            bar_start_times=downbeat_times,
         )
         # slice_at_bars creates {stem_name}_bars/ inside output_dir
         bar_dir = stems_dir / f"{stem_name}_bars"
