@@ -24,7 +24,7 @@
 //   manifest.stems[].wav_path, manifest.stems[].beats_dir (optional).
 // ─────────────────────────────────────────────────────────────────────────────
 
-/* global Max, outlet, post, LiveAPI, File, Task, messagename, arrayfromargs */
+/* global Max, outlet, post, LiveAPI, File, Folder, Task, messagename, arrayfromargs, max */
 
 autowatch = 1;
 inlets = 1;
@@ -45,9 +45,51 @@ var STEM_TARGETS = {
 var SIMPLER_TEMPLATE = "SF | Beat Chop Simpler";
 var FALLBACK_TEMPLATE = null;   // null triggers `generic audio track` path
 
+// Inline file-log helper (see sf_logger.js). Keeps the loader self-contained
+// so a broken require() never takes track creation down.
+function _sfFileLog(module, msg) {
+    try {
+        var homePath;
+        try {
+            if (typeof max !== "undefined" && max && typeof max.getsystemvariable === "function") {
+                homePath = String(max.getsystemvariable("HOME") || "");
+            }
+        } catch (_) {}
+        if (!homePath) {
+            try {
+                if (typeof File !== "undefined" && typeof File.getenv === "function") {
+                    homePath = String(File.getenv("HOME") || "");
+                }
+            } catch (_) {}
+        }
+        if (!homePath) homePath = "/Users/zak";
+        var dir = homePath + "/stemforge/logs";
+        var path = dir + "/sf_debug.log";
+        var maxPath = "Macintosh HD:" + path;
+        try { new Folder("Macintosh HD:" + dir).close(); }
+        catch (_) {
+            try {
+                var ff = new File("Macintosh HD:" + dir + "/.keep", "write", "TEXT", "TEXT");
+                if (ff.isopen) { ff.writestring(""); ff.close(); }
+            } catch (_) {}
+        }
+        var ts;
+        try { ts = (new Date()).toISOString(); }
+        catch (_) { ts = String(new Date().getTime()); }
+        var line = "[" + ts + "] [" + String(module) + "] " + String(msg) + "\n";
+        var f = new File(maxPath, "write", "TEXT", "TEXT");
+        if (!f.isopen) return;
+        try { f.position = f.eof; } catch (_) {}
+        f.writestring(line);
+        try { f.eof = f.position; } catch (_) {}
+        f.close();
+    } catch (_) {}
+}
+
 function status(msg) {
     try { outlet(0, "set", String(msg)); } catch (_) {}
     try { post(String(msg) + "\n"); } catch (_) {}
+    _sfFileLog("sf_loader", msg);
 }
 
 function toMaxPath(p) {
@@ -833,10 +875,20 @@ function loadClipsToTrack(trackIdx, loops, stemName) {
 }
 
 function parseColor(c) {
-    // Accept integer (0xFF4444) or hex string ("#FF4444") → integer for Live API
+    // Accept integer (0xFF4444), hex string ("#FF4444"), or color-descriptor
+    // object ({name, index, hex}) → integer for Live API. Object form is what
+    // the preset JSON now ships (see presets/idm_production.json). We extract
+    // the hex rather than the index so each target keeps its authored shade —
+    // color_index would collapse shade variants that share a palette slot.
     if (typeof c === "number") return c;
     if (typeof c === "string" && c.charAt(0) === "#") {
         return parseInt(c.substring(1), 16);
+    }
+    if (c && typeof c === "object") {
+        if (typeof c.hex === "string" && c.hex.charAt(0) === "#") {
+            return parseInt(c.hex.substring(1), 16);
+        }
+        if (typeof c.hex === "number") return c.hex;
     }
     return null;
 }
@@ -989,28 +1041,53 @@ function loadSong() {
 
     // Priority chain: sf_preset dict → manifest embedding → hardcoded fallback
     var pipelineConfig = null;
+    var pipelineSource = "hardcoded";
+    var pipelineName = null;
 
-    // 1. sf_preset dict (user selected preset in dropdown)
+    // 1. sf_preset dict (user selected preset in dropdown).
+    //    Tolerate three possible shapes:
+    //      a) Top-level `stems` (direct parse-tree write)
+    //      b) `root` key holds a stringified JSON blob
+    //      c) `root` key holds a parsed-tree object
     try {
         var presetDict = new Dict("sf_preset");
         var presetRaw = presetDict.stringify();
         if (presetRaw && presetRaw !== "{}") {
-            var presetData = JSON.parse(presetRaw);
-            if (presetData.stems) {
-                pipelineConfig = presetData.stems;
+            var outer = JSON.parse(presetRaw);
+            var unwrapped = outer;
+            if (outer && outer.root !== undefined) {
+                if (typeof outer.root === "string") {
+                    try { unwrapped = JSON.parse(outer.root); } catch (_) { unwrapped = outer; }
+                } else if (typeof outer.root === "object") {
+                    unwrapped = outer.root;
+                }
+            }
+            if (unwrapped && unwrapped.stems) {
+                pipelineConfig = unwrapped.stems;
+                pipelineSource = "sf_preset";
+                pipelineName = (unwrapped.displayName
+                    || unwrapped.name
+                    || (unwrapped.preset && unwrapped.preset.name)
+                    || "(unnamed)");
             }
         }
-    } catch (_) {}
+    } catch (e) {
+        status("sf_preset read error: " + e);
+    }
 
     // 2. manifest-embedded processing_config (backward compat)
     if (!pipelineConfig && mf.processing_config) {
         pipelineConfig = mf.processing_config;
+        pipelineSource = "manifest-embedded";
     }
 
-    // 3. hardcoded fallback
+    // 3. hardcoded fallback (IDM)
     if (!pipelineConfig) {
         pipelineConfig = PROCESSING_CONFIG;
+        pipelineSource = "hardcoded-IDM";
     }
+    status("pipelineConfig source: " + pipelineSource
+        + (pipelineName ? " (" + pipelineName + ")" : ""));
 
     var stemOrder = ["drums", "bass", "vocals", "other"];
 
