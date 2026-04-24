@@ -139,8 +139,21 @@ function _readFileContents(posixPath) {
     try {
         var f = new File(toMaxPath(posixPath), "read");
         if (!f.isopen) return null;
+        var size = Number(f.eof) || 0;
         var raw = "";
-        while (f.position < f.eof) { raw += f.readstring(65536); }
+        if (size > 0) {
+            // Single-read fast path: Max's chunked readstring loop corrupts
+            // content at chunk boundaries on files >64K (observed on a 90K
+            // manifest.json — JSON.parse fails though Python validates OK).
+            raw = f.readstring(size) || "";
+        }
+        // Fallback: if the single read came up short, read the rest with
+        // explicit position tracking and an abort-on-no-advance guard.
+        var prev = -1;
+        while (f.position < f.eof && f.position !== prev) {
+            prev = f.position;
+            raw += f.readstring(32768);
+        }
         f.close();
         return raw;
     } catch (e) {

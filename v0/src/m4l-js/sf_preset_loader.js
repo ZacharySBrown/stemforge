@@ -141,8 +141,17 @@ function _readFileContents(posixPath) {
     try {
         var f = new File(toMaxPath(posixPath), "read");
         if (!f.isopen) return null;
+        var size = Number(f.eof) || 0;
         var raw = "";
-        while (f.position < f.eof) { raw += f.readstring(65536); }
+        if (size > 0) {
+            // Single-read fast path; see sf_manifest_loader for why.
+            raw = f.readstring(size) || "";
+        }
+        var prev = -1;
+        while (f.position < f.eof && f.position !== prev) {
+            prev = f.position;
+            raw += f.readstring(32768);
+        }
         f.close();
         return raw;
     } catch (e) {
