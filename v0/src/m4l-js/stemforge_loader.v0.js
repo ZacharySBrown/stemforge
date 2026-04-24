@@ -144,6 +144,22 @@ function writeFileContents(p, contents) {
     }
 }
 
+// Max named dicts have an asymmetric API: `parse(jsonStr)` stores jsonStr's
+// content at the dict root (no auto-wrap), but `stringify()` emits
+// `{"root": <content>}` on read. So every read needs to unwrap `.root`
+// and every write should NOT re-wrap (passing a {root:...} string to
+// parse() produces `.root.root` nesting on the next read).
+// root may also be a stringified blob in some older dicts; handle defensively.
+function _unwrapDictContent(parsed) {
+    if (parsed && parsed.root !== undefined) {
+        if (typeof parsed.root === "object") return parsed.root;
+        if (typeof parsed.root === "string") {
+            try { return JSON.parse(parsed.root); } catch (_) {}
+        }
+    }
+    return parsed;
+}
+
 function trackCount() {
     return new LiveAPI("live_set").getcount("tracks");
 }
@@ -459,7 +475,7 @@ function loadFromDict() {
     catch (e) { status("loadFromDict: cannot open dict " + dictName + ": " + e); return; }
 
     var mf;
-    try { mf = JSON.parse(d.stringify()); }
+    try { mf = _unwrapDictContent(JSON.parse(d.stringify())); }
     catch (e) { status("loadFromDict: parse error: " + e); return; }
 
     status("loaded manifest from dict: " + dictName);
@@ -703,7 +719,7 @@ function loadV2FromDict() {
     catch (e) { status("loadV2FromDict: cannot open dict " + dictName + ": " + e); return; }
 
     var mf;
-    try { mf = JSON.parse(d.stringify()); }
+    try { mf = _unwrapDictContent(JSON.parse(d.stringify())); }
     catch (e) { status("loadV2FromDict: parse error: " + e); return; }
 
     status("loaded v2 manifest from dict: " + dictName);
@@ -1143,7 +1159,7 @@ function loadSong() {
     catch (e) { status("loadSong: cannot open dict " + dictName + ": " + e); return; }
 
     var mf;
-    try { mf = JSON.parse(d.stringify()); }
+    try { mf = _unwrapDictContent(JSON.parse(d.stringify())); }
     catch (e) { status("loadSong: parse error: " + e); return; }
 
     var stemData = mf.stems;
@@ -1478,12 +1494,13 @@ function commitOffsets() {
         return;
     }
     var mfDict;
-    try { mfDict = JSON.parse(rawDict); }
+    try { mfDict = _unwrapDictContent(JSON.parse(rawDict)); }
     catch (e4) {
         status("commitOffsets: dict parse error: " + e4);
         return;
     }
     var nDict = _commitAllOffsets(mfDict, clipIndex);
+    // Dict.parse stores json content directly (no auto-wrap) — pass unwrapped.
     try {
         d.parse(JSON.stringify(mfDict));
     } catch (e5) {
