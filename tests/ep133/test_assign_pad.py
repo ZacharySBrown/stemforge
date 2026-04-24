@@ -136,6 +136,22 @@ def test_pad_params_all_fields():
     assert d["time.mode"] == "bpm"  # string form — device rejects integer on write
 
 
+def test_pad_params_playmode_release_coupling():
+    """Release auto-pairs with playmode: oneshot↔255, key↔15, legato↔255.
+
+    The on-device UI always writes both fields atomically when playmode changes.
+    Writing playmode alone (with the wrong release) causes key-mode gating to
+    silently fail at playback. Verified on-device 2026-04-24.
+    """
+    import json
+    assert json.loads(P.PadParams(playmode="oneshot").to_json(slot=1))["envelope.release"] == 255
+    assert json.loads(P.PadParams(playmode="key").to_json(slot=1))["envelope.release"] == 15
+    assert json.loads(P.PadParams(playmode="legato").to_json(slot=1))["envelope.release"] == 255
+
+    # Explicit release overrides the auto-pair
+    assert json.loads(P.PadParams(playmode="key", release=100).to_json(slot=1))["envelope.release"] == 100
+
+
 def test_pad_params_validation():
     """PadParams rejects out-of-range and invalid values."""
     with pytest.raises(ValueError, match="playmode"):

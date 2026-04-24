@@ -156,6 +156,16 @@ _VALID_PLAYMODES = frozenset({"oneshot", "key", "legato"})
 # diagnostic on 2026-04-24 proved {"sound.playmode":"oneshot"} ACKs and {"sound.playmode":0} ERRs.
 # Integer ↔ string map kept for documentation, but to_json() uses the string form.
 _PLAYMODE_WIRE_INT: dict[str, int] = {"oneshot": 0, "key": 1, "legato": 2}
+
+# 2026-04-24: playmode gate behavior REQUIRES a paired envelope.release value. The on-device
+# UI writes both fields atomically when you change playmode — writing playmode alone leaves
+# release at the caller-provided value, which can silently mask the gate behavior.
+# None = legato (on-device UI emits no release change; legato inherits prior release).
+_PLAYMODE_DEFAULT_RELEASE: dict[str, int | None] = {
+    "oneshot": 255,
+    "key":     15,
+    "legato":  None,
+}
 # 2026-04-24: BAR mode is singular "bar" on-device (captures show time.mode enum 0=off, 1=bar, 2=bpm).
 # Earlier "bars" was a guess that never matched capture. Device accepts string form only on write.
 _TIME_MODE_WIRE_INT: dict[str, int] = {"off": 0, "bar": 1, "bpm": 2}
@@ -177,7 +187,10 @@ class PadParams:
     sample_start: int = 0
     sample_end: int | None = None  # omitted when None
     attack: int = 0                # 0..255
-    release: int = 255             # 0..255
+    # release=None → auto-pair with playmode (oneshot↔255, key↔15, legato↔255).
+    # Pass an int to override; the device UI always writes playmode+release atomically,
+    # so key-mode gating silently fails without the paired release value.
+    release: int | None = None     # 0..255 or None for playmode-matched default
     pitch: float = 0.0             # semitones, -12.0..12.0
     amplitude: int = 100           # 0..100
     pan: int = 0                   # -16..16
@@ -194,6 +207,10 @@ class PadParams:
             raise ValueError(
                 f"playmode {self.playmode!r} must be one of {sorted(_VALID_PLAYMODES)}"
             )
+        # Auto-pair release with playmode when caller didn't specify one.
+        # Legato has no UI-emitted pair, so fall back to 255 (safe default for unknown context).
+        if self.release is None:
+            self.release = _PLAYMODE_DEFAULT_RELEASE[self.playmode] or 255
         if self.sample_start < 0:
             raise ValueError(f"sample_start {self.sample_start} must be >= 0")
         if self.sample_end is not None and self.sample_end <= self.sample_start:
