@@ -1,0 +1,341 @@
+{
+  "pipelines": {
+    "default": {
+      "description": "Clean stems, warped and looped, ready to use",
+      "stems": {
+        "drums": {
+          "template": "SF | Drums Raw",
+          "color": 16720896,
+          "warp_mode": "beats",
+          "loop": true
+        },
+        "drum": {
+          "template": "SF | Drums Raw",
+          "color": 16720896,
+          "warp_mode": "beats",
+          "loop": true
+        },
+        "bass": {
+          "template": "SF | Bass",
+          "color": 22015,
+          "warp_mode": "beats",
+          "loop": true
+        },
+        "other": {
+          "template": "SF | Texture Verb",
+          "color": 43588,
+          "warp_mode": "complex",
+          "loop": true
+        },
+        "vocals": {
+          "template": "SF | Vocals",
+          "color": 16746496,
+          "warp_mode": "tones",
+          "loop": true
+        },
+        "synthesizer": {
+          "template": "SF | Texture Verb",
+          "color": 11141375,
+          "warp_mode": "complex",
+          "loop": true
+        },
+        "guitar": {
+          "template": "SF | Texture Verb",
+          "color": 16763904,
+          "warp_mode": "complex",
+          "loop": true
+        },
+        "electricguitar": {
+          "template": "SF | Texture Verb",
+          "color": 16763904,
+          "warp_mode": "complex",
+          "loop": true
+        },
+        "piano": {
+          "template": "SF | Texture Verb",
+          "color": 11141375,
+          "warp_mode": "tones",
+          "loop": true
+        }
+      }
+    },
+    "idm_crushed": {
+      "description": "Bitcrushed, saturated, degraded \u2014 maximum texture",
+      "stems": {
+        "drums": {
+          "template": "SF | Drums Crushed",
+          "color": 16720896,
+          "warp_mode": "beats",
+          "loop": true,
+          "effects": [
+            {
+              "device": 0,
+              "params": {
+                "Digital_Bits": 0.55,
+                "Digital_Rate": 0.45,
+                "Analog_Flux": 0.25,
+                "Global_Strength": 0.75
+              }
+            },
+            {
+              "device": 1,
+              "params": {
+                "Drive": 0.35,
+                "Style": 0.0,
+                "Mix": 0.6
+              }
+            },
+            {
+              "device": 2,
+              "params": {
+                "Ratio": 0.85,
+                "Attack_Time": 0.05,
+                "Release_Time": 0.25,
+                "Makeup": 0.55
+              }
+            }
+          ]
+        },
+        "drum": {
+          "template": "SF | Drums Crushed",
+          "color": 16720896,
+          "warp_mode": "beats",
+          "loop": true,
+          "effects": [
+            {
+              "device": 0,
+              "params": {
+                "Digital_Bits": 0.55,
+                "Digital_Rate": 0.45,
+                "Analog_Flux": 0.25,
+                "Global_Strength": 0.75
+              }
+            },
+            {
+              "device": 1,
+              "params": {
+                "Drive": 0.35,
+                "Style": 0.0,
+                "Mix": 0.6
+              }
+            }
+          ]
+        },
+        "bass": {
+          "template": "SF | Bass",
+          "color": 22015,
+          "warp_mode": "beats",
+          "loop": true,
+          "effects": [
+            {
+              "device": 0,
+              "params": {
+                "1 Frequency": 0.22,
+                "2 Gain": 0.55
+              }
+            },
+            {
+              "device": 1,
+              "params": {
+                "Analog_Flux": 0.15,
+                "Analog_Press": 0.3,
+                "Global_Strength": 0.35
+              }
+            }
+          ]
+        },
+        "other": {
+          "template": "SF | Texture Verb",
+          "color": 43588,
+          "warp_mode": "complex",
+          "loop": true,
+          "effects": [
+            {
+              "device": 0,
+              "params": {
+                "Spectral_Ripple": 0.3,
+                "Spectral_MP3": 0.2,
+                "Analog_Flux": 0.4,
+                "Global_Strength": 0.55
+              }
+            },
+            {
+              "device": 1,
+              "params": {
+                "Style": 0.3,
+                "Time": 0.5,
+                "Feedback": 0.3,
+                "Mix": 0.35
+              }
+            },
+            {
+              "device": 2,
+              "params": {
+                "Room_Size": 0.75,
+                "Decay_Time": 0.7,
+                "Dry_Wet": 0.35
+              }
+            }
+          ]
+        },
+        "synthesizer": {
+          "template": "SF | Texture Verb",
+          "color": 11141375,
+          "warp_mode": "complex",
+          "loop": true,
+          "effects": [
+            {
+              "device": 0,
+              "params": {
+                "Spectral_Ripple": 0.4,
+                "Spectral_MP3": 0.3,
+                "Global_Strength": 0.6
+              }
+            }
+          ]
+        }
+      }
+    },
+    "glitch": {
+      "description": "Granular reverse textures, spectral mangling \u2014 Four Tet / Boards of Canada",
+      "stems": {
+        "drums": {
+          "template": "SF | Drums Raw",
+          "color": 16720896,
+          "warp_mode": "beats",
+          "loop": true
+        },
+        "drum": {
+          "template": "SF | Drums Raw",
+          "color": 16720896,
+          "warp_mode": "beats",
+          "loop": true
+        },
+        "bass": {
+          "template": "SF | Bass",
+          "color": 22015,
+          "warp_mode": "beats",
+          "loop": true
+        },
+        "other": {
+          "template": "SF | Texture Crystallized",
+          "color": 43588,
+          "warp_mode": "complex-pro",
+          "loop": true,
+          "effects": [
+            {
+              "device": 0,
+              "params": {
+                "Pitch": 0.43,
+                "Splice": 0.2,
+                "Delay": 0.4,
+                "Recycle": 0.35,
+                "Reverse": 1.0,
+                "Mix": 0.7
+              }
+            },
+            {
+              "device": 1,
+              "params": {
+                "Room_Size": 0.9,
+                "Decay_Time": 0.85,
+                "Dry_Wet": 0.6
+              }
+            }
+          ]
+        },
+        "synthesizer": {
+          "template": "SF | Texture Crystallized",
+          "color": 11141375,
+          "warp_mode": "complex-pro",
+          "loop": true,
+          "effects": [
+            {
+              "device": 0,
+              "params": {
+                "Pitch": 0.57,
+                "Splice": 0.3,
+                "Recycle": 0.45,
+                "Reverse": 1.0,
+                "Mix": 0.65
+              }
+            }
+          ]
+        }
+      }
+    },
+    "ambient": {
+      "description": "Expansive reverbs, slow modulation \u2014 textural/ambient IDM",
+      "stems": {
+        "drums": {
+          "template": "SF | Drums Raw",
+          "color": 16720896,
+          "warp_mode": "beats",
+          "loop": true,
+          "effects": [
+            {
+              "device": 0,
+              "params": {
+                "Analog_Flux": 0.1,
+                "Global_Strength": 0.2
+              }
+            }
+          ]
+        },
+        "drum": {
+          "template": "SF | Drums Raw",
+          "color": 16720896,
+          "warp_mode": "beats",
+          "loop": true
+        },
+        "bass": {
+          "template": "SF | Bass",
+          "color": 22015,
+          "warp_mode": "tones",
+          "loop": true
+        },
+        "other": {
+          "template": "SF | Texture Verb",
+          "color": 43588,
+          "warp_mode": "complex-pro",
+          "loop": true,
+          "effects": [
+            {
+              "device": 0,
+              "params": {
+                "Rate": 0.08,
+                "Depth": 0.8,
+                "Style": 0.0
+              }
+            },
+            {
+              "device": 1,
+              "params": {
+                "Style": 0.3,
+                "Time": 0.75,
+                "Feedback": 0.45,
+                "Mix": 0.45
+              }
+            },
+            {
+              "device": 2,
+              "params": {
+                "Decay": 0.85,
+                "Mix": 0.5
+              }
+            }
+          ]
+        },
+        "synthesizer": {
+          "template": "SF | Texture Verb",
+          "color": 11141375,
+          "warp_mode": "complex-pro",
+          "loop": true
+        }
+      }
+    }
+  },
+  "stems": {},
+  "displayName": "",
+  "version": "1.0.0"
+}

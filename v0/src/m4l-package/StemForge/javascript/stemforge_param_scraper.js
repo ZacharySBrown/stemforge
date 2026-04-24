@@ -454,7 +454,7 @@ function startScrape(mode) {
 
     // Set default output path — into repo at stemforge/data/
     if (!_outputPath) {
-        _outputPath = "/Users/" + getUsername() + "/zacharysbrown/stemforge/stemforge/data/live_devices.json";
+        _outputPath = "/Users/" + getUsername() + "/Documents/StemForge/live_devices.json";
     }
 
     // Initialize result
