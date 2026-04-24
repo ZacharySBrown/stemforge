@@ -241,13 +241,16 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         v8ui_cfg["size"]["width"],
         v8ui_cfg["size"]["height"],
     )
-    # Presentation-mode rect: full 820×149 so the middle matrix AND right
-    # FORGE button are both visible. Native preset/source umenus sit on TOP
-    # of the v8ui's left-column cards (z-order: umenus added after v8ui).
+    # Presentation-mode rect: narrowed to middle+right only (x=212..820).
+    # v8ui captures all clicks within its bounds, so if it overlaps the
+    # left-column umenus the native dropdowns never receive clicks. sf_ui.js
+    # has been updated to draw the FORGE button at the right edge of whatever
+    # canvas width it gets (onresize handles the width), so the button stays
+    # visible in the narrowed 608-wide area.
     v8ui_presentation_rect = (
-        v8ui_cfg["pos"]["x"],
+        212.0,
         v8ui_cfg["pos"]["y"],
-        v8ui_cfg["size"]["width"],
+        v8ui_cfg["size"]["width"] - 212.0,
         v8ui_cfg["size"]["height"],
     )
     boxes.append(

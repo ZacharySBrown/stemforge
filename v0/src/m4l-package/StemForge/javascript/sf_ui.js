@@ -62,7 +62,11 @@ const CANVAS_W = 820;
 const CANVAS_H = 149;
 
 const COL_LEFT_END   = 212;
-const COL_RIGHT_START = 716;
+// Right column anchors to the right edge of whatever canvas we're given.
+// Patcher may narrow the v8ui presentation_rect (e.g. to 608 wide so native
+// umenus in the left column can receive clicks). onresize() keeps this in
+// sync so FORGE button + middle-matrix width adapt to the actual canvas.
+let COL_RIGHT_START = 716;
 
 // Colors — stored as [r, g, b] 0..1 floats so we don't convert per-paint.
 const COL = {
@@ -492,10 +496,25 @@ function drawMiddleMatrix(state, progressMode, doneMode) {
     }
 }
 
+var _pillDiagLogged = false;
 function drawPillRow(x, y, w, h, targets, stemName, phase2Targets, progressMode, doneMode) {
     const pillH = 20;
     const pillGap = 6;
     const pillY = y + Math.floor((h - pillH) / 2);
+
+    // One-shot diagnostic — log the first pill-row's target data to find
+    // where colors are getting lost on the way to drawPill. Remove after
+    // verification.
+    if (!_pillDiagLogged && targets && targets.length) {
+        _pillDiagLogged = true;
+        try {
+            var t0 = targets[0];
+            _sfFileLog("sf_ui", "pill-diag stem=" + stemName + " n=" + targets.length
+                + " first.name=" + (t0 && t0.name)
+                + " first.color=" + JSON.stringify(t0 && t0.color)
+                + " canvasW=" + canvasW);
+        } catch (e) { _sfFileLog("sf_ui", "pill-diag err: " + e); }
+    }
 
     let cx = x;
     const limitX = x + w;
@@ -704,10 +723,14 @@ function drawMiddleError(state) {
 // ---------------------------------------------------------------------------
 
 function drawRightButton(state) {
-    const bx = COL_RIGHT_START + 8;
-    const by = 75 - 16;     // centered around y=75 per spec
+    // v8ui may be sized smaller than the canonical 820 width when the
+    // patcher narrows presentation_rect (e.g. to leave room for native
+    // umenus in the left column). Anchor the button to the right edge of
+    // whatever canvas width we actually have instead of hardcoded 716.
     const bw = 88;
     const bh = 32;
+    const bx = canvasW - bw - 8;
+    const by = 75 - 16;     // centered around y=75 per spec
 
     let label = "FORGE";
     let fillRgb = COL.violet;
@@ -844,6 +867,9 @@ function ondblclick() { /* unused */ }
 function onresize(w, h) {
     canvasW = w;
     canvasH = h;
+    // Right column hangs off the right edge; keep 104px of space for the
+    // FORGE button + padding (was the 820 − 716 convention).
+    COL_RIGHT_START = Math.max(COL_LEFT_END + 100, canvasW - 104);
     mgraphics.redraw();
 }
 
