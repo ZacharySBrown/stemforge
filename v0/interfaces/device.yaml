@@ -1,71 +1,87 @@
-# StemForge v0 — M4L device UI + binary-resolution contract
-# Track C reads this to generate StemForge.amxd.
-# Track E reads this for install paths.
+# StemForge v0 — M4L device UI + binary-resolution contract.
+#
+# Layout v2 (v8ui matrix architecture):
+#   - 820×169 fixed M4L canvas.
+#   - Top 820×149 is a single [v8ui sf_ui.js] canvas (left/middle/right columns).
+#   - Bottom 20px is native status: status dot + status text + version text.
+#   - All UI drawing + click dispatch happens inside sf_ui.js. The patcher
+#     routes sf_ui's outlet-0 events to popup umenus and the sf_forge/sf_state
+#     JS modules. See specs/stemforge_device_ui_contract.md for the full spec.
 
-version: 1
+version: 2
 
 device:
   name: "StemForge"
   short_name: "SF"
   bundle_identifier: "com.stemforge.m4l.v0"
-  version: "0.0.1"
+  version: "0.1.0"
 
-# UI — 169px height (M4L standard), 4px grid, dense.
-# No internal title — Ableton's device header shows the name.
+# UI — 820×169px (M4L 169 is fixed; 820 is the spec canvas).
 ui:
-  size: { width: 296, height: 169 }
+  size: { width: 820, height: 169 }
 
-  elements:
-    # ── Row 1 (y:4): Preset selector (primary) + Load button ──
-    - id: preset
-      type: dropdown
-      label: "Preset"
-      options: []
-      default: "idm_production"
-      pos: { x: 4, y: 4 }
+  # Visual body is drawn by v8ui; native objects live only in the 20px footer.
+  v8ui:
+    id: sf_ui
+    filename: sf_ui.js
+    pos: { x: 0, y: 0 }
+    size: { width: 820, height: 149 }
 
-    - id: load_button
-      type: button
-      label: "Load"
-      action: load_session
-      pos: { x: 232, y: 4 }
-      size: { width: 56, height: 20 }
+  status_bar:
+    y: 152
+    height: 14
 
-    # ── Row 2 (y:32): Backend + FORGE button ──
-    - id: backend
-      type: dropdown
-      label: "Backend"
-      options: [auto, demucs, lalal, musicai]
-      default: auto
-      pos: { x: 4, y: 32 }
+    status_dot:
+      id: sf_status_dot
+      pos: { x: 8, y: 152 }
+      size: { width: 12, height: 12 }
 
-    - id: forge_button
-      type: button
-      label: "FORGE"
-      action: spawn_native
-      pos: { x: 196, y: 28 }
-      size: { width: 96, height: 28 }
+    status_text:
+      id: sf_status_text
+      pos: { x: 24, y: 152 }
+      size: { width: 600, height: 14 }
 
-    # ── Row 3 (y:60): Progress bar (full width, thin) ──
-    - id: progress_bar
-      type: progress
-      pos: { x: 4, y: 64 }
-      size: { width: 288, height: 8 }
+    version_text:
+      id: sf_version_text
+      pos: { x: 720, y: 152 }
+      size: { width: 90, height: 14 }
 
-    # ── Row 4 (y:76): Status text + version ──
-    - id: status_text
-      type: status
-      pos: { x: 4, y: 76 }
+# JS modules to instantiate as classic [js] boxes in the patcher.
+# v8ui is handled separately. Order here is arbitrary (visual only).
+js_modules:
+  - filename: sf_state.js
+    scripting_name: sf_state_mgr
+    numoutlets: 2
+  - filename: sf_forge.js
+    scripting_name: sf_forge_mgr
+    numoutlets: 3
+  - filename: sf_preset_loader.js
+    scripting_name: sf_preset_loader
+    numoutlets: 2
+  - filename: sf_manifest_loader.js
+    scripting_name: sf_manifest_loader
+    numoutlets: 2
+  - filename: sf_settings.js
+    scripting_name: sf_settings_mgr
+    numoutlets: 2
+  - filename: sf_logger.js
+    scripting_name: sf_logger
+    numoutlets: 0
+  - filename: stemforge_ndjson_parser.v0.js
+    scripting_name: sf_ndjson_parser
+    numoutlets: 1
+  - filename: stemforge_loader.v0.js
+    scripting_name: sf_lom_loader
+    numoutlets: 3
 
 # How the M4L device finds the native binary at runtime.
-# First match wins.
 binary:
   executable_name: stemforge-native
   search_paths:
-    - "$AMXD_DIR/../bin/stemforge-native"                    # co-installed bundle
-    - "~/Library/Application Support/StemForge/bin/stemforge-native"  # user install
-    - "/usr/local/bin/stemforge-native"                      # system install (pkg default)
-    - "/opt/homebrew/bin/stemforge-native"                   # apple silicon brew
+    - "$AMXD_DIR/../bin/stemforge-native"
+    - "~/Library/Application Support/StemForge/bin/stemforge-native"
+    - "/usr/local/bin/stemforge-native"
+    - "/opt/homebrew/bin/stemforge-native"
   protocol: ndjson-stdio
   schema: "v0/interfaces/ndjson.schema.json"
 
@@ -83,7 +99,7 @@ post_complete:
   read_manifest: "~/stemforge/processed/$track/stems.json"
   actions:
     - set_tempo_from_manifest
-    - duplicate_template_tracks   # per tracks.yaml stem_target mappings
+    - duplicate_template_tracks
     - load_clips_into_tracks
     - load_beat_slices_into_simpler
 
@@ -94,6 +110,6 @@ paths:
   logs:              "~/stemforge/logs"
   support:           "~/Library/Application Support/StemForge"
   models:            "~/Library/Application Support/StemForge/models"
-  ableton_user_lib:  "~/Music/Ableton/User Library"  # postinstall detects actual
+  ableton_user_lib:  "~/Music/Ableton/User Library"
   amxd_install:      "$ableton_user_lib/Presets/Audio Effects/Max Audio Effect/StemForge.amxd"
   als_install:       "$ableton_user_lib/Templates/StemForge.als"
