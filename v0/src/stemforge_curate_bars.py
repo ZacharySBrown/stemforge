@@ -789,6 +789,16 @@ def run(
                 "message": f"{stem_name}: {len(oneshot_entries)} one-shots selected",
             })
 
+    # Normalize all stems to {loops, oneshots} shape — stems that skipped
+    # oneshot extraction (loops-only mode, or non-drum stems in production
+    # mode) are still bare lists at this point.
+    for stem_name, stem_entry in list(curated_manifest["stems"].items()):
+        if isinstance(stem_entry, list):
+            curated_manifest["stems"][stem_name] = {
+                "loops": stem_entry,
+                "oneshots": [],
+            }
+
     # Embed processing config (pipeline targets) into manifest for M4L loader
     if pipeline and pipeline.exists():
         import yaml

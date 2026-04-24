@@ -13,7 +13,6 @@ import shutil
 from pathlib import Path
 
 import soundfile as sf
-import torch
 
 LARSNET_MODELS_DIR = Path.home() / ".stemforge" / "models" / "larsnet"
 LARSNET_STEMS = ["kick", "snare", "toms", "hihat", "cymbals"]
@@ -68,6 +67,8 @@ def separate_drums(
     Returns:
         dict mapping stem name → output WAV path
     """
+    import torch
+
     from .larsnet import LarsNet
 
     # Resolve device
@@ -107,6 +108,10 @@ def separate_drums(
 
 
 def is_available() -> bool:
-    """Check if LarsNet models are downloaded and ready."""
+    """Check if LarsNet can actually run — torch importable AND models present."""
+    try:
+        import torch  # noqa: F401
+    except ImportError:
+        return False
     models_dir = _resolve_models_dir()
     return models_dir.exists() and (models_dir / "kick" / "pretrained_kick_unet.pth").exists()
