@@ -110,6 +110,9 @@ OBJ_SHELL               = "obj-shell"
 OBJ_OPENDIALOG          = "obj-opendialog"
 OBJ_AUDIOPATH_REGEX     = "obj-audiopath-regex"
 OBJ_AUDIOPATH_PREPEND   = "obj-audiopath-prepend"
+OBJ_MANIFEST_DIALOG     = "obj-manifest-dialog"
+OBJ_MANIFESTPATH_REGEX  = "obj-manifestpath-regex"
+OBJ_MANIFESTPATH_PREPEND = "obj-manifestpath-prepend"
 
 OBJ_STATUS_DOT          = "obj-sf-status-dot"
 OBJ_STATUS_TEXT         = "obj-sf-status-text"
@@ -596,17 +599,17 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
 
     # Manifest-loader outlet 0 populates the umenu.
     lines.append(_line(OBJ_SF_MANIFEST_LOADER, 0, OBJ_UMENU_SOURCE, 0))
-    # Manifest-loader outlet 1 sends setSource <json> OR browseAudio → we
-    # route through [route] to separate the two.
+    # Manifest-loader outlet 1 sends one of: setSource <json>, browseAudio,
+    # browseManifest. The [route] fans these out to three downstream paths.
     boxes.append(
         _box(
             "obj-route-source",
             "newobj",
-            (16.0 + 220.0, js_row_y + 140, 220.0, 22.0),
+            (16.0 + 220.0, js_row_y + 140, 320.0, 22.0),
             numinlets=1,
-            numoutlets=3,
-            outlettype=["", "", ""],
-            extras={"text": "route setSource browseAudio"},
+            numoutlets=4,
+            outlettype=["", "", "", ""],
+            extras={"text": "route setSource browseAudio browseManifest"},
         )
     )
     lines.append(_line(OBJ_SF_MANIFEST_LOADER, 1, "obj-route-source", 0))
@@ -663,6 +666,47 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     )
     lines.append(_line(OBJ_AUDIOPATH_REGEX, 0, OBJ_AUDIOPATH_PREPEND, 0))
     lines.append(_line(OBJ_AUDIOPATH_PREPEND, 0, OBJ_SF_MANIFEST_LOADER, 0))
+
+    # browseManifest → [opendialog] (any file) → regex strip HFS → prepend
+    # manifestPath → back into sf_manifest_loader. Mirrors the browseAudio
+    # chain above but for a .json manifest file anywhere on disk.
+    boxes.append(
+        _box(
+            OBJ_MANIFEST_DIALOG,
+            "newobj",
+            (16.0 + 700.0, js_row_y + 166, 150.0, 22.0),
+            numinlets=1,
+            numoutlets=2,
+            outlettype=["", "bang"],
+            extras={"text": "opendialog"},
+        )
+    )
+    lines.append(_line("obj-route-source", 2, OBJ_MANIFEST_DIALOG, 0))
+    boxes.append(
+        _box(
+            OBJ_MANIFESTPATH_REGEX,
+            "newobj",
+            (16.0 + 700.0, js_row_y + 192, 230.0, 22.0),
+            numinlets=1,
+            numoutlets=5,
+            outlettype=["", "", "", "", ""],
+            extras={"text": "regexp (.+):(/.*) @substitute %2"},
+        )
+    )
+    lines.append(_line(OBJ_MANIFEST_DIALOG, 0, OBJ_MANIFESTPATH_REGEX, 0))
+    boxes.append(
+        _box(
+            OBJ_MANIFESTPATH_PREPEND,
+            "newobj",
+            (16.0 + 700.0, js_row_y + 218, 160.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "prepend manifestPath"},
+        )
+    )
+    lines.append(_line(OBJ_MANIFESTPATH_REGEX, 0, OBJ_MANIFESTPATH_PREPEND, 0))
+    lines.append(_line(OBJ_MANIFESTPATH_PREPEND, 0, OBJ_SF_MANIFEST_LOADER, 0))
 
     # ── v8ui event routing (outlet 0 is a selector-prefixed list) ───────────
 
