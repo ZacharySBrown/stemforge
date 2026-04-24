@@ -12,6 +12,41 @@
 
 version: 2
 
+# ── Curation Stage v2 Schema ─────────────────────────────────────────────
+# Controls the per-item `clip`/`warp_markers`/`loop`/`offsets` blocks emitted
+# into the curated manifest. See specs/stemforge-curation-v2-spec.md.
+#
+# v0 behaviour: pad_bars is always 0.0 in emitted manifest; padded_* == raw_*;
+# warp_markers are stubs (start + end); offsets.committed=false.
+curation:
+  trim_pad:
+    default_bars: 0.5         # v0: ignored (pad_bars forced to 0). v1: honoured.
+    unit: bars                # "bars" | "beats" | "seconds"
+  warp_markers:
+    enabled: true
+    mode: auto                # "auto" | "manual_only"
+    auto_snap: transient      # "transient" | "downbeat" | "none"
+  loop:
+    enabled: true
+    loop_mode: none           # "none" | "loop" | "ping_pong"
+  stems:
+    drums:
+      trim_pad: { bars: 0.25 }
+      warp_markers: { auto_snap: transient }
+      loop: { enabled: true, loop_mode: none }
+    bass:
+      trim_pad: { bars: 0.5 }
+      warp_markers: { auto_snap: downbeat }
+      loop: { enabled: true, loop_mode: none }
+    vocals:
+      trim_pad: { bars: 1.0 }
+      warp_markers: { auto_snap: transient }
+      loop: { enabled: true, loop_mode: none }
+    other:
+      trim_pad: { bars: 0.5 }
+      warp_markers: { auto_snap: transient }
+      loop: { enabled: true, loop_mode: none }
+
 # ── Layout Mode ──────────────────────────────────────────────────────────
 # stems    = quadrant 8×8 (4 stems × 4×4 pads, Drum Racks)
 # dj       = DJ single-deck (base + subloops + oneshots per quadrant)
@@ -133,3 +168,61 @@ defaults:
     rhythm: 0.5
     spectral: 0.25
     energy: 0.25
+
+# ── EP-133 Export (Hardware sampler target) ─────────────────────────────
+# Drives `stemforge export --target ep133 --manifest ... --config <this>`.
+# See specs/stemforge-ep133-export-spec.md.
+ep133_export:
+  enabled: true
+
+  sync:
+    mode: midi_clock              # "midi_clock" | "sync24" | "usb_midi"
+    master: ableton               # Ableton sends clock; EP-133 receives
+    # On-device: SHIFT+ERASE → System Settings → MIDI → Clock → On
+
+  defaults:
+    play_mode: key                # "oneshot" | "key" | "legato"
+    loop: false
+    mute_group: 0                 # 0 = no choke; 1–8 = group id
+    time_stretch:
+      mode: bpm                   # "bpm" | "bar" | "none"
+      source_bpm: null            # null = read from manifest bpm
+
+  stems:
+    drums:
+      play_mode: oneshot
+      loop: true
+      mute_group: 0
+      time_stretch:
+        mode: bar                 # drums: stretch to fit N bars exactly
+        bars: 4
+    bass:
+      play_mode: oneshot
+      loop: true
+      mute_group: 1
+      time_stretch:
+        mode: bpm
+        source_bpm: null
+    vocals:
+      play_mode: key              # gated: plays while held
+      loop: false
+      mute_group: 2
+      time_stretch:
+        mode: bpm
+        source_bpm: null
+    other:
+      play_mode: legato           # mono, continues on retrigger
+      loop: false
+      mute_group: 0
+      time_stretch:
+        mode: bpm
+        source_bpm: null
+
+  # Starting pad-map. In v0 each of the 16 loops per stem becomes its own file;
+  # the user assigns them to pads in EP Sample Tool following SETUP.md. v1 may
+  # model per-loop pad assignments.
+  pad_map:
+    drums:  { group: A, pad: 1 }
+    bass:   { group: A, pad: 2 }
+    vocals: { group: A, pad: 3 }
+    other:  { group: A, pad: 4 }

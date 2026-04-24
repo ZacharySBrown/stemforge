@@ -122,7 +122,11 @@ class LarsNet(nn.Module):
 
     def forward(self, x):
         if isinstance(x, (str, Path)):
-            x, sr_ = ta.load(str(x))
+            # Load via soundfile directly — torchaudio ≥2.11 routes through
+            # torchcodec regardless of backend=, which is an optional dep.
+            import soundfile as sf
+            audio_np, sr_ = sf.read(str(x), dtype="float32", always_2d=True)
+            x = torch.from_numpy(audio_np.T).contiguous()  # [channels, samples]
             if sr_ != self.sr:
                 x = ta.functional.resample(x, sr_, self.sr)
 

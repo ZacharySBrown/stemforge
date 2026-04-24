@@ -56,9 +56,10 @@ class ModalBackend(AbstractBackend):
 
         console.print(f"  Backend: [cyan]Modal (cloud GPU)[/cyan]")
 
-        # Look up the deployed function by app + function name
+        # Look up the deployed function by app + function name.
+        # Modal 1.x renamed Function.lookup → Function.from_name.
         try:
-            split_track = modal.Function.lookup(MODAL_APP_NAME, MODAL_FUNCTION_NAME)
+            split_track = modal.Function.from_name(MODAL_APP_NAME, MODAL_FUNCTION_NAME)
         except Exception as e:
             raise RuntimeError(
                 f"Could not find deployed Modal function '{MODAL_APP_NAME}/{MODAL_FUNCTION_NAME}'.\n"

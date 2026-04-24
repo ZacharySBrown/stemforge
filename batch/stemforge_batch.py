@@ -166,8 +166,11 @@ def split_track(
             {"mix": chunk, "z_cac": z_cac},
         )
 
-        # time_out_stacked: [4, 2, CHUNK] — 4 heads × stereo × samples
-        time_out = outputs[0]   # [4, 2, CHUNK]
+        # time_out_stacked ONNX output shape is [1, 4, 2, CHUNK] —
+        # batch × 4 heads × stereo × samples. Squeeze batch dim.
+        time_out = outputs[0]
+        if time_out.ndim == 4 and time_out.shape[0] == 1:
+            time_out = time_out[0]   # [4, 2, CHUNK]
 
         # Average the 4 specialist heads for each stem
         for stem_idx, stem_name in enumerate(STEMS):

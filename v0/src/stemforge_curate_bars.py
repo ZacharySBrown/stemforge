@@ -34,6 +34,11 @@ from stemforge.slicer import detect_bpm_and_beats, slice_at_bars, group_bars_int
 from stemforge.beat_align import find_best_downbeat_offset, apply_downbeat_offset, filter_ghost_beats
 from stemforge.curator import curate, section_stratified_select
 from stemforge.config import load_curation_config, CurationConfig
+from stemforge.curation_schema import (
+    load_curation_schema_config,
+    build_curation_block,
+    CurationSchemaConfig,
+)
 from stemforge.oneshot import extract_oneshots, extract_kicks_from_bass, select_diverse_oneshots, extract_drum_oneshots_via_larsnet
 from stemforge.drum_classifier import classify_and_assign, arrange_drum_pads
 from stemforge.layout import build_stems_layout, layout_to_manifest
@@ -65,6 +70,7 @@ def run(
     json_events: bool = True,
     curation_config: CurationConfig | None = None,
     pipeline: Path | None = None,
+    schema_config: CurationSchemaConfig | None = None,
 ) -> Path:
     """Run bar slicing + curation on stems in stems_dir.
 
@@ -77,6 +83,8 @@ def run(
     stems = find_stems(stems_dir)
     if curation_config is None:
         curation_config = CurationConfig()
+    if schema_config is None:
+        schema_config = CurationSchemaConfig()
 
     layout_mode = curation_config.layout.mode
     is_loops_only = layout_mode == "loops-only"
@@ -348,17 +356,25 @@ def run(
                     bar_index[int(m.group(1))] = bf
 
             stem_bars = []
+            stem_schema = schema_config.for_stem(stem_name)
             for position, bar_idx in enumerate(selected_indices):
                 src = bar_index.get(bar_idx)
                 if src and src.exists():
                     dst = stem_curated_dir / f"bar_{position + 1:03d}.wav"
                     shutil.copy2(src, dst)
-                    stem_bars.append({
+                    entry = {
                         "position": position + 1,
                         "source_bar_index": bar_idx,
                         "phrase_bars": 1,
                         "file": str(dst),
-                    })
+                    }
+                    entry.update(build_curation_block(
+                        dst, phrase_bars=1,
+                        time_sig_numerator=time_sig,
+                        stem_schema=stem_schema,
+                        bpm=bpm,
+                    ))
+                    stem_bars.append(entry)
             curated_manifest["stems"][stem_name] = stem_bars
 
     else:
@@ -436,14 +452,22 @@ def run(
                 )
 
             stem_bars = []
+            stem_schema = schema_config.for_stem(stem_name)
             for position, src in enumerate(selected):
                 dst = stem_curated_dir / f"bar_{position + 1:03d}.wav"
                 shutil.copy2(src, dst)
-                stem_bars.append({
+                entry = {
                     "position": position + 1,
                     "phrase_bars": sc.phrase_bars,
                     "file": str(dst),
-                })
+                }
+                entry.update(build_curation_block(
+                    dst, phrase_bars=sc.phrase_bars,
+                    time_sig_numerator=time_sig,
+                    stem_schema=stem_schema,
+                    bpm=bpm,
+                ))
+                stem_bars.append(entry)
 
             curated_manifest["stems"][stem_name] = stem_bars
 
@@ -509,12 +533,13 @@ def run(
         stem_os_dir.mkdir(parents=True, exist_ok=True)
 
         oneshot_entries = []
+        stem_schema = schema_config.for_stem(stem_name)
         for oi, profile in enumerate(selected_os):
             if profile is None or profile.path is None:
                 continue
             dst = stem_os_dir / f"os_{oi + 1:03d}.wav"
             shutil.copy2(profile.path, dst)
-            oneshot_entries.append({
+            entry = {
                 "position": oi + 1,
                 "file": str(dst),
                 "classification": profile.classification,
@@ -525,7 +550,16 @@ def run(
                 "duration_ms": round(profile.duration * 1000, 1),
                 "rms": round(profile.rms, 4),
                 "crest_factor": round(profile.crest_factor, 2),
-            })
+            }
+            # Oneshots have no fixed phrase_bars — pass None so beat_pos_end is
+            # derived from BPM + duration.
+            entry.update(build_curation_block(
+                dst, phrase_bars=None,
+                time_sig_numerator=time_sig,
+                stem_schema=stem_schema,
+                bpm=bpm,
+            ))
+            oneshot_entries.append(entry)
 
         # Upgrade manifest stem entry to v2 format (loops + oneshots)
         existing = curated_manifest["stems"].get(stem_name, [])
@@ -627,6 +661,7 @@ def main():
     args = ap.parse_args()
 
     curation_cfg = load_curation_config(args.curation) if args.curation else None
+    schema_cfg = load_curation_schema_config(args.curation) if args.curation else None
 
     try:
         manifest = run(
@@ -637,6 +672,7 @@ def main():
             json_events=args.json_events,
             curation_config=curation_cfg,
             pipeline=args.pipeline,
+            schema_config=schema_cfg,
         )
         if not args.json_events:
             print(f"Curated manifest: {manifest}")

@@ -536,7 +536,7 @@ def generate_pipeline_json(pipeline_dir):
 @click.option("--analysis", type=click.Path(exists=True, path_type=Path), default=None,
               help="Ableton analysis JSON. If omitted, uses librosa beat detection.")
 @click.option("--backend", "-b", default="demucs",
-              type=click.Choice(["demucs"]))
+              type=click.Choice(["demucs", "modal", "lalal", "musicai"]))
 @click.option("--model", "-m", default="default")
 @click.option("--strategy", "-s", default="max-diversity",
               type=click.Choice(["max-diversity", "rhythm-taxonomy", "sectional"]))
@@ -544,7 +544,12 @@ def generate_pipeline_json(pipeline_dir):
 @click.option("--time-sig", default="4/4",
               help="Time signature (librosa fallback only). Format: numerator/denominator.")
 @click.option("--output", "-o", default=None, type=click.Path(path_type=Path))
-def forge(audio_file, analysis, backend, model, strategy, n_bars, time_sig, output):
+@click.option("--curation", type=click.Path(exists=True, path_type=Path), default=None,
+              help="Curation config YAML (e.g. pipelines/curation.yaml). When provided, "
+                   "delegates bar-slicing + curation to v0/src/stemforge_curate_bars.py and "
+                   "produces a production-mode manifest (layout_mode=production, version=2). "
+                   "Omit to use forge's built-in v1 curation path.")
+def forge(audio_file, analysis, backend, model, strategy, n_bars, time_sig, output, curation):
     """
     Full pipeline: split → slice at bars → curate → curated WAVs + manifest.
 
@@ -574,16 +579,61 @@ def forge(audio_file, analysis, backend, model, strategy, n_bars, time_sig, outp
 
     # ── 1. Separation ──
     emit("progress", phase="splitting", pct=0)
-    be = DemucsBackend()
+    if backend == "modal":
+        from .backends.modal_backend import ModalBackend
+        be = ModalBackend()
+    elif backend == "lalal":
+        be = LalalBackend()
+    elif backend == "musicai":
+        be = MusicAiBackend()
+    else:
+        be = DemucsBackend()
     try:
-        stem_paths = be.separate(audio_file, track_out, model=model)
+        if backend == "demucs":
+            stem_paths = be.separate(audio_file, track_out, model=model)
+        else:
+            stem_paths = be.separate(audio_file, track_out)
     except Exception as e:
         emit("error", phase="splitting", message=str(e))
         sys.exit(1)
     emit("progress", phase="splitting", pct=100,
          stems=[str(p) for p in stem_paths.values()])
 
-    # ── 2. Slicing at bar boundaries ──
+    # ── 2+3. Production curation (opt-in via --curation) ──
+    # When a curation config is provided, delegate bar-slicing + curation to
+    # v0/src/stemforge_curate_bars.py which writes a production-mode manifest
+    # (layout_mode=production, version=2, drum oneshots, phrase structure).
+    # When omitted, falls through to forge's legacy inline curator below.
+    if curation is not None:
+        import subprocess
+        script = Path(__file__).resolve().parents[1] / "v0/src/stemforge_curate_bars.py"
+        if not script.exists():
+            emit("error", phase="curating",
+                 message=f"stemforge_curate_bars.py not found at {script}")
+            sys.exit(1)
+        result = subprocess.run(
+            [sys.executable, str(script),
+             "--stems-dir", str(track_out),
+             "--curation", str(curation),
+             "--json-events",
+             "--n-bars", str(n_bars),
+             "--strategy", strategy,
+             "--time-sig", str(fallback_numerator)],
+            check=False,
+        )
+        if result.returncode != 0:
+            emit("error", phase="curating",
+                 message=f"stemforge_curate_bars.py exited {result.returncode}")
+            sys.exit(1)
+        manifest_path = track_out / "curated" / "manifest.json"
+        emit("complete",
+             output_dir=str(manifest_path.parent),
+             manifest=str(manifest_path),
+             bars=n_bars,
+             mode="production")
+        return
+
+    # ── 2. Slicing at bar boundaries (legacy inline path) ──
     emit("progress", phase="slicing", pct=0)
 
     analysis_data = None
@@ -687,7 +737,8 @@ def forge(audio_file, analysis, backend, model, strategy, n_bars, time_sig, outp
 
 
 @cli.command()
-@click.argument("input_path", type=click.Path(exists=True, path_type=Path))
+@click.argument("input_path", required=False, default=None,
+                type=click.Path(exists=True, path_type=Path))
 @click.option("--target", "-t", required=True,
               type=click.Choice(["ep133", "chompi", "both"]),
               help="Target device.")
@@ -707,7 +758,17 @@ def forge(audio_file, analysis, backend, model, strategy, n_bars, time_sig, outp
               help="EP-133: upload samples via USB-MIDI SysEx after export.")
 @click.option("--start-slot", default=1, type=int,
               help="EP-133: starting sound slot for upload (default: 1).")
-def export(input_path, target, workflow, output, budget, firmware, dry_run, upload, start_slot):
+@click.option("--manifest", default=None, type=click.Path(exists=True, path_type=Path),
+              help="EP-133 v2 manifest-driven export. When provided, loads a curated "
+                   "manifest.json (Curation Stage v2 schema) and produces per-loop "
+                   "WAVs + SETUP.md sized for EP Sample Tool. Skips legacy "
+                   "directory-scan. Pairs with --config.")
+@click.option("--config", "config_path", default=None,
+              type=click.Path(exists=True, path_type=Path),
+              help="EP-133 v2 curation config YAML (e.g. pipelines/curation.yaml). "
+                   "Reads the `ep133_export:` block. Used with --manifest.")
+def export(input_path, target, workflow, output, budget, firmware, dry_run,
+           upload, start_slot, manifest, config_path):
     """
     Export stems/slices for hardware samplers.
 
@@ -717,7 +778,62 @@ def export(input_path, target, workflow, output, budget, firmware, dry_run, uplo
       stemforge export processed/ --target chompi --workflow perform
       stemforge export track_dir/ --target both --workflow compose
       stemforge export track_dir/ --target ep133 --workflow compose --budget
+
+    \b
+    EP-133 v2 (manifest-driven):
+      stemforge export --target ep133 \\
+        --manifest processed/song/curated/manifest.json \\
+        --config pipelines/curation.yaml \\
+        --output export/ep133/
     """
+    # ── EP-133 v2 manifest-driven path ───────────────────────────────────────
+    if manifest is not None:
+        if target != "ep133":
+            raise click.UsageError(
+                "--manifest is EP-133-specific; use --target ep133."
+            )
+        if input_path is not None:
+            console.print(
+                "[yellow]--manifest provided; ignoring positional INPUT_PATH.[/yellow]"
+            )
+        from .exporters.ep133_v2 import export_from_manifest
+
+        out_root = Path(output) if output else Path("./export/ep133")
+        if dry_run:
+            console.print(
+                f"[dim]DRY RUN: would export manifest {manifest} → {out_root}[/dim]"
+            )
+            return
+
+        try:
+            song_out = export_from_manifest(
+                manifest_path=Path(manifest),
+                config_path=Path(config_path) if config_path else None,
+                out_dir=Path(out_root),
+            )
+        except (ValueError, FileNotFoundError, OSError) as e:
+            console.print(f"[red]EP-133 v2 export failed:[/red] {e}")
+            sys.exit(1)
+
+        report_file = song_out / "_ep133_export_report.json"
+        if report_file.exists():
+            r = json.loads(report_file.read_text())
+            console.print(
+                f"  [green]OK[/green] ep133 v2: "
+                f"{r['loops_exported']} loops → {song_out}"
+            )
+            for w in r.get("warnings", []):
+                console.print(f"  [yellow]warn:[/yellow] {w}")
+        else:
+            console.print(f"  [green]OK[/green] ep133 v2: → {song_out}")
+        return
+
+    # ── Legacy directory-scan path ────────────────────────────────────────────
+    if input_path is None:
+        raise click.UsageError(
+            "INPUT_PATH is required unless --manifest is provided."
+        )
+
     from .exporters.ep133 import EP133Exporter
     from .exporters.chompi import ChompiExporter
 

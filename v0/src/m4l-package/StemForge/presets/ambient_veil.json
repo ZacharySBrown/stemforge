@@ -1,0 +1,368 @@
+{
+  "preset": {
+    "name": "Ambient Veil",
+    "version": "1.0.0",
+    "description": "Drifting, reverb-washed textures. Designed to layer on top of a rhythmic preset (IDM) for atmosphere — pads, drones, shimmer, granular freeze."
+  },
+  "stems": {
+    "drums": {
+      "targets": [
+        {
+          "name": "loops",
+          "type": "clips",
+          "color": {
+            "name": "periwinkle",
+            "index": 10,
+            "hex": "#92A7FF"
+          },
+          "params": {
+            "phrase_bars": 2,
+            "loop_count": 16,
+            "strategy": "rhythm-taxonomy"
+          },
+          "chain": [
+            {
+              "insert": "Chorus-Ensemble",
+              "params": {
+                "Mode": 1,
+                "Rate": 0.2,
+                "Amount": 0.35,
+                "Feedback": 0.15,
+                "Width": 0.6,
+                "Dry/Wet": 0.5
+              }
+            },
+            {
+              "insert": "EQ Eight",
+              "params": {}
+            }
+          ]
+        },
+        {
+          "name": "rack",
+          "type": "rack",
+          "color": {
+            "name": "sky",
+            "index": 8,
+            "hex": "#8BC5FF"
+          },
+          "params": {
+            "oneshot_count": 16,
+            "oneshot_mode": "classify",
+            "use_larsnet": true,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "Reverb",
+              "params": {
+                "Decay Time": 0.6,
+                "Room Size": 0.55,
+                "Predelay": 0.15,
+                "Dry/Wet": 0.5
+              }
+            }
+          ]
+        },
+        {
+          "name": "ghost",
+          "type": "clips",
+          "color": {
+            "name": "slate_blue",
+            "index": 21,
+            "hex": "#009DB7"
+          },
+          "params": {
+            "phrase_bars": 2,
+            "loop_count": 16,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "Auto Filter",
+              "params": {
+                "Filter Type": 1,
+                "Frequency": 0.4,
+                "Resonance": 0.15,
+                "Filter Slope": 1
+              }
+            },
+            {
+              "insert": "Reverb",
+              "params": {
+                "Decay Time": 0.85,
+                "Room Size": 0.75,
+                "Predelay": 0.2,
+                "Diffusion": 0.7,
+                "Dry/Wet": 0.75
+              }
+            }
+          ]
+        },
+        {
+          "name": "drone",
+          "type": "clips",
+          "color": {
+            "name": "dark_indigo",
+            "index": 23,
+            "hex": "#3C21A0"
+          },
+          "params": {
+            "phrase_bars": 2,
+            "loop_count": 16,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "Grain Delay",
+              "params": {
+                "Pitch": -12,
+                "Spray": 0.6,
+                "Frequency": 0.3,
+                "Random": 0.4,
+                "Feedback": 0.75,
+                "DryWet": 1.0
+              }
+            },
+            {
+              "insert": "Hybrid Reverb",
+              "params": {
+                "Algo Type": 2,
+                "Decay": 0.85,
+                "Size": 0.75,
+                "Sh Shimmer": 0.55,
+                "Dry/Wet": 0.7
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "bass": {
+      "targets": [
+        {
+          "name": "sub",
+          "type": "clips",
+          "color": {
+            "name": "indigo",
+            "index": 22,
+            "hex": "#3C55C7"
+          },
+          "params": {
+            "phrase_bars": 4,
+            "loop_count": 16,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "EQ Eight",
+              "params": {}
+            },
+            {
+              "insert": "Utility",
+              "params": {
+                "Bass Mono": 1,
+                "Bass Freq": 0.3,
+                "Stereo Width": 0.85
+              }
+            }
+          ]
+        },
+        {
+          "name": "drone",
+          "type": "clips",
+          "color": {
+            "name": "dark_indigo",
+            "index": 23,
+            "hex": "#3C21A0"
+          },
+          "params": {
+            "phrase_bars": 4,
+            "loop_count": 16,
+            "strategy": "sectional"
+          },
+          "chain": [
+            {
+              "insert": "Grain Delay",
+              "params": {
+                "Pitch": -7,
+                "Spray": 0.5,
+                "Frequency": 0.4,
+                "Random": 0.3,
+                "Feedback": 0.65,
+                "DryWet": 0.85
+              }
+            },
+            {
+              "insert": "Reverb",
+              "params": {
+                "Decay Time": 0.8,
+                "Room Size": 0.7,
+                "Dry/Wet": 0.7
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "vocals": {
+      "targets": [
+        {
+          "name": "phrases",
+          "type": "clips",
+          "color": {
+            "name": "cyan",
+            "index": 7,
+            "hex": "#5CFFE8"
+          },
+          "params": {
+            "phrase_bars": 4,
+            "loop_count": 16,
+            "strategy": "sectional"
+          },
+          "chain": [
+            {
+              "insert": "Chorus-Ensemble",
+              "params": {
+                "Mode": 1,
+                "Rate": 0.15,
+                "Amount": 0.3,
+                "Width": 0.65,
+                "Dry/Wet": 0.4
+              }
+            },
+            {
+              "insert": "Reverb",
+              "params": {
+                "Decay Time": 0.7,
+                "Room Size": 0.6,
+                "Predelay": 0.2,
+                "Dry/Wet": 0.55
+              }
+            }
+          ]
+        },
+        {
+          "name": "whisper",
+          "type": "clips",
+          "color": {
+            "name": "mint",
+            "index": 6,
+            "hex": "#25FFA8"
+          },
+          "params": {
+            "phrase_bars": 4,
+            "loop_count": 16,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "Auto Filter",
+              "params": {
+                "Filter Type": 1,
+                "Frequency": 0.5,
+                "Resonance": 0.2
+              }
+            },
+            {
+              "insert": "Grain Delay",
+              "params": {
+                "Pitch": 0,
+                "Spray": 0.7,
+                "Frequency": 0.2,
+                "Feedback": 0.55,
+                "DryWet": 0.65
+              }
+            },
+            {
+              "insert": "Reverb",
+              "params": {
+                "Decay Time": 0.85,
+                "Room Size": 0.75,
+                "Predelay": 0.25,
+                "Dry/Wet": 0.75
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "other": {
+      "targets": [
+        {
+          "name": "shimmer",
+          "type": "clips",
+          "color": {
+            "name": "magenta",
+            "index": 11,
+            "hex": "#D86CE4"
+          },
+          "params": {
+            "phrase_bars": 4,
+            "loop_count": 16,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "Chorus-Ensemble",
+              "params": {
+                "Mode": 1,
+                "Rate": 0.15,
+                "Amount": 0.35,
+                "Width": 0.7,
+                "Dry/Wet": 0.5
+              }
+            },
+            {
+              "insert": "Hybrid Reverb",
+              "params": {
+                "Algo Type": 2,
+                "Decay": 0.75,
+                "Size": 0.7,
+                "Sh Shimmer": 0.7,
+                "Sh Pitch Shift": 0.6,
+                "Dry/Wet": 0.65
+              }
+            }
+          ]
+        },
+        {
+          "name": "drone",
+          "type": "clips",
+          "color": {
+            "name": "purple",
+            "index": 24,
+            "hex": "#AB3CBF"
+          },
+          "params": {
+            "phrase_bars": 4,
+            "loop_count": 16,
+            "strategy": "sectional"
+          },
+          "chain": [
+            {
+              "insert": "Grain Delay",
+              "params": {
+                "Pitch": -12,
+                "Spray": 0.7,
+                "Frequency": 0.25,
+                "Feedback": 0.8,
+                "DryWet": 1.0
+              }
+            },
+            {
+              "insert": "Reverb",
+              "params": {
+                "Decay Time": 0.9,
+                "Room Size": 0.85,
+                "Dry/Wet": 0.7
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "displayName": "Ambient Veil",
+  "version": "1.0.0"
+}

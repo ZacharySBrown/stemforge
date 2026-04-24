@@ -112,6 +112,29 @@ function readFileContents(p) {
     }
 }
 
+function writeFileContents(p, contents) {
+    // Overwrites the file at `p` with `contents`. Truncates before writing.
+    // Modeled on _sfFileLog's file-write pattern — used by commitOffsets to
+    // persist manifest changes back to disk.
+    try {
+        var maxPath = toMaxPath(p);
+        var f = new File(maxPath, "write", "TEXT", "TEXT");
+        if (!f.isopen) {
+            status("writeFile error: could not open " + p);
+            return false;
+        }
+        try { f.position = 0; } catch (_) {}
+        try { f.eof = 0; } catch (_) {}
+        f.writestring(String(contents));
+        try { f.eof = f.position; } catch (_) {}
+        f.close();
+        return true;
+    } catch (e) {
+        status("writeFile error: " + e);
+        return false;
+    }
+}
+
 function trackCount() {
     return new LiveAPI("live_set").getcount("tracks");
 }
@@ -175,6 +198,84 @@ function loadClip(trackIdx, slotIdx, wavPath, clipName, startMarkerBeats) {
             // transients during selection (prefer bars that start with a hit).
         }
     } catch (_) {}
+    return true;
+}
+
+// Apply Curation v2 clip/warp-marker/offset data to an already-loaded clip.
+// Feature-detects the v2 schema by checking loopEntry.clip.padded_start_sec.
+// Returns true if v2 data was applied, false if the entry is legacy (caller
+// should fall back to its existing warp_mode behavior). See spec sections
+// 4 (warp marker types), 6 (offset flow), 9 (export formula), 10 (M4L app).
+function applyCurationV2Clip(clipApi, loopEntry) {
+    if (!loopEntry || !loopEntry.clip) return false;
+    var clipBlock = loopEntry.clip;
+    if (clipBlock.padded_start_sec === undefined) return false;
+    if (!clipApi || clipApi.id === "0") return false;
+
+    var offsets = loopEntry.offsets || {};
+    var startOffset = Number(offsets.start_offset_sec) || 0.0;
+    var endOffset = Number(offsets.end_offset_sec) || 0.0;
+
+    var paddedStart = Number(clipBlock.padded_start_sec) || 0.0;
+    var paddedEnd = Number(clipBlock.padded_end_sec) || 0.0;
+    var startMarker = paddedStart + startOffset;
+    var endMarker = paddedEnd + endOffset;
+
+    // Set clip boundaries (spec §9)
+    try { clipApi.set("start_marker", startMarker); } catch (e) {
+        status("      start_marker set failed: " + e);
+    }
+    try { clipApi.set("end_marker", endMarker); } catch (e) {
+        status("      end_marker set failed: " + e);
+    }
+
+    // Loop block (spec §5)
+    var loopBlock = loopEntry.loop;
+    if (loopBlock && loopBlock.enabled) {
+        var ls = Number(loopBlock.loop_start_sec);
+        var le = Number(loopBlock.loop_end_sec);
+        if (isFinite(ls)) {
+            try { clipApi.set("loop_start", ls); } catch (_) {}
+        }
+        if (isFinite(le)) {
+            try { clipApi.set("loop_end", le); } catch (_) {}
+        }
+        try { clipApi.set("looping", 1); } catch (_) {}
+    }
+
+    // Default warp mode = 4 (Complex) per spec §10.
+    try { clipApi.set("warp_mode", 4); } catch (_) {}
+
+    // Warp markers (spec §4, §10). Try `create_warp_marker` first, fall back
+    // to `add_warp_marker`; if both fail, skip (clip still has Live's default
+    // start/end markers).
+    var wmList = loopEntry.warp_markers;
+    if (wmList && wmList.length) {
+        for (var wi = 0; wi < wmList.length; wi++) {
+            var wm = wmList[wi];
+            if (!wm) continue;
+            var t = Number(wm.time_sec);
+            var b = Number(wm.beat_pos);
+            if (!isFinite(t) || !isFinite(b)) continue;
+            var created = false;
+            try {
+                clipApi.call("create_warp_marker", t, b);
+                created = true;
+            } catch (e1) {
+                try {
+                    clipApi.call("add_warp_marker", t, b);
+                    created = true;
+                } catch (e2) {
+                    // Skip — neither API call available.
+                }
+            }
+            if (!created) {
+                // Stop trying if the first marker failed; avoid log spam.
+                break;
+            }
+        }
+    }
+
     return true;
 }
 
@@ -312,7 +413,12 @@ function _loadCuratedManifest(mf) {
                         "live_set tracks " + insertIdx + " clip_slots " + bi + " clip"
                     );
                     if (clipApi.id !== "0") {
-                        clipApi.set("warp_mode", warpMode);
+                        // Curation v2: apply padded markers + warp markers
+                        // + offsets when present; fall back to legacy warp
+                        // mode when the entry has no clip block.
+                        if (!applyCurationV2Clip(clipApi, bar)) {
+                            clipApi.set("warp_mode", warpMode);
+                        }
                     }
                 } catch (_) {}
                 loaded++;
@@ -864,7 +970,12 @@ function loadClipsToTrack(trackIdx, loops, stemName) {
                         "live_set tracks " + trackIdx + " clip_slots " + li + " clip"
                     );
                     if (clipApi.id !== "0") {
-                        clipApi.set("warp_mode", warpMode);
+                        // Curation v2: if entry has a clip block, apply
+                        // padded markers + warp markers + offsets. Otherwise
+                        // fall back to legacy per-stem warp_mode.
+                        if (!applyCurationV2Clip(clipApi, item)) {
+                            clipApi.set("warp_mode", warpMode);
+                        }
                     }
                 } catch (_) {}
                 loaded++;
@@ -1178,6 +1289,200 @@ function loadSong() {
     }
 
     status("song loader: " + loaded + " items across " + stemOrder.length + " stems for \"" + songName + "\"");
+    outlet(1, "bang");
+}
+
+// ── Curation v2: commit offsets (Ableton → manifest) ────────────────────────
+// Per spec §6. Walks every track × clip_slot (up to 31), matches loaded clips
+// against manifest entries by file_path, reads the current start_marker /
+// end_marker from the LOM, computes the offset vs padded_*_sec, and writes
+// the result back to the manifest (sf_manifest dict or disk file).
+//
+// Two call shapes:
+//   commitOffsets                    → reads/writes the `sf_manifest` dict
+//   commitOffsets <absManifestPath>  → reads/writes the file on disk
+
+function _stripHfsPrefix(s) {
+    if (!s) return "";
+    var str = String(s);
+    // LOM returns paths as "Macintosh HD:/Users/..." — strip the prefix so
+    // manifest entries stored as POSIX paths compare cleanly.
+    if (str.indexOf("Macintosh HD:") === 0) {
+        return str.substring("Macintosh HD:".length);
+    }
+    return str;
+}
+
+function _getLomString(api, prop) {
+    try {
+        var v = api.get(prop);
+        if (v && typeof v === "object") return String(v[0]);
+        return String(v);
+    } catch (_) {
+        return "";
+    }
+}
+
+function _getLomNumber(api, prop) {
+    try {
+        var v = api.get(prop);
+        if (v && typeof v === "object") return Number(v[0]);
+        return Number(v);
+    } catch (_) {
+        return NaN;
+    }
+}
+
+function _buildClipIndex() {
+    // Returns {posixPath: {trackIdx, slotIdx}} for every loaded audio clip in
+    // the live set, covering clip_slots 0..30 on each track.
+    var index = {};
+    var n = trackCount();
+    for (var ti = 0; ti < n; ti++) {
+        for (var sj = 0; sj < 31; sj++) {
+            var csPath = "live_set tracks " + ti + " clip_slots " + sj;
+            var clipApi;
+            try {
+                clipApi = new LiveAPI(csPath + " clip");
+            } catch (_) { continue; }
+            if (!clipApi || clipApi.id === "0") continue;
+            var fp = _getLomString(clipApi, "file_path");
+            if (!fp) continue;
+            var posix = _stripHfsPrefix(fp);
+            if (!posix) continue;
+            if (!index[posix]) {
+                index[posix] = { trackIdx: ti, slotIdx: sj };
+            }
+        }
+    }
+    return index;
+}
+
+function _commitEntryOffsets(entry, clipIndex) {
+    // Mutates `entry` in place. Returns true if offsets were committed.
+    if (!entry || !entry.clip || !entry.file) return false;
+    if (entry.clip.padded_start_sec === undefined) return false;
+
+    var target = String(entry.file);
+    var hit = clipIndex[target];
+    if (!hit) {
+        // Also try stripping HFS from the manifest side, in case it stored a
+        // Macintosh HD: path.
+        hit = clipIndex[_stripHfsPrefix(target)];
+    }
+    if (!hit) return false;
+
+    var clipApi = new LiveAPI(
+        "live_set tracks " + hit.trackIdx + " clip_slots " + hit.slotIdx + " clip"
+    );
+    if (!clipApi || clipApi.id === "0") return false;
+
+    var startMarker = _getLomNumber(clipApi, "start_marker");
+    var endMarker = _getLomNumber(clipApi, "end_marker");
+    if (!isFinite(startMarker) || !isFinite(endMarker)) return false;
+
+    var paddedStart = Number(entry.clip.padded_start_sec) || 0.0;
+    var paddedEnd = Number(entry.clip.padded_end_sec) || 0.0;
+
+    var offsets = entry.offsets || {};
+    offsets.start_offset_sec = startMarker - paddedStart;
+    offsets.end_offset_sec = endMarker - paddedEnd;
+    offsets.committed = true;
+    if (offsets.note === undefined) offsets.note = "";
+    entry.offsets = offsets;
+    return true;
+}
+
+function _commitAllOffsets(mf, clipIndex) {
+    // Walks a manifest's stems, handling both v2 {loops: [...]} and v1 flat-
+    // array shapes. Mutates mf in place, returns the count of committed
+    // entries.
+    if (!mf || !mf.stems) return 0;
+    var committed = 0;
+    for (var key in mf.stems) {
+        var stemBlock = mf.stems[key];
+        if (!stemBlock) continue;
+        var list = null;
+        if (Array.isArray(stemBlock)) {
+            // v1 flat-array stem shape.
+            list = stemBlock;
+        } else if (stemBlock && Array.isArray(stemBlock.loops)) {
+            // v2 {loops: [...], oneshots: [...]} shape — only loops have
+            // clip markers; oneshots are triggered from Simpler pads.
+            list = stemBlock.loops;
+        }
+        if (!list) continue;
+        for (var li = 0; li < list.length; li++) {
+            if (_commitEntryOffsets(list[li], clipIndex)) committed++;
+        }
+    }
+    return committed;
+}
+
+function commitOffsets() {
+    var args = arrayfromargs(messagename, arguments).slice(1);
+    var diskPath = args.length ? args.join(" ") : "";
+
+    var clipIndex = _buildClipIndex();
+
+    if (diskPath) {
+        // Disk-backed mode: read the JSON file, mutate, write back.
+        var raw = readFileContents(diskPath);
+        if (!raw) {
+            status("commitOffsets: cannot read " + diskPath);
+            return;
+        }
+        var mf;
+        try { mf = JSON.parse(raw); }
+        catch (e) {
+            status("commitOffsets: parse error: " + e);
+            return;
+        }
+        var n = _commitAllOffsets(mf, clipIndex);
+        var out;
+        try { out = JSON.stringify(mf, null, 2); }
+        catch (e2) {
+            status("commitOffsets: stringify error: " + e2);
+            return;
+        }
+        if (!writeFileContents(diskPath, out)) {
+            status("commitOffsets: write failed for " + diskPath);
+            return;
+        }
+        status("Committed offsets for " + n + " clips");
+        outlet(0, "set", "Committed offsets for " + n + " clips");
+        outlet(1, "bang");
+        return;
+    }
+
+    // Dict-backed mode: read sf_manifest, mutate, write back.
+    var d;
+    try { d = new Dict("sf_manifest"); }
+    catch (e) {
+        status("commitOffsets: cannot open sf_manifest: " + e);
+        return;
+    }
+    var rawDict;
+    try { rawDict = d.stringify(); }
+    catch (e3) {
+        status("commitOffsets: dict stringify error: " + e3);
+        return;
+    }
+    var mfDict;
+    try { mfDict = JSON.parse(rawDict); }
+    catch (e4) {
+        status("commitOffsets: dict parse error: " + e4);
+        return;
+    }
+    var nDict = _commitAllOffsets(mfDict, clipIndex);
+    try {
+        d.parse(JSON.stringify(mfDict));
+    } catch (e5) {
+        status("commitOffsets: dict write error: " + e5);
+        return;
+    }
+    status("Committed offsets for " + nDict + " clips");
+    outlet(0, "set", "Committed offsets for " + nDict + " clips");
     outlet(1, "bang");
 }
 

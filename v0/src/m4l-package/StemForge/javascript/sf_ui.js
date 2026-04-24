@@ -728,11 +728,14 @@ function drawRightButton(state) {
             fillRgb = COL.violet;
             break;
         case "forging": {
+            // Solid gray "pressed" fill so the button clearly looks busy as
+            // soon as state flips to forging. Subtle breathing (±6% alpha)
+            // signals "alive" without the flashy amber strobe.
             label = "CANCEL";
             const pulse = 0.5 + 0.5 * Math.sin(animPhase * Math.PI * 2);
-            fillRgb = COL.amber;
-            fillAlpha = 0.20 + 0.25 * pulse;
-            strokeRgb = COL.amber;
+            fillRgb = COL.buttonDisabled;
+            fillAlpha = 0.92 + 0.08 * pulse;
+            strokeRgb = COL.border;
             textRgb = COL.amber;
             break;
         }

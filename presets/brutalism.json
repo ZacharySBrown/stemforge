@@ -1,0 +1,362 @@
+{
+  "preset": {
+    "name": "Brutalism",
+    "version": "1.0.0",
+    "description": "Harsh, distorted, industrial. Saturator / Overdrive / Pedal / Roar / Redux stacks. Gated rooms, vinyl crackle, bit-crushed drums."
+  },
+  "stems": {
+    "drums": {
+      "targets": [
+        {
+          "name": "loops",
+          "type": "clips",
+          "color": {
+            "name": "red",
+            "index": 14,
+            "hex": "#FF3A34"
+          },
+          "params": {
+            "phrase_bars": 1,
+            "loop_count": 16,
+            "strategy": "rhythm-taxonomy"
+          },
+          "chain": [
+            {
+              "insert": "Drum Buss",
+              "params": {
+                "Drive": 0.6,
+                "Drive Type": 1,
+                "Crunch": 0.35,
+                "Transients": 0.3,
+                "Boom Amt": 0.15,
+                "Dry/Wet": 0.85
+              }
+            },
+            {
+              "insert": "Compressor",
+              "params": {
+                "Threshold": 0.45,
+                "Ratio": 0.75
+              }
+            }
+          ]
+        },
+        {
+          "name": "rack",
+          "type": "rack",
+          "color": {
+            "name": "red",
+            "index": 14,
+            "hex": "#FF3A34"
+          },
+          "params": {
+            "oneshot_count": 16,
+            "oneshot_mode": "classify",
+            "use_larsnet": true,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "Saturator",
+              "params": {
+                "Drive": 0.6,
+                "Type": 0,
+                "Dry/Wet": 0.85
+              }
+            },
+            {
+              "insert": "Compressor",
+              "params": {
+                "Threshold": 0.5,
+                "Ratio": 0.7
+              }
+            }
+          ]
+        },
+        {
+          "name": "crushed",
+          "type": "clips",
+          "color": {
+            "name": "crimson",
+            "index": 25,
+            "hex": "#AF2E58"
+          },
+          "params": {
+            "phrase_bars": 1,
+            "loop_count": 16,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "Redux",
+              "params": {
+                "Bit Depth": 6,
+                "Sample Rate": 0.35,
+                "Jitter": 0.2,
+                "Dry/Wet": 0.85
+              }
+            },
+            {
+              "insert": "Overdrive",
+              "params": {
+                "Drive": 45,
+                "Tone": 60,
+                "Dry/Wet": 85
+              }
+            },
+            {
+              "insert": "Compressor",
+              "params": {
+                "Threshold": 0.4,
+                "Ratio": 0.85
+              }
+            }
+          ]
+        },
+        {
+          "name": "vinyl",
+          "type": "clips",
+          "color": {
+            "name": "dark_brown",
+            "index": 16,
+            "hex": "#A13C00"
+          },
+          "params": {
+            "phrase_bars": 1,
+            "loop_count": 16,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "Vinyl Distortion",
+              "params": {
+                "Tracing On": 1,
+                "Tracing Drive": 0.6,
+                "Pinch On": 1,
+                "Pinch Drive": 0.55,
+                "Global Drive": 0.65,
+                "Crackle Density": 25,
+                "Crackle Volume": 0.2
+              }
+            },
+            {
+              "insert": "Erosion",
+              "params": {
+                "Amount": 0.5,
+                "Frequency": 0.55,
+                "Filter Width": 0.5
+              }
+            }
+          ]
+        },
+        {
+          "name": "gated",
+          "type": "clips",
+          "color": {
+            "name": "burnt_orange",
+            "index": 15,
+            "hex": "#F06E24"
+          },
+          "params": {
+            "phrase_bars": 1,
+            "loop_count": 16,
+            "strategy": "rhythm-taxonomy"
+          },
+          "chain": [
+            {
+              "insert": "Gate",
+              "params": {
+                "Threshold": 0.35,
+                "Attack": 5,
+                "Hold": 0.1,
+                "Release": 0.3,
+                "Return": 6
+              }
+            },
+            {
+              "insert": "Saturator",
+              "params": {
+                "Drive": 0.5,
+                "Type": 4,
+                "Dry/Wet": 0.85
+              }
+            },
+            {
+              "insert": "Reverb",
+              "params": {
+                "Decay Time": 0.35,
+                "Room Size": 0.5,
+                "Dry/Wet": 0.3
+              }
+            }
+          ]
+        },
+        {
+          "name": "roar",
+          "type": "clips",
+          "color": {
+            "name": "red",
+            "index": 14,
+            "hex": "#FF3A34"
+          },
+          "params": {
+            "phrase_bars": 1,
+            "loop_count": 16,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "Roar",
+              "params": {
+                "Drive": 0.7,
+                "Stage 1 On": 1,
+                "Shaper 1 On": 1,
+                "Shaper 1 Type": 2,
+                "Shaper 1 Amt": 0.55,
+                "Flt 1 On": 1,
+                "Flt 1 Type": 2,
+                "Flt 1 Freq": 0.45,
+                "Flt 1 Res": 0.35,
+                "Output": 0.85,
+                "Dry/Wet": 1.0
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "bass": {
+      "targets": [
+        {
+          "name": "distort",
+          "type": "clips",
+          "color": {
+            "name": "dark_brown",
+            "index": 16,
+            "hex": "#A13C00"
+          },
+          "params": {
+            "phrase_bars": 2,
+            "loop_count": 16,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "Overdrive",
+              "params": {
+                "Drive": 55,
+                "Tone": 45,
+                "Dry/Wet": 100
+              }
+            },
+            {
+              "insert": "Saturator",
+              "params": {
+                "Drive": 0.55,
+                "Type": 4,
+                "Dry/Wet": 0.9
+              }
+            },
+            {
+              "insert": "Compressor",
+              "params": {
+                "Threshold": 0.5,
+                "Ratio": 0.8
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "vocals": {
+      "targets": [
+        {
+          "name": "shout",
+          "type": "clips",
+          "color": {
+            "name": "red",
+            "index": 14,
+            "hex": "#FF3A34"
+          },
+          "params": {
+            "phrase_bars": 4,
+            "loop_count": 16,
+            "strategy": "sectional"
+          },
+          "chain": [
+            {
+              "insert": "Overdrive",
+              "params": {
+                "Drive": 60,
+                "Tone": 70,
+                "Dry/Wet": 100
+              }
+            },
+            {
+              "insert": "Pedal",
+              "params": {
+                "Type": 1,
+                "Drive": 0.55,
+                "Output": 0,
+                "Dry/Wet": 0.85
+              }
+            },
+            {
+              "insert": "Compressor",
+              "params": {
+                "Threshold": 0.45,
+                "Ratio": 0.8
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "other": {
+      "targets": [
+        {
+          "name": "industrial",
+          "type": "clips",
+          "color": {
+            "name": "dark_brown",
+            "index": 16,
+            "hex": "#A13C00"
+          },
+          "params": {
+            "phrase_bars": 2,
+            "loop_count": 16,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "Erosion",
+              "params": {
+                "Amount": 0.7,
+                "Frequency": 0.55,
+                "Filter Width": 0.5
+              }
+            },
+            {
+              "insert": "Saturator",
+              "params": {
+                "Drive": 0.7,
+                "Type": 5,
+                "Dry/Wet": 0.9
+              }
+            },
+            {
+              "insert": "Redux",
+              "params": {
+                "Bit Depth": 10,
+                "Sample Rate": 0.45,
+                "Dry/Wet": 0.75
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "displayName": "Brutalism",
+  "version": "1.0.0"
+}
