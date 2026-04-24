@@ -240,10 +240,15 @@ function applyCurationV2Clip(clipApi, loopEntry) {
     var startOffset = Number(offsets.start_offset_sec) || 0.0;
     var endOffset = Number(offsets.end_offset_sec) || 0.0;
 
-    var paddedStart = Number(clipBlock.padded_start_sec) || 0.0;
-    var paddedEnd = Number(clipBlock.padded_end_sec) || 0.0;
-    var startMarker = paddedStart + startOffset;
-    var endMarker = paddedEnd + endOffset;
+    // Default start/end = musical bar boundaries (raw_*), not padded_*.
+    // Padding exists so the user can trim backward into it by committing a
+    // negative start_offset (reveal an early transient they want back), or
+    // forward past the bar end by committing a positive end_offset.
+    // Playback on first trigger should start at the musical content.
+    var rawStart = Number(clipBlock.raw_start_sec) || 0.0;
+    var rawEnd = Number(clipBlock.raw_end_sec) || 0.0;
+    var startMarker = rawStart + startOffset;
+    var endMarker = rawEnd + endOffset;
 
     // Set clip boundaries (spec §9)
     try { clipApi.set("start_marker", startMarker); } catch (e) {
@@ -270,11 +275,18 @@ function applyCurationV2Clip(clipApi, loopEntry) {
     // Default warp mode = 4 (Complex) per spec §10.
     try { clipApi.set("warp_mode", 4); } catch (_) {}
 
-    // Warp markers (spec §4, §10). Try `create_warp_marker` first, fall back
-    // to `add_warp_marker`; if both fail, skip (clip still has Live's default
-    // start/end markers).
+    // Warp markers (spec §4, §10). Ableton auto-warps on clip load and
+    // picks its own markers; ours need to land on top. Try
+    // `clear_all_warp_markers` first (removes Ableton's guesses), then
+    // `create_warp_marker` (preferred) or `add_warp_marker` (fallback).
+    // Surface every failure — silent catches here hid a BPM regression.
     var wmList = loopEntry.warp_markers;
     if (wmList && wmList.length) {
+        try { clipApi.call("clear_all_warp_markers"); }
+        catch (eClear) { status("      clear_all_warp_markers failed: " + eClear); }
+
+        var succeeded = 0;
+        var failed = 0;
         for (var wi = 0; wi < wmList.length; wi++) {
             var wm = wmList[wi];
             if (!wm) continue;
@@ -290,14 +302,15 @@ function applyCurationV2Clip(clipApi, loopEntry) {
                     clipApi.call("add_warp_marker", t, b);
                     created = true;
                 } catch (e2) {
-                    // Skip — neither API call available.
+                    status("      warp_marker(" + t.toFixed(3) + ", "
+                        + b.toFixed(3) + ") both create+add failed: "
+                        + e1 + " / " + e2);
                 }
             }
-            if (!created) {
-                // Stop trying if the first marker failed; avoid log spam.
-                break;
-            }
+            if (created) succeeded++; else failed++;
         }
+        status("      warp_markers set: " + succeeded + " ok, "
+            + failed + " failed (target: " + wmList.length + ")");
     }
 
     return true;
@@ -1405,12 +1418,17 @@ function _commitEntryOffsets(entry, clipIndex) {
     var endMarker = _getLomNumber(clipApi, "end_marker");
     if (!isFinite(startMarker) || !isFinite(endMarker)) return false;
 
-    var paddedStart = Number(entry.clip.padded_start_sec) || 0.0;
-    var paddedEnd = Number(entry.clip.padded_end_sec) || 0.0;
+    // Offsets are relative to raw_* (the musical bar boundaries), matching
+    // applyCurationV2Clip's default start/end = raw_* + offset. A negative
+    // start_offset means the user trimmed backward into the left pad to
+    // reveal an early transient; positive means they trimmed forward past
+    // the bar start. Same symmetry for end_offset with the right pad.
+    var rawStart = Number(entry.clip.raw_start_sec) || 0.0;
+    var rawEnd = Number(entry.clip.raw_end_sec) || 0.0;
 
     var offsets = entry.offsets || {};
-    offsets.start_offset_sec = startMarker - paddedStart;
-    offsets.end_offset_sec = endMarker - paddedEnd;
+    offsets.start_offset_sec = startMarker - rawStart;
+    offsets.end_offset_sec = endMarker - rawEnd;
     offsets.committed = true;
     if (offsets.note === undefined) offsets.note = "";
     entry.offsets = offsets;
