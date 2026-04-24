@@ -34,7 +34,7 @@ Preserved (unchanged) objects, reused by sf_forge:
 
 Wiring summary (contract §8):
     v8ui outlet 0 → [route preset_click source_click forge_click cancel_click
-                     done_click retry_click settings_click]
+                     done_click retry_click settings_click commit_click]
         preset_click   → sf_preset_loader (open popup)
         source_click   → sf_manifest_loader (open popup)
         forge_click    → sf_forge_mgr startForge
@@ -42,6 +42,8 @@ Wiring summary (contract §8):
         retry_click    → sf_forge_mgr retry
         done_click     → sf_state_mgr    reset
         settings_click → sf_settings_mgr openFile
+        commit_click   → sf_forge_mgr commitOffsets (forwards to loader via
+                          outlet 2 for the LOM → manifest offset roundtrip)
 
     sf_state_mgr outlet 0 → [v8ui sf_ui] refresh (redraw on every mutation)
     sf_preset_loader outlet 0 → [umenu sf_preset_menu]
@@ -670,14 +672,15 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             "newobj",
             (16.0, js_row_y - 40,
              # width
-             680.0, 22.0),
+             740.0, 22.0),
             numinlets=1,
-            numoutlets=8,  # 7 events + unmatched
-            outlettype=["", "", "", "", "", "", "", ""],
+            numoutlets=9,  # 8 events + unmatched
+            outlettype=["", "", "", "", "", "", "", "", ""],
             extras={
                 "text": (
                     "route preset_click source_click forge_click "
-                    "cancel_click retry_click done_click settings_click"
+                    "cancel_click retry_click done_click settings_click "
+                    "commit_click"
                 )
             },
         )
@@ -797,6 +800,25 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     )
     lines.append(_line(OBJ_ROUTE_UI_EVENTS, 6, "obj-settings-open-msg", 0))
     lines.append(_line("obj-settings-open-msg", 0, OBJ_SF_SETTINGS, 0))
+
+    # Outlet 7 — commit_click → [message commitOffsets] → sf_forge inlet 0.
+    # sf_forge.js declares `inlets = 1`, so there's only one inlet; Max
+    # dispatches the `commitOffsets` method by message name. sf_forge's
+    # commitOffsets() forwarder then re-emits via outlet 2 to the loader,
+    # which performs the LOM → manifest offset roundtrip.
+    boxes.append(
+        _box(
+            "obj-commit-msg",
+            "message",
+            (410.0 + 5 * 110, js_row_y - 10, 120.0, 22.0),
+            numinlets=2,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "commitOffsets"},
+        )
+    )
+    lines.append(_line(OBJ_ROUTE_UI_EVENTS, 7, "obj-commit-msg", 0))
+    lines.append(_line("obj-commit-msg", 0, OBJ_SF_FORGE, 0))
 
     # ── sf_state outlet 0 → v8ui refresh ────────────────────────────────────
     # The state mgr emits `bang` on mutation. We prepend `refresh` so the

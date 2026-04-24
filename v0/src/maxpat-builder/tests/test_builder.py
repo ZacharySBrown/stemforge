@@ -121,9 +121,34 @@ def test_v8ui_emits_events_via_route(boxes, line_pairs):
     for required in (
         "preset_click", "source_click", "forge_click",
         "cancel_click", "retry_click", "done_click", "settings_click",
+        "commit_click",
     ):
         assert required in tokens, f"route missing branch for {required}"
     assert ("obj-sf-ui", route["id"]) in line_pairs
+
+
+def test_commit_click_wired_to_forge(boxes, line_pairs):
+    """The COMMIT button emits commit_click; it must route through a
+    [message commitOffsets] box into sf_forge so the loader does the
+    LOM → manifest offset roundtrip."""
+    msg = next(
+        (b for b in boxes if b.get("text") == "commitOffsets"
+         and b.get("maxclass") == "message"),
+        None,
+    )
+    assert msg is not None, "missing [message commitOffsets] box"
+    assert (msg["id"], "obj-sf-forge") in line_pairs, (
+        "commitOffsets message must feed sf_forge"
+    )
+    # And the route's commit_click outlet must reach that message box.
+    route = next(
+        (b for b in boxes if b.get("text", "").startswith("route preset_click")),
+        None,
+    )
+    assert route is not None
+    assert (route["id"], msg["id"]) in line_pairs, (
+        "route commit_click outlet must feed the commitOffsets message"
+    )
 
 
 # ── Modular JS objects ───────────────────────────────────────────────────────

@@ -12,7 +12,7 @@
  *     done / error) onto one canvas using mgraphics.
  *   - Dispatch click events through outlet 0 as lists:
  *       preset_click | source_click | forge_click | cancel_click |
- *       done_click   | retry_click  | settings_click
+ *       done_click   | retry_click  | settings_click | commit_click
  *   - Drive a pulsing animation loop ONLY while state is "forging" to avoid
  *     unnecessary redraws.
  *
@@ -102,6 +102,11 @@ let animPhase = 0;       // 0..1, advances while forging
 let animTask = null;     // Task object for pulse animation
 let lastKind = "empty";  // to detect state-kind transitions
 let cachedFontSet = false;
+
+// Commit-button hit-rect, cached between paint() and onclick(). Populated by
+// drawRightButton() in the states where the COMMIT button is visible;
+// otherwise null so onclick() won't route a click there.
+let commitBtnRect = null;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -804,6 +809,32 @@ function drawRightButton(state) {
             textAt(bx + bw / 2 - hw / 2, by + bh + 14, hint, COL.textDim, FONT_SIZE_META);
         }
     }
+
+    // Secondary COMMIT button — visible in `done` (primary use: forged, user
+    // nudged markers in Live, now wants to roundtrip offsets back to the
+    // manifest) and `idle` (re-commit without re-forging — dimmer look).
+    commitBtnRect = null;
+    if (state.kind === "done" || state.kind === "idle") {
+        // Place above the primary button within the right column, y ∈ [40, 115]
+        // per spec. Primary button sits at by = 59 (h=32, centered y=75), so
+        // the commit button lives above it with a small gap.
+        const cbw = bw;
+        const cbh = 22;
+        const cbx = bx;
+        const cby = by - cbh - 6;  // 6px gap above primary button
+        const dim = state.kind === "idle";   // idle → less-confirmed look
+        const fillA = dim ? 0.10 : 0.20;
+        const strokeA = dim ? 0.55 : 0.85;
+        const textA = dim ? 0.75 : 1.0;
+        fillRoundedRect(cbx, cby, cbw, cbh, 11, COL.green, fillA);
+        strokeRoundedRect(cbx, cby, cbw, cbh, 11, COL.green, strokeA, 1);
+        setFontSize(FONT_SIZE_BTN);
+        const label = "COMMIT";
+        const clw = textWidth(label, FONT_SIZE_BTN);
+        textAt(cbx + cbw / 2 - clw / 2, cby + cbh / 2 + 4, label,
+               COL.green, FONT_SIZE_BTN, textA);
+        commitBtnRect = { x: cbx, y: cby, w: cbw, h: cbh };
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -825,6 +856,15 @@ function onclick(x, y, button, mod1, shift, ctrl, mod2) {
     }
 
     if (x >= COL_RIGHT_START) {
+        // Secondary COMMIT button takes precedence — drawn above the primary
+        // action button in `done` / `idle` states. commitBtnRect is populated
+        // by drawRightButton() only when the button is currently visible.
+        if (commitBtnRect &&
+            x >= commitBtnRect.x && x < commitBtnRect.x + commitBtnRect.w &&
+            y >= commitBtnRect.y && y < commitBtnRect.y + commitBtnRect.h) {
+            outlet(0, "commit_click");
+            return;
+        }
         // Right column action button. Dispatch per state kind.
         switch (state.kind) {
             case "empty":
