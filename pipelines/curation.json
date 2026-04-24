@@ -1,0 +1,145 @@
+{
+  "version": 2,
+  "layout": {
+    "mode": "production",
+    "pad_grid": "8x8",
+    "quadrant_size": "4x4"
+  },
+  "stems": {
+    "drums": {
+      "phrase_bars": 1,
+      "loop_count": 8,
+      "oneshot_count": 8,
+      "strategy": "max-diversity",
+      "oneshot_mode": "classify",
+      "chromatic": false,
+      "midi_extract": false,
+      "rms_floor": 0.01,
+      "crest_min": 4.0,
+      "content_density_min": 0.15,
+      "distance_weights": {
+        "rhythm": 0.6,
+        "spectral": 0.2,
+        "energy": 0.2
+      },
+      "processing": [
+        {
+          "pipeline": "default"
+        }
+      ],
+      "targets": []
+    },
+    "bass": {
+      "phrase_bars": 1,
+      "loop_count": 4,
+      "oneshot_count": 0,
+      "strategy": "max-diversity",
+      "oneshot_mode": "diverse",
+      "midi_extract": true,
+      "midi_quantize": "1/16",
+      "bottom_mode": "melodic",
+      "chromatic": true,
+      "chromatic_root": "auto",
+      "rms_floor": 0.01,
+      "crest_min": 2.0,
+      "content_density_min": 0.3,
+      "distance_weights": {
+        "rhythm": 0.3,
+        "spectral": 0.4,
+        "energy": 0.3
+      },
+      "processing": [
+        {
+          "pipeline": "default"
+        }
+      ],
+      "targets": []
+    },
+    "vocals": {
+      "phrase_bars": 4,
+      "loop_count": 12,
+      "oneshot_count": 4,
+      "strategy": "sectional",
+      "oneshot_mode": "diverse",
+      "midi_extract": false,
+      "chromatic": false,
+      "rms_floor": 0.02,
+      "crest_min": 3.0,
+      "content_density_min": 0.3,
+      "distance_weights": {
+        "rhythm": 0.2,
+        "spectral": 0.5,
+        "energy": 0.3
+      },
+      "processing": [
+        {
+          "pipeline": "default"
+        }
+      ],
+      "targets": []
+    },
+    "other": {
+      "phrase_bars": 2,
+      "loop_count": 10,
+      "oneshot_count": 6,
+      "strategy": "max-diversity",
+      "oneshot_mode": "diverse",
+      "midi_extract": false,
+      "chromatic": false,
+      "rms_floor": 0.015,
+      "crest_min": 2.0,
+      "content_density_min": 0.2,
+      "distance_weights": {
+        "rhythm": 0.3,
+        "spectral": 0.4,
+        "energy": 0.3
+      },
+      "processing": [
+        {
+          "pipeline": "default"
+        },
+        {
+          "pipeline": "glitch"
+        }
+      ],
+      "targets": []
+    }
+  },
+  "song": {
+    "boundary_method": "recurrence",
+    "min_segment_bars": 4,
+    "max_segments": 8,
+    "prefer_transitions": true,
+    "transition_window_bars": 2
+  },
+  "dj": {
+    "base_position": "top_left",
+    "subloop_axis": "vertical",
+    "oneshot_axis": "horizontal",
+    "subloop_divisions": [
+      1,
+      0.5,
+      0.5,
+      0.25
+    ],
+    "fill_mode": "combo"
+  },
+  "defaults": {
+    "phrase_bars": 1,
+    "loop_count": 8,
+    "oneshot_count": 8,
+    "strategy": "max-diversity",
+    "oneshot_mode": "diverse",
+    "chromatic": false,
+    "midi_extract": false,
+    "rms_floor": 0.01,
+    "crest_min": 4.0,
+    "content_density_min": 0.15,
+    "distance_weights": {
+      "rhythm": 0.5,
+      "spectral": 0.25,
+      "energy": 0.25
+    }
+  },
+  "displayName": ""
+}
