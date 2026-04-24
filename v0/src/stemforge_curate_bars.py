@@ -25,6 +25,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import soundfile as sf
 
 # Add repo root to path so we can import stemforge modules
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -60,6 +61,118 @@ def find_stems(stems_dir: Path) -> dict[str, Path]:
         if p.exists():
             stems[name] = p
     return stems
+
+
+def _reslice_with_padding(
+    *,
+    source_stem_path: Path,
+    dst_path: Path,
+    bar_idx: int,
+    phrase_bars: int,
+    bar_duration_sec: float,
+    pad_bars_yaml: float,
+) -> dict:
+    """Re-slice a padded window from the source stem WAV to dst_path.
+
+    Architectural rationale: curation/analysis runs on exact-bar WAVs so the
+    rhythm/diversity/onset signals aren't polluted by neighbouring-bar
+    content. Padding is purely for the user's trim adjustment in Ableton —
+    applied AFTER selection, only to the chosen bars, by reading the padded
+    region straight from the source stem.
+
+    Bar index → time mapping uses uniform bar_duration_sec:
+        raw_start_in_stem = (bar_idx - 1) * bar_duration_sec
+    Bar filenames are already 1-indexed positions in the bar grid (see
+    stemforge.slicer._write_bar_slices), so this holds even when silent bars
+    leave gaps in the bar-file sequence.
+
+    Returns dict with resolved values the caller passes to build_curation_block:
+        pad_bars_applied   — symmetric min of both sides after edge clamping
+        raw_start_sec      — where the exact-bar window begins inside dst file
+        bar_duration_sec   — echoed for convenience
+        padded_duration    — dst file duration (actual, post-clamp)
+    """
+    info = sf.info(str(source_stem_path))
+    sr = info.samplerate
+    stem_duration = float(info.duration)
+
+    raw_start_in_stem = max(0.0, (bar_idx - 1) * bar_duration_sec)
+    raw_end_in_stem = min(stem_duration, raw_start_in_stem + phrase_bars * bar_duration_sec)
+
+    pad_sec = float(pad_bars_yaml) * bar_duration_sec
+
+    # Clamp padding at stem edges
+    pad_start_actual_sec = min(pad_sec, raw_start_in_stem)
+    pad_end_actual_sec = min(pad_sec, max(0.0, stem_duration - raw_end_in_stem))
+
+    # Symmetric pad: use the smaller of the two so the emitted pad_bars is
+    # valid on BOTH sides. Asymmetric clamps still trim the file correctly,
+    # but we expose the symmetric-safe value in the manifest.
+    pad_actual_sec = min(pad_start_actual_sec, pad_end_actual_sec)
+    pad_bars_applied = pad_actual_sec / bar_duration_sec if bar_duration_sec > 0 else 0.0
+
+    window_start_sec = raw_start_in_stem - pad_start_actual_sec
+    window_end_sec = raw_end_in_stem + pad_end_actual_sec
+
+    # Read the source region by frames
+    start_frame = max(0, int(round(window_start_sec * sr)))
+    stop_frame = min(info.frames, int(round(window_end_sec * sr)))
+    if stop_frame <= start_frame:
+        raise ValueError(
+            f"Empty slice window for bar {bar_idx} in {source_stem_path.name}"
+        )
+
+    data, _ = sf.read(
+        str(source_stem_path),
+        start=start_frame,
+        stop=stop_frame,
+        always_2d=True,
+    )
+
+    # Match v0 bar WAVs: PCM_24
+    dst_path.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(str(dst_path), data, sr, subtype="PCM_24")
+
+    # raw_start_sec inside the padded file is where we inserted the exact bar
+    raw_start_in_dst = pad_start_actual_sec
+
+    padded_duration = (stop_frame - start_frame) / float(sr)
+
+    return {
+        "pad_bars_applied": pad_bars_applied,
+        "raw_start_sec": raw_start_in_dst,
+        "bar_duration_sec": bar_duration_sec,
+        "padded_duration": padded_duration,
+    }
+
+
+def _parse_bar_index(filename: str) -> int | None:
+    """Extract bar grid index N from `{stem}_bar_NNN.wav`."""
+    m = re.search(r"_bar_(\d+)\.wav$", filename)
+    return int(m.group(1)) if m else None
+
+
+def _parse_phrase_index(filename: str) -> int | None:
+    """Extract phrase index N from `{stem}_phrase_NNN.wav`."""
+    m = re.search(r"_phrase_(\d+)\.wav$", filename)
+    return int(m.group(1)) if m else None
+
+
+def _first_bar_idx_for_phrase(
+    bar_dir: Path, stem_name: str, phrase_bars: int, phrase_idx: int,
+) -> int | None:
+    """Resolve phrase idx (1-based) → bar-grid idx of its first underlying bar.
+
+    Mirrors group_bars_into_phrases grouping: phrase pi+1 covers
+    bar_files[pi*phrase_bars : (pi+1)*phrase_bars] in sorted order.
+    Returns None if the phrase can't be resolved.
+    """
+    bar_files = sorted(bar_dir.glob(f"{stem_name}_bar_*.wav"))
+    pi = phrase_idx - 1
+    start = pi * phrase_bars
+    if start >= len(bar_files):
+        return None
+    return _parse_bar_index(bar_files[start].name)
 
 
 def run(
@@ -343,7 +456,12 @@ def run(
                 "message": f"Selected {len(selected_indices)} bars, mirroring across stems",
             })
 
-        # Mirror across all stems
+        # Mirror across all stems — v1: padded re-slice from source stem
+        # per selected bar. Analysis ran on exact-bar WAVs; padding is
+        # applied here only to the chosen bars so Ableton gets pre-roll
+        # context for user trim without polluting curation signals.
+        bar_duration_sec = (60.0 / bpm) * time_sig if bpm > 0 else 0.0
+
         for stem_name, bar_dir in stem_bar_dirs.items():
             stem_curated_dir = curated_root / stem_name
             stem_curated_dir.mkdir()
@@ -351,16 +469,55 @@ def run(
             bar_files = sorted(bar_dir.glob(f"{stem_name}_bar_*.wav"))
             bar_index = {}
             for bf in bar_files:
-                m = re.search(r"_bar_(\d+)\.wav$", bf.name)
-                if m:
-                    bar_index[int(m.group(1))] = bf
+                idx = _parse_bar_index(bf.name)
+                if idx is not None:
+                    bar_index[idx] = bf
+
+            stem_schema = schema_config.for_stem(stem_name)
+            source_stem_path = stems.get(stem_name)
 
             stem_bars = []
-            stem_schema = schema_config.for_stem(stem_name)
             for position, bar_idx in enumerate(selected_indices):
                 src = bar_index.get(bar_idx)
-                if src and src.exists():
-                    dst = stem_curated_dir / f"bar_{position + 1:03d}.wav"
+                if not (src and src.exists()):
+                    continue
+                dst = stem_curated_dir / f"bar_{position + 1:03d}.wav"
+
+                pad_bars_yaml = float(stem_schema.pad_bars or 0.0)
+                use_padded = (
+                    pad_bars_yaml > 0.0
+                    and source_stem_path is not None
+                    and source_stem_path.exists()
+                    and bar_duration_sec > 0
+                )
+
+                if use_padded:
+                    reslice = _reslice_with_padding(
+                        source_stem_path=source_stem_path,
+                        dst_path=dst,
+                        bar_idx=bar_idx,
+                        phrase_bars=1,
+                        bar_duration_sec=bar_duration_sec,
+                        pad_bars_yaml=pad_bars_yaml,
+                    )
+                    entry = {
+                        "position": position + 1,
+                        "source_bar_index": bar_idx,
+                        "phrase_bars": 1,
+                        "file": str(dst),
+                    }
+                    entry.update(build_curation_block(
+                        dst, phrase_bars=1,
+                        time_sig_numerator=time_sig,
+                        stem_schema=stem_schema,
+                        bpm=bpm,
+                        pad_bars_applied=reslice["pad_bars_applied"],
+                        bar_duration_sec=bar_duration_sec,
+                        ts_num=time_sig,
+                        raw_start_sec=reslice["raw_start_sec"],
+                    ))
+                else:
+                    # Fallback: copy exact-bar WAV (v0 behaviour)
                     shutil.copy2(src, dst)
                     entry = {
                         "position": position + 1,
@@ -374,7 +531,7 @@ def run(
                         stem_schema=stem_schema,
                         bpm=bpm,
                     ))
-                    stem_bars.append(entry)
+                stem_bars.append(entry)
             curated_manifest["stems"][stem_name] = stem_bars
 
     else:
@@ -453,20 +610,73 @@ def run(
 
             stem_bars = []
             stem_schema = schema_config.for_stem(stem_name)
+            source_stem_path = stems.get(stem_name)
+            bar_duration_sec = (60.0 / bpm) * time_sig if bpm > 0 else 0.0
+            pad_bars_yaml = float(stem_schema.pad_bars or 0.0)
+
             for position, src in enumerate(selected):
                 dst = stem_curated_dir / f"bar_{position + 1:03d}.wav"
-                shutil.copy2(src, dst)
-                entry = {
-                    "position": position + 1,
-                    "phrase_bars": sc.phrase_bars,
-                    "file": str(dst),
-                }
-                entry.update(build_curation_block(
-                    dst, phrase_bars=sc.phrase_bars,
-                    time_sig_numerator=time_sig,
-                    stem_schema=stem_schema,
-                    bpm=bpm,
-                ))
+
+                # Resolve source bar-grid index from the selected filename.
+                # - exact-bar file:   {stem}_bar_N.wav        → bar idx = N
+                # - phrase file:      {stem}_phrase_P.wav     → bar idx = first
+                #                     underlying bar in group_bars_into_phrases
+                #                     ordering.
+                first_bar_idx = None
+                phrase_idx = _parse_phrase_index(src.name)
+                if phrase_idx is not None:
+                    first_bar_idx = _first_bar_idx_for_phrase(
+                        bar_dir, stem_name, sc.phrase_bars, phrase_idx,
+                    )
+                else:
+                    first_bar_idx = _parse_bar_index(src.name)
+
+                use_padded = (
+                    pad_bars_yaml > 0.0
+                    and source_stem_path is not None
+                    and source_stem_path.exists()
+                    and bar_duration_sec > 0
+                    and first_bar_idx is not None
+                )
+
+                if use_padded:
+                    reslice = _reslice_with_padding(
+                        source_stem_path=source_stem_path,
+                        dst_path=dst,
+                        bar_idx=first_bar_idx,
+                        phrase_bars=int(sc.phrase_bars),
+                        bar_duration_sec=bar_duration_sec,
+                        pad_bars_yaml=pad_bars_yaml,
+                    )
+                    entry = {
+                        "position": position + 1,
+                        "source_bar_index": first_bar_idx,
+                        "phrase_bars": sc.phrase_bars,
+                        "file": str(dst),
+                    }
+                    entry.update(build_curation_block(
+                        dst, phrase_bars=sc.phrase_bars,
+                        time_sig_numerator=time_sig,
+                        stem_schema=stem_schema,
+                        bpm=bpm,
+                        pad_bars_applied=reslice["pad_bars_applied"],
+                        bar_duration_sec=bar_duration_sec,
+                        ts_num=time_sig,
+                        raw_start_sec=reslice["raw_start_sec"],
+                    ))
+                else:
+                    shutil.copy2(src, dst)
+                    entry = {
+                        "position": position + 1,
+                        "phrase_bars": sc.phrase_bars,
+                        "file": str(dst),
+                    }
+                    entry.update(build_curation_block(
+                        dst, phrase_bars=sc.phrase_bars,
+                        time_sig_numerator=time_sig,
+                        stem_schema=stem_schema,
+                        bpm=bpm,
+                    ))
                 stem_bars.append(entry)
 
             curated_manifest["stems"][stem_name] = stem_bars
