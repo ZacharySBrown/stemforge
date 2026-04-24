@@ -151,10 +151,15 @@ def chunk_pcm(data: bytes, chunk_size: int = CHUNK_BYTES) -> list[bytes]:
 # ──────────────────────────────────────────────────────────────────────
 
 _VALID_PLAYMODES = frozenset({"oneshot", "key", "legato"})
-# Wire encoding confirmed 2026-04-23 from EP Sample Tool UI capture — device uses integers, NOT strings.
-_PLAYMODE_WIRE: dict[str, int] = {"oneshot": 0, "key": 1, "legato": 2}
-# "bars" is unconfirmed — only "bpm" and "off" verified from live device capture (2026-04-23)
-_VALID_TIME_MODES = frozenset({"off", "bpm", "bars"})
+# 2026-04-24: Device EMITS integers as responses (captures show {"sound.playmode":1}) but
+# REJECTS integer writes with status=1. String form is what the device accepts on write —
+# diagnostic on 2026-04-24 proved {"sound.playmode":"oneshot"} ACKs and {"sound.playmode":0} ERRs.
+# Integer ↔ string map kept for documentation, but to_json() uses the string form.
+_PLAYMODE_WIRE_INT: dict[str, int] = {"oneshot": 0, "key": 1, "legato": 2}
+# 2026-04-24: BAR mode is singular "bar" on-device (captures show time.mode enum 0=off, 1=bar, 2=bpm).
+# Earlier "bars" was a guess that never matched capture. Device accepts string form only on write.
+_TIME_MODE_WIRE_INT: dict[str, int] = {"off": 0, "bar": 1, "bpm": 2}
+_VALID_TIME_MODES = frozenset(_TIME_MODE_WIRE_INT.keys())
 
 
 @dataclass
@@ -177,7 +182,7 @@ class PadParams:
     amplitude: int = 100           # 0..100
     pan: int = 0                   # -16..16
     mutegroup: bool = False
-    time_mode: str = "off"         # "off" | "bpm" | "bars"
+    time_mode: str = "off"         # "off" | "bar" | "bpm"
     # NOTE: time_bpm is NOT stored in pad metadata (confirmed 2026-04-23 capture).
     # Source BPM is encoded in the WAV file at upload time (smpl chunk or TE proprietary).
     # This field is reserved for future WAV-encoding support; to_json() does not emit it.
@@ -213,7 +218,7 @@ class PadParams:
     def to_json(self, slot: int) -> bytes:
         """Serialize to the ASCII JSON blob the device expects."""
         d: dict = {"sym": slot}
-        d["sound.playmode"] = _PLAYMODE_WIRE[self.playmode]
+        d["sound.playmode"] = self.playmode
         d["sample.start"] = self.sample_start
         if self.sample_end is not None:
             d["sample.end"] = self.sample_end

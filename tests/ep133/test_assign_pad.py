@@ -95,7 +95,7 @@ def test_pad_params_defaults():
     raw = params.to_json(slot=700)
     d = json.loads(raw)
     assert d["sym"] == 700
-    assert d["sound.playmode"] == 0  # oneshot=0 (integer wire encoding, confirmed 2026-04-23)
+    assert d["sound.playmode"] == "oneshot"  # string form — device rejects integer on write (2026-04-24 diag)
     assert d["sample.start"] == 0
     assert "sample.end" not in d   # omitted when None
     assert d["envelope.attack"] == 0
@@ -104,7 +104,7 @@ def test_pad_params_defaults():
     assert d["sound.amplitude"] == 100
     assert d["sound.pan"] == 0
     assert d["sound.mutegroup"] is False
-    assert d["time.mode"] == "off"
+    assert d["time.mode"] == "off"  # string form — device rejects integer on write (2026-04-24 diag)
 
 
 def test_pad_params_all_fields():
@@ -124,7 +124,7 @@ def test_pad_params_all_fields():
     )
     raw = params.to_json(slot=1)
     d = json.loads(raw)
-    assert d["sound.playmode"] == 1  # key=1 (integer wire encoding)
+    assert d["sound.playmode"] == "key"  # string form — device rejects integer on write
     assert d["sample.start"] == 100
     assert d["sample.end"] == 44100
     assert d["envelope.attack"] == 10
@@ -133,7 +133,7 @@ def test_pad_params_all_fields():
     assert d["sound.amplitude"] == 80
     assert d["sound.pan"] == -8
     assert d["sound.mutegroup"] is True
-    assert d["time.mode"] == "bpm"
+    assert d["time.mode"] == "bpm"  # string form — device rejects integer on write
 
 
 def test_pad_params_validation():
@@ -178,7 +178,7 @@ def test_build_assign_pad_with_params_includes_all_fields():
     json_end = payload.index(0, json_start)
     d = json.loads(payload[json_start:json_end])
     assert d["sym"] == 700
-    assert d["sound.playmode"] == 2  # legato=2 (integer wire encoding)
+    assert d["sound.playmode"] == "legato"  # string form — device rejects integer on write
     assert d["envelope.attack"] == 5
     assert d["envelope.release"] == 128
     assert payload[-1] == 0  # null terminator
