@@ -151,6 +151,8 @@ def chunk_pcm(data: bytes, chunk_size: int = CHUNK_BYTES) -> list[bytes]:
 # ──────────────────────────────────────────────────────────────────────
 
 _VALID_PLAYMODES = frozenset({"oneshot", "key", "legato"})
+# Wire encoding confirmed 2026-04-23 from EP Sample Tool UI capture — device uses integers, NOT strings.
+_PLAYMODE_WIRE: dict[str, int] = {"oneshot": 0, "key": 1, "legato": 2}
 # "bars" is unconfirmed — only "bpm" and "off" verified from live device capture (2026-04-23)
 _VALID_TIME_MODES = frozenset({"off", "bpm", "bars"})
 
@@ -211,7 +213,7 @@ class PadParams:
     def to_json(self, slot: int) -> bytes:
         """Serialize to the ASCII JSON blob the device expects."""
         d: dict = {"sym": slot}
-        d["sound.playmode"] = self.playmode
+        d["sound.playmode"] = _PLAYMODE_WIRE[self.playmode]
         d["sample.start"] = self.sample_start
         if self.sample_end is not None:
             d["sample.end"] = self.sample_end
