@@ -124,6 +124,10 @@ function writeFileContents(p, contents) {
     // Overwrites the file at `p` with `contents`. Truncates before writing.
     // Modeled on _sfFileLog's file-write pattern — used by commitOffsets to
     // persist manifest changes back to disk.
+    //
+    // CRITICAL: Max File.writestring caps at 32767 chars per call (signed-short,
+    // same as readstring). Writing an 84K manifest in one call silently
+    // truncates to exactly 32767 bytes. Loop with safe chunks.
     try {
         var maxPath = toMaxPath(p);
         var f = new File(maxPath, "write", "TEXT", "TEXT");
@@ -133,9 +137,25 @@ function writeFileContents(p, contents) {
         }
         try { f.position = 0; } catch (_) {}
         try { f.eof = 0; } catch (_) {}
-        f.writestring(String(contents));
+
+        var MAX_CHUNK = 32767;
+        var total = String(contents);
+        var written = 0;
+        var prev = -1;
+        while (written < total.length && f.position !== prev) {
+            prev = f.position;
+            var end = written + MAX_CHUNK;
+            if (end > total.length) end = total.length;
+            f.writestring(total.substring(written, end));
+            written = end;
+        }
         try { f.eof = f.position; } catch (_) {}
         f.close();
+        if (written < total.length) {
+            status("writeFile: short write " + written + "/" + total.length
+                + " bytes to " + p);
+            return false;
+        }
         return true;
     } catch (e) {
         status("writeFile error: " + e);
@@ -1600,8 +1620,29 @@ function commitOffsets() {
         status("commitOffsets: dict write error: " + e5);
         return;
     }
-    status("Committed offsets for " + nDict + " clips");
-    outlet(0, "set", "Committed offsets for " + nDict + " clips");
+
+    // Also persist to disk so the manifest file reflects the committed
+    // offsets across sessions. Derive the path from `source_dir` in the
+    // manifest — that's where `curated/manifest.json` lives.
+    var wroteDisk = false;
+    var srcDir = mfDict && mfDict.source_dir;
+    if (srcDir) {
+        var diskPathDerived = String(srcDir).replace(/\/+$/, "")
+            + "/curated/manifest.json";
+        var mfOut;
+        try { mfOut = JSON.stringify(mfDict, null, 2); }
+        catch (eS) { status("commitOffsets: disk stringify error: " + eS); }
+        if (mfOut && writeFileContents(diskPathDerived, mfOut)) {
+            wroteDisk = true;
+        } else if (mfOut) {
+            status("commitOffsets: disk write failed for " + diskPathDerived);
+        }
+    }
+
+    var msg = "Committed offsets for " + nDict + " clips"
+        + (wroteDisk ? " (dict + disk)" : " (dict only)");
+    status(msg);
+    outlet(0, "set", msg);
     outlet(1, "bang");
 }
 
