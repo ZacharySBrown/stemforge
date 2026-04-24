@@ -496,25 +496,10 @@ function drawMiddleMatrix(state, progressMode, doneMode) {
     }
 }
 
-var _pillDiagLogged = false;
 function drawPillRow(x, y, w, h, targets, stemName, phase2Targets, progressMode, doneMode) {
     const pillH = 20;
     const pillGap = 6;
     const pillY = y + Math.floor((h - pillH) / 2);
-
-    // One-shot diagnostic — log the first pill-row's target data to find
-    // where colors are getting lost on the way to drawPill. Remove after
-    // verification.
-    if (!_pillDiagLogged && targets && targets.length) {
-        _pillDiagLogged = true;
-        try {
-            var t0 = targets[0];
-            _sfFileLog("sf_ui", "pill-diag stem=" + stemName + " n=" + targets.length
-                + " first.name=" + (t0 && t0.name)
-                + " first.color=" + JSON.stringify(t0 && t0.color)
-                + " canvasW=" + canvasW);
-        } catch (e) { _sfFileLog("sf_ui", "pill-diag err: " + e); }
-    }
 
     let cx = x;
     const limitX = x + w;
@@ -522,7 +507,15 @@ function drawPillRow(x, y, w, h, targets, stemName, phase2Targets, progressMode,
     for (let i = 0; i < targets.length; i++) {
         const t = targets[i];
         const name = t && t.name ? String(t.name) : "target";
-        const color = (t && t.color && t.color.hex) ? t.color.hex : "#888888";
+        // Target.color can be either a hex string ("#FF4444" — older presets
+        // like idm_production.json) or a descriptor object ({name, index,
+        // hex} — the 4 new vibes presets). Support both so every preset
+        // renders correctly. Matches stemforge_loader.v0.js:parseColor.
+        let color = "#888888";
+        if (t && t.color) {
+            if (typeof t.color === "string") color = t.color;
+            else if (typeof t.color.hex === "string") color = t.color.hex;
+        }
         const pillW = Math.max(28, textWidth(name, FONT_SIZE_PILL) + 18);
 
         // Overflow handling: if this pill won't fit and there are more pills,

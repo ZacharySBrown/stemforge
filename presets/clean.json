@@ -10,7 +10,11 @@
         {
           "name": "loops",
           "type": "clips",
-          "color": "#FF4444",
+          "color": {
+            "name": "red",
+            "index": 14,
+            "hex": "#FF3A34"
+          },
           "params": {
             "phrase_bars": 1,
             "loop_count": 16
@@ -20,7 +24,11 @@
         {
           "name": "rack",
           "type": "rack",
-          "color": "#FF4444",
+          "color": {
+            "name": "red",
+            "index": 14,
+            "hex": "#FF3A34"
+          },
           "params": {
             "oneshot_count": 16,
             "oneshot_mode": "classify",
@@ -35,7 +43,11 @@
         {
           "name": "loops",
           "type": "clips",
-          "color": "#4477FF",
+          "color": {
+            "name": "blue",
+            "index": 9,
+            "hex": "#5480E4"
+          },
           "params": {
             "phrase_bars": 2,
             "loop_count": 16
@@ -49,7 +61,11 @@
         {
           "name": "phrases",
           "type": "clips",
-          "color": "#FFAA44",
+          "color": {
+            "name": "orange",
+            "index": 1,
+            "hex": "#FFA529"
+          },
           "params": {
             "phrase_bars": 4,
             "loop_count": 16
@@ -63,7 +79,11 @@
         {
           "name": "loops",
           "type": "clips",
-          "color": "#44DD77",
+          "color": {
+            "name": "mint",
+            "index": 6,
+            "hex": "#25FFA8"
+          },
           "params": {
             "phrase_bars": 2,
             "loop_count": 16

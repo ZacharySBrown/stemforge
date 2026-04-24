@@ -10,7 +10,11 @@
         {
           "name": "loops",
           "type": "clips",
-          "color": "#FF4444",
+          "color": {
+            "name": "red",
+            "index": 14,
+            "hex": "#FF3A34"
+          },
           "params": {
             "phrase_bars": 1,
             "loop_count": 16,
@@ -21,7 +25,11 @@
         {
           "name": "rack",
           "type": "rack",
-          "color": "#FF4444",
+          "color": {
+            "name": "red",
+            "index": 14,
+            "hex": "#FF3A34"
+          },
           "params": {
             "oneshot_count": 16,
             "oneshot_mode": "classify",
@@ -40,7 +48,11 @@
         {
           "name": "crushed",
           "type": "clips",
-          "color": "#882222",
+          "color": {
+            "name": "dark_brown",
+            "index": 16,
+            "hex": "#A13C00"
+          },
           "params": {
             "phrase_bars": 1,
             "loop_count": 16
@@ -60,7 +72,11 @@
         {
           "name": "repeat",
           "type": "clips",
-          "color": "#CC3333",
+          "color": {
+            "name": "crimson",
+            "index": 25,
+            "hex": "#AF2E58"
+          },
           "params": {
             "phrase_bars": 1,
             "loop_count": 16
@@ -91,7 +107,11 @@
         {
           "name": "echo",
           "type": "clips",
-          "color": "#AA4444",
+          "color": {
+            "name": "crimson",
+            "index": 25,
+            "hex": "#AF2E58"
+          },
           "params": {
             "phrase_bars": 1,
             "loop_count": 16
@@ -118,7 +138,11 @@
         {
           "name": "grain",
           "type": "clips",
-          "color": "#993333",
+          "color": {
+            "name": "crimson",
+            "index": 25,
+            "hex": "#AF2E58"
+          },
           "params": {
             "phrase_bars": 1,
             "loop_count": 16
@@ -150,7 +174,11 @@
         {
           "name": "loops",
           "type": "clips",
-          "color": "#4477FF",
+          "color": {
+            "name": "blue",
+            "index": 9,
+            "hex": "#5480E4"
+          },
           "params": {
             "phrase_bars": 2,
             "loop_count": 16,
@@ -177,7 +205,11 @@
         {
           "name": "phrases",
           "type": "clips",
-          "color": "#FFAA44",
+          "color": {
+            "name": "orange",
+            "index": 1,
+            "hex": "#FFA529"
+          },
           "params": {
             "phrase_bars": 4,
             "loop_count": 16,
@@ -204,7 +236,11 @@
         {
           "name": "loops",
           "type": "clips",
-          "color": "#44DD77",
+          "color": {
+            "name": "mint",
+            "index": 6,
+            "hex": "#25FFA8"
+          },
           "params": {
             "phrase_bars": 2,
             "loop_count": 16
@@ -214,7 +250,11 @@
         {
           "name": "grain",
           "type": "clips",
-          "color": "#338855",
+          "color": {
+            "name": "forest",
+            "index": 18,
+            "hex": "#429130"
+          },
           "params": {
             "phrase_bars": 2,
             "loop_count": 16
@@ -242,7 +282,11 @@
         {
           "name": "echo",
           "type": "clips",
-          "color": "#2D7744",
+          "color": {
+            "name": "forest",
+            "index": 18,
+            "hex": "#429130"
+          },
           "params": {
             "phrase_bars": 2,
             "loop_count": 16
