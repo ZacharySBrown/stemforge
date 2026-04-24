@@ -166,9 +166,10 @@ _PLAYMODE_DEFAULT_RELEASE: dict[str, int | None] = {
     "key":     15,
     "legato":  None,
 }
-# 2026-04-24: BAR mode is singular "bar" on-device (captures show time.mode enum 0=off, 1=bar, 2=bpm).
-# Earlier "bars" was a guess that never matched capture. Device accepts string form only on write.
-_TIME_MODE_WIRE_INT: dict[str, int] = {"off": 0, "bar": 1, "bpm": 2}
+# 2026-04-24: BAR mode is singular "bar" on-device. Earlier "bars" was a guess that never matched
+# capture. Device accepts string form only on write. Integer-to-string mapping verified twice:
+# BPM→OFF→BPM transitions emit 0,1 → confirms BPM=1 (and therefore BAR=2).
+_TIME_MODE_WIRE_INT: dict[str, int] = {"off": 0, "bpm": 1, "bar": 2}
 _VALID_TIME_MODES = frozenset(_TIME_MODE_WIRE_INT.keys())
 
 
@@ -330,3 +331,118 @@ def pad_num_from_label(label: str) -> int:
             f"unknown pad label {label!r}; valid: {sorted(PAD_LABEL_TO_NUM)}"
         )
     return PAD_LABEL_TO_NUM[label]
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Sample-slot metadata (fileId = slot number)
+#
+# Separate schema from pad metadata. 17 fields total, discovered 2026-04-24
+# from a paginated FILE_METADATA_GET on slot 100. Writes are partial-field:
+# only emit what the caller set; unlisted fields stay at their current value.
+# Notable fields:
+#   sound.bpm    — source BPM for stretch math (stretch = project_bpm / source)
+#   sound.bars   — bar count for BAR mode (device clamps to powers of 2)
+#   sound.rootnote — MIDI root note (default 60, affects key/legato pitch track)
+#   sound.loopstart/loopend — sample-index loop points, -1 = none
+# Read-only fields (set at upload time): channels, samplerate, format, crc.
+# ──────────────────────────────────────────────────────────────────────
+
+@dataclass
+class SampleParams:
+    """Partial sample-slot metadata for FILE_METADATA_SET at fileId = slot.
+
+    All fields optional; None means "don't emit, leave current value alone".
+    This is deliberately a partial-write schema — unlike PadParams which
+    writes a full snapshot, sample-slot writes merge into existing state.
+    """
+    bpm: float | None = None          # sound.bpm — source BPM
+    bars: float | None = None         # sound.bars — device may clamp to 1/2/4/8/16
+    playmode: str | None = None       # sound.playmode — "oneshot"/"key"/"legato"
+    time_mode: str | None = None      # time.mode — "off"/"bar"/"bpm"
+    rootnote: int | None = None       # sound.rootnote — MIDI 0..127, default 60
+    amplitude: int | None = None      # sound.amplitude — 0..100
+    pan: int | None = None            # sound.pan — -16..16
+    pitch: float | None = None        # sound.pitch — semitones, -12..12
+    loopstart: int | None = None      # sound.loopstart — sample index, -1 = none
+    loopend: int | None = None        # sound.loopend — sample index, -1 = none
+    attack: int | None = None         # envelope.attack — 0..255
+    release: int | None = None        # envelope.release — 0..255
+    name: str | None = None           # display name (20 chars max)
+
+    def __post_init__(self) -> None:
+        if self.playmode is not None and self.playmode not in _VALID_PLAYMODES:
+            raise ValueError(
+                f"playmode {self.playmode!r} must be one of {sorted(_VALID_PLAYMODES)}"
+            )
+        if self.time_mode is not None and self.time_mode not in _VALID_TIME_MODES:
+            raise ValueError(
+                f"time_mode {self.time_mode!r} must be one of {sorted(_VALID_TIME_MODES)}"
+            )
+        if self.rootnote is not None and not (0 <= self.rootnote <= 127):
+            raise ValueError(f"rootnote {self.rootnote} must be 0..127")
+        if self.amplitude is not None and not (0 <= self.amplitude <= 100):
+            raise ValueError(f"amplitude {self.amplitude} must be 0..100")
+        if self.pan is not None and not (-16 <= self.pan <= 16):
+            raise ValueError(f"pan {self.pan} must be -16..16")
+        if self.attack is not None and not (0 <= self.attack <= 255):
+            raise ValueError(f"attack {self.attack} must be 0..255")
+        if self.release is not None and not (0 <= self.release <= 255):
+            raise ValueError(f"release {self.release} must be 0..255")
+        if self.loopstart is not None and self.loopstart < -1:
+            raise ValueError(f"loopstart {self.loopstart} must be >= -1")
+        if self.loopend is not None and self.loopend < -1:
+            raise ValueError(f"loopend {self.loopend} must be >= -1")
+        if self.name is not None and len(self.name.encode("ascii")) > 20:
+            raise ValueError(f"name {self.name!r} exceeds 20 ASCII bytes")
+        if self.bpm is not None and not (1.0 <= self.bpm <= 200.0):
+            # Observed 2026-04-24: 180 ACK, 240 rejected with status=1.
+            # Exact upper bound uncertain; conservative cap at 200.
+            raise ValueError(f"bpm {self.bpm} must be 1.0..200.0 (device rejects higher)")
+
+    def is_empty(self) -> bool:
+        """Return True if every field is None (nothing to write)."""
+        return all(getattr(self, f.name) is None for f in self.__dataclass_fields__.values())
+
+    def to_json(self) -> bytes:
+        """Serialize only the set fields to the JSON blob the device expects."""
+        d: dict = {}
+        if self.playmode is not None:
+            d["sound.playmode"] = self.playmode
+        if self.amplitude is not None:
+            d["sound.amplitude"] = self.amplitude
+        if self.pan is not None:
+            d["sound.pan"] = self.pan
+        if self.pitch is not None:
+            d["sound.pitch"] = round(self.pitch, 2)
+        if self.rootnote is not None:
+            d["sound.rootnote"] = self.rootnote
+        if self.time_mode is not None:
+            d["time.mode"] = self.time_mode
+        if self.bpm is not None:
+            d["sound.bpm"] = round(self.bpm, 2)
+        if self.bars is not None:
+            d["sound.bars"] = round(self.bars, 2)
+        if self.loopstart is not None:
+            d["sound.loopstart"] = self.loopstart
+        if self.loopend is not None:
+            d["sound.loopend"] = self.loopend
+        if self.attack is not None:
+            d["envelope.attack"] = self.attack
+        if self.release is not None:
+            d["envelope.release"] = self.release
+        if self.name is not None:
+            d["name"] = self.name
+        return json.dumps(d, separators=(",", ":")).encode("ascii")
+
+
+def build_slot_metadata_set(slot: int, params: SampleParams) -> bytes:
+    """Build the FILE_METADATA_SET payload for a sample-slot write.
+
+    `slot` is the sample library slot (1..65535) — fileId is the slot number
+    directly, not a pad fileId. Writes merge into the slot's existing record.
+    """
+    if not (1 <= slot <= 0xFFFF):
+        raise ValueError(f"slot {slot} must be 1..65535")
+    if params.is_empty():
+        raise ValueError("SampleParams is empty — nothing to write")
+    return build_metadata_set(slot, params.to_json())
