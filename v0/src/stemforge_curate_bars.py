@@ -146,6 +146,98 @@ def _reslice_with_padding(
     }
 
 
+def _detect_reference_onsets(
+    reference_wav: Path,
+    target_sr: int = 22050,
+) -> np.ndarray:
+    """Detect onset times (seconds) on the reference stem.
+
+    Returns sorted array of onset times in seconds. Used as the "true beat
+    grid" for snapping every other stem's slices into time-alignment with
+    the dominant rhythmic content. For tracks with a clean periodic
+    reference (e.g. steady bass on quarter notes), this fixes the problem
+    where beat-this's detected beats sit a few tens of ms off the real
+    musical downbeats.
+    """
+    import librosa
+    y, sr = librosa.load(str(reference_wav), sr=target_sr, mono=True)
+    onset_frames = librosa.onset.onset_detect(
+        y=y, sr=sr, units="frames", backtrack=True,
+    )
+    return librosa.frames_to_time(onset_frames, sr=sr)
+
+
+def _snap_to_nearest_onset(
+    t_sec: float,
+    onsets_sec: np.ndarray,
+    max_offset_sec: float = 0.150,
+) -> float:
+    """Return the onset time closest to t_sec within ±max_offset_sec.
+
+    Falls back to t_sec unchanged if no onset is within the window — leaves
+    that slice un-shifted rather than yanking it across a missing-bass
+    section.
+    """
+    if onsets_sec is None or len(onsets_sec) == 0:
+        return t_sec
+    diffs = np.abs(onsets_sec - t_sec)
+    idx = int(np.argmin(diffs))
+    if diffs[idx] <= max_offset_sec:
+        return float(onsets_sec[idx])
+    return t_sec
+
+
+def _reextract_slice(
+    source_stem_path: Path,
+    dst_path: Path,
+    start_sec: float,
+    duration_sec: float,
+) -> bool:
+    """Read [start_sec, start_sec + duration_sec] from source_stem_path,
+    write to dst_path. Returns False on failure.
+    """
+    try:
+        with sf.SoundFile(str(source_stem_path)) as f:
+            sr = f.samplerate
+            start_frame = max(0, int(round(start_sec * sr)))
+            n_frames = int(round(duration_sec * sr))
+            f.seek(start_frame)
+            data = f.read(n_frames, always_2d=True)
+        if data.shape[0] < n_frames:
+            pad = np.zeros((n_frames - data.shape[0], data.shape[1]),
+                           dtype=data.dtype)
+            data = np.concatenate([data, pad], axis=0)
+        sf.write(str(dst_path), data, sr, subtype="PCM_24")
+        return True
+    except Exception:
+        return False
+
+
+def _normalize_wav_duration(wav_path: Path, target_sec: float) -> None:
+    """Trim or zero-pad a WAV in place to exactly target_sec long.
+
+    The slicer cuts at beat-this's detected beat positions, which aren't
+    perfectly periodic — bar slices end up varying by ±5%. Ableton then
+    stretches each clip by a different factor to fit session BPM, making
+    every loop sound subtly different. Normalizing to exact bar duration
+    removes the stretch so every clip plays at session BPM natively.
+    Tails of percussive bars are low-energy so trim/pad at the end is
+    typically inaudible.
+    """
+    info = sf.info(str(wav_path))
+    target_frames = int(round(target_sec * info.samplerate))
+    if abs(target_frames - info.frames) <= 2:
+        return  # already within sub-sample precision
+    data, sr = sf.read(str(wav_path), always_2d=True)
+    if data.shape[0] > target_frames:
+        data = data[:target_frames]
+    elif data.shape[0] < target_frames:
+        pad = np.zeros((target_frames - data.shape[0], data.shape[1]),
+                       dtype=data.dtype)
+        data = np.concatenate([data, pad], axis=0)
+    sf.write(str(wav_path), data, sr, subtype="PCM_24")
+
+
 def _parse_bar_index(filename: str) -> int | None:
     """Extract bar grid index N from `{stem}_bar_NNN.wav`."""
     m = re.search(r"_bar_(\d+)\.wav$", filename)
@@ -535,6 +627,31 @@ def run(
             curated_manifest["stems"][stem_name] = stem_bars
 
     else:
+        # ── Reference-stem onset grid (alignment) ──────────────────────────
+        # When `alignment.reference_stem` is set in the curation yaml (or
+        # defaults to "bass" if available), detect onsets on that stem ONCE
+        # and re-extract every selected bar from each source stem at the
+        # nearest onset position. Fixes the case where beat-this's detected
+        # downbeats are systematically off by tens of ms — slices then play
+        # off-grid with the metronome regardless of duration normalization.
+        # Default reference: bass (typically the steadiest periodic stem
+        # for electronic / hip-hop / rock material). Future: opt-in via
+        # yaml `alignment.reference_stem`.
+        ref_stem_name = "bass" if "bass" in stems else None
+        ref_onsets = None
+        if ref_stem_name and ref_stem_name in stems:
+            ref_path = stems[ref_stem_name]
+            try:
+                ref_onsets = _detect_reference_onsets(ref_path)
+                if json_events:
+                    emit({"event": "progress", "phase": "curating", "pct": 88,
+                          "message": f"alignment: detected {len(ref_onsets)} onsets on {ref_stem_name} stem"})
+            except Exception as e:
+                if json_events:
+                    emit({"event": "progress", "phase": "curating", "pct": 88,
+                          "message": f"alignment: ref-onset detection failed: {e}"})
+                ref_onsets = None
+
         # ── Per-stem mode: each stem curated independently with its own phrase_bars ──
         for si, (stem_name, bar_dir) in enumerate(stem_bar_dirs.items()):
             sc = stem_configs[stem_name]
@@ -608,6 +725,30 @@ def run(
                     distance_weights=sc.distance_weights,
                 )
 
+            # Drop selections whose duration deviates wildly from the expected
+            # phrase length. The slicer dumps post-last-beat audio into the
+            # final bar file, leaving an outlier that can be 10-20× longer
+            # than the rest. Diversity selectors love that outlier; we don't.
+            _bar_dur_for_filter = (60.0 / bpm) * time_sig if bpm > 0 else 0.0
+            expected_dur = _bar_dur_for_filter * float(sc.phrase_bars or 1)
+            if expected_dur > 0:
+                kept = []
+                for s in selected:
+                    try:
+                        with sf.SoundFile(str(s)) as f:
+                            d = f.frames / float(f.samplerate)
+                    except Exception:
+                        continue
+                    if 0.5 * expected_dur <= d <= 1.5 * expected_dur:
+                        kept.append(s)
+                    elif json_events:
+                        emit({
+                            "event": "progress", "phase": "curating", "pct": 90,
+                            "message": f"{stem_name}: dropped {s.name} "
+                                       f"(duration {d:.2f}s vs expected {expected_dur:.2f}s)"
+                        })
+                selected = kept
+
             stem_bars = []
             stem_schema = schema_config.for_stem(stem_name)
             source_stem_path = stems.get(stem_name)
@@ -665,9 +806,51 @@ def run(
                         raw_start_sec=reslice["raw_start_sec"],
                     ))
                 else:
-                    shutil.copy2(src, dst)
+                    target_dur = _bar_dur_for_filter * float(sc.phrase_bars or 1)
+                    used_alignment = False
+
+                    # Reference-stem alignment: if we have onsets and a
+                    # source stem, re-extract this bar from the source at
+                    # the snapped onset position rather than copying the
+                    # already-cut slice. Pulls the slice's start onto a
+                    # real musical onset so loops play in time with the
+                    # session metronome.
+                    if (
+                        ref_onsets is not None
+                        and source_stem_path is not None
+                        and source_stem_path.exists()
+                        and first_bar_idx is not None
+                        and bar_duration_sec > 0
+                        and target_dur > 0
+                    ):
+                        nominal_start = float(first_bar_idx - 1) * bar_duration_sec
+                        snapped_start = _snap_to_nearest_onset(
+                            nominal_start, ref_onsets, max_offset_sec=0.150,
+                        )
+                        if _reextract_slice(
+                            source_stem_path, dst, snapped_start, target_dur,
+                        ):
+                            used_alignment = True
+
+                    if not used_alignment:
+                        shutil.copy2(src, dst)
+
+                    # Normalize the curated copy to exactly phrase_bars long
+                    # so every clip's natural BPM == session BPM and Ableton
+                    # doesn't stretch unevenly between bars. Re-extract above
+                    # already produces an exact-duration slice, so this is a
+                    # no-op in that path; still belt-and-suspenders for the
+                    # shutil.copy2 fallback.
+                    if target_dur > 0:
+                        try:
+                            _normalize_wav_duration(dst, target_dur)
+                        except Exception as e:
+                            if json_events:
+                                emit({"event": "progress", "phase": "curating", "pct": 92,
+                                      "message": f"normalize {dst.name} failed: {e}"})
                     entry = {
                         "position": position + 1,
+                        "source_bar_index": first_bar_idx,
                         "phrase_bars": sc.phrase_bars,
                         "file": str(dst),
                     }
