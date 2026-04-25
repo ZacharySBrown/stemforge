@@ -250,7 +250,11 @@ function loadClip(trackIdx, slotIdx, wavPath, clipName, startMarkerBeats) {
 // Returns true if v2 data was applied, false if the entry is legacy (caller
 // should fall back to its existing warp_mode behavior). See spec sections
 // 4 (warp marker types), 6 (offset flow), 9 (export formula), 10 (M4L app).
-function applyCurationV2Clip(clipApi, loopEntry) {
+//
+// `stemName` (optional) selects warp_mode from BAR_WARP_MODES. Drums/bass
+// default to 0 (Beats) — far cleaner stretching of transient-heavy bar-
+// aligned material than the generic 4 (Complex). Vocals/other stay at 4.
+function applyCurationV2Clip(clipApi, loopEntry, stemName) {
     if (!loopEntry || !loopEntry.clip) return false;
     var clipBlock = loopEntry.clip;
     if (clipBlock.padded_start_sec === undefined) return false;
@@ -309,8 +313,13 @@ function applyCurationV2Clip(clipApi, loopEntry) {
         try { clipApi.set("looping", 1); } catch (_) {}
     }
 
-    // Default warp mode = 4 (Complex) for stems.
-    try { clipApi.set("warp_mode", 4); } catch (_) {}
+    // Per-stem warp mode from BAR_WARP_MODES (drums/bass = 0 Beats,
+    // vocals/other = 4 Complex). Falls back to 4 if stem is unknown.
+    var wmode = 4;
+    if (stemName && BAR_WARP_MODES[stemName] !== undefined) {
+        wmode = BAR_WARP_MODES[stemName];
+    }
+    try { clipApi.set("warp_mode", wmode); } catch (_) {}
 
     // Warp markers — Live 12 LOM (hard-won findings):
     //   - `create_warp_marker` / `clear_all_warp_markers` are GHOST methods:
@@ -532,7 +541,7 @@ function _loadCuratedManifest(mf) {
                         // Curation v2: apply padded markers + warp markers
                         // + offsets when present; fall back to legacy warp
                         // mode when the entry has no clip block.
-                        if (!applyCurationV2Clip(clipApi, bar)) {
+                        if (!applyCurationV2Clip(clipApi, bar, stemName)) {
                             clipApi.set("warp_mode", warpMode);
                         }
                     }
@@ -1089,7 +1098,7 @@ function loadClipsToTrack(trackIdx, loops, stemName) {
                         // Curation v2: if entry has a clip block, apply
                         // padded markers + warp markers + offsets. Otherwise
                         // fall back to legacy per-stem warp_mode.
-                        if (!applyCurationV2Clip(clipApi, item)) {
+                        if (!applyCurationV2Clip(clipApi, item, stemName)) {
                             clipApi.set("warp_mode", warpMode);
                         }
                     }
