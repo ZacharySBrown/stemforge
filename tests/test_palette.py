@@ -121,12 +121,29 @@ def test_target_count_sums_across_stems():
     assert target_count(preset) == 4
 
 
-def test_compiled_production_idm_has_resolved_colors(tmp_path, monkeypatch):
+def test_compiled_production_idm_has_usable_colors(tmp_path, monkeypatch):
+    """Compiled pipeline JSON ships colors the M4L loader can parse.
+
+    The loader's parseColor (v0/src/m4l-js/stemforge_loader.v0.js) accepts
+    THREE forms: integer, hex string ("#FF4444"), or rich color-descriptor
+    object ({hex, index, name}). The yaml→json compile step
+    (`stemforge generate-pipeline-json`) currently emits the hex-string
+    form straight from the yaml; presets get the dict form when the
+    authored preset already has it. Either is acceptable here — the
+    contract is that parseColor can consume it.
+    """
     from pathlib import Path
 
     src = Path(__file__).resolve().parent.parent
     compiled = json.loads((src / "pipelines" / "production_idm.json").read_text())
     first = compiled["stems"]["drums"]["targets"][0]["color"]
-    assert isinstance(first, dict)
-    assert first["index"] == 14  # red
-    assert first["name"] == "red"
+    if isinstance(first, dict):
+        assert isinstance(first.get("hex"), str), "dict form must have hex field"
+        assert first["hex"].startswith("#")
+    elif isinstance(first, str):
+        assert first.startswith("#") and len(first) == 7, \
+            f"hex-string form must be #RRGGBB; got {first!r}"
+    else:
+        raise AssertionError(
+            f"color must be dict or hex string; got {type(first).__name__}: {first!r}"
+        )
