@@ -104,6 +104,16 @@ class StemCurationConfig:
     distance_weights: dict = field(default_factory=lambda: {
         "rhythm": 0.5, "spectral": 0.25, "energy": 0.25
     })
+    # section-main-alt strategy params (no-op for other strategies)
+    alts_per_section: int = 2   # ALT versions captured per section type (in addition to MAIN)
+    max_sections: int = 4       # cap on distinct section types to pull from (sorted by population)
+    # Performance-mode: rotate each curated bar so its first detected onset
+    # sits at sample 0, pad tail with silence to preserve duration. For EP-133
+    # key mode and similar where pressing the pad should fire the rhythm
+    # immediately with zero leading air. Default off to preserve musical
+    # timing of beat 1 (which may rest on some material).
+    trim_to_first_onset: bool = False
+    trim_onset_threshold_ms: float = 30.0  # only trim if leading silence > this
     processing: list[dict] = field(default_factory=lambda: [{"pipeline": "default"}])
 
 
@@ -178,6 +188,10 @@ def load_curation_config(path: str | Path | None = None) -> CurationConfig:
             crest_min=merged.get("crest_min", 4.0),
             content_density_min=merged.get("content_density_min", 0.0),
             distance_weights=merged.get("distance_weights", defaults.get("distance_weights", {})),
+            alts_per_section=merged.get("alts_per_section", 2),
+            max_sections=merged.get("max_sections", 4),
+            trim_to_first_onset=merged.get("trim_to_first_onset", False),
+            trim_onset_threshold_ms=merged.get("trim_onset_threshold_ms", 30.0),
             processing=merged.get("processing", [{"pipeline": "default"}]),
         )
 

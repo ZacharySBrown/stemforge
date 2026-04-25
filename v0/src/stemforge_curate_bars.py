@@ -213,6 +213,38 @@ def _reextract_slice(
         return False
 
 
+def _trim_wav_to_first_onset(wav_path: Path, threshold_ms: float = 30.0) -> bool:
+    """Rotate a WAV so its first detected onset sits at sample 0; pad the
+    tail with silence to preserve total duration.
+
+    For EP-133 key/performance mode and similar: pressing the trigger should
+    fire the rhythm immediately with zero leading air. Detect first onset
+    via librosa.onset_detect; if the leading silence exceeds threshold_ms,
+    trim it and zero-pad the tail. Returns True if the file was modified.
+    """
+    import librosa
+    info = sf.info(str(wav_path))
+    target_sr = info.samplerate
+    y_mono, _ = librosa.load(str(wav_path), sr=target_sr, mono=True)
+    onset_frames = librosa.onset.onset_detect(
+        y=y_mono, sr=target_sr, units="samples", backtrack=True,
+    )
+    if len(onset_frames) == 0:
+        return False
+    first_sample = int(onset_frames[0])
+    if first_sample / target_sr * 1000.0 < threshold_ms:
+        return False  # leading silence below threshold — leave alone
+
+    data, sr = sf.read(str(wav_path), always_2d=True)
+    if first_sample >= data.shape[0]:
+        return False  # onset past end — pathological, skip
+    trimmed = data[first_sample:]
+    pad = np.zeros((first_sample, data.shape[1]), dtype=data.dtype)
+    out = np.concatenate([trimmed, pad], axis=0)
+    sf.write(str(wav_path), out, sr, subtype="PCM_24")
+    return True
+
+
 def _normalize_wav_duration(wav_path: Path, target_sec: float) -> None:
     """Trim or zero-pad a WAV in place to exactly target_sec long.
 
@@ -444,27 +476,24 @@ def run(
     # Check if all stems share the same phrase_bars — enables mirroring
     stem_configs = {s: curation_config.for_stem(s) for s in stems}
 
-    # In loops-only and production modes, override loop/oneshot counts
+    # In loops-only and production modes, override loop/oneshot counts.
+    # Use dataclasses.replace so we keep all OTHER per-stem yaml settings
+    # (alts_per_section, max_sections, content_density_min, bottom_mode, etc.)
+    # — earlier code rebuilt from scratch and silently dropped any field
+    # not explicitly forwarded.
     if is_loops_only or is_production:
-        from stemforge.config import StemCurationConfig
+        import dataclasses as _dc
         for s in stem_configs:
             sc = stem_configs[s]
-            # Production mode: 16 loops for all stems, plus 8 drum one-shots
-            # Loops-only: 16 loops, 0 one-shots for all stems
             os_count = 8 if (is_production and s == "drums") else 0
             os_mode = "classify" if s == "drums" else "diverse"
-            stem_configs[s] = StemCurationConfig(
-                phrase_bars=sc.phrase_bars,
+            stem_configs[s] = _dc.replace(
+                sc,
                 loop_count=16,
                 oneshot_count=os_count,
-                strategy=sc.strategy,
                 oneshot_mode=os_mode,
                 chromatic=False,
                 midi_extract=False,
-                rms_floor=sc.rms_floor,
-                crest_min=sc.crest_min,
-                distance_weights=sc.distance_weights,
-                processing=sc.processing,
             )
     phrase_bars_set = {sc.phrase_bars for sc in stem_configs.values()}
     # In loops-only mode, always use per-stem curation — mirroring from drums
@@ -684,10 +713,14 @@ def run(
                     "message": f"{stem_name}: selecting {sc.loop_count} {item_label}s from {n_available}",
                 })
 
-            # Use section-stratified selection for melodic mode when structure is available
+            # Detect song structure if any selection path needs it: melodic
+            # mode (section-stratified) OR section-main-alt strategy.
             song_structure = None
-            if sc.bottom_mode == "melodic" and sc.midi_extract:
-                # Detect song structure for section-aware loop selection
+            needs_structure = (
+                (sc.bottom_mode == "melodic" and sc.midi_extract)
+                or sc.strategy == "section-main-alt"
+            )
+            if needs_structure:
                 try:
                     from stemforge.segmenter import detect_song_structure
                     song_structure = detect_song_structure(
@@ -704,7 +737,8 @@ def run(
                 except Exception:
                     pass  # fall back to regular curation
 
-            if song_structure and song_structure.boundaries_bars:
+            if (song_structure and song_structure.boundaries_bars
+                and sc.bottom_mode == "melodic" and sc.midi_extract):
                 selected = section_stratified_select(
                     curation_dir,
                     n_bars=sc.loop_count,
@@ -723,6 +757,10 @@ def run(
                     crest_min=sc.crest_min,
                     content_density_min=sc.content_density_min,
                     distance_weights=sc.distance_weights,
+                    song_structure=song_structure,
+                    alts_per_section=int(getattr(sc, "alts_per_section", 2) or 2),
+                    max_sections=int(getattr(sc, "max_sections", 4) or 4),
+                    phrase_bars=int(sc.phrase_bars or 1),
                 )
 
             # Drop selections whose duration deviates wildly from the expected
@@ -848,6 +886,21 @@ def run(
                             if json_events:
                                 emit({"event": "progress", "phase": "curating", "pct": 92,
                                       "message": f"normalize {dst.name} failed: {e}"})
+
+                    # Optional: trim to first onset for performance/key mode
+                    # (rotate audio so first transient sits at sample 0; pad
+                    # tail with silence to preserve duration).
+                    if getattr(sc, "trim_to_first_onset", False):
+                        try:
+                            _trim_wav_to_first_onset(
+                                dst,
+                                threshold_ms=float(getattr(sc, "trim_onset_threshold_ms", 30.0)),
+                            )
+                        except Exception as e:
+                            if json_events:
+                                emit({"event": "progress", "phase": "curating", "pct": 93,
+                                      "message": f"trim-to-onset {dst.name} failed: {e}"})
+
                     entry = {
                         "position": position + 1,
                         "source_bar_index": first_bar_idx,

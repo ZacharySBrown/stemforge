@@ -325,6 +325,104 @@ def _select_sectional(
     return selected, features, selected_idx
 
 
+def _select_section_main_alt(
+    profiles: list[BeatProfile], n: int, weights: dict | None,
+    song_structure: "SongStructure",
+    alts_per_section: int = 2,
+    max_sections: int = 4,
+    phrase_bars: int = 1,
+) -> tuple[list[BeatProfile], np.ndarray, list[int]]:
+    """Per-section MAIN (centroid) + N ALTs (max-distant from MAIN).
+
+    Groups bars by their detected section LABEL (so all "A" bars across
+    the song pool together, regardless of which section instance they
+    came from). For each section type, the MAIN is the bar closest to
+    the section's feature-space centroid (most representative version);
+    ALTs are the bars maximally distant from MAIN within the same
+    section (variations on the canonical pattern).
+
+    Caller controls the slot allocation via `alts_per_section` and
+    `max_sections`. Total selections = up to max_sections × (1 + alts).
+    Sections are ordered by population (largest first) so backbone
+    sections get picked before fringe ones.
+    """
+    if not profiles:
+        return [], np.zeros((0, 20)), []
+    if not song_structure or not getattr(song_structure, "form", None):
+        # No structure detected — fall back to max-diversity.
+        if len(profiles) <= n:
+            feats = np.array([_feature_vector(p, weights) for p in profiles])
+            return profiles, feats, list(range(len(profiles)))
+        feats = _znorm(np.array([_feature_vector(p, weights) for p in profiles]))
+        seed = int(np.argmax([p.crest_factor for p in profiles]))
+        idx = _greedy_farthest_point(feats, seed, n)
+        return [profiles[i] for i in idx], feats, idx
+
+    # Build feature matrix for ALL filtered bars; section selection works
+    # against indices into this matrix.
+    feature_matrix = _znorm(np.array([_feature_vector(p, weights) for p in profiles]))
+
+    # Group profile indices by section label. profile.index is the
+    # 1-indexed slot in the curation dir — for phrase files, that's a
+    # phrase index, not a bar index. Convert via stride.
+    stride = max(1, int(phrase_bars or 1))
+    by_section: dict[str, list[int]] = {}
+    for i, p in enumerate(profiles):
+        bar_num = (int(p.index) - 1) * stride + 1
+        sec = song_structure.section_for_bar(bar_num)
+        if sec is None:
+            continue  # bar past the last detected segment — exclude
+        by_section.setdefault(sec, []).append(i)
+
+    if not by_section:
+        return [], feature_matrix, []
+
+    # Order sections by population (largest backbone first), cap at max_sections.
+    section_order = sorted(by_section.keys(), key=lambda s: -len(by_section[s]))
+    section_order = section_order[:max(1, max_sections)]
+
+    per_section_slots = max(1, alts_per_section + 1)
+    selected_idx: list[int] = []
+
+    for section in section_order:
+        if len(selected_idx) >= n:
+            break
+        sec_indices = by_section[section]
+        if not sec_indices:
+            continue
+        sec_features = feature_matrix[sec_indices]
+
+        # MAIN = bar closest to centroid (= lowest avg distance to others).
+        centroid = sec_features.mean(axis=0)
+        d_to_centroid = np.linalg.norm(sec_features - centroid, axis=1)
+        main_local = int(np.argmin(d_to_centroid))
+        sec_picks_local = [main_local]
+
+        # ALTs = bars max-distant from MAIN within this section.
+        if alts_per_section > 0 and len(sec_indices) > 1:
+            d_from_main = np.linalg.norm(
+                sec_features - sec_features[main_local], axis=1
+            )
+            ranked = np.argsort(-d_from_main).tolist()
+            for cand_local in ranked:
+                if cand_local == main_local:
+                    continue
+                sec_picks_local.append(cand_local)
+                if len(sec_picks_local) >= per_section_slots:
+                    break
+
+        for local in sec_picks_local:
+            global_idx = sec_indices[local]
+            if global_idx in selected_idx:
+                continue
+            selected_idx.append(global_idx)
+            if len(selected_idx) >= n:
+                break
+
+    selected = [profiles[i] for i in selected_idx]
+    return selected, feature_matrix, selected_idx
+
+
 def _select_transition(
     profiles: list[BeatProfile], n: int, weights: dict | None,
     song_structure: "SongStructure",
@@ -464,6 +562,9 @@ def curate(
     content_density_min: float = 0.0,
     distance_weights: dict[str, float] | None = None,
     song_structure: "SongStructure | None" = None,
+    alts_per_section: int = 2,
+    max_sections: int = 4,
+    phrase_bars: int = 1,
 ) -> list[Path]:
     """
     Analyze every WAV in `beat_dir`, filter by rms_floor, crest_min, and
@@ -478,16 +579,23 @@ def curate(
       - rhythm-taxonomy: Cluster by rhythm fingerprint, pick diverse variants per cluster
       - sectional: Weight bars by structural importance (needs song_structure)
       - transition: Select only bars near structural boundaries (needs song_structure)
+      - section-main-alt: Per detected section type, pick MAIN (centroid) +
+        N ALTs (most distant from MAIN). Captures both the canonical
+        backbone of each section and its variations. (needs song_structure;
+        alts_per_section + max_sections control slot allocation)
 
     Returns list of selected Paths in selection order.
     """
     beat_dir = Path(beat_dir)
-    valid_strategies = ("max-diversity", "rhythm-taxonomy", "sectional", "transition")
+    valid_strategies = (
+        "max-diversity", "rhythm-taxonomy", "sectional", "transition",
+        "section-main-alt",
+    )
     if strategy not in valid_strategies:
         raise ValueError(f"Unknown strategy: {strategy}. Valid: {valid_strategies}")
 
-    # Sectional/transition need song structure — fall back if missing
-    if strategy in ("sectional", "transition") and song_structure is None:
+    # Strategies needing song structure — fall back if missing
+    if strategy in ("sectional", "transition", "section-main-alt") and song_structure is None:
         warnings.warn(
             f"Strategy '{strategy}' requires song_structure; falling back to max-diversity.",
             stacklevel=2,
@@ -522,6 +630,12 @@ def curate(
     elif strategy == "transition":
         selected, feature_matrix, selected_idx = _select_transition(
             filtered, n_bars, distance_weights, song_structure
+        )
+    elif strategy == "section-main-alt":
+        selected, feature_matrix, selected_idx = _select_section_main_alt(
+            filtered, n_bars, distance_weights, song_structure,
+            alts_per_section=alts_per_section, max_sections=max_sections,
+            phrase_bars=phrase_bars,
         )
     else:
         # max-diversity (default)
