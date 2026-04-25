@@ -82,9 +82,9 @@ def cli():
 @cli.command()
 @click.argument("audio_file", type=click.Path(exists=True, path_type=Path))
 @click.option("--backend", "-b",
-              type=click.Choice(["lalal", "demucs", "musicai", "modal", "auto"]),
+              type=click.Choice(["lalal", "demucs", "musicai", "auto"]),
               default="auto",
-              help="'auto' uses LALAL if key is set, else Demucs. 'modal' for Modal cloud GPU.")
+              help="'auto' uses LALAL if key is set, else Demucs.")
 @click.option("--stems", "-s", default=None,
               help=f"[lalal] Preset ({', '.join(LALAL_PRESETS)}) or "
                    f"comma-separated stems. Default: {LALAL_DEFAULT_PRESET}")
@@ -112,7 +112,6 @@ def split(audio_file, backend, stems, model, pipeline, output, no_slice, no_norm
       stemforge split track.wav --stems chop             # drum+bass only (LALAL)
       stemforge split track.wav --model 6stem            # 6-stem Demucs model
       stemforge split track.wav --pipeline glitch        # use 'glitch' pipeline config
-      stemforge split track.wav --backend modal           # Modal cloud GPU (fast)
       stemforge split track.wav --no-slice               # full stems, no beat files
       stemforge split track.mp3                          # auto-converts to WAV
     """
@@ -135,9 +134,6 @@ def split(audio_file, backend, stems, model, pipeline, output, no_slice, no_norm
         be = LalalBackend()
     elif backend == "musicai":
         be = MusicAiBackend()
-    elif backend == "modal":
-        from .backends.modal_backend import ModalBackend
-        be = ModalBackend()
     else:
         be = DemucsBackend()
 
@@ -536,7 +532,7 @@ def generate_pipeline_json(pipeline_dir):
 @click.option("--analysis", type=click.Path(exists=True, path_type=Path), default=None,
               help="Ableton analysis JSON. If omitted, uses librosa beat detection.")
 @click.option("--backend", "-b", default="demucs",
-              type=click.Choice(["demucs", "modal", "lalal", "musicai"]))
+              type=click.Choice(["demucs", "lalal", "musicai"]))
 @click.option("--model", "-m", default="default")
 @click.option("--strategy", "-s", default="max-diversity",
               type=click.Choice(["max-diversity", "rhythm-taxonomy", "sectional"]))
@@ -579,10 +575,7 @@ def forge(audio_file, analysis, backend, model, strategy, n_bars, time_sig, outp
 
     # ── 1. Separation ──
     emit("progress", phase="splitting", pct=0)
-    if backend == "modal":
-        from .backends.modal_backend import ModalBackend
-        be = ModalBackend()
-    elif backend == "lalal":
+    if backend == "lalal":
         be = LalalBackend()
     elif backend == "musicai":
         be = MusicAiBackend()
