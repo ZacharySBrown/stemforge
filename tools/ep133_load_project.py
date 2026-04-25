@@ -136,14 +136,25 @@ def run_load(
     project: int,
     delay_ms: int,
     dry_run: bool,
+    source_bpm: float | None = None,
 ) -> list[dict]:
-    """Execute uploads + pad assignments. Returns ops annotated with timing."""
+    """Execute uploads + pad assignments. Returns ops annotated with timing.
+
+    If `source_bpm` is provided, also writes `sound.bpm = source_bpm` and
+    `time.mode = "bpm"` to each slot's metadata. This tags each slot with
+    its recorded tempo so the device's bar inference works cleanly when
+    the pad is played at any project tempo.
+    """
     if dry_run:
         print("  DRY RUN — no device I/O performed\n")
         return ops
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from stemforge.exporters.ep133 import EP133Client
+    from stemforge.exporters.ep133.commands import TE_SYSEX_FILE
+    from stemforge.exporters.ep133.payloads import (
+        PadParams, SampleParams, build_slot_metadata_set,
+    )
 
     results = []
     with EP133Client.open(inter_message_delay_s=delay_ms / 1000.0) as client:
@@ -164,6 +175,19 @@ def run_load(
             client.upload_sample(wav, slot=slot)
             print(f"done  ({time.monotonic()-t0:.1f}s)", flush=True)
 
+            if source_bpm is not None:
+                t_bpm = time.monotonic()
+                print(
+                    f"           sound.bpm={source_bpm:.2f}, time.mode=bpm ...",
+                    end=" ",
+                    flush=True,
+                )
+                params = SampleParams(bpm=source_bpm, time_mode="bpm")
+                payload = build_slot_metadata_set(slot, params)
+                request_id = client._send(TE_SYSEX_FILE, payload)
+                client._await_response(request_id, timeout=5.0)
+                print(f"done  ({time.monotonic()-t_bpm:.2f}s)", flush=True)
+
             print(
                 f"           assigning  P{project} {group}-{op['pad_label']}"
                 f"  (pad_num={pad_num})  →  slot {slot} ...",
@@ -171,7 +195,9 @@ def run_load(
                 flush=True,
             )
             t1 = time.monotonic()
-            client.assign_pad(project=project, group=group, pad_num=pad_num, slot=slot)
+            pad_params = PadParams(time_mode="bpm") if source_bpm is not None else None
+            client.assign_pad(project=project, group=group, pad_num=pad_num,
+                              slot=slot, params=pad_params)
             print(f"done  ({time.monotonic()-t1:.1f}s)", flush=True)
 
             results.append({**op, "wav_path": str(op["wav_path"]), "ok": True})
@@ -279,6 +305,8 @@ def main() -> None:
                         help="Skip uploads; only push pad metadata to already-loaded slots")
     parser.add_argument("--playmode", choices=["oneshot", "key", "legato"], default=None,
                         help="Set playback mode on all pads (key=gate, stops when finger lifts)")
+    parser.add_argument("--no-bpm", action="store_true",
+                        help="Skip writing sound.bpm + time.mode=bpm to slots (default: writes manifest's bpm)")
     args = parser.parse_args()
 
     if not (1 <= args.pads <= 12):
@@ -316,7 +344,11 @@ def main() -> None:
                 ops, args.project, bpm, args.playmode, args.delay_ms, args.dry_run
             )
         else:
-            results = run_load(ops, args.project, args.delay_ms, args.dry_run)
+            source_bpm = None if args.no_bpm else bpm
+            if source_bpm is not None:
+                print(f"  Tagging slots with sound.bpm={source_bpm:.2f} + time.mode=bpm\n")
+            results = run_load(ops, args.project, args.delay_ms, args.dry_run,
+                               source_bpm=source_bpm)
     except Exception as e:
         print(f"\nERROR: {e}", file=sys.stderr)
         sys.exit(1)
