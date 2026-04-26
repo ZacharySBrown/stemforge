@@ -716,6 +716,66 @@ def re_anchor(track_dir, bpm, first_downbeat, pre_bars, pad_pre_bars, pad_post_b
         console.print("  [dim]Old chunks preserved at <stem>_prechop.bak/.[/dim]")
 
 
+@cli.command()
+@click.argument("export_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.option("--library", "-l", default=None, type=click.Path(path_type=Path),
+              help="Library root (default: ~/mus)")
+@click.option("--song-slug", "-s", default=None,
+              help="Override song slug. Defaults to BatchManifest.track or export-dir name.")
+@click.option("--symlink", is_flag=True, default=False,
+              help="Symlink instead of copy (default: copy).")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Show what would be routed without writing.")
+def route(export_dir, library, song_slug, symlink, dry_run):
+    """
+    Distribute a bounce dir's outputs into ~/mus/Samples/<bucket>/.
+
+    \b
+    Examples:
+      stemforge route ~/stemforge/exports/oohlala_2026-04-26
+      stemforge route ./bounce_dir --song-slug "ooh la la"
+      stemforge route ./bounce_dir --library ~/other-library
+      stemforge route ./bounce_dir --symlink           # link instead of copy
+    """
+    from .router import route_export_dir, DEFAULT_LIBRARY_ROOT, classify, derive_song_slug
+    from .manifest_schema import BATCH_FILENAME, load_batch
+
+    library_root = (library or DEFAULT_LIBRARY_ROOT).expanduser()
+
+    if dry_run:
+        batch_path = export_dir / BATCH_FILENAME
+        if not batch_path.exists():
+            raise click.ClickException(f"No {BATCH_FILENAME} in {export_dir}")
+        batch = load_batch(batch_path)
+        slug = derive_song_slug(explicit=song_slug, batch=batch, export_dir=export_dir)
+        console.print(f"[bold]Song slug:[/bold] {slug}")
+        console.print(f"[bold]Library:  [/bold] {library_root}")
+        console.print(f"[bold]Mode:     [/bold] {'symlink' if symlink else 'copy'} (DRY-RUN)")
+        for entry in batch.samples:
+            bucket = classify(entry)
+            console.print(f"  [cyan]{entry.file or '?'}[/cyan]  →  Samples/{bucket.subpath}/  "
+                          f"[dim]({bucket.kind})[/dim]")
+        return
+
+    result = route_export_dir(
+        export_dir,
+        library_root=library_root,
+        song_slug=song_slug,
+        copy=not symlink,
+    )
+
+    console.print(f"\n[bold]Routed[/bold] {len(result.records)} samples to "
+                  f"[cyan]{library_root}/Samples/[/cyan] under slug [bold]{result.song_slug}[/bold]")
+    for rec in result.records:
+        console.print(f"  ✓ {rec.dest_wav.name} → Samples/{rec.bucket}/")
+    if result.skipped:
+        console.print(f"\n[yellow]Skipped {len(result.skipped)}:[/yellow]")
+        for path, reason in result.skipped:
+            console.print(f"  – {path.name}  [dim]({reason})[/dim]")
+    console.print(f"\n[dim]Run manifest: "
+                  f"{library_root}/Projects/Stems/{result.song_slug}/stemforge_curation.json[/dim]")
+
+
 @cli.command("list")
 def list_options():
     """Show available Demucs models."""
