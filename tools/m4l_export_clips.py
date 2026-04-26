@@ -50,7 +50,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import sys
 from pathlib import Path
 
@@ -89,18 +88,25 @@ def slice_clip(
     out_path: Path,
     *,
     start_seconds: float,
-    end_seconds: float,
+    length_seconds: float,
+    loop_start_seconds: float,
+    loop_end_seconds: float,
     gain_db: float = 0.0,
 ) -> tuple[float, int]:
-    """Read `[start..end]` seconds of `source_path`, apply gain, write to `out_path`.
+    """Read `length_seconds` starting at `start_seconds`, wrapping modulo
+    the loop region `[loop_start_seconds, loop_end_seconds]` within source.
 
-    Wraps around the source's length when the requested window extends past
-    the end. This matches Ableton's loop semantics: a clip with
-    `loop_start = 8`, `loop_end = 24`, `length = 16` plays beats 8..16 of
-    source, then wraps to beats 0..8 — so the bounced WAV is the second
-    half of the source followed by the first half (the "rotation" the user
-    set by moving the loop_start marker). Without this wrap the EP-133 only
-    gets half the loop.
+    Models Live's looping-clip playback: when the read head hits loop_end
+    in source coords, it jumps back to loop_start (NOT to source-start).
+    For forge-padded sources where the loop region is a proper subset of
+    the source, this is the only correct rotation. The previous "wrap to
+    source-start" was the right answer for `tools/ep133_load_hybrid_session.py`
+    where the input was already pre-trimmed to the loop region; it broke
+    when BOUNCE started consuming forge-padded sources directly.
+
+    Loop boundaries are clamped to the source's audible range, so a loop
+    declared past source-end shrinks to fit. When length exceeds the loop
+    region's audible range, the read repeats the region.
 
     Returns (duration_seconds, sample_rate).
     """
@@ -110,30 +116,35 @@ def slice_clip(
     if source_frames <= 0:
         raise ValueError(f"empty source: {source_path}")
 
-    requested_frames = int(round((end_seconds - start_seconds) * sr))
-    if requested_frames <= 0:
+    target_frames = int(round(length_seconds * sr))
+    if target_frames <= 0:
+        raise ValueError(f"empty slice: length={length_seconds:.3f}s")
+
+    ls_frame = max(0, int(round(loop_start_seconds * sr)))
+    le_frame = min(source_frames, int(round(loop_end_seconds * sr)))
+    if le_frame <= ls_frame:
         raise ValueError(
-            f"empty slice: start={start_seconds:.3f}s end={end_seconds:.3f}s"
+            f"empty loop region: ls={loop_start_seconds:.3f}s "
+            f"le={loop_end_seconds:.3f}s src={source_frames/sr:.3f}s"
         )
 
-    # Normalize start into the source's [0, source_frames) range — Live can
-    # set loop_start beyond the source if the user moved the marker into the
-    # repeated tail.
-    start_frame = int(round(start_seconds * sr)) % source_frames
+    # Clamp start into the loop region — if the user dragged the play-triangle
+    # outside the loop, fall through to loop_start.
+    start_frame = int(round(start_seconds * sr))
+    if start_frame < ls_frame or start_frame >= le_frame:
+        start_frame = ls_frame
 
-    # Read in chunks, wrapping at source end. Handles arbitrary loop lengths
-    # including loops that span multiple source repetitions.
     chunks: list[np.ndarray] = []
     position = start_frame
-    remaining = requested_frames
+    remaining = target_frames
     while remaining > 0:
-        available = source_frames - position
+        available = le_frame - position
         n = min(available, remaining)
         chunk, _ = sf.read(str(source_path), start=position, frames=n,
                            always_2d=True, dtype="float32")
         chunks.append(chunk)
         remaining -= n
-        position = 0  # subsequent passes always start at sample 0
+        position = ls_frame  # subsequent passes start at loop_start
 
     audio = chunks[0] if len(chunks) == 1 else np.concatenate(chunks, axis=0)
 
@@ -142,7 +153,7 @@ def slice_clip(
         audio = audio * gain_linear
 
     sf.write(str(out_path), audio, sr, subtype="FLOAT")
-    return requested_frames / sr, sr
+    return target_frames / sr, sr
 
 
 def determine_playmode(bars: float, threshold: float) -> str:
@@ -225,21 +236,14 @@ def slice_and_write_one(
     if not source_path.exists():
         raise FileNotFoundError(f"clip source not found: {source_path}")
 
-    # Beats↔seconds conversion for warped clips: the source's duration
-    # maps linearly to the clip's `length_beats`. So 1 project-beat in
-    # the clip corresponds to (source_duration / length_beats) seconds
-    # in the source. Linear-warp approximation — exact when there are
-    # only default first/last warp markers (the common case for forge
-    # output and most user clips). Non-trivial intermediate warp markers
-    # would need full marker-table interpretation; defer to V2.
-    length_beats = float(clip.get("length_beats") or 0.0)
-    source_duration = sf.info(str(source_path)).duration
-    if length_beats > 0 and source_duration > 0:
-        seconds_per_beat = source_duration / length_beats
-    else:
-        src_bpm = clip.get("clip_warp_bpm") or project_tempo
-        seconds_per_beat = 60.0 / src_bpm if src_bpm else 0.5
+    # Beats↔seconds: use the source's natural BPM. Forge-padded sources
+    # are typically 2× their clip's `length_beats` worth of audio (extra
+    # context bars), so the source-duration / length-beats ratio is NOT
+    # the right conversion factor — it would mis-scale every position.
+    src_bpm = clip.get("clip_warp_bpm") or project_tempo
+    seconds_per_beat = 60.0 / src_bpm if src_bpm else 0.5
 
+    length_beats = float(clip.get("length_beats") or 0.0)
     loop_start_beats = float(clip.get("loop_start_beats") or 0.0)
     loop_end_beats = float(clip.get("loop_end_beats") or length_beats)
     # start_marker defaults to loop_start when not provided (older specs).
@@ -254,11 +258,6 @@ def slice_and_write_one(
 
     loop_length_beats = loop_end_beats - loop_start_beats
 
-    # Slice = source[start_marker .. start_marker + loop_length] with wrap.
-    # The wrap is modulo the source length (handled inside slice_clip).
-    start_seconds = start_marker_beats * seconds_per_beat
-    end_seconds = (start_marker_beats + loop_length_beats) * seconds_per_beat
-
     group = clip.get("suggested_group") or "X"
     slot = int(clip.get("slot_idx", 0))
     out_filename = f"{group}{slot:02d}.wav"
@@ -266,8 +265,10 @@ def slice_and_write_one(
 
     duration, _sr = slice_clip(
         source_path, out_path,
-        start_seconds=start_seconds,
-        end_seconds=end_seconds,
+        start_seconds=start_marker_beats * seconds_per_beat,
+        length_seconds=loop_length_beats * seconds_per_beat,
+        loop_start_seconds=loop_start_beats * seconds_per_beat,
+        loop_end_seconds=loop_end_beats * seconds_per_beat,
         gain_db=float(clip.get("gain") or 0.0),
     )
 

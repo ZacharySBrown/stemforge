@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -20,8 +19,6 @@ _spec.loader.exec_module(m4l_export_clips)
 
 from stemforge.manifest_schema import (
     BATCH_FILENAME,
-    BatchManifest,
-    SampleMeta,
     load_batch,
     load_sidecar,
 )
@@ -107,10 +104,11 @@ def test_run_writes_wav_sidecar_and_batch(tmp_path: Path, source_wav: Path) -> N
     wav = export_dir / "A00.wav"
     assert wav.exists()
     info = sf.info(str(wav))
-    # Default clip: length_beats=16, loop=[0..16], source=10s.
-    # Linear-warp: seconds_per_beat = 10/16 = 0.625. Bounce = 16 × 0.625 = 10s.
-    # (The source's natural rate is what determines slice timing, not project_tempo.)
-    assert info.duration == pytest.approx(10.0, abs=0.01)
+    # Default clip: length_beats=16, loop=[0..16], project_tempo=120.
+    # spb = 60/120 = 0.5. Bounce = 16 × 0.5 = 8s. Source (10s) is longer
+    # than the loop region (8s), so the loop region is clamped to source
+    # only on the upper bound, not here — slice = source[0..8s].
+    assert info.duration == pytest.approx(8.0, abs=0.01)
 
     # Sidecar exists and round-trips
     side_meta = load_sidecar(wav)
@@ -181,28 +179,25 @@ def test_run_skips_missing_source_files(tmp_path: Path, source_wav: Path) -> Non
     assert len(batch.samples) == 1
 
 
-def test_loop_wraps_around_source_when_loop_extends_past_source(
+def test_loop_region_clamped_when_extending_past_source(
     tmp_path: Path, source_wav: Path
 ) -> None:
-    """Loop in source-coords extends past source length → wraps cleanly.
+    """Loop region declared past source-end → clamp to source, then wrap.
 
-    Source = 10s ramp [-1..+1]. length_beats=16 → seconds_per_beat = 0.625.
-    loop_start=8 beats → 5.0s in source. loop_end=24 → 15.0s (past source).
-    start_marker defaults to loop_start. Bounce starts at 5.0s, plays for
-    16 × 0.625 = 10s, wrapping at source-end. Result: source[5..10] then
-    source[0..5] — second half ramp, then first half ramp.
+    Source = 10s ramp [-1..+1]. project_tempo=120 → spb=0.5.
+    loop_start=8 beats → 4.0s in source. loop_end=24 → 12.0s (past source).
+    Clamp le → 10.0s. Loop region in source = [4.0s, 10.0s] (6s playable).
+    start_marker defaults to loop_start. Bounce length = 16 × 0.5 = 8s.
+    Result: source[4..10] (6s) + source[4..6] (2s, wrap to ls).
     """
     sr = 44100
-    source_seconds = 10.0
-    source_frames = int(sr * source_seconds)
-
     wrap_clip = _make_clip(
         source_wav,
         warping=True,
-        clip_warp_bpm=None,           # force linear-warp from source duration
-        length_beats=16.0,            # source maps 1:1 to length
-        loop_start_beats=8.0,         # 5.0s in source
-        loop_end_beats=24.0,          # 15.0s in source → wraps
+        clip_warp_bpm=None,           # use project_tempo = 120 → spb=0.5
+        length_beats=16.0,
+        loop_start_beats=8.0,         # 4.0s in source
+        loop_end_beats=24.0,          # 12.0s declared, clamped to 10.0s
         signature_numerator=4,
     )
     spec_path = _write_spec(tmp_path, [wrap_clip])
@@ -210,52 +205,46 @@ def test_loop_wraps_around_source_when_loop_extends_past_source(
 
     wav_path = tmp_path / "export" / "A00.wav"
     info = sf.info(str(wav_path))
-    assert info.duration == pytest.approx(10.0, abs=0.01)
+    assert info.duration == pytest.approx(8.0, abs=0.01)
 
     audio, _ = sf.read(str(wav_path), always_2d=True, dtype="float32")
-    assert len(audio) == pytest.approx(source_frames, abs=2)
 
-    # Source ramp: sample 0 = -1.0, sample (source_frames-1) ≈ +1.0,
-    # midpoint sample ≈ 0. Bounce = source[midpoint..end] + source[0..midpoint].
+    # Ramp: sample i → -1 + 2i/(N-1). At source seconds 4..10 the ramp
+    # values are -0.2..+1.0; at 4..6 the values are -0.2..+0.2.
+    # Bounce: chunk1 = source[4..10] (6s, ramp -0.2..+1.0)
+    #         chunk2 = source[4..6]  (2s, ramp -0.2..+0.2)
+    # Wrap point is at bounce-second 6.0: chunk1 ends, chunk2 begins.
     first_sample = audio[0, 0]
-    last_sample = audio[-1, 0]
-    midpoint_sample = audio[source_frames // 2, 0]
+    last_of_chunk1 = audio[int(6.0 * sr) - 1, 0]   # ≈ +1.0
+    first_of_chunk2 = audio[int(6.0 * sr), 0]      # ≈ -0.2 (back to ls)
+    last_sample = audio[-1, 0]                     # last sample of chunk2 ≈ +0.2
 
-    assert abs(first_sample) < 0.01            # was source midpoint ≈ 0
-    assert abs(last_sample) < 0.01             # ends just before midpoint ≈ 0
-    assert midpoint_sample == pytest.approx(-1.0, abs=0.01)  # wrap → source[0]
+    assert first_sample == pytest.approx(-0.2, abs=0.02)
+    assert last_of_chunk1 == pytest.approx(+1.0, abs=0.02)
+    assert first_of_chunk2 == pytest.approx(-0.2, abs=0.02)
+    assert last_sample == pytest.approx(+0.2, abs=0.02)
 
 
-def test_start_marker_rotates_loop_within_source(
+def test_start_marker_rotates_within_loop_region(
     tmp_path: Path, source_wav: Path
 ) -> None:
     """start_marker > loop_start → bounce begins at start_marker, then wraps
-    within the loop region back to loop_start. Models the user-screenshot
-    case: loop region bar 3..7, start_marker dragged to bar 4.
+    within the loop region back to loop_start (NOT to source-start).
 
-    Source = 10s ramp. length=16 beats, loop=[8..16], start_marker=12.
-    seconds_per_beat = 0.625. Bounce starts at 12*0.625 = 7.5s, plays for
-    8 beats × 0.625 = 5.0s. So source[7.5..10s] then wrap → source[0..2.5s].
-
-    Wait — that wrap is wrong because the LOOP is [8..16]beats = [5..10]s in
-    source. Live's playback wraps within the loop region: start_marker → loop_end
-    → loop_start → start_marker. So source[7.5..10] + source[5..7.5].
-    Total still 5.0s.
-
-    But our slice_clip wraps modulo SOURCE length, not loop region. For most
-    cases (loop region = full source, as in this test), they're equivalent.
-    For loop ⊂ source, behavior diverges — but that's a rarer case the user
-    has not asked about; defer to follow-up.
+    Source = 10s ramp. project_tempo=120 → spb=0.5.
+    length=16 beats, loop=[8..16], start_marker=12.
+    ls_s=4.0s, le_s=8.0s, sm_s=6.0s. Loop region [4..8s] fully within source.
+    Bounce length = (16-8) × 0.5 = 4.0s.
+    Slice: source[6..8] (chunk1, 2s) + source[4..6] (chunk2, 2s).
     """
-    sr = 44100
     rotated_clip = _make_clip(
         source_wav,
         warping=True,
-        clip_warp_bpm=None,
-        length_beats=16.0,             # source full
-        loop_start_beats=8.0,          # bar 3 (= source 5.0s)
-        loop_end_beats=16.0,           # bar 5 (= source 10.0s, end)
-        start_marker_beats=12.0,       # bar 4 (= source 7.5s)
+        clip_warp_bpm=None,            # use project_tempo=120 → spb=0.5
+        length_beats=16.0,
+        loop_start_beats=8.0,          # source 4.0s
+        loop_end_beats=16.0,           # source 8.0s
+        start_marker_beats=12.0,       # source 6.0s
         signature_numerator=4,
     )
     spec_path = _write_spec(tmp_path, [rotated_clip])
@@ -264,13 +253,20 @@ def test_start_marker_rotates_loop_within_source(
     wav_path = tmp_path / "export" / "A00.wav"
     audio, _ = sf.read(str(wav_path), always_2d=True, dtype="float32")
     info = sf.info(str(wav_path))
-    # Bounce length = (loop_end - loop_start) × seconds_per_beat = 8 × 0.625 = 5.0s
-    assert info.duration == pytest.approx(5.0, abs=0.01)
+    assert info.duration == pytest.approx(4.0, abs=0.01)
 
-    # First sample = source @ 7.5s = ramp value (7.5/10 × 2 - 1) = +0.5
-    # Last sample ≈ source @ 5.0s = ramp value (5/10 × 2 - 1) = 0.0
-    # Midpoint of bounce = source wrap point ≈ 0.0 (sample 0 of source = -1)
-    assert audio[0, 0] == pytest.approx(0.5, abs=0.02)
+    # Ramp: source @ Xs = -1 + 2(X/10). At 4s = -0.2, at 6s = +0.2, at 8s = +0.6.
+    # First sample = source[6s] = +0.2.
+    # Wrap point at 2.0s into bounce: chunk1 ends at source[8s-eps] ≈ +0.6,
+    # chunk2 begins at source[4s] = -0.2.
+    sr = 44100
+    assert audio[0, 0] == pytest.approx(+0.2, abs=0.02)
+    # Last sample of chunk1 (just before wrap)
+    assert audio[int(2.0 * sr) - 1, 0] == pytest.approx(+0.6, abs=0.02)
+    # First sample of chunk2 (right after wrap)
+    assert audio[int(2.0 * sr), 0] == pytest.approx(-0.2, abs=0.02)
+    # Last sample of bounce ≈ source[6s - eps] ≈ +0.2
+    assert audio[-1, 0] == pytest.approx(+0.2, abs=0.02)
 
 
 def test_start_marker_defaults_to_loop_start_when_absent(
@@ -281,7 +277,7 @@ def test_start_marker_defaults_to_loop_start_when_absent(
     clip = _make_clip(
         source_wav,
         warping=True,
-        clip_warp_bpm=None,
+        clip_warp_bpm=None,             # project_tempo=120 → spb=0.5
         length_beats=16.0,
         loop_start_beats=8.0,
         loop_end_beats=24.0,
@@ -290,9 +286,9 @@ def test_start_marker_defaults_to_loop_start_when_absent(
     assert "start_marker_beats" not in clip
     spec_path = _write_spec(tmp_path, [clip])
     m4l_export_clips.run(spec_path, json_events=False)
-    # Should not crash; bounce length = full loop = 10s
+    # Bounce length = (24-8) × 0.5 = 8s
     info = sf.info(str(tmp_path / "export" / "A00.wav"))
-    assert info.duration == pytest.approx(10.0, abs=0.01)
+    assert info.duration == pytest.approx(8.0, abs=0.01)
 
 
 def test_loop_wraps_multiple_source_iterations(
@@ -364,10 +360,9 @@ def test_warped_clip_tags_sidecar_with_clip_warp_bpm(
 
     wav = tmp_path / "export" / "A00.wav"
     info = sf.info(str(wav))
-    # length_beats=8 maps linearly across source_duration=10s.
-    # Bounce = 8 beats × (10/8) seconds_per_beat = 10s (full source).
-    # The clip_warp_bpm of 60 is informational, not used to compute timing.
-    assert info.duration == pytest.approx(10.0, abs=0.01)
+    # clip_warp_bpm=60 → spb = 60/60 = 1.0s per beat.
+    # length=8, loop=[0..8] → bounce = 8 × 1.0 = 8s.
+    assert info.duration == pytest.approx(8.0, abs=0.01)
 
     meta = load_sidecar(wav)
     assert meta is not None
@@ -477,6 +472,59 @@ def test_main_exits_2_on_missing_spec(tmp_path: Path) -> None:
     with pytest.raises(SystemExit) as exc:
         m4l_export_clips.main([str(tmp_path / "nope.json")])
     assert exc.value.code == 2
+
+
+def test_a09_geometry_forge_padded_source_with_late_start_marker(tmp_path: Path) -> None:
+    """Real-world A09 case: forge-padded source 2× the loop length, start_marker
+    deep into the loop region. The bounce wraps within the loop region (NOT to
+    source-start), so the audible "loop seam" lands at (le - sm) / loop_length
+    through the bounced WAV.
+
+    Geometry mirrors the live spec captured 2026-04-26:
+        source duration = 16s (32 beats at project_tempo=120, spb=0.5)
+        length_beats=16, loop=[8..24], start_marker=20
+
+    In source coords: ls_s=4, le_s=12, sm_s=10. Loop region [4..12] sits fully
+    within the 16s source (bars 0..2 are pre-roll, bars 6..8 are post-roll).
+    Bounce length = 16 × 0.5 = 8s.
+    Slice: source[10..12] (chunk1 = 2s) + source[4..10] (chunk2 = 6s).
+    Wrap point: 2.0s into the 8.0s bounce = 25% — exactly the user's signature
+    "abrupt amplitude change less than halfway through".
+    """
+    sr = 44100
+    # 16-second ramp source (pre-roll [0..4], loop region [4..12], post-roll [12..16]).
+    # Use distinct constant levels per region so we can detect both chunks
+    # AND verify post-roll content is excluded.
+    n = int(sr * 16.0)
+    data = np.zeros((n, 1), dtype=np.float32)
+    data[:int(sr * 4.0), 0] = 0.10           # pre-roll (must NOT appear in bounce)
+    data[int(sr * 4.0):int(sr * 12.0), 0] = 0.50   # loop region body
+    data[int(sr * 12.0):, 0] = 0.90          # post-roll (must NOT appear)
+    src_path = tmp_path / "padded_source.wav"
+    sf.write(str(src_path), data, sr, subtype="FLOAT")
+
+    clip = _make_clip(
+        src_path,
+        warping=True,
+        clip_warp_bpm=None,            # use project_tempo=120 → spb=0.5
+        length_beats=16.0,
+        loop_start_beats=8.0,          # source 4.0s
+        loop_end_beats=24.0,           # source 12.0s
+        start_marker_beats=20.0,       # source 10.0s
+    )
+    spec_path = _write_spec(tmp_path, [clip])
+    m4l_export_clips.run(spec_path, json_events=False)
+
+    audio, _ = sf.read(str(tmp_path / "export" / "A00.wav"),
+                       always_2d=True, dtype="float32")
+
+    # Bounce is exactly 8s
+    assert len(audio) == int(sr * 8.0)
+
+    # Every sample in the bounce is from the loop-region body (level 0.5).
+    # No pre-roll (0.10) or post-roll (0.90) leaked in.
+    assert audio.min() == pytest.approx(0.50, abs=0.001)
+    assert audio.max() == pytest.approx(0.50, abs=0.001)
 
 
 def test_main_runs_against_valid_spec(tmp_path: Path, source_wav: Path) -> None:
