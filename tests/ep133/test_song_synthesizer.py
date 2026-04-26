@@ -120,13 +120,15 @@ def test_synthesize_pad_records_use_session_tracks_slot(snapshots, manifest):
     spec = synthesize(snapshots, manifest, 120.0, (4, 4), 1)
     # Build {(group, pad): sample_slot}.
     pad_map = {(p.group, p.pad): p.sample_slot for p in spec.pads}
-    # session_tracks slot is 0-indexed; pad = slot + 1.
-    assert pad_map[("a", 1)] == 0  # loop_a1 slot=0
-    assert pad_map[("a", 2)] == 1  # loop_a2 slot=1
-    assert pad_map[("a", 3)] == 2  # loop_a3 slot=2
-    assert pad_map[("b", 1)] == 0
-    assert pad_map[("b", 2)] == 1
-    assert pad_map[("c", 1)] == 0
+    # Slot mapping: SAMPLE_SLOT_BASE (700) + group offset (0/20/40/60) +
+    # manifest's per-group 0-indexed slot. Avoids clobbering user samples
+    # in the EP-133's 1..699 user range.
+    assert pad_map[("a", 1)] == 700  # loop_a1 slot=0  → 700 + 0 + 0
+    assert pad_map[("a", 2)] == 701  # loop_a2 slot=1  → 700 + 0 + 1
+    assert pad_map[("a", 3)] == 702  # loop_a3 slot=2  → 700 + 0 + 2
+    assert pad_map[("b", 1)] == 720  # loop_b1 slot=0  → 700 + 20 + 0
+    assert pad_map[("b", 2)] == 721
+    assert pad_map[("c", 1)] == 740  # 700 + 40 + 0
 
 
 def test_synthesize_pads_default_to_oneshot(snapshots, manifest):
@@ -152,15 +154,18 @@ def test_synthesize_sounds_dict_maps_sample_slot_to_wav(snapshots, manifest):
         assert str(spec.sounds[pad.sample_slot])
 
 
-def test_synthesize_event_position_zero_full_pattern_duration(snapshots, manifest):
+def test_synthesize_event_position_zero(snapshots, manifest):
+    """Each emitted pattern is a single trigger at position 0.
+    Note/velocity/duration values match captured-reference one-shots
+    (see synthesizer comment): note=60, vel=100, dur=96 ticks."""
     spec = synthesize(snapshots, manifest, 120.0, (4, 4), 1)
     for pattern in spec.patterns:
         assert len(pattern.events) == 1
         e = pattern.events[0]
         assert e.position_ticks == 0
-        assert e.duration_ticks == pattern.bars * TICKS_PER_BAR
+        assert e.duration_ticks == 96
         assert e.note == 60
-        assert e.velocity == 127
+        assert e.velocity == 100
         assert e.pad == 1 or e.pad == 2 or e.pad == 3
         assert 1 <= e.pad <= 12
 

@@ -269,7 +269,12 @@ def build_ppak(
         _zip_write_with_leading_slash(
             zf, f"projects/P{spec.project_slot:02d}.tar", tar_data
         )
-        # Bundle samples
+        # Bundle samples. The device requires entries in the form
+        # ``/sounds/{slot} {slot}_{name}.wav`` (note the literal space
+        # between slot and display name) — verified from a real device
+        # backup. Entries named just ``/sounds/{slot:03d}.wav`` are NOT
+        # picked up; the sample stays unloaded and pads referencing that
+        # slot trigger the device's "restore complete with issues" flag.
         for slot, wav_path in sorted(spec.sounds.items()):
             wav_path = Path(wav_path)
             if not wav_path.is_file():
@@ -278,7 +283,7 @@ def build_ppak(
                 )
             _zip_write_with_leading_slash(
                 zf,
-                f"sounds/{slot:03d}.wav",
+                f"sounds/{slot:03d} {slot:03d}_{wav_path.stem}.wav",
                 wav_path.read_bytes(),
             )
 
@@ -344,8 +349,13 @@ def _build_inner_tar(spec: PpakSpec, template: _ReferenceTemplate) -> bytes:
                     (group, pad), bytes(PAD_RECORD_SIZE)
                 )
                 if pd is None:
-                    # Unassigned pad — use template as-is.
-                    blob = tmpl
+                    # Unassigned pad — emit a zero-filled record so the
+                    # device doesn't surface "restore complete with issues"
+                    # for orphan template pads pointing at slots we never
+                    # bundled. The 48 pad files are still required to be
+                    # present in the TAR; the device treats all-zero pads
+                    # as empty/silent.
+                    blob = bytes(PAD_RECORD_SIZE)
                 else:
                     blob = build_pad(
                         sample_slot=pd.sample_slot,

@@ -214,15 +214,16 @@ def test_build_ppak_unassigned_pads_remain_zero(template_ppak: Path, silent_wav:
 def test_build_ppak_pattern_layout(template_ppak: Path, silent_wav: Path):
     data = build_ppak(_minimal_spec(silent_wav), template_ppak)
     _, members = _open_ppak(data)
-    pattern = members["patterns/a/01"]
+    pattern = members["patterns/a01"]
     # Header: [0x00, bars=2, count=1, 0x00]
     assert pattern[0] == 0x00
     assert pattern[1] == 2  # bars (NOT constant 0x01!)
     assert pattern[2] == 1
     assert pattern[3] == 0x00
-    # Event: [pos=0(LE), pad*8=24, note=60, vel=127, dur=768(LE), 0x00]
+    # Event: [pos=0(LE), (pad-1)*8=16, note=60, vel=127, dur=768(LE), 0x00]
+    # — events use 0-indexed pad encoding; pad 3 → byte 0x10.
     assert pattern[4] == 0x00 and pattern[5] == 0x00
-    assert pattern[6] == 3 * 8  # 0x18
+    assert pattern[6] == (3 - 1) * 8  # 0x10
     assert pattern[7] == 60
     assert pattern[8] == 127
     duration = struct.unpack_from("<H", pattern, 9)[0]
@@ -256,7 +257,8 @@ def test_build_ppak_bundles_sounds_at_expected_path(
     data = build_ppak(_minimal_spec(silent_wav), template_ppak)
     with zipfile.ZipFile(io.BytesIO(data), "r") as zf:
         names = zf.namelist()
-    assert "/sounds/100.wav" in names
+    # Device requires "/sounds/{slot} {slot}_{name}.wav" — see writer comment.
+    assert any(n.startswith("/sounds/100 100_") and n.endswith(".wav") for n in names), names
 
 
 def test_build_ppak_project_tar_path_matches_slot(
@@ -372,16 +374,16 @@ def test_build_ppak_round_trip_through_synthetic_template(tmp_path: Path):
     data = build_ppak(spec, template)
     _, members = _open_ppak(data)
 
-    # Pattern A
-    pa = members["patterns/a/01"]
+    # Pattern A — events use 0-indexed pad encoding: pad 1 → byte 0.
+    pa = members["patterns/a01"]
     assert pa[1] == 1  # bars
     assert pa[2] == 1  # event count
-    assert pa[6] == 1 * 8  # pad indicator
-    # Pattern B (bars=4)
-    pb = members["patterns/b/01"]
+    assert pa[6] == (1 - 1) * 8  # 0
+    # Pattern B (bars=4) — pad 5 → byte 0x20.
+    pb = members["patterns/b01"]
     assert pb[1] == 4
     assert pb[2] == 1
-    assert pb[6] == 5 * 8
+    assert pb[6] == (5 - 1) * 8  # 0x20
 
     # Scenes — 2 chunks
     sc = members["scenes"]
@@ -402,9 +404,12 @@ def test_build_ppak_round_trip_through_synthetic_template(tmp_path: Path):
     assert pad_b5[23] == 1
     assert pad_b5[25] == 2
 
-    # Sounds bundled
+    # Sounds bundled — device requires "/sounds/{slot} {slot}_{name}.wav"
+    # naming (literal space + descriptive suffix). Verified against a real
+    # device backup; entries without the descriptive suffix are silently
+    # ignored by the device → "restore complete with issues" + missing audio.
     with zipfile.ZipFile(io.BytesIO(data), "r") as zf:
         names = zf.namelist()
-    assert "/sounds/101.wav" in names
-    assert "/sounds/102.wav" in names
+    assert any(n.startswith("/sounds/101 101_") and n.endswith(".wav") for n in names), names
+    assert any(n.startswith("/sounds/102 102_") and n.endswith(".wav") for n in names), names
     assert "/projects/P03.tar" in names

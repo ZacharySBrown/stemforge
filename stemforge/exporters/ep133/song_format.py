@@ -112,22 +112,24 @@ class PpakSpec:
 def build_pattern(events: list[Event], bars: int) -> bytes:
     """Build one pattern file.
 
-    Layout (all little-endian where multibyte):
+    Layout (verified against captured reference patterns):
 
     ====  =================================================================
     off   value
     ====  =================================================================
     0     0x00
-    1     bars (uint8) — was constant 0x01 in DannyDesert's writer (bug)
+    1     bars (uint8)
     2     event_count (uint8, max 255)
     3     0x00
     4..   event_count × 8-byte event records, each:
-          [pos_lo, pos_hi, pad*8, note, velocity, dur_lo, dur_hi, 0x00]
+          [pos_lo, pos_hi, pad*8, note, velocity, dur_lo, dur_hi, flag]
+          - position_ticks (uint16 LE) — bytes 0-1
+          - pad*8 — byte 2 (so pad 1 = 0x08, pad 11 = 0x58)
+          - note — byte 3 (always 0x3c = 60 = C4 in captured patterns)
+          - velocity — byte 4 (always 0x64 = 100 in captured patterns)
+          - duration_ticks (uint16 LE) — bytes 5-6
+          - flag — byte 7 (mostly 0x00; sometimes 0x08 on last event)
     ====  =================================================================
-
-    ``note`` is the MIDI note number (60 = C4 / natural pitch). DannyDesert
-    hard-coded this as ``0x3c`` and put 0x10/0x00 in the duration slot —
-    both wrong per phones24's reader.
     """
     if not (1 <= bars <= 255):
         raise ValueError(f"bars must be 1..255, got {bars}")
@@ -142,11 +144,11 @@ def build_pattern(events: list[Event], bars: int) -> bytes:
     out.append(len(events))
     out.append(0x00)
 
-    # Sort by position for deterministic output (matches DannyDesert behavior;
-    # device tolerates either order but determinism eases testing).
     for ev in sorted(events, key=lambda e: e.position_ticks):
         if not (0 <= ev.position_ticks <= 0xFFFF):
-            raise ValueError(f"position_ticks out of uint16 range: {ev.position_ticks}")
+            raise ValueError(
+                f"position_ticks out of uint16 range: {ev.position_ticks}"
+            )
         if not (1 <= ev.pad <= 12):
             raise ValueError(f"pad must be 1..12, got {ev.pad}")
         if not (0 <= ev.note <= 127):
@@ -154,10 +156,16 @@ def build_pattern(events: list[Event], bars: int) -> bytes:
         if not (0 <= ev.velocity <= 127):
             raise ValueError(f"velocity must be 0..127, got {ev.velocity}")
         if not (0 <= ev.duration_ticks <= 0xFFFF):
-            raise ValueError(f"duration_ticks out of uint16 range: {ev.duration_ticks}")
+            raise ValueError(
+                f"duration_ticks out of uint16 range: {ev.duration_ticks}"
+            )
 
         out += struct.pack("<H", ev.position_ticks)
-        out.append(ev.pad * 8)
+        # IMPORTANT: pad encoding in event is 0-indexed (file path is
+        # 1-indexed). Verified against minimal reference where the "."
+        # pad is stored at pads/{group}/p10 (1-indexed file 10) and
+        # fires from event byte 0x48 (= 72 = 9 * 8 → 0-indexed pad 9).
+        out.append((ev.pad - 1) * 8)
         out.append(ev.note)
         out.append(ev.velocity)
         out += struct.pack("<H", ev.duration_ticks)
@@ -196,16 +204,60 @@ def build_scenes(scenes: list[SceneSpec], time_sig: tuple[int, int]) -> bytes:
     if not (0 <= num <= 255) or not (0 <= denom <= 255):
         raise ValueError(f"time_sig values must fit in uint8: {time_sig}")
 
+    # Device requires the scenes file to be a fixed 712 bytes, regardless of
+    # how many scenes are populated:
+    #   - 7-byte header (4 zero + numerator + denominator + ???=0)
+    #   - 99 × 6-byte scene chunks (unused chunks zero-fill pat_a..pat_d but
+    #     keep the per-chunk numerator/denominator at offsets 4-5)
+    #   - 111-byte trailer (purpose: TBD; appears to hold "current scene" +
+    #     song-mode metadata. Empty trailer = all zeros works for fresh
+    #     exports.)
+    #
+    # Verified against captured minimal reference: 7 + 99*6 + 111 = 712.
+    # An incomplete/short scenes file causes the device to error on load
+    # ("ERR PATTERN ...").
+    SCENES_TOTAL_SIZE = 712
+    SCENES_TRAILER_SIZE = (
+        SCENES_TOTAL_SIZE - SCENES_HEADER_SIZE - SCENES_MAX * 6
+    )
+
+    # Validate populated scenes
+    for sc in scenes:
+        for v, name in ((sc.a, "a"), (sc.b, "b"), (sc.c, "c"), (sc.d, "d")):
+            if not (0 <= v <= 99):
+                raise ValueError(
+                    f"scene.{name} pattern index must be 0..99, got {v}"
+                )
+
     out = bytearray(SCENES_HEADER_SIZE)
     out[5] = num
     out[6] = denom
 
-    for sc in scenes:
-        for v, name in ((sc.a, "a"), (sc.b, "b"), (sc.c, "c"), (sc.d, "d")):
-            if not (0 <= v <= 99):
-                raise ValueError(f"scene.{name} pattern index must be 0..99, got {v}")
-        out += bytes([sc.a, sc.b, sc.c, sc.d, num, denom])
+    # Emit all 99 scene slots: populated ones first, then empty ones.
+    for i in range(SCENES_MAX):
+        if i < len(scenes):
+            sc = scenes[i]
+            out += bytes([sc.a, sc.b, sc.c, sc.d, num, denom])
+        else:
+            out += bytes([0, 0, 0, 0, num, denom])
 
+    # Trailer (111 bytes). Two non-zero fields verified from the minimal
+    # captured reference (which had 3 scenes populated):
+    #   trailer[0..3]:  scene count, BIG-endian uint32
+    #   trailer[11..12]: 01 01 (purpose TBD — possibly "song mode" flag +
+    #                    "current scene"; safe to mirror the reference)
+    # Zero-filling these caused "ERR SCENE 146" on load — device reads
+    # past the populated chunks looking for a stop marker / count.
+    trailer = bytearray(SCENES_TRAILER_SIZE)
+    scene_count = len(scenes)
+    trailer[0:4] = scene_count.to_bytes(4, "big")
+    trailer[11] = 0x01
+    trailer[12] = 0x01
+    out += bytes(trailer)
+
+    assert len(out) == SCENES_TOTAL_SIZE, (
+        f"scenes file size {len(out)} != {SCENES_TOTAL_SIZE}"
+    )
     return bytes(out)
 
 
@@ -301,12 +353,20 @@ def build_settings(bpm: float, template: bytes) -> bytes:
 # ----- Path helpers (used by the .ppak writer) -------------------------------
 
 def pattern_filename(group: str, index: int) -> str:
-    """``patterns/{group}/{NN}`` — index zero-padded to 2 digits."""
+    """``patterns/{group}{NN}`` — index zero-padded to 2 digits.
+
+    NOTE: device uses NO slash between group letter and index (e.g.
+    ``patterns/a01``, not ``patterns/a/01``). DannyDesert and the original
+    spec docs both wrote ``patterns/{group}/{NN}`` — verified WRONG against
+    a real captured backup; the device silently ignores nested-path entries
+    and the patterns never play, leaving pads dark even though pad records
+    correctly bind to samples.
+    """
     if group not in {"a", "b", "c", "d"}:
         raise ValueError(f"group must be a|b|c|d, got {group!r}")
     if not (1 <= index <= 99):
         raise ValueError(f"index must be 1..99, got {index}")
-    return f"patterns/{group}/{index:02d}"
+    return f"patterns/{group}{index:02d}"
 
 
 def pad_filename(group: str, pad: int) -> str:

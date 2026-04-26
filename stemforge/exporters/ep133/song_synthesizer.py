@@ -35,6 +35,28 @@ MAX_SCENES = 99
 MAX_PATTERNS_PER_GROUP = 99
 MAX_PADS_PER_GROUP = 12
 
+# Global sample-slot base. Per Zak's convention, song-export writes always
+# land at slot 700+ so they don't clobber the user's 1..699 sample library.
+# Each group gets a 20-slot window so manifest's per-group 0..19 indices
+# stay isolated:
+#   A → 700..719   B → 720..739   C → 740..759   D → 760..779
+SAMPLE_SLOT_BASE = 700
+SAMPLE_SLOT_PER_GROUP = 20
+_GROUP_SLOT_OFFSET = {"a": 0, "b": 20, "c": 40, "d": 60}
+
+
+def global_sample_slot(group: str, manifest_slot: int) -> int:
+    """Map (group, per-group manifest slot) → global EP-133 sample slot."""
+    g = group.lower()
+    if g not in _GROUP_SLOT_OFFSET:
+        raise ValueError(f"group must be one of a/b/c/d, got {group!r}")
+    if not (0 <= manifest_slot < SAMPLE_SLOT_PER_GROUP):
+        raise ValueError(
+            f"manifest_slot must be 0..{SAMPLE_SLOT_PER_GROUP - 1}, "
+            f"got {manifest_slot}"
+        )
+    return SAMPLE_SLOT_BASE + _GROUP_SLOT_OFFSET[g] + manifest_slot
+
 # Pattern timing
 TICKS_PER_BAR = 384
 
@@ -171,7 +193,7 @@ def synthesize(
                 pad_records[pad_key] = PadSpec(
                     group=group.lower(),
                     pad=pad,
-                    sample_slot=int(entry["slot"]),
+                    sample_slot=global_sample_slot(group, int(entry["slot"])),
                     play_mode="oneshot",
                     time_stretch_bars=bars,
                 )
@@ -197,9 +219,13 @@ def synthesize(
                     Event(
                         position_ticks=0,
                         pad=pad,
+                        # Captured patterns ALL use note=60 (0x3c), vel=100
+                        # (0x64). Duration is a short trigger (one-shot
+                        # samples play their full length regardless); using
+                        # full bars*TICKS_PER_BAR triggers ERR PATTERN.
                         note=60,
-                        velocity=127,
-                        duration_ticks=bars * TICKS_PER_BAR,
+                        velocity=100,
+                        duration_ticks=96,
                     )
                 ],
             )

@@ -45,7 +45,9 @@ def parse_pattern(data: bytes) -> dict:
         # parsers.ts: skip "weird chunks" where pad indicator isn't a multiple of 8
         if chunk[2] % 8 != 0:
             continue
-        pad = chunk[2] // 8
+        # Event encodes pad as 0-indexed (file paths use 1-indexed). Re-add 1
+        # so callers can assert against the 1-indexed pad they passed in.
+        pad = (chunk[2] // 8) + 1
         notes.setdefault(pad, []).append(
             {
                 "note": chunk[3],
@@ -179,12 +181,16 @@ def test_build_pattern_position_is_uint16_le():
     assert blob[5] == 0x01
 
 
-def test_build_pattern_pad_indicator_is_pad_times_8():
+def test_build_pattern_pad_indicator_is_pad_minus_one_times_8():
+    # pad indicator is (pad - 1) * 8 — events use 0-indexed pad numbering
+    # while file paths use 1-indexed (pads/{group}/p01..p12). Verified
+    # against minimal device reference: pad file p10 fires from event byte
+    # 0x48 (= 9 * 8 = (10-1) * 8).
     blob = build_pattern([Event(0, 5, 60, 100, 100)], bars=1)
     # pad indicator at event-offset 2 = absolute offset 6.
-    assert blob[6] == 5 * 8  # 0x28
+    assert blob[6] == (5 - 1) * 8  # 0x20
     blob2 = build_pattern([Event(0, 12, 60, 100, 100)], bars=1)
-    assert blob2[6] == 12 * 8  # 0x60
+    assert blob2[6] == (12 - 1) * 8  # 0x58
 
 
 def test_build_pattern_event_byte7_is_zero_padding():
@@ -254,8 +260,10 @@ def test_build_pattern_two_bars_event_at_far_position():
 
 
 def test_build_scenes_empty_header_only():
+    # Device requires fixed 712-byte scenes file even when no scenes are
+    # populated (7 header + 99 × 6 scene slots + 111 trailer).
     blob = build_scenes([], (4, 4))
-    assert len(blob) == SCENES_HEADER_SIZE
+    assert len(blob) == 712
     assert blob[5] == 4
     assert blob[6] == 4
 
@@ -266,7 +274,9 @@ def test_build_scenes_single_scene_round_trip():
     parsed = parse_scenes(blob)
     assert parsed["numerator"] == 4
     assert parsed["denominator"] == 4
-    assert parsed["scenes"] == [{"a": 1, "b": 2, "c": 0, "d": 3}]
+    # Scene 1 is populated; scenes 2..99 are empty (zero-filled with same
+    # numerator/denominator).
+    assert parsed["scenes"][0] == {"a": 1, "b": 2, "c": 0, "d": 3}
 
 
 def test_build_scenes_multiple_round_trip():
@@ -277,9 +287,10 @@ def test_build_scenes_multiple_round_trip():
     ]
     blob = build_scenes(scenes, (3, 4))
     parsed = parse_scenes(blob)
-    assert len(parsed["scenes"]) == 3
+    # First 3 are populated; remaining 96 (of 99) are empty.
     assert parsed["scenes"][0] == {"a": 1, "b": 1, "c": 1, "d": 1}
     assert parsed["scenes"][2] == {"a": 0, "b": 3, "c": 3, "d": 3}
+    assert parsed["scenes"][3] == {"a": 0, "b": 0, "c": 0, "d": 0}
     assert parsed["numerator"] == 3
     assert parsed["denominator"] == 4
 
@@ -424,8 +435,11 @@ def test_build_settings_rejects_wrong_template_size():
 
 
 def test_pattern_filename_zero_pads_index():
-    assert pattern_filename("a", 1) == "patterns/a/01"
-    assert pattern_filename("d", 99) == "patterns/d/99"
+    # Device requires patterns/{group}{NN} (no slash between group and
+    # number). Verified from captured backup; nested-path entries
+    # (patterns/a/01) are silently ignored by the device.
+    assert pattern_filename("a", 1) == "patterns/a01"
+    assert pattern_filename("d", 99) == "patterns/d99"
 
 
 def test_pad_filename_zero_pads():

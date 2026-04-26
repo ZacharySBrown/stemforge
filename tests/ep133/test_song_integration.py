@@ -146,15 +146,20 @@ def _parse_pattern(buf: bytes) -> dict:
 def _parse_scenes(buf: bytes) -> list[dict]:
     """Decode the scenes file into a list of {a, b, c, d} dicts.
 
-    Spec §"Scenes file":
-        bytes 0..6 = header
-        bytes 7+    = 6-byte chunks: [a, b, c, d, reserved, reserved]
+    Layout (verified from captured reference, 712 bytes total):
+        bytes 0..6   = header
+        bytes 7..600 = 99 × 6-byte scene slots: [a, b, c, d, num, denom]
+        bytes 601..  = 111-byte trailer (scene_count + flags; NOT scenes)
     """
     if len(buf) < 7:
         raise ValueError(f"scenes file too short: {len(buf)} bytes")
     chunks = []
-    pos = 7
-    while pos + 6 <= len(buf):
+    # Only iterate the 99 scene slots; the trailer bytes that follow
+    # would otherwise be misread as additional scenes.
+    for i in range(99):
+        pos = 7 + i * 6
+        if pos + 6 > len(buf):
+            break
         chunks.append(
             {
                 "a": buf[pos],
@@ -163,7 +168,6 @@ def _parse_scenes(buf: bytes) -> list[dict]:
                 "d": buf[pos + 3],
             }
         )
-        pos += 6
     # Drop trailing zero-fill scenes — only count up to the last non-empty one.
     while chunks and chunks[-1] == {"a": 0, "b": 0, "c": 0, "d": 0}:
         chunks.pop()
@@ -343,12 +347,15 @@ def test_tar_has_pattern_files(tar_files, arrangement):
     if not expected_groups:
         pytest.skip("arrangement has no clips on any track; nothing to assert")
 
+    # Format is "patterns/{group}{NN}" (no slash between group and number),
+    # e.g. patterns/a01. Extract leading group letter from the basename.
     pattern_groups_present = set()
     for name in tar_files:
-        if name.startswith("patterns/"):
-            parts = name.split("/")
-            if len(parts) >= 2:
-                pattern_groups_present.add(parts[1])
+        if not name.startswith("patterns/"):
+            continue
+        basename = name[len("patterns/"):]
+        if basename and basename[0].isalpha():
+            pattern_groups_present.add(basename[0].lower())
     missing = expected_groups - pattern_groups_present
     assert not missing, (
         f"expected pattern dirs for groups {expected_groups}, missing {missing}; "
@@ -369,10 +376,18 @@ def test_settings_bpm_matches_arrangement(tar_files, arrangement):
 
 
 def test_scenes_count_matches_locator_count(tar_files, arrangement):
+    """Populated (non-zero) scene chunks should match locator count.
+    The scenes file is fixed-size 712 bytes: 7-byte header + 99 scene
+    slots + 111-byte trailer; unused slots are zero-filled."""
     scenes = _parse_scenes(tar_files["scenes"])
+    populated = [
+        s for s in scenes
+        if s["a"] != 0 or s["b"] != 0 or s["c"] != 0 or s["d"] != 0
+    ]
     expected = len(arrangement["locators"])
-    assert len(scenes) == expected, (
-        f"got {len(scenes)} scenes, expected {expected} (one per locator)"
+    assert len(populated) == expected, (
+        f"got {len(populated)} populated scenes, expected {expected} "
+        f"(one per locator); total slots={len(scenes)}"
     )
 
 
