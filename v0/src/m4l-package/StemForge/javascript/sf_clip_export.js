@@ -173,6 +173,12 @@ function _readClipSpec(trackIdx, slotIdx) {
     var lengthBeats = Number(_g("length", 0));
     var loopStart = Number(_g("loop_start", 0));
     var loopEnd = Number(_g("loop_end", lengthBeats));
+    // start_marker is where Live BEGINS playback when the clip is launched.
+    // It can be offset INSIDE the [loop_start, loop_end] region — when the
+    // user drags the play-triangle in the clip view to a different bar.
+    // The bounce must start here so the EP-133 plays the rotated phrase
+    // the user dialed in.
+    var startMarker = Number(_g("start_marker", loopStart));
     var warping = Number(_g("warping", 0));
     var sigNum = Number(_g("signature_numerator", 4));
     var filePath = String(_g("file_path", "")).replace(/^"+|"+$/g, "");
@@ -190,6 +196,7 @@ function _readClipSpec(trackIdx, slotIdx) {
         length_beats: lengthBeats,
         loop_start_beats: loopStart,
         loop_end_beats: loopEnd,
+        start_marker_beats: startMarker,
         signature_numerator: sigNum,
         clip_warp_bpm: clipBpm > 0 ? clipBpm : null,
         gain: gain,

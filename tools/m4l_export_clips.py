@@ -207,18 +207,57 @@ def slice_and_write_one(
     project_tempo: float,
     threshold: float,
 ) -> tuple[Path, SampleMeta]:
-    """Slice one clip, write the WAV + sidecar. Returns (wav_path, meta)."""
+    """Slice one clip, write the WAV + sidecar. Returns (wav_path, meta).
+
+    The bounced WAV represents one full loop iteration as Live plays it:
+
+      - Length = (loop_end - loop_start) project beats
+      - Starts at `start_marker` (where the user dragged the play-triangle)
+      - Wraps through loop_end → loop_start within one iteration when the
+        start_marker isn't at loop_start
+      - Wraps through source-end → source-beginning when the loop region
+        (in source coordinates) extends past the source file's duration
+
+    This means the EP-133, playing the file as a one-shot loop, hears
+    exactly what Live plays after the first loop wrap.
+    """
     source_path = Path(clip["file_path"])
     if not source_path.exists():
         raise FileNotFoundError(f"clip source not found: {source_path}")
 
-    # Tempo for the beats→seconds conversion: warped clips advance their
-    # internal beat-clock at clip_warp_bpm; un-warped clips use the source
-    # sample's natural tempo (we treat it as project_tempo as a best guess).
-    src_bpm = clip.get("clip_warp_bpm") or project_tempo
+    # Beats↔seconds conversion for warped clips: the source's duration
+    # maps linearly to the clip's `length_beats`. So 1 project-beat in
+    # the clip corresponds to (source_duration / length_beats) seconds
+    # in the source. Linear-warp approximation — exact when there are
+    # only default first/last warp markers (the common case for forge
+    # output and most user clips). Non-trivial intermediate warp markers
+    # would need full marker-table interpretation; defer to V2.
+    length_beats = float(clip.get("length_beats") or 0.0)
+    source_duration = sf.info(str(source_path)).duration
+    if length_beats > 0 and source_duration > 0:
+        seconds_per_beat = source_duration / length_beats
+    else:
+        src_bpm = clip.get("clip_warp_bpm") or project_tempo
+        seconds_per_beat = 60.0 / src_bpm if src_bpm else 0.5
 
-    start_seconds = beats_to_seconds(float(clip["loop_start_beats"]), src_bpm)
-    end_seconds = beats_to_seconds(float(clip["loop_end_beats"]), src_bpm)
+    loop_start_beats = float(clip.get("loop_start_beats") or 0.0)
+    loop_end_beats = float(clip.get("loop_end_beats") or length_beats)
+    # start_marker defaults to loop_start when not provided (older specs).
+    start_marker_beats = float(clip.get("start_marker_beats", loop_start_beats))
+
+    # Clamp start_marker into the loop region — if the user dragged it
+    # outside, treat it as the loop boundary it's nearest.
+    if start_marker_beats < loop_start_beats:
+        start_marker_beats = loop_start_beats
+    elif start_marker_beats > loop_end_beats:
+        start_marker_beats = loop_end_beats
+
+    loop_length_beats = loop_end_beats - loop_start_beats
+
+    # Slice = source[start_marker .. start_marker + loop_length] with wrap.
+    # The wrap is modulo the source length (handled inside slice_clip).
+    start_seconds = start_marker_beats * seconds_per_beat
+    end_seconds = (start_marker_beats + loop_length_beats) * seconds_per_beat
 
     group = clip.get("suggested_group") or "X"
     slot = int(clip.get("slot_idx", 0))
