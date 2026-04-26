@@ -53,3 +53,29 @@ Lock the bass and pad EARLY (bars 1–8) — they will not change for the whole
 track. Spend the rest of the session ONLY on drum variation. The drum
 complexity arc (A → A' → CLIMAX) is the song's only real engine. If you
 find yourself reaching for a chord change, you're writing a different form.
+
+## Building this template in Live (~30 min)
+
+1. **New Set** → tempo **160 BPM**, time signature **4/4**.
+2. **Arrangement view**.
+3. **Locators**:
+   - bar 1 → `INTRO`
+   - bar 9 → `A`
+   - bar 25 → `A'`
+   - bar 41 → `BREAK`
+   - bar 49 → `CLIMAX`
+   - bar 73 → `OUT`
+4. **Arrangement loop end** at bar 80.
+5. **Tracks**:
+   - `Drums Loop` (red) — Simpler slot, slice mode
+   - `Drums Granular` (red) — Granulator II
+   - `Drums Repeat` (crimson) — Beat Repeat host
+   - `Drums Stretch` (crimson) — Simpler, texture mode
+   - `Sub Bass` (blue) — Operator FM
+   - `Pad / Chord Bed` (mint) — Wavetable
+6. **Returns**: Glitch FX (Spectral Time + Frequency Shifter), Drum Bus
+   parallel comp (Compressor 8:1 fast attack), Reverb.
+7. **Master**: Glue Comp 3:1 fast → tape saturator → limiter pushed.
+8. **Set up an automation lane** on the drum bus volume — you'll want it
+   later for the BREAK silence and CLIMAX ducks.
+9. **Save** to `~/mus/Templates/idm_squarepusher Project/idm_squarepusher.als`.

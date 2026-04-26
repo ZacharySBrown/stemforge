@@ -53,3 +53,36 @@ Lock A into 16 bars, COPY to A' and A'' positions immediately, THEN start
 varying. The temptation is to build A and stop — the locators exist to
 force you into B and BREAK. Spend 80% of the time on those, not on
 perfecting A.
+
+## Building this template in Live (~25 min)
+
+1. **New Set** → set tempo to **86 BPM**, time signature **4/4**.
+2. **Switch to Arrangement view** (Tab).
+3. **Insert locators** at the bars below. Easiest: type the bar number into
+   the position display (top of arrangement), hit Enter to jump there, then
+   `Cmd+L` to insert a locator. Right-click the locator to rename it:
+   - bar 1 → `INTRO`
+   - bar 5 → `A`
+   - bar 21 → `B`
+   - bar 37 → `A'`
+   - bar 53 → `BREAK`
+   - bar 61 → `A''`
+   - bar 77 → `OUT`
+4. **Set arrangement loop end** at bar 84 (so playback stops there).
+5. **Create tracks** (Cmd+T audio, Cmd+Shift+T MIDI). Name + color each:
+   - `Drums Loop` (red)
+   - `Drums Crushed` (dark red)
+   - `Bass Mono` (blue)
+   - `Keys` (yellow)
+   - `Sample Loop A` (orange) — palette slot for dragged-in curation
+   - `Sample Loop B` (orange)
+   - `Texture` (gray) — vinyl/room tone send target
+6. **Add three return tracks** (Cmd+Alt+T): Reverb (short plate), Delay
+   (1/8d slap), Texture (vinyl crackle bus).
+7. **Insert chains per track** (see [Starter chains](#starter-chains-per-track-type)
+   above). For lo-fi, Tape Saturator + Glue Comp + low-pass at 8 kHz on
+   the master is the lo-fi-defining move.
+8. **File → Save Live Set As…** → save to
+   `~/mus/Templates/lofi_aaba Project/lofi_aaba.als`.
+9. To use as a template start point, **File → Save Current Set as Default**
+   *or* just `Cmd+O` and open this `.als` directly when sketching.
