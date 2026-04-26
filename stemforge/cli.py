@@ -672,5 +672,81 @@ def forge(audio_file, analysis, backend, model, strategy, n_bars, time_sig, outp
          bars=len(selected_indices))
 
 
+@cli.command("export-song")
+@click.option("--arrangement", "arrangement_path",
+              required=True, type=click.Path(exists=True, path_type=Path),
+              help="snapshot.json from the M4L arrangement reader (Track B output).")
+@click.option("--manifest", "manifest_path",
+              required=True, type=click.Path(exists=True, path_type=Path),
+              help="stems.json with a session_tracks block.")
+@click.option("--reference-template",
+              required=False, type=click.Path(exists=True, path_type=Path), default=None,
+              help="Captured reference .ppak used as a byte template by the writer.")
+@click.option("--project", "project_slot", default=1, type=click.IntRange(1, 9),
+              help="EP-133 project slot (1..9). Default: 1.")
+@click.option("--out", "out_path", required=True, type=click.Path(path_type=Path),
+              help="Output .ppak path.")
+@click.option("--mode", default="locator",
+              type=click.Choice(["locator"]),
+              help="Scene-derivation mode. v1 only supports 'locator'.")
+def export_song(arrangement_path, manifest_path, reference_template, project_slot, out_path, mode):
+    """
+    Build an EP-133 K.O. II song-mode .ppak from an Ableton arrangement snapshot.
+
+    \b
+    Pipeline:
+      arrangement.json + stems.json → resolve_scenes → synthesize → build_ppak
+
+    \b
+    Example:
+      stemforge export-song \\
+        --arrangement snapshot.json \\
+        --manifest stems.json \\
+        --reference-template tests/ep133/fixtures/reference.ppak \\
+        --project 1 \\
+        --out song.ppak
+    """
+    from .exporters.ep133.song_resolver import resolve_scenes
+    from .exporters.ep133.song_synthesizer import synthesize
+    from .exporters.ep133.ppak_writer import build_ppak
+
+    console.print(Rule(f"[bold cyan]StemForge[/bold cyan] — export-song (mode={mode})"))
+    console.print(f"  Arrangement: {arrangement_path}")
+    console.print(f"  Manifest:    {manifest_path}")
+    console.print(f"  Project:     [cyan]{project_slot}[/cyan]")
+    console.print(f"  Output:      {out_path}")
+    if reference_template:
+        console.print(f"  Template:    {reference_template}")
+
+    arrangement = json.loads(Path(arrangement_path).read_text())
+    manifest = json.loads(Path(manifest_path).read_text())
+
+    bpm = float(arrangement.get("tempo", 120.0))
+    sig_raw = arrangement.get("time_sig", [4, 4])
+    time_sig = (int(sig_raw[0]), int(sig_raw[1]))
+
+    console.print(f"  Tempo:       [cyan]{bpm:.2f}[/cyan]  Time sig: [cyan]{time_sig[0]}/{time_sig[1]}[/cyan]")
+
+    snapshots = resolve_scenes(arrangement, manifest)
+    console.print(f"  Snapshots:   [cyan]{len(snapshots)}[/cyan]")
+
+    spec = synthesize(snapshots, manifest, bpm, time_sig, int(project_slot))
+    console.print(
+        f"  Patterns:    [cyan]{len(spec.patterns)}[/cyan]  "
+        f"Scenes: [cyan]{len(spec.scenes)}[/cyan]  "
+        f"Pads: [cyan]{len(spec.pads)}[/cyan]  "
+        f"Sounds: [cyan]{len(spec.sounds)}[/cyan]"
+    )
+
+    payload = build_ppak(spec, reference_template)
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_bytes(payload)
+
+    kb = len(payload) / 1024.0
+    console.print(Rule("[bold green]Done![/bold green]"))
+    console.print(f"  Wrote [bold]{out_path}[/bold] ({kb:.1f} KB)")
+
+
 if __name__ == "__main__":
     cli()
