@@ -182,22 +182,53 @@ def _read_settings_bpm(buf: bytes) -> float:
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="module")
-def arrangement() -> dict:
-    return json.loads(SAMPLE_ARRANGEMENT.read_text())
+def materialized_fixtures(tmp_path_factory) -> tuple[dict, dict]:
+    """Rewrite Track-C sample fixtures to point at on-disk stub WAVs.
+
+    Track A's ``build_ppak`` reads each sound's bytes via ``Path.read_bytes()``,
+    so file_path entries must resolve. Track-C's fixtures use ``/songs/test/...``
+    placeholder paths; mirror them under tmp_path and rewrite both arrangement
+    and manifest.
+    """
+    arrangement_raw = json.loads(SAMPLE_ARRANGEMENT.read_text())
+    manifest_raw = json.loads(SAMPLE_MANIFEST.read_text())
+
+    base = tmp_path_factory.mktemp("song_export_int")
+    path_map: dict[str, str] = {}
+
+    for group, entries in (manifest_raw.get("session_tracks") or {}).items():
+        gdir = base / "songs" / group
+        gdir.mkdir(parents=True, exist_ok=True)
+        for entry in entries:
+            old = entry.get("file_path") or entry.get("file")
+            if old is None:
+                continue
+            new = gdir / Path(old).name
+            new.write_bytes(b"RIFF\x00\x00\x00\x00WAVE")
+            path_map[old] = str(new)
+            entry["file"] = str(new)
+
+    for group_clips in arrangement_raw.get("tracks", {}).values():
+        for clip in group_clips:
+            old = clip.get("file_path")
+            if old in path_map:
+                clip["file_path"] = path_map[old]
+
+    return arrangement_raw, manifest_raw
 
 
 @pytest.fixture(scope="module")
-def manifest() -> dict:
-    return json.loads(SAMPLE_MANIFEST.read_text())
+def arrangement(materialized_fixtures) -> dict:
+    return materialized_fixtures[0]
 
 
 @pytest.fixture(scope="module")
-def reference_template_bytes() -> bytes:
-    return REFERENCE_PPAK.read_bytes()
+def manifest(materialized_fixtures) -> dict:
+    return materialized_fixtures[1]
 
 
 @pytest.fixture(scope="module")
-def built_ppak_bytes(arrangement, manifest, reference_template_bytes) -> bytes:
+def built_ppak_bytes(arrangement, manifest) -> bytes:
     """Run the full song-export pipeline once per module."""
     snapshots = resolve_scenes(arrangement, manifest)
     spec = synthesize(
@@ -207,7 +238,7 @@ def built_ppak_bytes(arrangement, manifest, reference_template_bytes) -> bytes:
         time_sig=tuple(arrangement["time_sig"]),
         project_slot=1,
     )
-    return build_ppak(spec, reference_template_bytes)
+    return build_ppak(spec, REFERENCE_PPAK)
 
 
 @pytest.fixture(scope="module")
