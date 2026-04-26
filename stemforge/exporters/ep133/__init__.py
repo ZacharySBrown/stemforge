@@ -1,8 +1,18 @@
 """
-EP-133 package. Contains:
+EP-133 K.O. II package.
 
-- `EP133Exporter` — formats stems/slices for EP-133 (existing behavior).
-- `EP133Client`   — SysEx uploader over USB-MIDI (new). See PORT_MAP.md.
+Existing modules:
+- ``EP133Exporter`` — formats stems/slices for EP-133 (Session-mode workflow).
+- ``EP133Client``   — SysEx uploader over USB-MIDI. See PORT_MAP.md.
+
+Song-mode export pipeline (arrangement → ``.ppak``):
+- ``song_format`` (Track A): ``PpakSpec``, ``Pattern``, ``SceneSpec``, ``PadSpec``,
+  ``Event`` dataclasses describing a song-mode project.
+- ``ppak_writer`` (Track A): ``build_ppak(spec, reference_template)`` byte builder.
+- ``song_resolver`` (Track C): ``resolve_scenes(arrangement, manifest)`` →
+  list of per-locator ``Snapshot``s.
+- ``song_synthesizer`` (Track C): ``synthesize(snapshots, manifest, ...)`` →
+  ``PpakSpec`` ready for the writer.
 
 Example:
     from stemforge.exporters.ep133 import EP133Client
