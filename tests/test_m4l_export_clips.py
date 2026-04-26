@@ -179,6 +179,114 @@ def test_run_skips_missing_source_files(tmp_path: Path, source_wav: Path) -> Non
     assert len(batch.samples) == 1
 
 
+def test_loop_wraps_around_source_when_loop_end_exceeds_source_length(
+    tmp_path: Path, source_wav: Path
+) -> None:
+    """Ableton lets users move loop_start past 0 so the loop wraps the source.
+
+    For a 16-beat source with loop_start=8, loop_end=24 (loop length 16),
+    Ableton plays beats 8..16 then wraps to beats 0..8. The bounced WAV
+    must match: second-half audio first, then first-half. Without the wrap,
+    the EP-133 plays a half-loop.
+
+    Source fixture: 10s of [-1.0..1.0] linear ramp at 44.1k. Splitting at
+    halfway (5s mark = sample 220500), the bounced WAV should be
+    [+0..+1.0, -1.0..0] in that order — first sample positive, last sample
+    just under zero.
+    """
+    # Use a 16-beat clip at 96 BPM → 10 seconds (matches the source length)
+    bpm = 96.0
+    sr = 44100
+    source_seconds = 10.0
+    source_frames = int(sr * source_seconds)
+
+    wrap_clip = _make_clip(
+        source_wav,
+        warping=True,
+        clip_warp_bpm=bpm,
+        length_beats=16.0,
+        loop_start_beats=8.0,   # halfway through source
+        loop_end_beats=24.0,    # past source end → wraps
+        signature_numerator=4,
+    )
+    spec_path = _write_spec(tmp_path, [wrap_clip], project_tempo=120.0)
+    m4l_export_clips.run(spec_path, json_events=False)
+
+    wav_path = tmp_path / "export" / "A00.wav"
+    info = sf.info(str(wav_path))
+    # Bounced length == full loop length (16 beats at 96 BPM = 10 seconds)
+    assert info.duration == pytest.approx(10.0, abs=0.01)
+
+    audio, _ = sf.read(str(wav_path), always_2d=True, dtype="float32")
+    assert len(audio) == pytest.approx(source_frames, abs=2)
+
+    # Source ramp: sample 0 = -1.0, sample (source_frames-1) ≈ +1.0
+    # Loop wraps at sample 220500 (halfway).
+    # First sample of bounce should be near 0 (the midpoint of the ramp).
+    # Last sample of bounce should be just under 0 (sample 220499 of source).
+    first_sample = audio[0, 0]
+    last_sample = audio[-1, 0]
+    midpoint_sample = audio[source_frames // 2, 0]  # this should be the
+                                                     # discontinuity (-1.0)
+
+    # First sample is at source's midpoint → near 0
+    assert abs(first_sample) < 0.01
+    # Last sample is just before midpoint → near 0 from below
+    assert abs(last_sample) < 0.01
+    # Midpoint of bounce = wrap point = sample 0 of source = -1.0
+    assert midpoint_sample == pytest.approx(-1.0, abs=0.01)
+
+
+def test_loop_wraps_multiple_source_iterations(
+    tmp_path: Path, source_wav: Path
+) -> None:
+    """Loop length > source length → wrap repeats."""
+    bpm = 96.0
+    # Source is 10s = 16 beats at 96 BPM. Loop is 32 beats = 2 full source loops.
+    clip = _make_clip(
+        source_wav,
+        warping=True,
+        clip_warp_bpm=bpm,
+        length_beats=16.0,
+        loop_start_beats=0.0,
+        loop_end_beats=32.0,
+        signature_numerator=4,
+    )
+    spec_path = _write_spec(tmp_path, [clip])
+    m4l_export_clips.run(spec_path, json_events=False)
+
+    wav_path = tmp_path / "export" / "A00.wav"
+    info = sf.info(str(wav_path))
+    # 32 beats at 96 BPM = 20 seconds
+    assert info.duration == pytest.approx(20.0, abs=0.02)
+
+
+def test_bars_reflects_loop_length_not_source_length(
+    tmp_path: Path, source_wav: Path
+) -> None:
+    """When loop_end - loop_start != length_beats, sidecar `bars` follows the
+    loop length (the bounced WAV's actual duration in bars)."""
+    clip = _make_clip(
+        source_wav,
+        warping=True,
+        clip_warp_bpm=96.0,
+        length_beats=16.0,
+        loop_start_beats=8.0,
+        loop_end_beats=24.0,    # 16-beat loop = 4 bars at 4/4
+        signature_numerator=4,
+    )
+    spec_path = _write_spec(tmp_path, [clip])
+    m4l_export_clips.run(spec_path, json_events=False)
+
+    meta = load_sidecar(tmp_path / "export" / "A00.wav")
+    assert meta is not None
+    # 16-beat loop / 4 = 4 bars (NOT 16/4 from source length, even though
+    # they happen to match in this case — the calculation should be from
+    # the loop region, not the source).
+    assert meta.bars == pytest.approx(4.0)
+    assert meta.playmode == "key"
+
+
 def test_warped_clip_uses_clip_warp_bpm_for_seconds(tmp_path: Path, source_wav: Path) -> None:
     """A warped clip's loop bounds are in beats AT THE CLIP's WARP BPM, not project tempo."""
     # Clip is 8 beats long at 60 BPM source → 8 seconds of source audio

@@ -92,32 +92,57 @@ def slice_clip(
     end_seconds: float,
     gain_db: float = 0.0,
 ) -> tuple[float, int]:
-    """Read [start..end] seconds of `source_path`, apply gain, write to `out_path`.
+    """Read `[start..end]` seconds of `source_path`, apply gain, write to `out_path`.
+
+    Wraps around the source's length when the requested window extends past
+    the end. This matches Ableton's loop semantics: a clip with
+    `loop_start = 8`, `loop_end = 24`, `length = 16` plays beats 8..16 of
+    source, then wraps to beats 0..8 — so the bounced WAV is the second
+    half of the source followed by the first half (the "rotation" the user
+    set by moving the loop_start marker). Without this wrap the EP-133 only
+    gets half the loop.
 
     Returns (duration_seconds, sample_rate).
     """
     info = sf.info(str(source_path))
     sr = info.samplerate
-    total_frames = info.frames
+    source_frames = info.frames
+    if source_frames <= 0:
+        raise ValueError(f"empty source: {source_path}")
 
-    start_frame = max(0, int(round(start_seconds * sr)))
-    end_frame = min(total_frames, int(round(end_seconds * sr)))
-    if end_frame <= start_frame:
+    requested_frames = int(round((end_seconds - start_seconds) * sr))
+    if requested_frames <= 0:
         raise ValueError(
-            f"empty slice: start={start_seconds:.3f}s end={end_seconds:.3f}s "
-            f"(frames {start_frame}..{end_frame})"
+            f"empty slice: start={start_seconds:.3f}s end={end_seconds:.3f}s"
         )
 
-    n_frames = end_frame - start_frame
-    audio, _ = sf.read(str(source_path), start=start_frame, frames=n_frames,
-                       always_2d=True, dtype="float32")
+    # Normalize start into the source's [0, source_frames) range — Live can
+    # set loop_start beyond the source if the user moved the marker into the
+    # repeated tail.
+    start_frame = int(round(start_seconds * sr)) % source_frames
+
+    # Read in chunks, wrapping at source end. Handles arbitrary loop lengths
+    # including loops that span multiple source repetitions.
+    chunks: list[np.ndarray] = []
+    position = start_frame
+    remaining = requested_frames
+    while remaining > 0:
+        available = source_frames - position
+        n = min(available, remaining)
+        chunk, _ = sf.read(str(source_path), start=position, frames=n,
+                           always_2d=True, dtype="float32")
+        chunks.append(chunk)
+        remaining -= n
+        position = 0  # subsequent passes always start at sample 0
+
+    audio = chunks[0] if len(chunks) == 1 else np.concatenate(chunks, axis=0)
 
     if gain_db != 0.0:
         gain_linear = 10.0 ** (gain_db / 20.0)
         audio = audio * gain_linear
 
     sf.write(str(out_path), audio, sr, subtype="FLOAT")
-    return n_frames / sr, sr
+    return requested_frames / sr, sr
 
 
 def determine_playmode(bars: float, threshold: float) -> str:
@@ -138,8 +163,16 @@ def build_meta_for_clip(
     `playmode`, `bpm`, `time_mode` — so the consumer just places.
     """
     sig_num = float(clip.get("signature_numerator") or 4)
-    length_beats = float(clip.get("length_beats") or 0.0)
-    bars = length_beats / sig_num if sig_num else 0.0
+    # Bars reflects the BOUNCED audio length, which is the loop region
+    # (loop_end - loop_start), not the source length. They diverge when
+    # the user has moved the loop_start marker so the loop wraps around
+    # the source — the bounce is a rotated full-loop, not a chopped slice.
+    loop_start = float(clip.get("loop_start_beats") or 0.0)
+    loop_end = float(clip.get("loop_end_beats") or 0.0)
+    loop_length_beats = max(0.0, loop_end - loop_start)
+    if loop_length_beats <= 0.0:
+        loop_length_beats = float(clip.get("length_beats") or 0.0)
+    bars = loop_length_beats / sig_num if sig_num else 0.0
 
     # Source BPM: prefer the clip's warp BPM if warped, else project tempo.
     src_bpm = clip.get("clip_warp_bpm") or project_tempo
