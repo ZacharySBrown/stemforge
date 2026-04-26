@@ -1,0 +1,86 @@
+{
+  "preset": {
+    "name": "Stems Only",
+    "version": "1.0.0",
+    "description": "One long loop per stem on its own track, no effects. Quickest A/B for hearing the raw separation. Note: until raw-stem loader lands, this drops one ~8-bar curated phrase per stem (not the full stem WAV).",
+    "displayName": "Stems Only"
+  },
+  "stems": {
+    "drums": {
+      "targets": [
+        {
+          "name": "stem",
+          "type": "clips",
+          "color": {
+            "name": "red",
+            "index": 14,
+            "hex": "#FF3A34"
+          },
+          "params": {
+            "phrase_bars": 8,
+            "loop_count": 1,
+            "strategy": "max-diversity"
+          },
+          "chain": []
+        }
+      ]
+    },
+    "bass": {
+      "targets": [
+        {
+          "name": "stem",
+          "type": "clips",
+          "color": {
+            "name": "blue",
+            "index": 9,
+            "hex": "#5480E4"
+          },
+          "params": {
+            "phrase_bars": 8,
+            "loop_count": 1,
+            "strategy": "max-diversity"
+          },
+          "chain": []
+        }
+      ]
+    },
+    "vocals": {
+      "targets": [
+        {
+          "name": "stem",
+          "type": "clips",
+          "color": {
+            "name": "orange",
+            "index": 1,
+            "hex": "#FFA529"
+          },
+          "params": {
+            "phrase_bars": 8,
+            "loop_count": 1,
+            "strategy": "max-diversity"
+          },
+          "chain": []
+        }
+      ]
+    },
+    "other": {
+      "targets": [
+        {
+          "name": "stem",
+          "type": "clips",
+          "color": {
+            "name": "mint",
+            "index": 6,
+            "hex": "#25FFA8"
+          },
+          "params": {
+            "phrase_bars": 8,
+            "loop_count": 1,
+            "strategy": "max-diversity"
+          },
+          "chain": []
+        }
+      ]
+    }
+  }
+}
