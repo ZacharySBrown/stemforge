@@ -65,6 +65,14 @@ from .slicer import (
 )
 from . import curator as _curator
 from .manifest import write_manifest
+from .manifest_schema import (
+    BAR_INDEX_TO_LABEL,
+    BatchManifest,
+    SampleMeta,
+    display_name,
+    write_batch,
+    write_sidecar,
+)
 from .config import (
     PROCESSED_DIR, LALAL_PRESETS, LALAL_STEMS, LALAL_DEFAULT_PRESET,
     DEMUCS_MODELS, MUSIC_AI_WORKFLOWS, MUSIC_AI_DEFAULT_WORKFLOW,
@@ -638,10 +646,16 @@ def forge(audio_file, analysis, backend, model, strategy, n_bars, time_sig, outp
 
     # When no analysis, reuse a single beat detection on drums for all stems.
     shared_beat_times = None
+    detected_bpm: float | None = None
     if analysis_data is None:
         bpm_source = (stem_paths.get("drums") or stem_paths.get("drum")
                       or next(iter(stem_paths.values())))
-        _bpm, shared_beat_times = detect_bpm_and_beats(bpm_source)
+        detected_bpm, shared_beat_times = detect_bpm_and_beats(bpm_source)
+    else:
+        # Ableton analysis JSON carries the project tempo at the top level.
+        ab_bpm = analysis_data.get("bpm") or analysis_data.get("tempo")
+        if ab_bpm is not None:
+            detected_bpm = float(ab_bpm)
 
     for i, (stem_name, stem_path) in enumerate(non_residual):
         if analysis_data is not None:
@@ -722,10 +736,64 @@ def forge(audio_file, analysis, backend, model, strategy, n_bars, time_sig, outp
     manifest_path = curated_root / "manifest.json"
     manifest_path.write_text(json.dumps(curated_manifest, indent=2))
 
+    # ── 4. Emit per-sample sidecars + a BatchManifest (manifest-spec) ──
+    # Producer-side rotation: drums→A, bass→B, vocals→C, other→D, with
+    # bottom-up pad layout per BAR_INDEX_TO_LABEL. Consumers (ep133-ppak's
+    # loaders) honor `suggested_pad`/`suggested_group` directly.
+    STEM_TO_GROUP = {"drums": "A", "bass": "B", "vocals": "C", "other": "D"}
+    PLAYMODE_BY_STEM = {"drums": "oneshot"}  # everything else defaults to "key"
+
+    batch_samples: list[SampleMeta] = []
+    for stem_name, entries in curated_manifest["stems"].items():
+        group = STEM_TO_GROUP.get(stem_name)
+        playmode = PLAYMODE_BY_STEM.get(stem_name, "key")
+
+        for entry in entries:
+            pos = entry["position"]
+            wav_rel = Path(entry["file"])  # relative to track_out
+            wav_abs = track_out / wav_rel
+
+            pad_idx = pos - 1  # 1-based → 0-based
+            suggested_pad = (
+                BAR_INDEX_TO_LABEL[pad_idx]
+                if pad_idx < len(BAR_INDEX_TO_LABEL) else None
+            )
+
+            meta = SampleMeta(
+                name=display_name(f"{track_name} {stem_name} {pos}"),
+                bpm=detected_bpm,
+                time_mode="bpm" if detected_bpm is not None else None,
+                bars=1.0,
+                playmode=playmode,
+                source_track=track_name,
+                stem=stem_name if stem_name in {"drums", "bass", "vocals", "other"} else None,
+                role="loop",
+                suggested_group=group,
+                suggested_pad=suggested_pad,
+            )
+
+            # Per-file sidecar (auto-fills file + audio_hash)
+            write_sidecar(wav_abs, meta)
+
+            # Add to batch with curated-root-relative file path
+            batch_samples.append(meta.model_copy(update={
+                "file": str(wav_abs.relative_to(curated_root)),
+            }))
+
+    batch = BatchManifest(
+        version=1,
+        track=track_name,
+        bpm=detected_bpm,
+        samples=batch_samples,
+    )
+    batch_path = write_batch(curated_root, batch)
+
     emit("progress", phase="curating", pct=100, selected=len(selected_indices))
     emit("complete",
          output_dir=str(curated_root),
          manifest=str(manifest_path),
+         batch_manifest=str(batch_path),
+         sidecars=len(batch_samples),
          bars=len(selected_indices))
 
 
