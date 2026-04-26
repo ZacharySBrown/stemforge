@@ -56,3 +56,29 @@ The SEED chop carries the entire track. Spend 80% of your sketch time picking
 it (Loops/Melodic/ is your friend). Once it's chosen, every other element
 exists to support, vary, or decay around it. Resist adding drums before
 bar 33 — the long lead-in is the genre's signature.
+
+## Building this template in Live (~30 min)
+
+1. **New Set** → tempo **120 BPM**, time signature **4/4**.
+2. **Arrangement view**.
+3. **Locators**:
+   - bar 1 → `SEED`
+   - bar 17 → `BUILD`
+   - bar 33 → `ESTABLISH`
+   - bar 49 → `VARIATION`
+   - bar 65 → `BLOOM`
+   - bar 81 → `DECAY`
+4. **Arrangement loop end** at bar 96.
+5. **Tracks**:
+   - `Drums Loop` (red) — Simpler slice mode
+   - `Drums Crushed` (dark red) — parallel saturator/bitcrush
+   - `Percussion` (orange) — shaker / tambourine / found-sound
+   - `Bass` (blue) — Simpler upright OR Operator sub
+   - `Melodic Chop A` (yellow) — main motif Simpler
+   - `Melodic Chop B` (yellow) — pitched variant
+   - `Pad / Texture` (purple) — Wavetable, slow attack
+   - `Vocal Chop` (orange, optional)
+6. **Returns**: Reverb (medium plate, 3-5s), Delay (1/8d feedback ~0.5),
+   Spectral Send (Spectral Resonator).
+7. **Master**: Glue Comp gentle → broad warm EQ → soft limiter.
+8. **Save** to `~/mus/Templates/idm_fourtet_evolve Project/idm_fourtet_evolve.als`.
