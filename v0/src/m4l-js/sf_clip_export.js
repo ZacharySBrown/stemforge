@@ -49,11 +49,14 @@ var EXPORT_ROOT = "~/stemforge/exports";
 
 // Path to the Python helper. Override via setHelperPath if needed.
 var HELPER_PATH = "/Users/zak/zacharysbrown/stemforge/tools/m4l_export_clips.py";
-var PYTHON_BIN  = "/usr/bin/env python3";
+// Use the repo's uv-managed venv python — Max's [shell] PATH doesn't include
+// per-project venvs, and /usr/bin/python3 (Apple's) lacks soundfile/pydantic.
+// Override via setPythonBin if you've installed deps system-wide.
+var PYTHON_BIN  = "/Users/zak/zacharysbrown/stemforge/.venv/bin/python3";
 
 // Default source tracks if `exportClips` is called with no args. Order matters:
 // first → group A, second → group B, etc.
-var DEFAULT_SOURCE_TRACKS = ["SF | A", "SF | B", "SF | C", "SF | D"];
+var DEFAULT_SOURCE_TRACKS = ["A", "B", "C", "D"];
 var GROUP_LETTERS = ["A", "B", "C", "D"];
 
 // Bottom-up EP-133 pad rotation, mirroring stemforge.manifest_schema.
@@ -195,18 +198,16 @@ function _readClipSpec(trackIdx, slotIdx) {
 
 // ── Spec assembly ────────────────────────────────────────────────────────────
 
-function _mkExportDir() {
+// Compute the EVENTUAL export dir for this bounce. Does NOT create it on
+// disk — Max's File()/Folder() can't reliably mkdir intermediate parents
+// (e.g. ~/stemforge/exports/ when /stemforge/ is missing) and silently
+// fails. Instead, the Python helper takes responsibility for `mkdir -p`-ing
+// the export_dir from inside the spec (export_dir.mkdir(parents=True,
+// exist_ok=True)). This avoids a fragile JS-side mkdir entirely.
+function _planExportDir() {
     var ts = String(new Date().getTime());
     var rootExpanded = EXPORT_ROOT.replace(/^~/, _homePath());
-    var dir = rootExpanded + "/" + ts;
-    try {
-        // Touch a `.keep` to materialize the directory tree (Max's Folder()
-        // doesn't always create missing parents).
-        var keepPath = "Macintosh HD:" + dir + "/.keep";
-        var ff = new File(keepPath, "write", "TEXT", "TEXT");
-        if (ff.isopen) { ff.writestring(""); ff.close(); }
-    } catch (_) {}
-    return dir;
+    return rootExpanded + "/" + ts;
 }
 
 function _homePath() {
@@ -219,8 +220,13 @@ function _homePath() {
     return "/Users/zak";
 }
 
-function _writeSpecFile(dir, spec) {
-    var path = dir + "/spec.json";
+// Write the spec to /tmp (always exists, no mkdir needed). The spec contains
+// the EVENTUAL export_dir path; the Python helper will mkdir -p that dir
+// before writing any outputs into it. This decouples spec write from output
+// dir creation — neither needs the other to exist first.
+function _writeSpecFile(spec) {
+    var ts = String(new Date().getTime());
+    var path = "/tmp/sf_clip_export_" + ts + ".json";
     var maxPath = "Macintosh HD:" + path;
     var f = new File(maxPath, "write", "TEXT", "TEXT");
     if (!f.isopen) {
@@ -307,7 +313,7 @@ function _doExport(sources, byIndex) {
         return;
     }
 
-    var dir = _mkExportDir();
+    var dir = _planExportDir();
     var spec = {
         version: 1,
         project_tempo: tempo,
@@ -316,19 +322,24 @@ function _doExport(sources, byIndex) {
         clips: clipSpecs,
     };
 
-    var specPath = _writeSpecFile(dir, spec);
+    var specPath = _writeSpecFile(spec);
     if (!specPath) {
-        _statusOut("export: could not write spec.json");
+        _statusOut("export: could not write spec to /tmp");
         return;
     }
 
     _statusOut("export: " + clipSpecs.length + " clips → " + dir);
 
-    var cmd = PYTHON_BIN + " " + _escapeForShell(HELPER_PATH) +
-              " " + _escapeForShell(specPath) + " --json-events";
-    log("spawn: " + cmd);
-    try { outlet(1, "spawn", cmd); }
-    catch (e) {
+    log("spawn: " + PYTHON_BIN + " " + HELPER_PATH + " " + specPath + " --json-events");
+    // shell.mxo (Bill Orcutt / Jeremy Bernstein v8.0.0) routes via its
+    // `anything` handler: selector becomes argv[0], remaining atoms become
+    // argv[1..n]. So send the binary as the SELECTOR and each arg as a
+    // separate atom — shell then does the equivalent of execvp(PYTHON_BIN,
+    // [HELPER, SPEC, "--json-events"]). No shell escaping needed; spaces
+    // in paths are safe because each atom is independent.
+    try {
+        outlet(1, PYTHON_BIN, HELPER_PATH, specPath, "--json-events");
+    } catch (e) {
         _statusOut("export: spawn outlet error: " + e);
     }
 }

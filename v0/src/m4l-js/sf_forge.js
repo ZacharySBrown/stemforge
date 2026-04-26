@@ -159,17 +159,19 @@ function _readPresetRoot() {
     }
 }
 
-function _escapeForShell(path) {
-    // Quote the path for a shell command. We don't do full POSIX escaping;
-    // just wrap in double quotes and escape embedded quotes.
-    var s = String(path || "");
-    s = s.replace(/"/g, '\\"');
-    return '"' + s + '"';
-}
-
-function _buildSplitCommand(audioPath) {
-    return NATIVE_BIN + ' split ' + _escapeForShell(audioPath) +
-           ' --json-events --variant ' + NATIVE_VARIANT;
+// shell.mxo (v8.0.0, Bill Orcutt / Jeremy Bernstein) routes via its
+// `anything` handler: selector becomes argv[0], remaining atoms become
+// argv[1..n]. So we send each command-line word as a separate atom; no
+// shell escaping needed because each atom is independent (spaces in paths
+// are safe as long as they're inside one atom).
+function _buildSplitArgv(audioPath) {
+    return [
+        NATIVE_BIN,
+        "split",
+        String(audioPath || ""),
+        "--json-events",
+        "--variant", NATIVE_VARIANT,
+    ];
 }
 
 // ── LiveAPI helpers ──────────────────────────────────────────────────────────
@@ -234,10 +236,11 @@ function _startPhase1(audioPath) {
 
     _smPhase1Start();
 
-    var cmd = _buildSplitCommand(audioPath);
-    log("spawn: " + cmd);
+    var argv = _buildSplitArgv(audioPath);
+    log("spawn: " + argv.join(" "));
+    // Multi-atom outlet — see _buildSplitArgv comment for why.
     try {
-        outlet(1, "spawn", cmd);
+        outlet.apply(null, [1].concat(argv));
     } catch (e) {
         log("spawn outlet error: " + e);
         _phase = "error";
@@ -374,7 +377,8 @@ function cancelForge() {
     _cancelRequested = true;
     log("cancelForge: current phase=" + _phase);
     if (_phase === "phase1" || _phase === "curating") {
-        try { outlet(1, "kill"); } catch (e) { log("kill outlet error: " + e); }
+        // shell.mxo's process-kill verb is `pkill`, not `kill`.
+        try { outlet(1, "pkill"); } catch (e) { log("pkill outlet error: " + e); }
         _phase = "error";
         _smError(1, "cancelled", "user cancelled split",
             "press retry to re-run");
@@ -526,7 +530,6 @@ if (typeof module !== "undefined" && module.exports) {
     module.exports.__test__ = {
         NATIVE_BIN: NATIVE_BIN,
         NATIVE_VARIANT: NATIVE_VARIANT,
-        _buildSplitCommand: _buildSplitCommand,
-        _escapeForShell: _escapeForShell
+        _buildSplitArgv: _buildSplitArgv
     };
 }
