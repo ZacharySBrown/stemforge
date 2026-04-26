@@ -141,8 +141,16 @@ function _readFileContents(posixPath) {
     try {
         var f = new File(toMaxPath(posixPath), "read");
         if (!f.isopen) return null;
+        // See sf_manifest_loader for why chunk size is 32767 (signed-short cap).
+        var MAX_CHUNK = 32767;
         var raw = "";
-        while (f.position < f.eof) { raw += f.readstring(65536); }
+        var prev = -1;
+        while (f.position < f.eof && f.position !== prev) {
+            prev = f.position;
+            var chunk = f.readstring(MAX_CHUNK) || "";
+            if (!chunk.length) break;
+            raw += chunk;
+        }
         f.close();
         return raw;
     } catch (e) {
