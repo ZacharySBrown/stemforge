@@ -102,8 +102,16 @@ function readFileContents(p) {
     try {
         var f = new File(toMaxPath(p), "read");
         if (!f.isopen) return null;
+        // See sf_manifest_loader for why chunk size is 32767 (signed-short cap).
+        var MAX_CHUNK = 32767;
         var raw = "";
-        while (f.position < f.eof) { raw += f.readstring(65536); }
+        var prev = -1;
+        while (f.position < f.eof && f.position !== prev) {
+            prev = f.position;
+            var chunk = f.readstring(MAX_CHUNK) || "";
+            if (!chunk.length) break;
+            raw += chunk;
+        }
         f.close();
         return raw;
     } catch (e) {
@@ -116,6 +124,10 @@ function writeFileContents(p, contents) {
     // Overwrites the file at `p` with `contents`. Truncates before writing.
     // Modeled on _sfFileLog's file-write pattern — used by commitOffsets to
     // persist manifest changes back to disk.
+    //
+    // CRITICAL: Max File.writestring caps at 32767 chars per call (signed-short,
+    // same as readstring). Writing an 84K manifest in one call silently
+    // truncates to exactly 32767 bytes. Loop with safe chunks.
     try {
         var maxPath = toMaxPath(p);
         var f = new File(maxPath, "write", "TEXT", "TEXT");
@@ -125,14 +137,46 @@ function writeFileContents(p, contents) {
         }
         try { f.position = 0; } catch (_) {}
         try { f.eof = 0; } catch (_) {}
-        f.writestring(String(contents));
+
+        var MAX_CHUNK = 32767;
+        var total = String(contents);
+        var written = 0;
+        var prev = -1;
+        while (written < total.length && f.position !== prev) {
+            prev = f.position;
+            var end = written + MAX_CHUNK;
+            if (end > total.length) end = total.length;
+            f.writestring(total.substring(written, end));
+            written = end;
+        }
         try { f.eof = f.position; } catch (_) {}
         f.close();
+        if (written < total.length) {
+            status("writeFile: short write " + written + "/" + total.length
+                + " bytes to " + p);
+            return false;
+        }
         return true;
     } catch (e) {
         status("writeFile error: " + e);
         return false;
     }
+}
+
+// Max named dicts have an asymmetric API: `parse(jsonStr)` stores jsonStr's
+// content at the dict root (no auto-wrap), but `stringify()` emits
+// `{"root": <content>}` on read. So every read needs to unwrap `.root`
+// and every write should NOT re-wrap (passing a {root:...} string to
+// parse() produces `.root.root` nesting on the next read).
+// root may also be a stringified blob in some older dicts; handle defensively.
+function _unwrapDictContent(parsed) {
+    if (parsed && parsed.root !== undefined) {
+        if (typeof parsed.root === "object") return parsed.root;
+        if (typeof parsed.root === "string") {
+            try { return JSON.parse(parsed.root); } catch (_) {}
+        }
+    }
+    return parsed;
 }
 
 function trackCount() {
@@ -206,7 +250,11 @@ function loadClip(trackIdx, slotIdx, wavPath, clipName, startMarkerBeats) {
 // Returns true if v2 data was applied, false if the entry is legacy (caller
 // should fall back to its existing warp_mode behavior). See spec sections
 // 4 (warp marker types), 6 (offset flow), 9 (export formula), 10 (M4L app).
-function applyCurationV2Clip(clipApi, loopEntry) {
+//
+// `stemName` (optional) selects warp_mode from BAR_WARP_MODES. Drums/bass
+// default to 0 (Beats) — far cleaner stretching of transient-heavy bar-
+// aligned material than the generic 4 (Complex). Vocals/other stay at 4.
+function applyCurationV2Clip(clipApi, loopEntry, stemName) {
     if (!loopEntry || !loopEntry.clip) return false;
     var clipBlock = loopEntry.clip;
     if (clipBlock.padded_start_sec === undefined) return false;
@@ -216,10 +264,32 @@ function applyCurationV2Clip(clipApi, loopEntry) {
     var startOffset = Number(offsets.start_offset_sec) || 0.0;
     var endOffset = Number(offsets.end_offset_sec) || 0.0;
 
-    var paddedStart = Number(clipBlock.padded_start_sec) || 0.0;
-    var paddedEnd = Number(clipBlock.padded_end_sec) || 0.0;
-    var startMarker = paddedStart + startOffset;
-    var endMarker = paddedEnd + endOffset;
+    // Default start/end = musical bar boundaries (raw_*), not padded_*.
+    // Padding exists so the user can trim backward into it by committing a
+    // negative start_offset (reveal an early transient they want back), or
+    // forward past the bar end by committing a positive end_offset.
+    // Playback on first trigger should start at the musical content.
+    //
+    // CRITICAL: when `warping` is on, Ableton interprets start_marker,
+    // end_marker, loop_start, loop_end as BEATS (not seconds). Convert
+    // using the slope implied by our intended warp markers — this is the
+    // same slope we encode via move_warp_marker / add_warp_marker below,
+    // so the bar boundaries and loop region stay aligned with the
+    // musical content in beat-time.
+    var rawStart = Number(clipBlock.raw_start_sec) || 0.0;
+    var rawEnd = Number(clipBlock.raw_end_sec) || 0.0;
+    var secToBeat = 1.0;
+    if (loopEntry.warp_markers && loopEntry.warp_markers.length >= 2) {
+        var wmFirst = loopEntry.warp_markers[0];
+        var wmLast = loopEntry.warp_markers[loopEntry.warp_markers.length - 1];
+        var ds = Number(wmLast.time_sec) - Number(wmFirst.time_sec);
+        var db = Number(wmLast.beat_pos) - Number(wmFirst.beat_pos);
+        if (isFinite(ds) && isFinite(db) && ds > 0) {
+            secToBeat = db / ds;
+        }
+    }
+    var startMarker = (rawStart + startOffset) * secToBeat;
+    var endMarker = (rawEnd + endOffset) * secToBeat;
 
     // Set clip boundaries (spec §9)
     try { clipApi.set("start_marker", startMarker); } catch (e) {
@@ -229,51 +299,106 @@ function applyCurationV2Clip(clipApi, loopEntry) {
         status("      end_marker set failed: " + e);
     }
 
-    // Loop block (spec §5)
+    // Loop block (spec §5). Also in beats for warped clips.
     var loopBlock = loopEntry.loop;
     if (loopBlock && loopBlock.enabled) {
         var ls = Number(loopBlock.loop_start_sec);
         var le = Number(loopBlock.loop_end_sec);
         if (isFinite(ls)) {
-            try { clipApi.set("loop_start", ls); } catch (_) {}
+            try { clipApi.set("loop_start", ls * secToBeat); } catch (_) {}
         }
         if (isFinite(le)) {
-            try { clipApi.set("loop_end", le); } catch (_) {}
+            try { clipApi.set("loop_end", le * secToBeat); } catch (_) {}
         }
         try { clipApi.set("looping", 1); } catch (_) {}
     }
 
-    // Default warp mode = 4 (Complex) per spec §10.
-    try { clipApi.set("warp_mode", 4); } catch (_) {}
+    // Per-stem warp mode from BAR_WARP_MODES (drums/bass = 0 Beats,
+    // vocals/other = 4 Complex). Falls back to 4 if stem is unknown.
+    var wmode = 4;
+    if (stemName && BAR_WARP_MODES[stemName] !== undefined) {
+        wmode = BAR_WARP_MODES[stemName];
+    }
+    try { clipApi.set("warp_mode", wmode); } catch (_) {}
 
-    // Warp markers (spec §4, §10). Try `create_warp_marker` first, fall back
-    // to `add_warp_marker`; if both fail, skip (clip still has Live's default
-    // start/end markers).
+    // Warp markers — Live 12 LOM (hard-won findings):
+    //   - `create_warp_marker` / `clear_all_warp_markers` are GHOST methods:
+    //     LiveAPI.call returns truthy for unknown names, so these appeared
+    //     to succeed but did nothing.
+    //   - `add_warp_marker` takes a Dict `{beat_time, sample_time}` — NOT
+    //     two floats, NOT flat key/value args. It also SILENTLY REJECTS
+    //     any attempt to add at a sample_time already occupied by a marker.
+    //   - `remove_warp_marker(beat_time)` takes a float beat_time, not an
+    //     index. Often rejects the shadow (last) marker.
+    //   - `move_warp_marker(beat_time, beat_delta)` shifts an existing
+    //     marker's beat_time by delta. Identify by CURRENT beat_time.
+    //   - `get("warp_markers")` returns a ONE-element array whose element
+    //     is a JSON string: `["{\"warp_markers\":[...]}"]`.
+    //
+    // Strategy: for each target anchor, match an existing marker by
+    // sample_time and MOVE its beat_time; add_warp_marker only if no
+    // marker exists at that sample. The shadow marker auto-repositions
+    // when we move the last visible marker.
     var wmList = loopEntry.warp_markers;
     if (wmList && wmList.length) {
+        var existing = [];
+        try {
+            var rawVal = clipApi.get("warp_markers");
+            if (rawVal && rawVal.length > 0) {
+                var rawStr = (typeof rawVal[0] === "string") ? rawVal[0] : String(rawVal[0]);
+                var parsed = JSON.parse(rawStr);
+                if (parsed && parsed.warp_markers && parsed.warp_markers.length) {
+                    existing = parsed.warp_markers;
+                }
+            }
+        } catch (_) {}
+
+        var moved = 0, addedNew = 0, noop = 0, failed = 0;
         for (var wi = 0; wi < wmList.length; wi++) {
             var wm = wmList[wi];
             if (!wm) continue;
-            var t = Number(wm.time_sec);
-            var b = Number(wm.beat_pos);
-            if (!isFinite(t) || !isFinite(b)) continue;
-            var created = false;
-            try {
-                clipApi.call("create_warp_marker", t, b);
-                created = true;
-            } catch (e1) {
-                try {
-                    clipApi.call("add_warp_marker", t, b);
-                    created = true;
-                } catch (e2) {
-                    // Skip — neither API call available.
+            var targetTime = Number(wm.time_sec);
+            var targetBeat = Number(wm.beat_pos);
+            if (!isFinite(targetTime) || !isFinite(targetBeat)) continue;
+
+            var match = null;
+            for (var ei = 0; ei < existing.length; ei++) {
+                if (Math.abs(existing[ei].sample_time - targetTime) < 0.001) {
+                    match = existing[ei];
+                    break;
                 }
             }
-            if (!created) {
-                // Stop trying if the first marker failed; avoid log spam.
-                break;
+
+            if (match) {
+                var delta = targetBeat - match.beat_time;
+                if (Math.abs(delta) < 0.0001) {
+                    noop++;
+                } else {
+                    try {
+                        clipApi.call("move_warp_marker", match.beat_time, delta);
+                        moved++;
+                    } catch (eMv) {
+                        status("      move_warp_marker(" + match.beat_time.toFixed(4)
+                            + ", " + delta.toFixed(4) + ") failed: " + eMv);
+                        failed++;
+                    }
+                }
+            } else {
+                try {
+                    var scratch = new Dict();
+                    scratch.set("beat_time", targetBeat);
+                    scratch.set("sample_time", targetTime);
+                    clipApi.call("add_warp_marker", scratch);
+                    addedNew++;
+                } catch (eAdd) {
+                    status("      add_warp_marker(beat=" + targetBeat.toFixed(3)
+                        + ", sample=" + targetTime.toFixed(3) + ") failed: " + eAdd);
+                    failed++;
+                }
             }
         }
+        status("      warp_markers: " + moved + " moved, " + addedNew + " added, "
+            + noop + " no-op, " + failed + " failed");
     }
 
     return true;
@@ -416,7 +541,7 @@ function _loadCuratedManifest(mf) {
                         // Curation v2: apply padded markers + warp markers
                         // + offsets when present; fall back to legacy warp
                         // mode when the entry has no clip block.
-                        if (!applyCurationV2Clip(clipApi, bar)) {
+                        if (!applyCurationV2Clip(clipApi, bar, stemName)) {
                             clipApi.set("warp_mode", warpMode);
                         }
                     }
@@ -450,7 +575,7 @@ function loadFromDict() {
     catch (e) { status("loadFromDict: cannot open dict " + dictName + ": " + e); return; }
 
     var mf;
-    try { mf = JSON.parse(d.stringify()); }
+    try { mf = _unwrapDictContent(JSON.parse(d.stringify())); }
     catch (e) { status("loadFromDict: parse error: " + e); return; }
 
     status("loaded manifest from dict: " + dictName);
@@ -694,7 +819,7 @@ function loadV2FromDict() {
     catch (e) { status("loadV2FromDict: cannot open dict " + dictName + ": " + e); return; }
 
     var mf;
-    try { mf = JSON.parse(d.stringify()); }
+    try { mf = _unwrapDictContent(JSON.parse(d.stringify())); }
     catch (e) { status("loadV2FromDict: parse error: " + e); return; }
 
     status("loaded v2 manifest from dict: " + dictName);
@@ -973,7 +1098,7 @@ function loadClipsToTrack(trackIdx, loops, stemName) {
                         // Curation v2: if entry has a clip block, apply
                         // padded markers + warp markers + offsets. Otherwise
                         // fall back to legacy per-stem warp_mode.
-                        if (!applyCurationV2Clip(clipApi, item)) {
+                        if (!applyCurationV2Clip(clipApi, item, stemName)) {
                             clipApi.set("warp_mode", warpMode);
                         }
                     }
@@ -1134,7 +1259,7 @@ function loadSong() {
     catch (e) { status("loadSong: cannot open dict " + dictName + ": " + e); return; }
 
     var mf;
-    try { mf = JSON.parse(d.stringify()); }
+    try { mf = _unwrapDictContent(JSON.parse(d.stringify())); }
     catch (e) { status("loadSong: parse error: " + e); return; }
 
     var stemData = mf.stems;
@@ -1289,7 +1414,151 @@ function loadSong() {
     }
 
     status("song loader: " + loaded + " items across " + stemOrder.length + " stems for \"" + songName + "\"");
+
+    // ── EP-133 hybrid session: restore A/B/C/D OR auto-populate ─────────
+    // If the manifest already has a `session_tracks` block (= user has
+    // committed a curation pass before), restore every clip on A/B/C/D
+    // from there. Otherwise this is a first FORGE — just drop the first
+    // 4 drum hits into Track A slots 1-4 as a starting point.
+    if (_sessionTracksHasContent(mf.session_tracks)) {
+        _restoreSessionTracks(mf, stemData);
+    } else {
+        _autoPopulateTrackAHits(stemData);
+    }
+
     outlet(1, "bang");
+}
+
+function _sessionTracksHasContent(s) {
+    if (!s) return false;
+    var letters = ["A", "B", "C", "D"];
+    for (var i = 0; i < letters.length; i++) {
+        if (s[letters[i]] && s[letters[i]].length > 0) return true;
+    }
+    return false;
+}
+
+function _autoPopulateTrackAHits(stemData) {
+    var drumsBlock = (stemData && stemData.drums) || {};
+    var hits = drumsBlock.oneshots || [];
+    if (hits.length === 0) return;
+    var trackA = findTrackByName("A");
+    if (trackA < 0) {
+        status("Track A not found — skipped hit auto-populate "
+            + "(add an audio track named 'A' to your template)");
+        return;
+    }
+    var hitsToDrop = Math.min(4, hits.length);
+    var droppedA = 0;
+    for (var ai = 0; ai < hitsToDrop; ai++) {
+        var hit = hits[ai];
+        if (!hit || !hit.file) continue;
+        var hitName = "hit " + (ai + 1)
+            + (hit.classification ? " (" + hit.classification + ")" : "");
+        if (loadClip(trackA, ai, hit.file, hitName, 0)) droppedA++;
+    }
+    status("Track A auto-populated: " + droppedA + " drum hits in slots 1-" + droppedA);
+}
+
+function _deleteClipIfPresent(trackIdx, slotIdx) {
+    try {
+        var cs = new LiveAPI("live_set tracks " + trackIdx + " clip_slots " + slotIdx);
+        // has_clip is a property; if 1, delete it.
+        var has = _getLomNumber(cs, "has_clip");
+        if (has === 1) cs.call("delete_clip");
+    } catch (_) {}
+}
+
+function _buildFileToLoopEntry(stemData) {
+    // Index every loop + oneshot across all stems by their `file` path so
+    // we can look up the matching loopEntry from a session_tracks entry's
+    // file field. Used to apply warp markers + raw_*_sec context to clips
+    // dropped on A/B/C/D from the same source WAVs.
+    var index = {};
+    if (!stemData) return index;
+    var stemNames = ["drums", "bass", "vocals", "other"];
+    for (var si = 0; si < stemNames.length; si++) {
+        var stem = stemNames[si];
+        var block = stemData[stem];
+        if (!block) continue;
+        var loops = Array.isArray(block) ? block : (block.loops || []);
+        for (var li = 0; li < loops.length; li++) {
+            if (loops[li] && loops[li].file) {
+                index[loops[li].file] = { entry: loops[li], stemName: stem };
+            }
+        }
+        var oneshots = (block.oneshots) || [];
+        for (var oi = 0; oi < oneshots.length; oi++) {
+            if (oneshots[oi] && oneshots[oi].file) {
+                index[oneshots[oi].file] = { entry: oneshots[oi], stemName: stem };
+            }
+        }
+    }
+    return index;
+}
+
+function _restoreSessionTracks(mf, stemData) {
+    // Re-create every clip on A/B/C/D from the manifest's session_tracks
+    // block. For each entry: drop the WAV, apply warp markers from the
+    // matching loopEntry (so the clip plays at session BPM), then override
+    // start_marker / end_marker with the saved session offsets.
+    var session = mf.session_tracks || {};
+    var letters = ["A", "B", "C", "D"];
+    var bpm = Number(mf.bpm) || 120.0;
+    var secToBeat = bpm / 60.0;
+    var fileToLoopEntry = _buildFileToLoopEntry(stemData);
+    var totalRestored = 0;
+
+    for (var li = 0; li < letters.length; li++) {
+        var letter = letters[li];
+        var trackIdx = findTrackByName(letter);
+        if (trackIdx < 0) continue;
+        var entries = session[letter] || [];
+        for (var ei = 0; ei < entries.length; ei++) {
+            var e = entries[ei];
+            if (!e || !e.file) continue;
+            var slot = Number(e.slot) | 0;
+
+            // Wipe the slot if anything is already there (auto-populate
+            // ran before us OR a stale clip is present from prior FORGE).
+            _deleteClipIfPresent(trackIdx, slot);
+
+            var clipName = letter + (slot + 1);
+            if (!loadClip(trackIdx, slot, e.file, clipName, 0)) continue;
+
+            // Apply warp markers + clip block from the matching loopEntry,
+            // if any. Hits / unmatched files just stay as plain audio
+            // clips with default Ableton warp behavior.
+            var lookup = fileToLoopEntry[e.file];
+            try {
+                var clipApi = new LiveAPI(
+                    "live_set tracks " + trackIdx + " clip_slots " + slot + " clip"
+                );
+                if (clipApi && clipApi.id !== "0") {
+                    if (lookup && lookup.entry) {
+                        applyCurationV2Clip(clipApi, lookup.entry, lookup.stemName);
+                    }
+                    // Now override markers with the user's session-saved
+                    // positions. clip is warped → markers are in beats.
+                    var startSec = Number(e.start_offset_sec) || 0.0;
+                    var endSec = Number(e.end_offset_sec) || 0.0;
+                    var warping = _getLomNumber(clipApi, "warping") | 0;
+                    if (warping) {
+                        try { clipApi.set("start_marker", startSec * secToBeat); } catch (_) {}
+                        try { clipApi.set("end_marker", endSec * secToBeat); } catch (_) {}
+                    } else {
+                        try { clipApi.set("start_marker", startSec); } catch (_) {}
+                        try { clipApi.set("end_marker", endSec); } catch (_) {}
+                    }
+                }
+            } catch (_) {}
+            totalRestored++;
+        }
+    }
+    var counts = letters.map(function (l) {
+        return l + "=" + (session[l] ? session[l].length : 0);
+    }).join(" ");
+    status("session_tracks restored: " + totalRestored + " clips (" + counts + ")");
 }
 
 // ── Curation v2: commit offsets (Ableton → manifest) ────────────────────────
@@ -1370,27 +1639,138 @@ function _commitEntryOffsets(entry, clipIndex) {
         // Macintosh HD: path.
         hit = clipIndex[_stripHfsPrefix(target)];
     }
-    if (!hit) return false;
+    if (!hit) {
+        // Clip not present in the live set — treat as user-deleted.
+        // Mark selected=false so downstream consumers (EP-133 export, etc.)
+        // can filter to only the user's keepers. Workflow: drag start
+        // markers → delete the clips you don't want → COMMIT.
+        var dropped = entry.offsets || {};
+        dropped.committed = true;
+        dropped.selected = false;
+        if (dropped.note === undefined) dropped.note = "";
+        entry.offsets = dropped;
+        return true;
+    }
 
     var clipApi = new LiveAPI(
         "live_set tracks " + hit.trackIdx + " clip_slots " + hit.slotIdx + " clip"
     );
-    if (!clipApi || clipApi.id === "0") return false;
+    if (!clipApi || clipApi.id === "0") {
+        // Same disposition as missing clip — slot exists but no clip in it.
+        var dropped2 = entry.offsets || {};
+        dropped2.committed = true;
+        dropped2.selected = false;
+        if (dropped2.note === undefined) dropped2.note = "";
+        entry.offsets = dropped2;
+        return true;
+    }
 
-    var startMarker = _getLomNumber(clipApi, "start_marker");
-    var endMarker = _getLomNumber(clipApi, "end_marker");
-    if (!isFinite(startMarker) || !isFinite(endMarker)) return false;
+    // Ableton returns start_marker/end_marker in BEATS for warped clips.
+    // Convert back to seconds using the slope derived from the manifest's
+    // warp_markers so the computed offsets are in the same units the manifest
+    // stores them (seconds, relative to raw_*).
+    var startMarkerBeats = _getLomNumber(clipApi, "start_marker");
+    var endMarkerBeats = _getLomNumber(clipApi, "end_marker");
+    if (!isFinite(startMarkerBeats) || !isFinite(endMarkerBeats)) return false;
 
-    var paddedStart = Number(entry.clip.padded_start_sec) || 0.0;
-    var paddedEnd = Number(entry.clip.padded_end_sec) || 0.0;
+    var beatToSec = 1.0;
+    if (entry.warp_markers && entry.warp_markers.length >= 2) {
+        var wmFirst = entry.warp_markers[0];
+        var wmLast = entry.warp_markers[entry.warp_markers.length - 1];
+        var ds = Number(wmLast.time_sec) - Number(wmFirst.time_sec);
+        var db = Number(wmLast.beat_pos) - Number(wmFirst.beat_pos);
+        if (isFinite(ds) && isFinite(db) && db > 0) {
+            beatToSec = ds / db;
+        }
+    }
+    var startMarkerSec = startMarkerBeats * beatToSec;
+    var endMarkerSec = endMarkerBeats * beatToSec;
+
+    // Offsets are relative to raw_* (the musical bar boundaries), matching
+    // applyCurationV2Clip's default start/end = raw_* + offset. A negative
+    // start_offset means the user trimmed backward into the left pad to
+    // reveal an early transient; positive means they trimmed forward past
+    // the bar start. Same symmetry for end_offset with the right pad.
+    var rawStart = Number(entry.clip.raw_start_sec) || 0.0;
+    var rawEnd = Number(entry.clip.raw_end_sec) || 0.0;
 
     var offsets = entry.offsets || {};
-    offsets.start_offset_sec = startMarker - paddedStart;
-    offsets.end_offset_sec = endMarker - paddedEnd;
+    offsets.start_offset_sec = startMarkerSec - rawStart;
+    offsets.end_offset_sec = endMarkerSec - rawEnd;
     offsets.committed = true;
+    offsets.selected = true;     // present in live set = user kept it
     if (offsets.note === undefined) offsets.note = "";
     entry.offsets = offsets;
     return true;
+}
+
+function _commitSessionTracks(mf) {
+    // Walks tracks named A / B / C / D in the live set, captures every
+    // loaded clip's file path + start/end markers (converted to seconds)
+    // + a "mode" hint for the export tool.
+    //
+    // mode is inferred from end_marker:
+    //   - "rotate"  if end_marker is at the clip's natural end (user only
+    //               moved start) — for loops the export tool will rotate
+    //               the WAV so start_marker = sample 0.
+    //   - "trim"    if end_marker has been moved inward — user picked a
+    //               specific region; the export tool slices that region.
+    //
+    // Writes into mf.session_tracks = {A: [...], B: [...], C: [...], D: [...]}.
+    // Empty arrays for letter-tracks that don't exist or have no clips.
+    var letters = ["A", "B", "C", "D"];
+    var bpm = Number(mf.bpm) || 120.0;
+    var beatToSec = 60.0 / bpm;
+    var result = { A: [], B: [], C: [], D: [] };
+
+    for (var li = 0; li < letters.length; li++) {
+        var letter = letters[li];
+        var trackIdx = findTrackByName(letter);
+        if (trackIdx < 0) continue;
+
+        for (var sj = 0; sj < 31; sj++) {
+            var csPath = "live_set tracks " + trackIdx + " clip_slots " + sj;
+            var clipApi;
+            try {
+                clipApi = new LiveAPI(csPath + " clip");
+            } catch (_) { continue; }
+            if (!clipApi || clipApi.id === "0") continue;
+
+            var fp = _getLomString(clipApi, "file_path");
+            if (!fp) continue;
+            var posix = _stripHfsPrefix(fp);
+
+            var warping = _getLomNumber(clipApi, "warping") | 0;
+            var startMarker = _getLomNumber(clipApi, "start_marker");
+            var endMarker = _getLomNumber(clipApi, "end_marker");
+            var clipLength = _getLomNumber(clipApi, "length");
+            // For warped clips the markers + length are in beats; convert
+            // to seconds via session BPM. For non-warped they're already
+            // in seconds.
+            var startSec = warping ? startMarker * beatToSec : startMarker;
+            var endSec = warping ? endMarker * beatToSec : endMarker;
+            var lengthSec = warping ? clipLength * beatToSec : clipLength;
+
+            // Trim vs rotate: end-marker within ~10ms of the clip's natural
+            // end → user only moved start → rotate. Otherwise trim.
+            var EPS = 0.010;
+            var mode = (Math.abs(endSec - lengthSec) < EPS) ? "rotate" : "trim";
+
+            result[letter].push({
+                slot: sj,
+                file: posix,
+                start_offset_sec: startSec,
+                end_offset_sec: endSec,
+                clip_length_sec: lengthSec,
+                mode: mode,
+            });
+        }
+    }
+    mf.session_tracks = result;
+    var summary = letters.map(function (l) {
+        return l + "=" + result[l].length;
+    }).join(" ");
+    status("session_tracks: " + summary);
 }
 
 function _commitAllOffsets(mf, clipIndex) {
@@ -1439,6 +1819,7 @@ function commitOffsets() {
             return;
         }
         var n = _commitAllOffsets(mf, clipIndex);
+        _commitSessionTracks(mf);
         var out;
         try { out = JSON.stringify(mf, null, 2); }
         catch (e2) {
@@ -1469,21 +1850,93 @@ function commitOffsets() {
         return;
     }
     var mfDict;
-    try { mfDict = JSON.parse(rawDict); }
+    try { mfDict = _unwrapDictContent(JSON.parse(rawDict)); }
     catch (e4) {
         status("commitOffsets: dict parse error: " + e4);
         return;
     }
     var nDict = _commitAllOffsets(mfDict, clipIndex);
+    _commitSessionTracks(mfDict);
+    // Dict.parse stores json content directly (no auto-wrap) — pass unwrapped.
     try {
         d.parse(JSON.stringify(mfDict));
     } catch (e5) {
         status("commitOffsets: dict write error: " + e5);
         return;
     }
-    status("Committed offsets for " + nDict + " clips");
-    outlet(0, "set", "Committed offsets for " + nDict + " clips");
+
+    // Also persist to disk so the manifest file reflects the committed
+    // offsets across sessions. Derive the path from `source_dir` in the
+    // manifest — that's where `curated/manifest.json` lives.
+    var wroteDisk = false;
+    var srcDir = mfDict && mfDict.source_dir;
+    if (srcDir) {
+        var diskPathDerived = String(srcDir).replace(/\/+$/, "")
+            + "/curated/manifest.json";
+        var mfOut;
+        try { mfOut = JSON.stringify(mfDict, null, 2); }
+        catch (eS) { status("commitOffsets: disk stringify error: " + eS); }
+        if (mfOut && writeFileContents(diskPathDerived, mfOut)) {
+            wroteDisk = true;
+        } else if (mfOut) {
+            status("commitOffsets: disk write failed for " + diskPathDerived);
+        }
+    }
+
+    var msg = "Committed offsets for " + nDict + " clips"
+        + (wroteDisk ? " (dict + disk)" : " (dict only)");
+    status(msg);
+    outlet(0, "set", msg);
     outlet(1, "bang");
+}
+
+// ── EP-133 song-export bridge ────────────────────────────────────────────────
+// Track B of the EP-133 arrangement → song-mode pipeline. Reads Live's
+// arrangement view via LOM and writes a snapshot.json. Delegates to
+// sf_arrangement_reader.js (the canonical implementation, also testable in
+// isolation). The file lives in the Max Package's javascript/ search path so
+// classic [js] include() resolves it by bare filename.
+//
+// Message contract from the patcher:
+//     exportArrangementSnapshot <output_path>
+//
+// On success: outlet 0 status, outlet 1 bang. On failure: outlet 0 status only.
+function exportArrangementSnapshot() {
+    var args = arrayfromargs(messagename, arguments).slice(1);
+    var outputPath = args.length ? args.join(" ") : "";
+    if (!outputPath) {
+        status("exportArrangementSnapshot: missing output path");
+        return;
+    }
+    var ok = false;
+    try {
+        // include() loads sibling .js into this [js] object's scope, exposing
+        // the reader's top-level functions for direct invocation. The Max
+        // Package's javascript/ dir is on Max's search path so a bare filename
+        // resolves against the installed StemForge package. The reader uses
+        // the name `runArrangementExport` (not `exportArrangementSnapshot`) so
+        // include() doesn't clobber this wrapper's binding.
+        include("sf_arrangement_reader.js");
+        var fn = (typeof runArrangementExport === "function")
+            ? runArrangementExport : null;
+        if (!fn) {
+            status("exportArrangementSnapshot: reader loaded but "
+                + "runArrangementExport not in scope");
+            return;
+        }
+        ok = !!fn(outputPath);
+    } catch (e) {
+        status("exportArrangementSnapshot: include/dispatch failed: " + e);
+        return;
+    }
+    if (ok) {
+        status("Arrangement snapshot written: " + outputPath);
+        outlet(0, "set", "Arrangement snapshot written");
+        outlet(1, "bang");
+    } else {
+        status("exportArrangementSnapshot: write failed for " + outputPath);
+        outlet(0, "set", "Snapshot write failed");
+    }
 }
 
 // ── Entry points from Max ─────────────────────────────────────────────────────

@@ -1890,6 +1890,55 @@ function commitOffsets() {
     outlet(1, "bang");
 }
 
+// ── EP-133 song-export bridge ────────────────────────────────────────────────
+// Track B of the EP-133 arrangement → song-mode pipeline. Reads Live's
+// arrangement view via LOM and writes a snapshot.json. Delegates to
+// sf_arrangement_reader.js (the canonical implementation, also testable in
+// isolation). The file lives in the Max Package's javascript/ search path so
+// classic [js] include() resolves it by bare filename.
+//
+// Message contract from the patcher:
+//     exportArrangementSnapshot <output_path>
+//
+// On success: outlet 0 status, outlet 1 bang. On failure: outlet 0 status only.
+function exportArrangementSnapshot() {
+    var args = arrayfromargs(messagename, arguments).slice(1);
+    var outputPath = args.length ? args.join(" ") : "";
+    if (!outputPath) {
+        status("exportArrangementSnapshot: missing output path");
+        return;
+    }
+    var ok = false;
+    try {
+        // include() loads sibling .js into this [js] object's scope, exposing
+        // the reader's top-level functions for direct invocation. The Max
+        // Package's javascript/ dir is on Max's search path so a bare filename
+        // resolves against the installed StemForge package. The reader uses
+        // the name `runArrangementExport` (not `exportArrangementSnapshot`) so
+        // include() doesn't clobber this wrapper's binding.
+        include("sf_arrangement_reader.js");
+        var fn = (typeof runArrangementExport === "function")
+            ? runArrangementExport : null;
+        if (!fn) {
+            status("exportArrangementSnapshot: reader loaded but "
+                + "runArrangementExport not in scope");
+            return;
+        }
+        ok = !!fn(outputPath);
+    } catch (e) {
+        status("exportArrangementSnapshot: include/dispatch failed: " + e);
+        return;
+    }
+    if (ok) {
+        status("Arrangement snapshot written: " + outputPath);
+        outlet(0, "set", "Arrangement snapshot written");
+        outlet(1, "bang");
+    } else {
+        status("exportArrangementSnapshot: write failed for " + outputPath);
+        outlet(0, "set", "Snapshot write failed");
+    }
+}
+
 // ── Entry points from Max ─────────────────────────────────────────────────────
 // These aren't stored on `globalThis`; Max's classic [js] object scans for
 // top-level functions automatically.
