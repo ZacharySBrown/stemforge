@@ -73,6 +73,9 @@ js_modules:
   - filename: stemforge_loader.v0.js
     scripting_name: sf_lom_loader
     numoutlets: 3
+  - filename: sf_clip_export.js
+    scripting_name: sf_clip_export
+    numoutlets: 2
 
 # How the M4L device finds the native binary at runtime.
 binary:

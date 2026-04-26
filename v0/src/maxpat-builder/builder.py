@@ -94,6 +94,7 @@ OBJ_SF_SETTINGS         = "obj-sf-settings"
 OBJ_SF_LOGGER           = "obj-sf-logger"
 OBJ_SF_NDJSON_PARSER    = "obj-sf-ndjson-parser"
 OBJ_SF_LOM_LOADER       = "obj-sf-lom-loader"
+OBJ_SF_CLIP_EXPORT      = "obj-sf-clip-export"
 
 OBJ_DICT_STATE          = "obj-dict-sf-state"
 OBJ_DICT_PRESET         = "obj-dict-sf-preset"
@@ -136,6 +137,15 @@ OBJ_ONBPM_PREPEND       = "obj-onbpm-prepend"
 OBJ_ONCOMPLETE_PREPEND  = "obj-oncomplete-prepend"
 OBJ_ONCURATED_PREPEND   = "obj-oncurated-prepend"
 OBJ_ONERROR_PREPEND     = "obj-onerror-prepend"
+
+# Clip-export NDJSON event prepends (sf_clip_export message names).
+OBJ_CX_STARTED_PREP     = "obj-cx-started-prepend"
+OBJ_CX_PROGRESS_PREP    = "obj-cx-progress-prepend"
+OBJ_CX_CLIP_DONE_PREP   = "obj-cx-clip-done-prepend"
+OBJ_CX_CLIP_ERROR_PREP  = "obj-cx-clip-error-prepend"
+OBJ_CX_COMPLETE_PREP    = "obj-cx-complete-prepend"
+OBJ_CX_ERROR_PREP       = "obj-cx-error-prepend"
+OBJ_BOUNCE_CLIPS_MSG    = "obj-bounce-clips-msg"
 
 OBJ_PLUGIN_IN           = "obj-plugin-in"
 OBJ_PLUGOUT             = "obj-plugout"
@@ -503,6 +513,21 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         )
     )
 
+    # sf_clip_export — bounce A/B/C/D clip slots → sidecars (driven by the
+    # BOUNCE button in sf_ui's right column). Outlet 0 = status, outlet 1 =
+    # [shell] spawn commands for tools/m4l_export_clips.py.
+    boxes.append(
+        _js_box(
+            OBJ_SF_CLIP_EXPORT,
+            "sf_clip_export.js",
+            (16.0, js_row_y + 68, js_w, 22.0),
+            scripting_name="sf_clip_export",
+            numinlets=1,
+            numoutlets=2,
+            outlettype=["", ""],
+        )
+    )
+
     # ── Visible native umenus (left column, presentation mode) ──────────────
     #
     # Pragmatic fix (2026-04-23): the previous transparent-overlay approach on
@@ -716,15 +741,15 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             "newobj",
             (16.0, js_row_y - 40,
              # width
-             740.0, 22.0),
+             860.0, 22.0),
             numinlets=1,
-            numoutlets=9,  # 8 events + unmatched
-            outlettype=["", "", "", "", "", "", "", "", ""],
+            numoutlets=10,  # 9 events + unmatched
+            outlettype=["", "", "", "", "", "", "", "", "", ""],
             extras={
                 "text": (
                     "route preset_click source_click forge_click "
                     "cancel_click retry_click done_click settings_click "
-                    "commit_click"
+                    "commit_click bounce_clips_click"
                 )
             },
         )
@@ -864,6 +889,26 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     lines.append(_line(OBJ_ROUTE_UI_EVENTS, 7, "obj-commit-msg", 0))
     lines.append(_line("obj-commit-msg", 0, OBJ_SF_FORGE, 0))
 
+    # Outlet 8 — bounce_clips_click → [message exportClips] → sf_clip_export
+    boxes.append(
+        _box(
+            OBJ_BOUNCE_CLIPS_MSG,
+            "message",
+            (410.0 + 6 * 110, js_row_y - 10, 110.0, 22.0),
+            numinlets=2,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "exportClips"},
+        )
+    )
+    lines.append(_line(OBJ_ROUTE_UI_EVENTS, 8, OBJ_BOUNCE_CLIPS_MSG, 0))
+    lines.append(_line(OBJ_BOUNCE_CLIPS_MSG, 0, OBJ_SF_CLIP_EXPORT, 0))
+
+    # sf_clip_export outlet 0 = status (currently logged inside the JS only;
+    # could be wired to status text later). Outlet 1 = [shell] spawn commands
+    # for the Python helper. Goes to the SAME shell sf_forge feeds.
+    lines.append(_line(OBJ_SF_CLIP_EXPORT, 1, OBJ_SHELL, 0))
+
     # ── sf_state outlet 0 → v8ui refresh ────────────────────────────────────
     # The state mgr emits `bang` on mutation. We prepend `refresh` so the
     # v8ui re-reads the dict.  (A bare bang also works — sf_ui.js treats
@@ -923,12 +968,16 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         _box(
             OBJ_ROUTE_NDJSON,
             "newobj",
-            (16.0 + 2 * (js_w + js_gap), js_row_y + 68, 460.0, 22.0),
+            (16.0 + 2 * (js_w + js_gap), js_row_y + 68, 760.0, 22.0),
             numinlets=1,
-            numoutlets=8,
-            outlettype=["", "", "", "", "", "", "", ""],
+            numoutlets=14,
+            outlettype=[""] * 14,
             extras={
-                "text": "route progress stem bpm slice_dir complete curated error"
+                "text": (
+                    "route progress stem bpm slice_dir complete curated error "
+                    "export_started export_progress export_clip_done "
+                    "export_clip_error export_complete export_error"
+                )
             },
         )
     )
@@ -1018,6 +1067,35 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     )
     lines.append(_line(OBJ_ROUTE_NDJSON, 6, OBJ_ONERROR_PREPEND, 0))
     lines.append(_line(OBJ_ONERROR_PREPEND, 0, OBJ_SF_FORGE, 0))
+
+    # ── Clip-export NDJSON routes (sf_clip_export ← [shell] ← Python helper) ─
+    # Each event from tools/m4l_export_clips.py becomes a prepend → message
+    # call into the sf_clip_export [js] box. Names mirror the JS handlers in
+    # sf_clip_export.js (onClipExportStarted / Progress / ClipDone / ClipError
+    # / Complete / Error).
+    _CX_PREPENDS = [
+        # (route_outlet_idx, prepend_obj_id, message_name, x_offset_idx)
+        (7,  OBJ_CX_STARTED_PREP,    "onClipExportStarted",    0),
+        (8,  OBJ_CX_PROGRESS_PREP,   "onClipExportProgress",   1),
+        (9,  OBJ_CX_CLIP_DONE_PREP,  "onClipExportClipDone",   2),
+        (10, OBJ_CX_CLIP_ERROR_PREP, "onClipExportClipError",  3),
+        (11, OBJ_CX_COMPLETE_PREP,   "onClipExportComplete",   4),
+        (12, OBJ_CX_ERROR_PREP,      "onClipExportError",      5),
+    ]
+    for route_idx, obj_id, msg_name, x_idx in _CX_PREPENDS:
+        boxes.append(
+            _box(
+                obj_id,
+                "newobj",
+                (16.0 + x_idx * 170.0, js_row_y + 250, 160.0, 22.0),
+                numinlets=1,
+                numoutlets=1,
+                outlettype=[""],
+                extras={"text": "prepend " + msg_name},
+            )
+        )
+        lines.append(_line(OBJ_ROUTE_NDJSON, route_idx, obj_id, 0))
+        lines.append(_line(obj_id, 0, OBJ_SF_CLIP_EXPORT, 0))
 
     # ── Status bar updates — sf_state.getStateJson emits `state <json>` but
     # for the status bar we key off a lightweight prefix.  v1: just wire the

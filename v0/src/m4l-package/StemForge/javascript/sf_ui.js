@@ -108,6 +108,10 @@ let cachedFontSet = false;
 // otherwise null so onclick() won't route a click there.
 let commitBtnRect = null;
 
+// Bounce-button hit-rect — always visible, sits below the primary action button.
+// Populated by drawRightButton() every paint, consumed by onclick().
+let bounceBtnRect = null;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -835,6 +839,25 @@ function drawRightButton(state) {
                COL.green, FONT_SIZE_BTN, textA);
         commitBtnRect = { x: cbx, y: cby, w: cbw, h: cbh };
     }
+
+    // Tertiary BOUNCE button — always visible, sits below the primary action.
+    // Lets the user roundtrip A/B/C/D clip slots back out as samples (with
+    // sidecars) for the EP-133 / future hardware loaders. Independent of forge
+    // state so users can bounce manually-arranged clips too.
+    {
+        const bbw = bw;
+        const bbh = 22;
+        const bbx = bx;
+        const bby = by + bh + 6;  // 6px gap below primary
+        fillRoundedRect(bbx, bby, bbw, bbh, 11, COL.amber, 0.18);
+        strokeRoundedRect(bbx, bby, bbw, bbh, 11, COL.amber, 0.85, 1);
+        setFontSize(FONT_SIZE_BTN);
+        const bLabel = "BOUNCE";
+        const blw = textWidth(bLabel, FONT_SIZE_BTN);
+        textAt(bbx + bbw / 2 - blw / 2, bby + bbh / 2 + 4, bLabel,
+               COL.amber, FONT_SIZE_BTN, 1.0);
+        bounceBtnRect = { x: bbx, y: bby, w: bbw, h: bbh };
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -863,6 +886,14 @@ function onclick(x, y, button, mod1, shift, ctrl, mod2) {
             x >= commitBtnRect.x && x < commitBtnRect.x + commitBtnRect.w &&
             y >= commitBtnRect.y && y < commitBtnRect.y + commitBtnRect.h) {
             outlet(0, "commit_click");
+            return;
+        }
+        // Tertiary BOUNCE button — drawn below the primary action button,
+        // always visible. Roundtrips A/B/C/D clips → sidecars for EP-133.
+        if (bounceBtnRect &&
+            x >= bounceBtnRect.x && x < bounceBtnRect.x + bounceBtnRect.w &&
+            y >= bounceBtnRect.y && y < bounceBtnRect.y + bounceBtnRect.h) {
+            outlet(0, "bounce_clips_click");
             return;
         }
         // Right column action button. Dispatch per state kind.
