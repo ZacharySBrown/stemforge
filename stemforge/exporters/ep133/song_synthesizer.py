@@ -38,9 +38,12 @@ MAX_PADS_PER_GROUP = 12
 # Pattern timing
 TICKS_PER_BAR = 384
 
-# Bars inference
+# Bars inference. The EP-133's time-stretch bar field accepts only
+# {0.25, 0.5, 1, 2, 4} (per phones24 parsers.ts and Track A's writer
+# validation). Longer clips snap to the 4-bar maximum and let the EP's
+# stretch slow the playback to fit.
 _BARS_TOLERANCE_SEC = 0.4
-_BARS_CANDIDATES_SNAP = (1, 2, 4, 8)
+_BARS_CANDIDATES_SNAP = (1, 2, 4)
 _BARS_CANDIDATES_FALLBACK = (1, 2, 4)
 
 
@@ -50,7 +53,7 @@ def infer_bars(clip_length_sec: float, project_bpm: float) -> int:
     Two-stage decision (matches the hybrid loader's ``detect_bars_value``):
 
     1. If the clip duration is within ±400ms of an integer bar count at
-       project BPM, snap to that bar count (chosen from {1, 2, 4, 8}).
+       project BPM, snap to that bar count (chosen from {1, 2, 4}).
     2. Otherwise pick the closest of {1, 2, 4} bars and let the EP's stretch
        absorb the difference.
     """

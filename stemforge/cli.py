@@ -964,9 +964,11 @@ def export_song(arrangement_path, manifest_path, reference_template, project_slo
         --project 1 \\
         --out song.ppak
     """
+    import tempfile
+
+    from .exporters.ep133.ppak_writer import build_ppak, build_synthetic_template_ppak
     from .exporters.ep133.song_resolver import resolve_scenes
     from .exporters.ep133.song_synthesizer import synthesize
-    from .exporters.ep133.ppak_writer import build_ppak
 
     console.print(Rule(f"[bold cyan]StemForge[/bold cyan] — export-song (mode={mode})"))
     console.print(f"  Arrangement: {arrangement_path}")
@@ -975,6 +977,12 @@ def export_song(arrangement_path, manifest_path, reference_template, project_slo
     console.print(f"  Output:      {out_path}")
     if reference_template:
         console.print(f"  Template:    {reference_template}")
+    else:
+        console.print(
+            "  Template:    [yellow]<none>[/yellow] — synthesizing minimal template "
+            "(device boots, but pad metadata is zero-filled). Pass "
+            "--reference-template for a real device capture."
+        )
 
     arrangement = json.loads(Path(arrangement_path).read_text())
     manifest = json.loads(Path(manifest_path).read_text())
@@ -996,7 +1004,13 @@ def export_song(arrangement_path, manifest_path, reference_template, project_slo
         f"Sounds: [cyan]{len(spec.sounds)}[/cyan]"
     )
 
-    payload = build_ppak(spec, reference_template)
+    if reference_template is None:
+        with tempfile.TemporaryDirectory() as td:
+            synth = Path(td) / "synthetic_template.ppak"
+            build_synthetic_template_ppak(synth, project_slot=int(project_slot))
+            payload = build_ppak(spec, synth)
+    else:
+        payload = build_ppak(spec, reference_template)
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_bytes(payload)

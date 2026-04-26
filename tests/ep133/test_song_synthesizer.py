@@ -43,11 +43,12 @@ def snapshots(arrangement, manifest):
 
 
 def test_infer_bars_snaps_to_exact_match():
-    # 120 BPM → 1 bar = 2.0 sec
+    # 120 BPM → 1 bar = 2.0 sec. EP-133 max is 4 bars; longer clips
+    # snap to 4 (let the device's stretch absorb the difference).
     assert infer_bars(2.0, 120.0) == 1
     assert infer_bars(4.0, 120.0) == 2
     assert infer_bars(8.0, 120.0) == 4
-    assert infer_bars(16.0, 120.0) == 8
+    assert infer_bars(16.0, 120.0) == 4
 
 
 def test_infer_bars_within_tolerance():
@@ -57,7 +58,7 @@ def test_infer_bars_within_tolerance():
 
 
 def test_infer_bars_falls_back_to_closest_of_1_2_4():
-    # 12 sec at 120 BPM = 6 bars (no exact match in {1,2,4,8}). Falls back
+    # 12 sec at 120 BPM = 6 bars (no exact match in {1,2,4}). Falls back
     # to {1, 2, 4} closest by absolute distance — closest to 6 is 4.
     assert infer_bars(12.0, 120.0) == 4
     # 0.5 sec → closest to 1 bar (2.0s) of {1, 2, 4} bars.
@@ -249,12 +250,76 @@ def test_synthesize_rejects_more_than_12_pads_per_group():
 
 
 def test_export_song_cli_smoke(tmp_path):
-    """End-to-end CLI smoke: arrangement + manifest fixtures → .ppak file
-    written and non-empty. Uses the placeholder writer; integration test
-    (Track D) covers real-bytes round-trip."""
+    """End-to-end CLI smoke: arrangement + manifest pointing at on-disk WAVs
+    in tmp_path → .ppak file written and non-empty. Without --reference-template
+    the CLI falls back to a synthetic template (build_synthetic_template_ppak)."""
     from click.testing import CliRunner
 
     from stemforge.cli import cli
+
+    # Materialise WAV stubs at the paths the manifest will reference.
+    # build_ppak only checks .is_file() then reads bytes, so any file works.
+    samples = {
+        "A": ["loop_a1.wav", "loop_a2.wav", "loop_a3.wav"],
+        "B": ["bass_b1.wav", "bass_b2.wav"],
+        "C": ["vox_c1.wav"],
+    }
+    placed: dict[str, list[Path]] = {}
+    for group, names in samples.items():
+        gdir = tmp_path / "songs" / group
+        gdir.mkdir(parents=True, exist_ok=True)
+        placed[group] = []
+        for name in names:
+            p = gdir / name
+            p.write_bytes(b"RIFF\x00\x00\x00\x00WAVE")
+            placed[group].append(p)
+
+    arrangement = {
+        "tempo": 120.0,
+        "time_sig": [4, 4],
+        "arrangement_length_sec": 24.0,
+        "locators": [
+            {"time_sec": 0.0, "name": "Verse"},
+            {"time_sec": 8.0, "name": "Chorus"},
+            {"time_sec": 16.0, "name": "Outro"},
+        ],
+        "tracks": {
+            "A": [
+                {"file_path": str(placed["A"][0]), "start_time_sec": 0.0,
+                 "length_sec": 8.0, "warping": 1},
+                {"file_path": str(placed["A"][1]), "start_time_sec": 4.0,
+                 "length_sec": 12.0, "warping": 1},
+                {"file_path": str(placed["A"][2]), "start_time_sec": 16.0,
+                 "length_sec": 8.0, "warping": 1},
+            ],
+            "B": [
+                {"file_path": str(placed["B"][0]), "start_time_sec": 0.0,
+                 "length_sec": 16.0, "warping": 1},
+                {"file_path": str(placed["B"][1]), "start_time_sec": 16.0,
+                 "length_sec": 4.0, "warping": 1},
+            ],
+            "C": [
+                {"file_path": str(placed["C"][0]), "start_time_sec": 8.0,
+                 "length_sec": 8.0, "warping": 1},
+            ],
+            "D": [],
+        },
+    }
+    manifest = {
+        "track": "test_song",
+        "session_tracks": {
+            group: [
+                {"slot": i, "file": str(placed[group][i]),
+                 "clip_length_sec": 8.0, "mode": "trim"}
+                for i in range(len(placed[group]))
+            ]
+            for group in ["A", "B", "C"]
+        } | {"D": []},
+    }
+    arr_path = tmp_path / "snapshot.json"
+    man_path = tmp_path / "stems.json"
+    arr_path.write_text(json.dumps(arrangement))
+    man_path.write_text(json.dumps(manifest))
 
     out = tmp_path / "song.ppak"
     runner = CliRunner()
@@ -262,8 +327,8 @@ def test_export_song_cli_smoke(tmp_path):
         cli,
         [
             "export-song",
-            "--arrangement", str(FIXTURES / "sample_arrangement.json"),
-            "--manifest", str(FIXTURES / "sample_manifest.json"),
+            "--arrangement", str(arr_path),
+            "--manifest", str(man_path),
             "--project", "1",
             "--out", str(out),
         ],
@@ -271,8 +336,8 @@ def test_export_song_cli_smoke(tmp_path):
     assert result.exit_code == 0, result.output
     assert out.exists()
     assert out.stat().st_size > 0
-    # placeholder writer prepends a magic header
-    assert out.read_bytes().startswith(b"STEMFORGE_PPAK_STUB_V0")
+    # .ppak is a ZIP (PK\x03\x04 local file header)
+    assert out.read_bytes().startswith(b"PK\x03\x04")
 
 
 def test_synthesize_same_pad_reused_across_scenes_emits_one_pattern(manifest):
