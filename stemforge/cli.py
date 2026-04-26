@@ -326,6 +326,46 @@ def route(export_dir, library, song_slug, symlink, dry_run):
                   f"{library_root}/Projects/Stems/{result.song_slug}/stemforge_curation.json[/dim]")
 
 
+@cli.command()
+@click.argument("stems_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.option("--bars", "-b", default=4, type=int,
+              help="Bars per chunk. Default: 4.")
+@click.option("--output", "-o", default=None, type=click.Path(path_type=Path),
+              help="Output dir. Default: <stems_dir>/prechop")
+@click.option("--time-sig", default=4, type=int,
+              help="Beats per bar. Default: 4 (i.e. 4/4).")
+def prechop(stems_dir, bars, output, time_sig):
+    """
+    Slice each full stem into bar-aligned chunks for arrangement-view import.
+
+    \b
+    Reads `<stems_dir>/stems.json`, slices every stem WAV at fixed bar
+    boundaries, and writes per-stem subdirs of NNN.wav chunks. Drag a
+    folder onto an Ableton arrangement-view track and Live places the
+    chunks head-to-tail in name order.
+
+    \b
+    Examples:
+      stemforge prechop ~/stemforge/processed/beware
+      stemforge prechop ~/stemforge/processed/beware --bars 8
+      stemforge prechop ~/stemforge/processed/beware -o ~/Desktop/chunks
+    """
+    from .prechop import prechop as _prechop
+
+    result = _prechop(stems_dir, bars_per_chunk=bars, output=output,
+                     time_signature=time_sig)
+    console.print(Rule(f"[bold cyan]prechop[/bold cyan] — {result.track_name}"))
+    console.print(f"  BPM:           [cyan]{result.bpm:.2f}[/cyan]")
+    console.print(f"  Bars/chunk:    [cyan]{result.bars_per_chunk}[/cyan]")
+    console.print(f"  Output:        [cyan]{result.output_root}[/cyan]\n")
+    for sr in result.stems:
+        last = f" + {sr.last_chunk_seconds:.2f}s tail" if abs(sr.last_chunk_seconds - sr.chunk_seconds) > 0.01 else ""
+        console.print(f"  ✓ [bold]{sr.stem_name:<8}[/bold]  "
+                      f"{sr.chunk_count} chunks{last}  →  {sr.output_dir.name}/")
+    console.print(f"\n[dim]Drag each subdirectory's contents onto a fresh Ableton "
+                  f"arrangement-view audio track to lay them out head-to-tail.[/dim]")
+
+
 @cli.command("list")
 def list_options():
     """Show available stems, presets, and models."""
