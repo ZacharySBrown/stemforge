@@ -146,6 +146,7 @@ OBJ_CX_CLIP_ERROR_PREP  = "obj-cx-clip-error-prepend"
 OBJ_CX_COMPLETE_PREP    = "obj-cx-complete-prepend"
 OBJ_CX_ERROR_PREP       = "obj-cx-error-prepend"
 OBJ_BOUNCE_CLIPS_MSG    = "obj-bounce-clips-msg"
+OBJ_EXPORT_SONG_MSG     = "obj-export-song-msg"
 
 OBJ_PLUGIN_IN           = "obj-plugin-in"
 OBJ_PLUGOUT             = "obj-plugout"
@@ -743,13 +744,13 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
              # width
              860.0, 22.0),
             numinlets=1,
-            numoutlets=10,  # 9 events + unmatched
-            outlettype=["", "", "", "", "", "", "", "", "", ""],
+            numoutlets=11,  # 10 events + unmatched
+            outlettype=["", "", "", "", "", "", "", "", "", "", ""],
             extras={
                 "text": (
                     "route preset_click source_click forge_click "
                     "cancel_click retry_click done_click settings_click "
-                    "commit_click bounce_clips_click"
+                    "commit_click bounce_clips_click export_song_click"
                 )
             },
         )
@@ -903,6 +904,25 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     )
     lines.append(_line(OBJ_ROUTE_UI_EVENTS, 8, OBJ_BOUNCE_CLIPS_MSG, 0))
     lines.append(_line(OBJ_BOUNCE_CLIPS_MSG, 0, OBJ_SF_CLIP_EXPORT, 0))
+
+    # Outlet 9 — export_song_click → [message exportArrangementSnapshot ~/Desktop/snapshot.json]
+    # → sf_lom_loader (stemforge_loader.v0.js). The loader's wrapper includes
+    # sf_arrangement_reader.js and dispatches to runArrangementExport(). The
+    # ~ in the path is expanded inside the JS via _arrHomeDir() so the .amxd
+    # stays portable across users.
+    boxes.append(
+        _box(
+            OBJ_EXPORT_SONG_MSG,
+            "message",
+            (410.0 + 7 * 110, js_row_y - 10, 240.0, 22.0),
+            numinlets=2,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "exportArrangementSnapshot ~/Desktop/snapshot.json"},
+        )
+    )
+    lines.append(_line(OBJ_ROUTE_UI_EVENTS, 9, OBJ_EXPORT_SONG_MSG, 0))
+    lines.append(_line(OBJ_EXPORT_SONG_MSG, 0, OBJ_SF_LOM_LOADER, 0))
 
     # sf_clip_export outlet 0 = status (currently logged inside the JS only;
     # could be wired to status text later). Outlet 1 = [shell] spawn commands

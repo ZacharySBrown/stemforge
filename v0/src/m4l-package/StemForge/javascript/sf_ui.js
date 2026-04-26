@@ -12,7 +12,8 @@
  *     done / error) onto one canvas using mgraphics.
  *   - Dispatch click events through outlet 0 as lists:
  *       preset_click | source_click | forge_click | cancel_click |
- *       done_click   | retry_click  | settings_click | commit_click
+ *       done_click   | retry_click  | settings_click | commit_click |
+ *       bounce_clips_click | export_song_click
  *   - Drive a pulsing animation loop ONLY while state is "forging" to avoid
  *     unnecessary redraws.
  *
@@ -79,6 +80,7 @@ const COL = {
     violet:   [0.753, 0.518, 0.988], // #C084FC
     green:    [0.290, 0.871, 0.502], // #4ADE80
     amber:    [0.984, 0.749, 0.141], // #FBBF24
+    cyan:     [0.337, 0.831, 0.937], // #56D4F0 — EXPORT button
     red:      [0.973, 0.443, 0.443], // #F87171
     buttonDisabled: [0.25, 0.25, 0.28],
     pillBorder: [0.10, 0.10, 0.12],
@@ -111,6 +113,10 @@ let commitBtnRect = null;
 // Bounce-button hit-rect — always visible, sits below the primary action button.
 // Populated by drawRightButton() every paint, consumed by onclick().
 let bounceBtnRect = null;
+
+// Export-song hit-rect — sits below BOUNCE. Always visible.
+// Triggers the M4L arrangement-view → snapshot.json reader (Track B).
+let exportSongBtnRect = null;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -857,6 +863,23 @@ function drawRightButton(state) {
         textAt(bbx + bbw / 2 - blw / 2, bby + bbh / 2 + 4, bLabel,
                COL.amber, FONT_SIZE_BTN, 1.0);
         bounceBtnRect = { x: bbx, y: bby, w: bbw, h: bbh };
+
+        // Quaternary EXPORT button — sits below BOUNCE. Reads Live's
+        // arrangement view via LOM and writes ~/Desktop/snapshot.json
+        // for `stemforge export-song`. Color: cyan to distinguish from
+        // amber BOUNCE (BOUNCE writes WAVs; EXPORT writes JSON metadata).
+        const ebw = bw;
+        const ebh = 22;
+        const ebx = bx;
+        const eby = bby + bbh + 6;  // 6px gap below BOUNCE
+        fillRoundedRect(ebx, eby, ebw, ebh, 11, COL.cyan, 0.18);
+        strokeRoundedRect(ebx, eby, ebw, ebh, 11, COL.cyan, 0.85, 1);
+        setFontSize(FONT_SIZE_BTN);
+        const eLabel = "EXPORT";
+        const elw = textWidth(eLabel, FONT_SIZE_BTN);
+        textAt(ebx + ebw / 2 - elw / 2, eby + ebh / 2 + 4, eLabel,
+               COL.cyan, FONT_SIZE_BTN, 1.0);
+        exportSongBtnRect = { x: ebx, y: eby, w: ebw, h: ebh };
     }
 }
 
@@ -894,6 +917,14 @@ function onclick(x, y, button, mod1, shift, ctrl, mod2) {
             x >= bounceBtnRect.x && x < bounceBtnRect.x + bounceBtnRect.w &&
             y >= bounceBtnRect.y && y < bounceBtnRect.y + bounceBtnRect.h) {
             outlet(0, "bounce_clips_click");
+            return;
+        }
+        // Quaternary EXPORT button — below BOUNCE. Triggers
+        // exportArrangementSnapshot via the route → sf_lom_loader path.
+        if (exportSongBtnRect &&
+            x >= exportSongBtnRect.x && x < exportSongBtnRect.x + exportSongBtnRect.w &&
+            y >= exportSongBtnRect.y && y < exportSongBtnRect.y + exportSongBtnRect.h) {
+            outlet(0, "export_song_click");
             return;
         }
         // Right column action button. Dispatch per state kind.

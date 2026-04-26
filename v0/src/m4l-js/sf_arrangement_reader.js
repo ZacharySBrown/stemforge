@@ -93,8 +93,38 @@ function _arrStatus(msg) {
 // ── LOM helpers (intentional duplicates of loader helpers — keeps this
 // module loadable without sourcing the 1900-line loader) ───────────────────
 
+function _arrHomeDir() {
+    // Mirror _arrFileLog: try max.getsystemvariable("HOME") first, fall back
+    // to File.getenv("HOME"), then a hardcoded /Users/zak. Returns POSIX, no
+    // trailing slash.
+    var h = "";
+    try {
+        if (typeof max !== "undefined" && max && typeof max.getsystemvariable === "function") {
+            h = String(max.getsystemvariable("HOME") || "");
+        }
+    } catch (_) {}
+    if (!h) {
+        try {
+            if (typeof File !== "undefined" && typeof File.getenv === "function") {
+                h = String(File.getenv("HOME") || "");
+            }
+        } catch (_) {}
+    }
+    if (!h) h = "/Users/zak";
+    if (h.charAt(h.length - 1) === "/") h = h.substring(0, h.length - 1);
+    return h;
+}
+
 function _arrToMaxPath(p) {
     var s = String(p);
+    // Expand ~ and ~/foo so the patcher's [exportArrangementSnapshot ~/Desktop/...]
+    // message stays portable across users without baking absolute paths into
+    // the .amxd.
+    if (s === "~") {
+        s = _arrHomeDir();
+    } else if (s.length >= 2 && s.charAt(0) === "~" && s.charAt(1) === "/") {
+        s = _arrHomeDir() + s.substring(1);
+    }
     if (s.length > 0 && s.charAt(0) === "/") return "Macintosh HD:" + s;
     return s;
 }
