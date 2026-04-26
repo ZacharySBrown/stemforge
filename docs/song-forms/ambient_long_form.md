@@ -55,3 +55,29 @@ when* — locators mark layer entries, not section changes.
 Resist drums. Resist tempo-locked elements. The form lives in *very long*
 crossfades and the way Reverb tails carry energy across locators. If you
 catch yourself adding a fourth element before bar 65, mute one.
+
+## Building this template in Live (~25 min)
+
+1. **New Set** → tempo **70 BPM**, time signature **4/4**.
+2. **Arrangement view** (Tab).
+3. **Locators** (jump to bar, `Cmd+L`, rename):
+   - bar 1 → `BED`
+   - bar 33 → `LAYER1`
+   - bar 65 → `LAYER2`
+   - bar 97 → `DECAY`
+4. **Arrangement loop end** at bar 128.
+5. **Tracks** (audio unless noted):
+   - `Drone Bed` (purple) — destination for Wavetable or sampled pad
+   - `Granular 1` (light purple) — Granulator II target
+   - `Granular 2` (light purple)
+   - `Field Rec` (gray)
+   - `Melodic Motif` (mint) — Simpler with sparse single-note source
+   - `Bass Drone Sub` (dark blue, optional)
+6. **Three return tracks**: Convolution Reverb (long IR, 10-15s tail);
+   Spectral / Delay (Spectral Resonator OR very long Echo with feedback);
+   Texture (subtle saturator + filter sweep send).
+7. **Master**: gentle bus comp 1.5:1 slow → broad EQ smile → tape saturator.
+   Set Master output ceiling at -6 dBFS — ambient lives in low-RMS territory.
+8. **Insert chains per track** (see chains section above). Especially
+   important: Auto Filter with very slow LFO (~0.05 Hz) on the Drone Bed.
+9. **Save** to `~/mus/Templates/ambient_long_form Project/ambient_long_form.als`.
