@@ -329,6 +329,84 @@ def test_json_events_emit_started_progress_complete(
     assert event_types[-1] == "export_complete"
 
 
+def test_wipe_stale_outputs_removes_only_producer_artifacts(tmp_path: Path) -> None:
+    """wipe_stale_outputs deletes prior sidecars/manifests/bounced WAVs but
+    leaves user files untouched."""
+    d = tmp_path
+    # Producer artifacts
+    (d / ".manifest.json").write_text("{}")
+    (d / ".manifest_abc123.json").write_text("{}")
+    (d / ".manifest_def456.json").write_text("{}")
+    (d / "A00.wav").write_bytes(b"x")
+    (d / "B11.wav").write_bytes(b"x")
+    (d / "D05.wav").write_bytes(b"x")
+    # User files (must survive)
+    (d / "notes.md").write_text("keep me")
+    (d / "cool_kick.wav").write_bytes(b"x")        # not <group><slot>.wav
+    (d / "spec.json").write_text("{}")              # not .manifest.json
+    (d / "A1.wav").write_bytes(b"x")                # only one digit — not our pattern
+
+    removed = m4l_export_clips.wipe_stale_outputs(d)
+    assert removed == 6
+
+    # Producer artifacts gone
+    assert not (d / ".manifest.json").exists()
+    assert not (d / ".manifest_abc123.json").exists()
+    assert not (d / "A00.wav").exists()
+    # User files stay
+    assert (d / "notes.md").exists()
+    assert (d / "cool_kick.wav").exists()
+    assert (d / "spec.json").exists()
+    assert (d / "A1.wav").exists()
+
+
+def test_re_bounce_replaces_stale_sidecars(tmp_path: Path, source_wav: Path) -> None:
+    """End-to-end: bouncing twice with different audio leaves no orphans."""
+    # First bounce: A00.wav with content "alpha"
+    spec_path = _write_spec(tmp_path, [_make_clip(source_wav)])
+    m4l_export_clips.run(spec_path, json_events=False)
+
+    export_dir = tmp_path / "export"
+    sidecars_after_first = sorted(export_dir.glob(".manifest_*.json"))
+    assert len(sidecars_after_first) == 1
+
+    # Second bounce: replace source so the new WAV has a different hash
+    new_source = tmp_path / "different.wav"
+    sf.write(str(new_source),
+             np.zeros((44100, 1), dtype="float32"),  # 1 second of silence
+             44100, subtype="FLOAT")
+    new_clip = _make_clip(new_source)
+    spec_path2 = _write_spec(tmp_path, [new_clip])
+    m4l_export_clips.run(spec_path2, json_events=False)
+
+    sidecars_after_second = sorted(export_dir.glob(".manifest_*.json"))
+    assert len(sidecars_after_second) == 1, (
+        f"expected 1 sidecar after re-bounce, got {len(sidecars_after_second)}: "
+        f"{[p.name for p in sidecars_after_second]}"
+    )
+    # And it should be the NEW hash, not the old one
+    assert sidecars_after_second[0] != sidecars_after_first[0]
+
+
+def test_wipe_emits_event_when_files_removed(
+    tmp_path: Path, source_wav: Path, capsys
+) -> None:
+    """When wipe removes any files, an export_wiped event is emitted."""
+    # Pre-populate with a stale sidecar
+    export_dir = tmp_path / "export"
+    export_dir.mkdir(parents=True)
+    (export_dir / ".manifest_stale123.json").write_text("{}")
+
+    spec_path = _write_spec(tmp_path, [_make_clip(source_wav)])
+    m4l_export_clips.run(spec_path, json_events=True)
+
+    out = capsys.readouterr().out
+    events = [json.loads(line) for line in out.strip().splitlines() if line]
+    wiped = [e for e in events if e["event"] == "export_wiped"]
+    assert len(wiped) == 1
+    assert wiped[0]["count"] >= 1
+
+
 def test_main_exits_2_on_missing_spec(tmp_path: Path) -> None:
     # argparse's ap.error() raises SystemExit(2) — that's the standard CLI bail
     with pytest.raises(SystemExit) as exc:

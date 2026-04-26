@@ -244,12 +244,46 @@ def slice_and_write_one(
     return out_path, meta
 
 
+_STALE_OUTPUT_GLOBS = (
+    ".manifest.json",     # batch manifest
+    ".manifest_*.json",   # per-WAV sidecars (filename uses content hash)
+    "[ABCD][0-9][0-9].wav",  # bounced WAVs (e.g. A00.wav, D11.wav)
+)
+
+
+def wipe_stale_outputs(export_dir: Path) -> int:
+    """Remove prior bounce outputs from `export_dir` before writing new ones.
+
+    Re-bouncing the same Live arrangement leaves orphan files behind:
+      - Sidecar filenames embed the content hash, so changed audio writes
+        a NEW sidecar without overwriting the old one.
+      - If the user removed a clip slot between bounces, the prior WAV
+        for that slot stays on disk forever.
+
+    Glob is conservative — only removes files matching the producer's own
+    output patterns. Anything else in the dir (user notes, etc.) is left.
+    Returns the number of files removed.
+    """
+    removed = 0
+    for pattern in _STALE_OUTPUT_GLOBS:
+        for p in export_dir.glob(pattern):
+            try:
+                p.unlink()
+                removed += 1
+            except OSError:
+                pass
+    return removed
+
+
 def run(spec_path: Path, *, json_events: bool = False) -> Path:
     """Process spec.json end-to-end. Returns the BatchManifest path."""
     spec = json.loads(spec_path.read_text())
 
     export_dir = Path(spec["export_dir"]).expanduser()
     export_dir.mkdir(parents=True, exist_ok=True)
+    wiped = wipe_stale_outputs(export_dir)
+    if wiped:
+        _emit(json_events, "export_wiped", count=wiped, dir=str(export_dir))
 
     project_tempo = float(spec.get("project_tempo") or 120.0)
     threshold = float(spec.get("oneshot_bars_threshold") or 0.5)
