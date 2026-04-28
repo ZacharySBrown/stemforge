@@ -33,8 +33,47 @@ SCENES_HEADER_SIZE = 7
 SCENES_CHUNK_SIZE = 6
 SCENES_MAX = 99
 
-PAD_RECORD_SIZE = 27
+PAD_RECORD_SIZE = 26
 SETTINGS_SIZE = 222
+
+# Device-default 26-byte pad record. Verified against
+# `factory_default.pak` (a freshly factory-reset device backup): every
+# pad in factory P01-P05 is exactly 26 bytes. The 27-byte records in
+# user-saved Sample Tool backups (reference_minimal.ppak,
+# 01_song_5_positions_all_scene1.ppak) are non-canonical — Sample Tool
+# pads to 27, which the device tolerates on import but corrupts during
+# scene-switch iteration (off-by-one stride causes ERR PATTERN 189).
+DEVICE_DEFAULT_PAD = bytes([
+    0x00,                                # byte 0
+    0x00, 0x00,                          # bytes 1-2  : sample slot (uint16 LE) — 0 = unassigned
+    0x00, 0x00, 0x00, 0x00, 0x00,        # bytes 3-7
+    0x00, 0x00, 0x00, 0x00,              # bytes 8-11 : length frames (u32 LE)
+    0x00, 0x00, 0x00, 0x00,              # bytes 12-15: BPM float32 LE — factory default = 0.0
+    0x64,                                # byte 16    : amplitude (= 100)
+    0x00, 0x00, 0x00,                    # bytes 17-19
+    0xff,                                # byte 20    : envelope.release default
+    0x00,                                # byte 21    : stretch mode (0 = NONE)
+    0x00, 0x00,                          # bytes 22-23: (byte 23 = play mode = oneshot)
+    0x3c,                                # byte 24    : note (= 60)
+    0x00,                                # byte 25
+])
+assert len(DEVICE_DEFAULT_PAD) == PAD_RECORD_SIZE
+
+# Device-default 222-byte settings file. Extracted byte-for-byte from
+# `reference_minimal.ppak` (with BPM bytes 4..7 zeroed for `build_settings`
+# to patch). The structure is: 24 leading zero bytes (BPM goes at 4..7) +
+# 49 × float32 LE = -1.0 + 2 trailer bytes (00 02).
+#
+# Shipping all-zero settings caused ERR PATTERN 189 on scene transitions —
+# the device's per-pad/per-scene parameters need their -1.0 ("no override")
+# defaults baked in for transition validation to succeed.
+DEVICE_DEFAULT_SETTINGS = (
+    bytes(24)                            # bytes 0-23: BPM float32 LE goes at 4..7
+    + bytes.fromhex("000080bf") * 48     # bytes 24-215: 48 × float32 LE = -1.0
+    + bytes(4)                           # bytes 216-219: zero
+    + bytes([0x00, 0x02])                # bytes 220-221: trailer
+)
+assert len(DEVICE_DEFAULT_SETTINGS) == SETTINGS_SIZE
 
 TICKS_PER_BAR = 384  # used by callers; not enforced inside builders
 
@@ -105,6 +144,7 @@ class PpakSpec:
     scenes: list[SceneSpec]
     pads: list[PadSpec]
     sounds: dict[int, Path]          # sample_slot → wav file path
+    song_positions: list[int] | None = None  # song-mode positions (1-indexed scene refs)
 
 
 # ----- Pattern builder -------------------------------------------------------
@@ -177,7 +217,11 @@ def build_pattern(events: list[Event], bars: int) -> bytes:
 
 # ----- Scenes builder --------------------------------------------------------
 
-def build_scenes(scenes: list[SceneSpec], time_sig: tuple[int, int]) -> bytes:
+def build_scenes(
+    scenes: list[SceneSpec],
+    time_sig: tuple[int, int],
+    song_positions: list[int] | None = None,
+) -> bytes:
     """Build the ``scenes`` file.
 
     Layout:
@@ -241,18 +285,34 @@ def build_scenes(scenes: list[SceneSpec], time_sig: tuple[int, int]) -> bytes:
         else:
             out += bytes([0, 0, 0, 0, num, denom])
 
-    # Trailer (111 bytes). Two non-zero fields verified from the minimal
-    # captured reference (which had 3 scenes populated):
-    #   trailer[0..3]:  scene count, BIG-endian uint32
-    #   trailer[11..12]: 01 01 (purpose TBD — possibly "song mode" flag +
-    #                    "current scene"; safe to mirror the reference)
-    # Zero-filling these caused "ERR SCENE 146" on load — device reads
-    # past the populated chunks looking for a stop marker / count.
+    # Trailer (111 bytes). Layout decoded from byte-diff of two captures
+    # (no-song baseline vs 5-position-song):
+    #   trailer[0..3]:  scene count (BE uint32; effectively a single byte
+    #                    at trailer[3] = file byte 604 since count < 256)
+    #   trailer[11]:    song length (count of song positions, 0..99)
+    #   trailer[12..110]: song-position bytes — one per position, value =
+    #                    scene index (1..99). Default device state is a
+    #                    1-position song pointing to scene 1.
+    #
+    # Zero-filling the trailer caused "ERR SCENE 146" on load — device
+    # reads past the populated chunks looking for a stop marker / count.
     trailer = bytearray(SCENES_TRAILER_SIZE)
     scene_count = len(scenes)
     trailer[0:4] = scene_count.to_bytes(4, "big")
-    trailer[11] = 0x01
-    trailer[12] = 0x01
+
+    # Default to a 1-position song pointing at scene 1 (matches device's
+    # default state when no song mode has been set up).
+    positions = list(song_positions) if song_positions else [1]
+    if len(positions) > 99:
+        raise ValueError(f"too many song positions: {len(positions)} (max 99)")
+    for i, p in enumerate(positions):
+        if not (1 <= p <= 99):
+            raise ValueError(
+                f"song_positions[{i}] = {p} out of range 1..99"
+            )
+    trailer[11] = len(positions)
+    for i, p in enumerate(positions):
+        trailer[12 + i] = p
     out += bytes(trailer)
 
     assert len(out) == SCENES_TOTAL_SIZE, (
@@ -270,26 +330,31 @@ def build_pad(
     template: bytes | None = None,
     *,
     project_bpm: float | None = None,
+    stretch_mode: str = "none",
+    sample_length_frames: int | None = None,
 ) -> bytes:
     """Build a 27-byte pad record.
-
-    Patches the four fields we own (sample_slot, time-stretch BPM if
-    ``project_bpm`` given, time-stretch mode + bars, play_mode) into the
-    template; everything else is preserved from the template (or zero-
-    filled if no template).
 
     Args:
         sample_slot: uint16 LE at bytes 1..2 — sample library slot.
         play_mode:   one of 'oneshot' | 'key' | 'legato' (byte 23).
-        time_stretch_bars: 1, 2, or 4 (raw bar count). Encoded at byte 25
-            and byte 21 is forced to 2 (=BARS mode).
+        time_stretch_bars: 1, 2, or 4 (raw bar count). Only used when
+            ``stretch_mode="bars"``.
         template:    bytes-like, must be 27 bytes when provided. ``None``
             yields a zero-filled base.
-        project_bpm: if given, written as float32 LE at bytes 12..15
-            (matches the project's stretch-BPM target).
+        project_bpm: if given AND stretch_mode != "none", written as
+            float32 LE at bytes 12..15.
+        stretch_mode: "none" (default — emit as one-shot, byte 21 = 0,
+            BPM/bars zeroed), "bars" (byte 21 = 2, encode bars).
+        sample_length_frames: WAV frame count (samples per channel).
+            Written as uint32 LE at bytes 8..11. Required for the device
+            to handle scene/song-mode transitions cleanly — manual pad
+            triggering tolerates length=0 (device reads from WAV header)
+            but transitions error with "ERR PATTERN" otherwise. Per
+            ZacharySBrown/ep133-ppak/PROTOCOL.md §7.
     """
     if template is None:
-        data = bytearray(PAD_RECORD_SIZE)
+        data = bytearray(DEVICE_DEFAULT_PAD)
     else:
         if len(template) != PAD_RECORD_SIZE:
             raise ValueError(
@@ -303,7 +368,11 @@ def build_pad(
         raise ValueError(
             f"play_mode must be one of {sorted(PLAY_MODE_ENCODING)}, got {play_mode!r}"
         )
-    if time_stretch_bars not in TIME_STRETCH_BARS_ENCODING:
+    if stretch_mode not in {"none", "bars"}:
+        raise ValueError(
+            f"stretch_mode must be 'none' or 'bars', got {stretch_mode!r}"
+        )
+    if stretch_mode == "bars" and time_stretch_bars not in TIME_STRETCH_BARS_ENCODING:
         raise ValueError(
             f"time_stretch_bars must be one of "
             f"{sorted(TIME_STRETCH_BARS_ENCODING)}, got {time_stretch_bars}"
@@ -312,18 +381,28 @@ def build_pad(
     # Bytes 1..2 — instrument number / sample slot
     struct.pack_into("<H", data, 1, sample_slot)
 
-    # Bytes 12..15 — time-stretch BPM (float32 LE), only when supplied.
-    if project_bpm is not None:
-        struct.pack_into("<f", data, 12, float(project_bpm))
+    # Bytes 8..11 — sample length in frames (uint32 LE).
+    if sample_length_frames is not None:
+        if not (0 <= sample_length_frames <= 0xFFFFFFFF):
+            raise ValueError(
+                f"sample_length_frames must fit in uint32, got {sample_length_frames}"
+            )
+        struct.pack_into("<I", data, 8, sample_length_frames)
 
-    # Byte 21 — time-stretch mode: 2 = BARS (since we're providing a bar count)
-    data[21] = 2
+    if stretch_mode == "bars":
+        # Bytes 12..15 — time-stretch BPM (float32 LE), only when supplied.
+        if project_bpm is not None:
+            struct.pack_into("<f", data, 12, float(project_bpm))
+        data[21] = 2  # BARS mode
+        data[25] = TIME_STRETCH_BARS_ENCODING[time_stretch_bars]
+    else:
+        # One-shot: leave bytes 12-15 alone (template / DEVICE_DEFAULT_PAD
+        # carries BPM=0, matching factory defaults). Clear BARS-mode bytes.
+        data[21] = 0
+        data[25] = 0
 
     # Byte 23 — play mode
     data[23] = PLAY_MODE_ENCODING[play_mode]
-
-    # Byte 25 — time-stretch bars (encoded)
-    data[25] = TIME_STRETCH_BARS_ENCODING[time_stretch_bars]
 
     return bytes(data)
 

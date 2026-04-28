@@ -23,6 +23,8 @@ from stemforge.exporters.ep133.ppak_writer import (
     build_synthetic_template_ppak,
 )
 from stemforge.exporters.ep133.song_format import (
+    DEVICE_DEFAULT_PAD,
+    DEVICE_DEFAULT_SETTINGS,
     PAD_RECORD_SIZE,
     SETTINGS_SIZE,
     Event,
@@ -113,7 +115,7 @@ def test_synthetic_template_has_expected_shape(template_ppak: Path):
             key = f"pads/{group}/p{pad:02d}"
             assert key in members, f"missing pad: {key}"
             assert len(members[key]) == PAD_RECORD_SIZE
-            assert members[key] == bytes(PAD_RECORD_SIZE)
+            assert members[key] == DEVICE_DEFAULT_PAD
 
 
 # ----- End-to-end build tests ------------------------------------------------
@@ -181,18 +183,24 @@ def test_build_ppak_inner_tar_is_uncompressed_posix(
     # Open the TAR — no compression suffix, must succeed with mode "r:" (no compression)
     with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:") as tf:
         members = tf.getmembers()
-    # Every member is a regular file in our writer.
-    assert all(m.isfile() for m in members)
+    # Members are either directory entries or regular files (our writer
+    # emits 6 directory entries — pads/, pads/a..d, patterns/ — plus one
+    # pad file per assigned pad).
+    assert all(m.isfile() or m.isdir() for m in members)
 
 
-def test_build_ppak_includes_all_48_pad_files(template_ppak: Path, silent_wav: Path):
+def test_build_ppak_emits_only_assigned_pads(template_ppak: Path, silent_wav: Path):
+    """Per factory P06 (truly empty project) layout: emit 6 directory
+    entries + only the pad files for assigned pads. Shipping all 48 pads
+    with default bytes was a pre-2026-04-27 bug fixed once we had the
+    factory backup as a byte reference.
+    """
     data = build_ppak(_minimal_spec(silent_wav), template_ppak)
     _, members = _open_ppak(data)
-    for group in GROUPS:
-        for pad in range(1, 13):
-            key = f"pads/{group}/p{pad:02d}"
-            assert key in members
-            assert len(members[key]) == PAD_RECORD_SIZE
+    pad_files = sorted(k for k in members if k.startswith("pads/") and k.count("/") == 2 and k.split("/")[-1].startswith("p"))
+    # The minimal spec assigns exactly one pad: a/p03.
+    assert pad_files == ["pads/a/p03"]
+    assert len(members["pads/a/p03"]) == PAD_RECORD_SIZE
 
 
 def test_build_ppak_authored_pad_has_sample_slot(template_ppak: Path, silent_wav: Path):
@@ -203,12 +211,18 @@ def test_build_ppak_authored_pad_has_sample_slot(template_ppak: Path, silent_wav
     assert sample_slot == 100
 
 
-def test_build_ppak_unassigned_pads_remain_zero(template_ppak: Path, silent_wav: Path):
-    """Pads not in spec.pads keep the template (zero) bytes."""
+def test_build_ppak_unassigned_pads_are_omitted(template_ppak: Path, silent_wav: Path):
+    """Per factory P06 layout (verified 2026-04-27 against
+    factory_default.pak), unassigned pads are simply omitted from the TAR.
+    The empty project ships ZERO pad files; populated projects ship only
+    the assigned ones.
+    """
     data = build_ppak(_minimal_spec(silent_wav), template_ppak)
     _, members = _open_ppak(data)
-    # pads/a/p01 is not in our spec → still zero from synthesized template.
-    assert members["pads/a/p01"] == bytes(PAD_RECORD_SIZE)
+    # Spec only assigns pads/a/p03 — no other pad files should exist.
+    assert "pads/a/p01" not in members
+    assert "pads/b/p01" not in members
+    assert "pads/d/p12" not in members
 
 
 def test_build_ppak_pattern_layout(template_ppak: Path, silent_wav: Path):
@@ -242,13 +256,13 @@ def test_build_ppak_scenes_layout(template_ppak: Path, silent_wav: Path):
     assert scenes[7:13] == bytes([1, 0, 0, 0, 4, 4])
 
 
-def test_build_ppak_settings_bpm_patched(template_ppak: Path, silent_wav: Path):
+def test_build_ppak_omits_settings_file(template_ppak: Path, silent_wav: Path):
+    """Per PROTOCOL.md §8 the `settings` entry should not be present —
+    populating it caused ERR 82 / ERROR 8200 wedge incidents on import.
+    """
     data = build_ppak(_minimal_spec(silent_wav), template_ppak)
     _, members = _open_ppak(data)
-    settings = members["settings"]
-    assert len(settings) == SETTINGS_SIZE
-    bpm = struct.unpack_from("<f", settings, 4)[0]
-    assert bpm == pytest.approx(128.0)
+    assert "settings" not in members
 
 
 def test_build_ppak_bundles_sounds_at_expected_path(
@@ -390,19 +404,22 @@ def test_build_ppak_round_trip_through_synthetic_template(tmp_path: Path):
     assert sc[7:13] == bytes([1, 1, 0, 0, 4, 4])
     assert sc[13:19] == bytes([1, 0, 0, 0, 4, 4])
 
-    # Settings BPM
-    assert struct.unpack_from("<f", members["settings"], 4)[0] == pytest.approx(140.5)
+    # Settings entry omitted (per PROTOCOL.md §8; see writer comment).
+    assert "settings" not in members
 
-    # Pad A1: sample_slot=101, play_mode=oneshot(0), bars=1(raw 0)
+    # Pad A1: sample_slot=101, play_mode=oneshot(0). Writer now emits as
+    # one-shot (stretch_mode=none) by default → byte 21 = 0, byte 25 = 0.
     pad_a1 = members["pads/a/p01"]
     assert struct.unpack_from("<H", pad_a1, 1)[0] == 101
+    assert pad_a1[21] == 0  # NONE stretch mode
     assert pad_a1[23] == 0
     assert pad_a1[25] == 0
-    # Pad B5: sample_slot=102, play_mode=key(1), bars=4(raw 2)
+    # Pad B5: sample_slot=102, play_mode=key(1). Same one-shot semantics.
     pad_b5 = members["pads/b/p05"]
     assert struct.unpack_from("<H", pad_b5, 1)[0] == 102
+    assert pad_b5[21] == 0
     assert pad_b5[23] == 1
-    assert pad_b5[25] == 2
+    assert pad_b5[25] == 0
 
     # Sounds bundled — device requires "/sounds/{slot} {slot}_{name}.wav"
     # naming (literal space + descriptive suffix). Verified against a real

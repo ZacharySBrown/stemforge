@@ -318,12 +318,16 @@ def test_build_scenes_rejects_pattern_index_out_of_range():
 
 
 def test_build_pad_zero_template_round_trip():
+    # BARS mode: explicitly request stretch_mode="bars" to test BPM/bars
+    # encoding. Default mode is "none" (one-shot) per ERR PATTERN 189
+    # debug — see build_pad docstring.
     blob = build_pad(
         sample_slot=42,
         play_mode="oneshot",
         time_stretch_bars=1,
         template=None,
         project_bpm=120.0,
+        stretch_mode="bars",
     )
     parsed = parse_pad(blob)
     assert parsed["sample_slot"] == 42
@@ -345,7 +349,8 @@ def test_build_pad_time_stretch_bars_encoding():
     encoding = {1: 0, 2: 1, 4: 2}
     for bars, raw in encoding.items():
         blob = build_pad(
-            sample_slot=1, play_mode="oneshot", time_stretch_bars=bars, project_bpm=120.0
+            sample_slot=1, play_mode="oneshot", time_stretch_bars=bars,
+            project_bpm=120.0, stretch_mode="bars",
         )
         assert blob[25] == raw
 
@@ -369,6 +374,7 @@ def test_build_pad_preserves_template_bytes_outside_patches():
 
 
 def test_build_pad_no_bpm_does_not_touch_bytes_12_15():
+    """In BARS mode without project_bpm, bytes 12..15 stay from template."""
     template = bytes(range(PAD_RECORD_SIZE))
     blob = build_pad(
         sample_slot=1,
@@ -376,17 +382,19 @@ def test_build_pad_no_bpm_does_not_touch_bytes_12_15():
         time_stretch_bars=1,
         template=template,
         project_bpm=None,
+        stretch_mode="bars",
     )
     assert blob[12:16] == template[12:16]
 
 
 def test_build_pad_rejects_invalid_template_size():
+    # Now PAD_RECORD_SIZE = 26, so 27 bytes is invalid.
     with pytest.raises(ValueError, match="pad template must be"):
         build_pad(
             sample_slot=1,
             play_mode="oneshot",
             time_stretch_bars=1,
-            template=b"\x00" * 26,
+            template=b"\x00" * 27,
         )
 
 
@@ -400,11 +408,13 @@ def test_build_pad_rejects_invalid_template_size():
     ],
 )
 def test_build_pad_rejects_invalid_args(kwargs, expected):
+    # Use stretch_mode="bars" so time_stretch_bars validation kicks in.
     base = {
         "sample_slot": 1,
         "play_mode": "oneshot",
         "time_stretch_bars": 1,
         "project_bpm": 120.0,
+        "stretch_mode": "bars",
     }
     base.update(kwargs)
     with pytest.raises(ValueError, match=expected):

@@ -312,21 +312,28 @@ def test_ppak_meta_json_well_formed(built_ppak_bytes):
 # Tests — TAR layer
 # ---------------------------------------------------------------------------
 
-def test_tar_has_all_pad_files(tar_files):
-    """48 pad files: groups a/b/c/d × pads 01..12, each 27 bytes per spec."""
-    for grp in ("a", "b", "c", "d"):
-        for pad in range(1, 13):
-            name = f"pads/{grp}/p{pad:02d}"
-            assert name in tar_files, f"missing pad file {name}"
-            assert len(tar_files[name]) == 27, (
-                f"{name} is {len(tar_files[name])} bytes, expected 27"
-            )
+def test_tar_has_pad_files_for_assigned_pads_only(tar_files):
+    """Only assigned pads emit pad files; each is 26 bytes (factory
+    native format). Verified 2026-04-27 against factory_default.pak —
+    factory P06 (empty project) emits zero pad files; demo projects emit
+    only the populated groups.
+    """
+    pad_files = {k: v for k, v in tar_files.items() if k.startswith("pads/") and k.count("/") == 2 and k.split("/")[-1].startswith("p")}
+    assert len(pad_files) > 0, "expected at least one pad file in TAR"
+    for name, blob in pad_files.items():
+        assert len(blob) == 26, (
+            f"{name} is {len(blob)} bytes, expected 26"
+        )
 
 
-def test_tar_has_settings_222_bytes(tar_files):
-    assert "settings" in tar_files, "tar missing `settings`"
-    assert len(tar_files["settings"]) == 222, (
-        f"settings is {len(tar_files['settings'])} bytes, expected 222"
+def test_tar_omits_settings_file(tar_files):
+    """Per ZacharySBrown/ep133-ppak/PROTOCOL.md §8 the `settings` entry
+    should not be present in the project TAR. Populating it has caused
+    ERR 82 / ERROR 8200 (wedge-class) on import.
+    """
+    assert "settings" not in tar_files, (
+        "tar contains `settings` — populating settings has caused "
+        "device-wedge errors on import; the entry must be omitted"
     )
 
 
@@ -367,12 +374,9 @@ def test_tar_has_pattern_files(tar_files, arrangement):
 # Tests — content layer
 # ---------------------------------------------------------------------------
 
-def test_settings_bpm_matches_arrangement(tar_files, arrangement):
-    bpm = _read_settings_bpm(tar_files["settings"])
-    expected = float(arrangement["tempo"])
-    assert abs(bpm - expected) < 0.01, (
-        f"settings BPM {bpm} != arrangement tempo {expected}"
-    )
+# `test_settings_bpm_matches_arrangement` removed — settings entry is now
+# omitted from the TAR (see test_tar_omits_settings_file). Project BPM is
+# carried by the `meta.json` and the device's own restore-time defaults.
 
 
 def test_scenes_count_matches_locator_count(tar_files, arrangement):
@@ -405,23 +409,14 @@ def test_patterns_decode_with_well_formed_events(tar_files):
 
 
 def test_pad_records_reference_sample_slots(tar_files):
-    """Pads in arrangement-mapped groups should have non-zero sample_slot.
+    """Every emitted pad file should reference a non-zero sample slot.
 
-    Spec §"Pad file" — bytes 1..2 = sample slot uint16 LE. A zero slot
-    means the pad is unassigned; for groups with clips in the arrangement
-    we expect at least one non-zero slot.
+    Spec §"Pad file" — bytes 1..2 = sample slot uint16 LE. Since unassigned
+    pads are now omitted from the TAR (factory P06 layout), every pad
+    file we emit corresponds to a populated pad with a real slot.
     """
-    nonzero_slots_by_group: dict[str, int] = {"a": 0, "b": 0, "c": 0, "d": 0}
-    for grp in ("a", "b", "c", "d"):
-        for pad in range(1, 13):
-            name = f"pads/{grp}/p{pad:02d}"
-            buf = tar_files[name]
-            slot = struct.unpack_from("<H", buf, 1)[0]
-            if slot != 0:
-                nonzero_slots_by_group[grp] += 1
-    # Sanity: at least one group has at least one non-zero slot
-    assert sum(nonzero_slots_by_group.values()) > 0, (
-        f"all 48 pads have sample_slot=0; expected the synthesizer to "
-        f"populate at least the pads referenced by the arrangement. "
-        f"counts={nonzero_slots_by_group}"
-    )
+    pad_files = {k: v for k, v in tar_files.items() if k.startswith("pads/") and k.count("/") == 2 and k.split("/")[-1].startswith("p")}
+    assert len(pad_files) > 0, "expected at least one pad file in TAR"
+    for name, buf in pad_files.items():
+        slot = struct.unpack_from("<H", buf, 1)[0]
+        assert slot != 0, f"{name} has slot=0; unassigned pads should be omitted"

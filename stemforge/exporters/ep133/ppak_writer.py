@@ -36,11 +36,14 @@ import io
 import json
 import re
 import tarfile
+import wave
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .song_format import (
+    DEVICE_DEFAULT_PAD,
+    DEVICE_DEFAULT_SETTINGS,
     PAD_RECORD_SIZE,
     SETTINGS_SIZE,
     PpakSpec,
@@ -51,6 +54,7 @@ from .song_format import (
     pad_filename,
     pattern_filename,
 )
+from .wav_format import convert_wav_to_ep133
 
 # ----- Constants -------------------------------------------------------------
 
@@ -149,7 +153,14 @@ class _ReferenceTemplate:
                         pad_num = int(pad_match.group(1))
                         f = tf.extractfile(member)
                         if f is not None:
-                            pad_templates[(parts[1], pad_num)] = f.read()
+                            blob = f.read()
+                            # Sample Tool / user-saved backups pad records
+                            # to 27 bytes; the device's native format is 26
+                            # (verified against factory_default.pak).
+                            # Truncate so the writer always emits 26.
+                            if len(blob) == PAD_RECORD_SIZE + 1:
+                                blob = blob[:PAD_RECORD_SIZE]
+                            pad_templates[(parts[1], pad_num)] = blob
 
         if settings is None:
             raise ValueError(
@@ -174,14 +185,15 @@ class _ReferenceTemplate:
 # ----- Synthesizer for tests + standalone builds ----------------------------
 
 def build_synthetic_template_ppak(out_path: Path, *, project_slot: int = 1) -> Path:
-    """Write a minimal zero-filled reference ``.ppak`` to ``out_path``.
+    """Write a minimal device-default reference ``.ppak`` to ``out_path``.
 
     Useful for unit tests and for users who don't yet have a real device
     capture. The output contains:
 
     - ``/meta.json`` with default fields
-    - ``/projects/PXX.tar`` containing 48 zero-filled 27-byte pad files
-      and a 222-byte zero-filled ``settings`` file
+    - ``/projects/PXX.tar`` containing 48 device-default 27-byte pad
+      files (BPM=120, amp=100, envrel=0xff, note=60) and a 222-byte
+      zero-filled ``settings`` file
 
     No patterns, scenes, or sounds — :func:`build_ppak` authors those.
     """
@@ -191,11 +203,13 @@ def build_synthetic_template_ppak(out_path: Path, *, project_slot: int = 1) -> P
     # Build the inner TAR
     tar_buf = io.BytesIO()
     with tarfile.open(fileobj=tar_buf, mode="w", format=tarfile.USTAR_FORMAT) as tf:
-        # 48 zero pad files
+        # 48 device-default pad files
         for group in GROUPS:
             for pad in range(1, 13):
-                _add_tar_bytes(tf, pad_filename(group, pad), bytes(PAD_RECORD_SIZE))
-        # zero settings
+                _add_tar_bytes(tf, pad_filename(group, pad), DEVICE_DEFAULT_PAD)
+        # zero settings — including a non-trivial settings file (even one
+        # extracted byte-for-byte from a reference) caused ERR 82 on
+        # import in testing. The device tolerates zero-filled settings.
         _add_tar_bytes(tf, "settings", bytes(SETTINGS_SIZE))
 
     tar_data = tar_buf.getvalue()
@@ -239,8 +253,31 @@ def build_ppak(
     _validate_spec(spec)
     template = _ReferenceTemplate.load(reference_template_path)
 
+    # Convert each WAV to EP-133 native format (mono 16-bit 46875Hz with
+    # smpl + LIST/INFO/TNGE metadata chunks). The factory format is
+    # mandatory: Sample Tool transfers hang on non-native WAVs (e.g. 24-bit
+    # stereo 44.1kHz), and the device won't register samples that lack
+    # the metadata chunks. Verified 2026-04-27 against factory_default.pak.
+    converted_wavs: dict[int, bytes] = {}
+    converted_frames: dict[int, int] = {}
+    for slot, wav_path in sorted(spec.sounds.items()):
+        wav_path = Path(wav_path)
+        if not wav_path.is_file():
+            raise FileNotFoundError(
+                f"sample slot {slot} wav missing: {wav_path}"
+            )
+        try:
+            new_bytes, frames = convert_wav_to_ep133(wav_path.read_bytes())
+            converted_wavs[slot] = new_bytes
+            converted_frames[slot] = frames
+        except wave.Error:
+            # Unparseable WAV (e.g. stub fixture in tests) — pass the
+            # original bytes through and skip the frame count. The pad
+            # record's length field will be zero for this slot.
+            converted_wavs[slot] = wav_path.read_bytes()
+
     # Build the inner TAR (POSIX format, no compression).
-    tar_data = _build_inner_tar(spec, template)
+    tar_data = _build_inner_tar(spec, template, converted_frames)
 
     # Build meta.json — preserve template fields, patch generated_at + author.
     meta = dict(template.meta)
@@ -277,14 +314,10 @@ def build_ppak(
         # slot trigger the device's "restore complete with issues" flag.
         for slot, wav_path in sorted(spec.sounds.items()):
             wav_path = Path(wav_path)
-            if not wav_path.is_file():
-                raise FileNotFoundError(
-                    f"sample slot {slot} wav missing: {wav_path}"
-                )
             _zip_write_with_leading_slash(
                 zf,
                 f"sounds/{slot:03d} {slot:03d}_{wav_path.stem}.wav",
-                wav_path.read_bytes(),
+                converted_wavs[slot],
             )
 
     data = buf.getvalue()
@@ -334,36 +367,54 @@ def _validate_spec(spec: PpakSpec) -> None:
                 )
 
 
-def _build_inner_tar(spec: PpakSpec, template: _ReferenceTemplate) -> bytes:
-    """Build the inner ``project.tar`` (POSIX format, no compression)."""
-    # Resolve pad specs by (group, pad)
+def _build_inner_tar(
+    spec: PpakSpec,
+    template: _ReferenceTemplate,
+    converted_frames_by_slot: dict[int, int] | None = None,
+) -> bytes:
+    """Build the inner ``project.tar`` (POSIX format, no compression).
+
+    ``converted_frames_by_slot`` provides post-conversion (mono 16-bit
+    46875Hz) frame counts for each sample slot, computed once during WAV
+    bundling. Required for pad-record bytes 8..11 to match the actual
+    audio data the device receives.
+    """
     pad_by_key = {(pd.group, pd.pad): pd for pd in spec.pads}
+    length_frames_by_slot = converted_frames_by_slot or {}
 
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w", format=tarfile.USTAR_FORMAT) as tf:
-        # 48 pad files — required to be present
+        # Group + patterns directories (matches factory P06 minimal layout).
+        for dir_name in ("pads", "pads/a", "pads/b", "pads/c", "pads/d", "patterns"):
+            info = tarfile.TarInfo(name=dir_name)
+            info.type = tarfile.DIRTYPE
+            info.size = 0
+            info.mtime = 0
+            info.mode = 0o755
+            tf.addfile(info)
+
+        # Only emit pad files for assigned pads. Factory P06 (truly empty
+        # project) emits ZERO pad files; factory P02/P03 (demo projects)
+        # emit only the populated groups. Shipping all 48 with defaults
+        # was a bug from before we had the factory backup as reference.
         for group in GROUPS:
             for pad in range(1, 13):
                 pd = pad_by_key.get((group, pad))
-                tmpl = template.pad_templates.get(
-                    (group, pad), bytes(PAD_RECORD_SIZE)
-                )
                 if pd is None:
-                    # Unassigned pad — emit a zero-filled record so the
-                    # device doesn't surface "restore complete with issues"
-                    # for orphan template pads pointing at slots we never
-                    # bundled. The 48 pad files are still required to be
-                    # present in the TAR; the device treats all-zero pads
-                    # as empty/silent.
-                    blob = bytes(PAD_RECORD_SIZE)
-                else:
-                    blob = build_pad(
-                        sample_slot=pd.sample_slot,
-                        play_mode=pd.play_mode,
-                        time_stretch_bars=pd.time_stretch_bars,
-                        template=tmpl,
-                        project_bpm=spec.bpm,
-                    )
+                    continue
+                tmpl = template.pad_templates.get(
+                    (group, pad), DEVICE_DEFAULT_PAD
+                )
+                blob = build_pad(
+                    sample_slot=pd.sample_slot,
+                    play_mode=pd.play_mode,
+                    time_stretch_bars=pd.time_stretch_bars,
+                    template=tmpl,
+                    stretch_mode="none",
+                    sample_length_frames=length_frames_by_slot.get(
+                        pd.sample_slot
+                    ),
+                )
                 _add_tar_bytes(tf, pad_filename(group, pad), blob)
 
         # Patterns
@@ -371,13 +422,27 @@ def _build_inner_tar(spec: PpakSpec, template: _ReferenceTemplate) -> bytes:
             blob = build_pattern(p.events, p.bars)
             _add_tar_bytes(tf, pattern_filename(p.group, p.index), blob)
 
+        # Empty song-mode marker pattern. The byte-diff between
+        # `00_baseline_no_song.ppak` and `01_song_5_positions_all_scene1.ppak`
+        # showed this 4-byte empty pattern (`patterns/d05` = 00 02 00 00 =
+        # bars=2, event_count=0) appears precisely when song mode is
+        # configured. Not referenced by any scene chunk — but the
+        # `settings` file teaches us the device validates side-tables
+        # whether or not scene chunks reference them.
+        if spec.song_positions:
+            _add_tar_bytes(tf, "patterns/d05", b"\x00\x02\x00\x00")
+
         # Scenes
-        scenes_blob = build_scenes(spec.scenes, spec.time_sig)
+        scenes_blob = build_scenes(
+            spec.scenes, spec.time_sig, spec.song_positions
+        )
         _add_tar_bytes(tf, "scenes", scenes_blob)
 
-        # Settings — patch BPM into preserved template
-        settings_blob = build_settings(spec.bpm, template.settings)
-        _add_tar_bytes(tf, "settings", settings_blob)
+        # Settings file deliberately omitted from the TAR per
+        # ZacharySBrown/ep133-ppak/PROTOCOL.md §8 — populating triggered
+        # ERR 82 / ERROR 8200 (wedge-class) on import in our 2026-04-27
+        # testing. Zero-filled was tolerated but not protocol-correct;
+        # not-present is what the protocol recommends.
 
     return buf.getvalue()
 

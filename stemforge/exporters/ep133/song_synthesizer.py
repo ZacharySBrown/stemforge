@@ -250,6 +250,10 @@ def synthesize(
 
     pads_sorted = sorted(pad_records.values(), key=lambda p: (p.group, p.pad))
 
+    # Default song-mode positions: play scenes 1..N in order. The user can
+    # always edit the song list on-device after import.
+    song_positions = list(range(1, len(scenes) + 1)) if scenes else None
+
     return PpakSpec(
         project_slot=project_slot,
         bpm=float(project_bpm),
@@ -258,4 +262,5 @@ def synthesize(
         scenes=scenes,
         pads=pads_sorted,
         sounds=sounds,
+        song_positions=song_positions,
     )
