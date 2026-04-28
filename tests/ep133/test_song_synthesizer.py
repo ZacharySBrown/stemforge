@@ -13,6 +13,7 @@ from stemforge.exporters.ep133.song_resolver import (
     resolve_scenes,
 )
 from stemforge.exporters.ep133.song_synthesizer import (
+    EMPTY_PATTERN_INDEX,
     MAX_PADS_PER_GROUP,
     MAX_SCENES,
     TICKS_PER_BAR,
@@ -85,8 +86,11 @@ def test_synthesize_dedups_patterns_by_group_pad_bars(snapshots, manifest):
     # Group A: pad 1/4bars, pad 2/4bars, pad 3/4bars → 3 patterns.
     # Group B: pad 1/8bars, pad 2/2bars → 2 patterns.
     # Group C: pad 1/4bars → 1 pattern.
+    # Filter to real (non-empty-marker) patterns; empty markers at idx 99
+    # are emitted for groups with silent scene chunks (see EMPTY_PATTERN_INDEX).
+    real = [p for p in spec.patterns if p.events]
     by_group: dict[str, list] = {}
-    for p in spec.patterns:
+    for p in real:
         by_group.setdefault(p.group, []).append(p)
     assert sorted(by_group.keys()) == ["a", "b", "c"]
     assert len(by_group["a"]) == 3
@@ -98,8 +102,9 @@ def test_synthesize_pattern_indices_are_per_group_starting_at_one(
     snapshots, manifest
 ):
     spec = synthesize(snapshots, manifest, 120.0, (4, 4), 1)
+    real = [p for p in spec.patterns if p.events]
     by_group: dict[str, list] = {}
-    for p in spec.patterns:
+    for p in real:
         by_group.setdefault(p.group, []).append(p)
     for group, patterns in by_group.items():
         indices = sorted(p.index for p in patterns)
@@ -108,12 +113,15 @@ def test_synthesize_pattern_indices_are_per_group_starting_at_one(
 
 def test_synthesize_scene_mapping_matches_expected_layout(snapshots, manifest):
     spec = synthesize(snapshots, manifest, 120.0, (4, 4), 1)
-    # Verse: A=loop_a1 → pattern 1; B=bass_b1 → pattern 1; C silent; D silent.
-    assert (spec.scenes[0].a, spec.scenes[0].b, spec.scenes[0].c, spec.scenes[0].d) == (1, 1, 0, 0)
-    # Chorus: A=loop_a2 → pattern 2; B=bass_b1 → pattern 1; C=vox_c1 → pattern 1.
-    assert (spec.scenes[1].a, spec.scenes[1].b, spec.scenes[1].c, spec.scenes[1].d) == (2, 1, 1, 0)
-    # Outro: A=loop_a3 → pattern 3; B=bass_b2 → pattern 2; C silent.
-    assert (spec.scenes[2].a, spec.scenes[2].b, spec.scenes[2].c, spec.scenes[2].d) == (3, 2, 0, 0)
+    # Silent groups reference EMPTY_PATTERN_INDEX (99), not 0 — see
+    # synthesizer comment on why 0 fails the device's transition validation.
+    E = EMPTY_PATTERN_INDEX
+    # Verse: A=loop_a1 → 1; B=bass_b1 → 1; C silent; D silent.
+    assert (spec.scenes[0].a, spec.scenes[0].b, spec.scenes[0].c, spec.scenes[0].d) == (1, 1, E, E)
+    # Chorus: A=loop_a2 → 2; B=bass_b1 → 1; C=vox_c1 → 1.
+    assert (spec.scenes[1].a, spec.scenes[1].b, spec.scenes[1].c, spec.scenes[1].d) == (2, 1, 1, E)
+    # Outro: A=loop_a3 → 3; B=bass_b2 → 2; C silent.
+    assert (spec.scenes[2].a, spec.scenes[2].b, spec.scenes[2].c, spec.scenes[2].d) == (3, 2, E, E)
 
 
 def test_synthesize_pad_records_use_session_tracks_slot(snapshots, manifest):
@@ -155,11 +163,15 @@ def test_synthesize_sounds_dict_maps_sample_slot_to_wav(snapshots, manifest):
 
 
 def test_synthesize_event_position_zero(snapshots, manifest):
-    """Each emitted pattern is a single trigger at position 0.
+    """Each *real* pattern is a single trigger at position 0.
     Note/velocity/duration values match captured-reference one-shots
-    (see synthesizer comment): note=60, vel=100, dur=96 ticks."""
+    (see synthesizer comment): note=60, vel=100, dur=96 ticks.
+    Empty marker patterns at EMPTY_PATTERN_INDEX have zero events."""
     spec = synthesize(snapshots, manifest, 120.0, (4, 4), 1)
     for pattern in spec.patterns:
+        if pattern.index == EMPTY_PATTERN_INDEX:
+            assert pattern.events == []
+            continue
         assert len(pattern.events) == 1
         e = pattern.events[0]
         assert e.position_ticks == 0
@@ -210,7 +222,12 @@ def test_synthesize_at_max_scenes_succeeds(manifest):
     assert len(spec.scenes) == MAX_SCENES
 
 
-def test_synthesize_silent_groups_produce_zero_pattern_index(manifest):
+def test_synthesize_silent_groups_reference_empty_pattern(manifest):
+    """Silent groups in a scene chunk reference EMPTY_PATTERN_INDEX (99),
+    not 0. The device throws `err pattern 189` on scene transition when
+    a group transitions from a real pattern to 0; an empty pattern at
+    index 99 is the convention reference song-mode captures use.
+    """
     snaps = [
         Snapshot(
             locator_time_sec=0.0, locator_name="silent",
@@ -218,11 +235,12 @@ def test_synthesize_silent_groups_produce_zero_pattern_index(manifest):
         )
     ]
     spec = synthesize(snaps, manifest, 120.0, (4, 4), 1)
-    assert spec.scenes[0].a == 0
-    assert spec.scenes[0].b == 0
-    assert spec.scenes[0].c == 0
-    assert spec.scenes[0].d == 0
-    assert spec.patterns == []
+    E = EMPTY_PATTERN_INDEX
+    assert (spec.scenes[0].a, spec.scenes[0].b, spec.scenes[0].c, spec.scenes[0].d) == (E, E, E, E)
+    # All four groups are silent → one empty pattern emitted per group.
+    assert sorted((p.group, p.index, len(p.events)) for p in spec.patterns) == [
+        ("a", E, 0), ("b", E, 0), ("c", E, 0), ("d", E, 0),
+    ]
     assert spec.pads == []
     assert spec.sounds == {}
 
@@ -366,6 +384,7 @@ def test_synthesize_same_pad_reused_across_scenes_emits_one_pattern(manifest):
         ),
     ]
     spec = synthesize(snaps, manifest, 120.0, (4, 4), 1)
-    assert len(spec.patterns) == 1
+    real = [p for p in spec.patterns if p.events]
+    assert len(real) == 1
     assert spec.scenes[0].a == 1
     assert spec.scenes[1].a == 1

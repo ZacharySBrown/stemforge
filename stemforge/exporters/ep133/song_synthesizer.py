@@ -35,6 +35,16 @@ MAX_SCENES = 99
 MAX_PATTERNS_PER_GROUP = 99
 MAX_PADS_PER_GROUP = 12
 
+# Pattern-index sentinel used in scene chunks where a group has no clip
+# in a given scene. Setting the chunk byte to 0 was the natural-looking
+# encoding ("no pattern"), but the device errors with `err pattern 189`
+# on scene transition when a group transitions from a real pattern to 0.
+# Reference song-mode captures NEVER use 0 — every scene fires every
+# group, with silent groups pointing at an empty pattern. We emit one
+# empty pattern per group (`patterns/{group}{99:02d}` = `00 02 00 00`)
+# and reference index 99 wherever a clip is absent.
+EMPTY_PATTERN_INDEX = 99
+
 # Global sample-slot base. Per Zak's convention, song-export writes always
 # land at slot 700+ so they don't clobber the user's 1..699 sample library.
 # Each group gets a 20-slot window so manifest's per-group 0..19 indices
@@ -181,7 +191,7 @@ def synthesize(
         for group in GROUPS:
             clip: ArrangementClip | None = snap.clip_for(group)
             if clip is None:
-                per_scene[group.lower()] = 0
+                per_scene[group.lower()] = EMPTY_PATTERN_INDEX
                 continue
             pad = lookup_pad(manifest, group, clip.file_path)
             bars = infer_bars(clip.length_sec, project_bpm)
@@ -229,6 +239,19 @@ def synthesize(
                     )
                 ],
             )
+        )
+
+    # Emit one empty pattern per group that has any "silent scene" reference.
+    # Scene chunks pointing at index 99 need this file to exist; the device
+    # validates references on scene transition.
+    groups_with_empty = {
+        g for sc in scenes
+        for g, idx in (("a", sc.a), ("b", sc.b), ("c", sc.c), ("d", sc.d))
+        if idx == EMPTY_PATTERN_INDEX
+    }
+    for g in sorted(groups_with_empty):
+        patterns.append(
+            Pattern(group=g, index=EMPTY_PATTERN_INDEX, bars=2, events=[])
         )
 
     # Validate per-group pad count.
