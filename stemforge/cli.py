@@ -236,6 +236,31 @@ def split(audio_file, backend, stems, model, pipeline, output, no_slice, no_norm
     )
     console.print(f"  Written: {manifest_path}")
 
+    # ── Pipeline post-split steps (e.g. arrangement-mode prechop) ─────────────
+    from .pipelines import load_pipeline, run_post_split_steps
+    try:
+        pipeline_cfg = load_pipeline(pipeline)
+    except Exception as e:
+        console.print(f"  [yellow]warn:[/yellow] pipeline {pipeline!r} load failed: {e}")
+        pipeline_cfg = None
+
+    if pipeline_cfg is not None and pipeline_cfg.prechop is not None:
+        console.print()
+        console.print(
+            f"[bold]Prechop[/bold]  bars={pipeline_cfg.prechop.bars} "
+            f"pad_bars={pipeline_cfg.prechop.pad_bars} "
+            f"pad_last={pipeline_cfg.prechop.pad_last}"
+        )
+        try:
+            status_post = run_post_split_steps(
+                pipeline_cfg, stem_paths, track_out, bpm=bpm,
+            )
+            pc = status_post.get("prechop", {})
+            if pc:
+                console.print(f"  Written: {pc['manifest']}")
+        except Exception as e:
+            console.print(f"  [red]prechop failed:[/red] {e}")
+
     # ── Summary ───────────────────────────────────────────────────────────────
     console.print()
     console.print(Rule("[bold green]Done![/bold green]"))
