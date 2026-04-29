@@ -1,0 +1,112 @@
+{
+  "tempo": 135.99917602539062,
+  "time_sig": [
+    4,
+    4
+  ],
+  "arrangement_length_sec": 17.64716574129778,
+  "locators": [
+    {
+      "time_sec": 0,
+      "name": "start"
+    },
+    {
+      "time_sec": 3.5294331482595562,
+      "name": "first"
+    },
+    {
+      "time_sec": 7.0588662965191125,
+      "name": "second"
+    },
+    {
+      "time_sec": 10.588299444778668,
+      "name": "third"
+    },
+    {
+      "time_sec": 14.117732593038225,
+      "name": "fourth"
+    }
+  ],
+  "tracks": {
+    "A": [
+      {
+        "file_path": "/Users/zak/stemforge/processed/smack_my_bitch_up/curated/drums/bar_002.wav",
+        "start_time_sec": 0,
+        "length_sec": 3.5294331482595562,
+        "warping": 1
+      },
+      {
+        "file_path": "/Users/zak/stemforge/processed/smack_my_bitch_up/curated/drums/bar_004.wav",
+        "start_time_sec": 3.5294331482595562,
+        "length_sec": 3.5294331482595562,
+        "warping": 1
+      },
+      {
+        "file_path": "/Users/zak/stemforge/processed/smack_my_bitch_up/curated/drums/bar_006.wav",
+        "start_time_sec": 7.0588662965191125,
+        "length_sec": 3.5294331482595562,
+        "warping": 1
+      },
+      {
+        "file_path": "/Users/zak/stemforge/processed/smack_my_bitch_up/curated/drums/bar_007.wav",
+        "start_time_sec": 10.588299444778668,
+        "length_sec": 3.5294331482595562,
+        "warping": 1
+      },
+      {
+        "file_path": "/Users/zak/stemforge/processed/smack_my_bitch_up/curated/drums/bar_007.wav",
+        "start_time_sec": 14.117732593038225,
+        "length_sec": 3.5294331482595562,
+        "warping": 1
+      }
+    ],
+    "B": [
+      {
+        "file_path": "/Users/zak/stemforge/processed/smack_my_bitch_up/curated/bass/bar_003.wav",
+        "start_time_sec": 3.5294331482595562,
+        "length_sec": 3.5294331482595562,
+        "warping": 1
+      },
+      {
+        "file_path": "/Users/zak/stemforge/processed/smack_my_bitch_up/curated/bass/bar_002.wav",
+        "start_time_sec": 7.0588662965191125,
+        "length_sec": 3.5294331482595562,
+        "warping": 1
+      },
+      {
+        "file_path": "/Users/zak/stemforge/processed/smack_my_bitch_up/curated/bass/bar_007.wav",
+        "start_time_sec": 10.588299444778668,
+        "length_sec": 3.5294331482595562,
+        "warping": 1
+      },
+      {
+        "file_path": "/Users/zak/stemforge/processed/smack_my_bitch_up/curated/bass/bar_007.wav",
+        "start_time_sec": 14.117732593038225,
+        "length_sec": 3.5294331482595562,
+        "warping": 1
+      }
+    ],
+    "C": [
+      {
+        "file_path": "/Users/zak/stemforge/processed/smack_my_bitch_up/curated/other/bar_001.wav",
+        "start_time_sec": 10.588299444778668,
+        "length_sec": 3.5294331482595562,
+        "warping": 1
+      },
+      {
+        "file_path": "/Users/zak/stemforge/processed/smack_my_bitch_up/curated/other/bar_001.wav",
+        "start_time_sec": 14.117732593038225,
+        "length_sec": 3.5294331482595562,
+        "warping": 1
+      }
+    ],
+    "D": [
+      {
+        "file_path": "/Users/zak/stemforge/processed/smack_my_bitch_up/curated/drums/bar_005.wav",
+        "start_time_sec": 14.117732593038225,
+        "length_sec": 3.5294331482595562,
+        "warping": 1
+      }
+    ]
+  }
+}

@@ -1,0 +1,373 @@
+{
+  "preset": {
+    "name": "Dub Echo",
+    "version": "1.0.0",
+    "description": "Deep dub space — synced tape echoes, filter delays, long dark-hall reverbs, low-pass sweeps. Made for drifting dub mixes."
+  },
+  "stems": {
+    "drums": {
+      "targets": [
+        {
+          "name": "loops",
+          "type": "clips",
+          "color": {
+            "name": "teal",
+            "index": 20,
+            "hex": "#009D7A"
+          },
+          "params": {
+            "phrase_bars": 1,
+            "loop_count": 16,
+            "strategy": "rhythm-taxonomy"
+          },
+          "chain": [
+            {
+              "insert": "EQ Eight",
+              "params": {}
+            },
+            {
+              "insert": "Compressor",
+              "params": {
+                "Threshold": 0.5,
+                "Ratio": 0.65
+              }
+            }
+          ]
+        },
+        {
+          "name": "rack",
+          "type": "rack",
+          "color": {
+            "name": "kelly",
+            "index": 19,
+            "hex": "#00A649"
+          },
+          "params": {
+            "oneshot_count": 16,
+            "oneshot_mode": "classify",
+            "use_larsnet": true,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "Reverb",
+              "params": {
+                "Decay Time": 0.4,
+                "Room Size": 0.45,
+                "Dry/Wet": 0.25
+              }
+            }
+          ]
+        },
+        {
+          "name": "dub",
+          "type": "clips",
+          "color": {
+            "name": "slate_blue",
+            "index": 21,
+            "hex": "#009DB7"
+          },
+          "params": {
+            "phrase_bars": 1,
+            "loop_count": 16,
+            "strategy": "rhythm-taxonomy"
+          },
+          "chain": [
+            {
+              "insert": "Echo",
+              "params": {
+                "L Synced": -3,
+                "R Synced": -4,
+                "L Sync Mode": 2,
+                "Feedback": 0.55,
+                "Noise On": 1,
+                "Noise Amt": 0.2,
+                "Wobble On": 1,
+                "Wobble Amt": 0.2,
+                "Dry Wet": 0.5
+              }
+            },
+            {
+              "insert": "Reverb",
+              "params": {
+                "Decay Time": 0.6,
+                "Room Size": 0.55,
+                "Dry/Wet": 0.35
+              }
+            }
+          ]
+        },
+        {
+          "name": "chamber",
+          "type": "clips",
+          "color": {
+            "name": "forest",
+            "index": 18,
+            "hex": "#429130"
+          },
+          "params": {
+            "phrase_bars": 1,
+            "loop_count": 16,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "Auto Filter",
+              "params": {
+                "Filter Type": 0,
+                "Frequency": 0.55,
+                "Resonance": 0.1
+              }
+            },
+            {
+              "insert": "Reverb",
+              "params": {
+                "Decay Time": 0.75,
+                "Room Size": 0.7,
+                "Predelay": 0.3,
+                "Dry/Wet": 0.55
+              }
+            }
+          ]
+        },
+        {
+          "name": "tape",
+          "type": "clips",
+          "color": {
+            "name": "teal",
+            "index": 20,
+            "hex": "#009D7A"
+          },
+          "params": {
+            "phrase_bars": 1,
+            "loop_count": 16,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "Saturator",
+              "params": {
+                "Drive": 0.45,
+                "Type": 0,
+                "Dry/Wet": 0.85
+              }
+            },
+            {
+              "insert": "Echo",
+              "params": {
+                "L Synced": -2,
+                "R Synced": -3,
+                "L Sync Mode": 2,
+                "Feedback": 0.5,
+                "Noise On": 1,
+                "Noise Amt": 0.3,
+                "Wobble On": 1,
+                "Wobble Amt": 0.3,
+                "Dry Wet": 0.45
+              }
+            }
+          ]
+        },
+        {
+          "name": "multitap",
+          "type": "clips",
+          "color": {
+            "name": "green",
+            "index": 5,
+            "hex": "#1AFF2F"
+          },
+          "params": {
+            "phrase_bars": 1,
+            "loop_count": 16,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "Filter Delay",
+              "params": {
+                "1 Input On": 1,
+                "1 Filter On": 1,
+                "1 Filter Freq": 0.35,
+                "1 Delay Mode": 1,
+                "1 Beat Delay": 3,
+                "1 Feedback": 0.4,
+                "1 Pan": -0.7,
+                "1 Volume": 0.7,
+                "2 Input On": 1,
+                "2 Filter On": 1,
+                "2 Filter Freq": 0.65,
+                "2 Delay Mode": 1,
+                "2 Beat Delay": 5,
+                "2 Feedback": 0.35,
+                "2 Pan": 0.7,
+                "2 Volume": 0.7,
+                "Dry": 0.5
+              }
+            },
+            {
+              "insert": "Reverb",
+              "params": {
+                "Decay Time": 0.55,
+                "Room Size": 0.5,
+                "Dry/Wet": 0.35
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "bass": {
+      "targets": [
+        {
+          "name": "dub",
+          "type": "clips",
+          "color": {
+            "name": "slate_blue",
+            "index": 21,
+            "hex": "#009DB7"
+          },
+          "params": {
+            "phrase_bars": 2,
+            "loop_count": 16,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "EQ Eight",
+              "params": {}
+            },
+            {
+              "insert": "Echo",
+              "params": {
+                "L Synced": -1,
+                "R Synced": -1,
+                "L Sync Mode": 2,
+                "Feedback": 0.35,
+                "Noise On": 1,
+                "Noise Amt": 0.1,
+                "Dry Wet": 0.3
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "vocals": {
+      "targets": [
+        {
+          "name": "dub",
+          "type": "clips",
+          "color": {
+            "name": "cyan",
+            "index": 7,
+            "hex": "#5CFFE8"
+          },
+          "params": {
+            "phrase_bars": 4,
+            "loop_count": 16,
+            "strategy": "sectional"
+          },
+          "chain": [
+            {
+              "insert": "Echo",
+              "params": {
+                "L Synced": -3,
+                "R Synced": -4,
+                "L Sync Mode": 2,
+                "Feedback": 0.6,
+                "Noise On": 1,
+                "Noise Amt": 0.25,
+                "Wobble On": 1,
+                "Wobble Amt": 0.3,
+                "Reverb Level": 0.35,
+                "Reverb Loc": 2,
+                "Dry Wet": 0.55
+              }
+            },
+            {
+              "insert": "Reverb",
+              "params": {
+                "Decay Time": 0.7,
+                "Room Size": 0.65,
+                "Dry/Wet": 0.5
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "other": {
+      "targets": [
+        {
+          "name": "chamber",
+          "type": "clips",
+          "color": {
+            "name": "forest",
+            "index": 18,
+            "hex": "#429130"
+          },
+          "params": {
+            "phrase_bars": 2,
+            "loop_count": 16,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "Hybrid Reverb",
+              "params": {
+                "Algo Type": 0,
+                "Decay": 0.75,
+                "Size": 0.7,
+                "Predelay": 0.35,
+                "Dry/Wet": 0.55
+              }
+            },
+            {
+              "insert": "EQ Eight",
+              "params": {}
+            }
+          ]
+        },
+        {
+          "name": "delay",
+          "type": "clips",
+          "color": {
+            "name": "teal",
+            "index": 20,
+            "hex": "#009D7A"
+          },
+          "params": {
+            "phrase_bars": 2,
+            "loop_count": 16,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "Filter Delay",
+              "params": {
+                "1 Input On": 1,
+                "1 Filter On": 1,
+                "1 Filter Freq": 0.45,
+                "1 Delay Mode": 1,
+                "1 Beat Delay": 4,
+                "1 Feedback": 0.5,
+                "1 Volume": 0.75,
+                "3 Input On": 1,
+                "3 Filter On": 1,
+                "3 Filter Freq": 0.3,
+                "3 Delay Mode": 1,
+                "3 Beat Delay": 2,
+                "3 Feedback": 0.45,
+                "3 Pan": 0.5,
+                "3 Volume": 0.65,
+                "Dry": 0.45
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "displayName": "Dub Echo",
+  "version": "1.0.0"
+}

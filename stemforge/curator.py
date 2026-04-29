@@ -13,6 +13,10 @@ import shutil
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .segmenter import SongStructure
 
 import numpy as np
 import soundfile as sf
@@ -35,6 +39,8 @@ class BeatProfile:
     spectral_flatness: float = 0.0
     rhythm_fingerprint: tuple = ()
     energy_curve: list = field(default_factory=list)
+    content_density: float = 0.0  # fraction of frames with energy above threshold
+    first_onset_time: float = 0.0  # seconds to first transient (0 = starts with a hit)
 
 
 def load_mono(path: Path) -> tuple[np.ndarray, int]:
@@ -92,6 +98,25 @@ def compute_energy_curve(audio: np.ndarray, n_segments: int = 8) -> list[float]:
     ]
 
 
+def compute_content_density(audio: np.ndarray, sr: int, rms_threshold: float = 0.01) -> float:
+    """Fraction of short frames (20ms) with RMS above threshold.
+
+    A bar that's 80% silence with one loud hit might have decent overall RMS
+    but low content density. This catches the "sparse stab in silence" pattern.
+    """
+    frame_len = max(1, int(0.02 * sr))  # 20ms frames
+    n_frames = len(audio) // frame_len
+    if n_frames == 0:
+        return 0.0
+    active = 0
+    for i in range(n_frames):
+        frame = audio[i * frame_len:(i + 1) * frame_len]
+        frame_rms = float(np.sqrt(np.mean(frame ** 2)))
+        if frame_rms >= rms_threshold:
+            active += 1
+    return active / n_frames
+
+
 def spectral_features(audio: np.ndarray, sr: int) -> dict:
     n_fft = min(2048, len(audio))
     if n_fft < 64:
@@ -123,6 +148,9 @@ def analyze_beat(path: Path, index: int) -> BeatProfile:
     spec = spectral_features(audio, sr)
     fingerprint = compute_rhythm_fingerprint(onsets, duration, grid_size=16)
     energy = compute_energy_curve(audio, n_segments=8)
+    density = compute_content_density(audio, sr)
+
+    first_onset = onsets[0] if onsets else duration  # no onsets = all silence
 
     return BeatProfile(
         path=path, index=index,
@@ -134,8 +162,10 @@ def analyze_beat(path: Path, index: int) -> BeatProfile:
         spectral_centroid=spec["centroid"],
         spectral_bandwidth=spec["bandwidth"],
         spectral_flatness=spec["flatness"],
+        first_onset_time=first_onset,
         rhythm_fingerprint=fingerprint,
         energy_curve=energy,
+        content_density=density,
     )
 
 
@@ -193,15 +223,22 @@ def greedy_diverse_select(profiles: list[BeatProfile], n: int,
 
 # ── Feature-vector-based selection (primary path used by `curate`) ──
 
-def _feature_vector(p: BeatProfile) -> np.ndarray:
+def _feature_vector(p: BeatProfile, weights: dict[str, float] | None = None) -> np.ndarray:
+    if weights is None:
+        weights = {"rhythm": 0.5, "spectral": 0.25, "energy": 0.25}
+    w_r = weights.get("rhythm", 0.5)
+    w_s = weights.get("spectral", 0.25)
+    w_e = weights.get("energy", 0.25)
+
     fp = np.array(p.rhythm_fingerprint, dtype=float) if p.rhythm_fingerprint else np.zeros(16)
-    base = np.array([
-        p.spectral_centroid,
-        p.spectral_bandwidth,
-        p.crest_factor,
-        p.onset_density,
-    ], dtype=float)
-    return np.concatenate([base, fp])
+    # Scale feature groups by their weights so GFP respects the balance
+    spectral = np.array([p.spectral_centroid, p.spectral_bandwidth], dtype=float) * w_s
+    # Mild early onset bonus: slightly prefer bars starting with a hit
+    onset_ratio = min(p.first_onset_time / (p.duration + 1e-10), 1.0)
+    early_bonus = (1.0 - onset_ratio) * w_e * 0.4  # 40% weight — diversity still dominates
+    transient = np.array([p.crest_factor, p.onset_density, early_bonus], dtype=float) * w_e
+    rhythm = fp * w_r
+    return np.concatenate([spectral, transient, rhythm])
 
 
 def _znorm(matrix: np.ndarray) -> np.ndarray:
@@ -227,53 +264,402 @@ def _greedy_farthest_point(features: np.ndarray, seed_idx: int, n: int) -> list[
     return selected
 
 
+def _select_rhythm_taxonomy(
+    profiles: list[BeatProfile], n: int, weights: dict | None,
+) -> tuple[list[BeatProfile], np.ndarray, list[int]]:
+    """Cluster by rhythm fingerprint, then pick diverse variants per cluster."""
+    clusters = cluster_by_rhythm(profiles, threshold=0.25)
+
+    if not clusters:
+        # Fallback: treat all as one cluster
+        clusters = {(0,) * 16: profiles}
+
+    # Allocate slots proportional to cluster size, at least 1 per cluster
+    total = sum(len(c) for c in clusters.values())
+    allocation: dict[tuple, int] = {}
+    remaining = n
+    for key, members in sorted(clusters.items(), key=lambda x: -len(x[1])):
+        slots = max(1, round(len(members) / total * n))
+        allocation[key] = min(slots, remaining)
+        remaining -= allocation[key]
+        if remaining <= 0:
+            break
+
+    # Select variants from each cluster using spectral+energy diversity
+    selected: list[BeatProfile] = []
+    for key, members in clusters.items():
+        slots = allocation.get(key, 0)
+        if slots == 0:
+            continue
+        variants = select_variants_from_cluster(members, max_variants=slots)
+        selected.extend(variants)
+
+    selected = selected[:n]
+    feature_matrix = np.array([_feature_vector(p, weights) for p in selected]) if selected else np.zeros((0, 20))
+    selected_idx = list(range(len(selected)))
+    return selected, feature_matrix, selected_idx
+
+
+def _select_sectional(
+    profiles: list[BeatProfile], n: int, weights: dict | None,
+    song_structure: "SongStructure",
+) -> tuple[list[BeatProfile], np.ndarray, list[int]]:
+    """Weight bars by structural importance, then greedy-select with bias toward boundaries."""
+    if not profiles:
+        return [], np.zeros((0, 20)), []
+
+    features = _znorm(np.array([_feature_vector(p, weights) for p in profiles]))
+
+    # Compute importance-weighted distance: boost bars near boundaries
+    importance = np.array([
+        song_structure.importance_for_bar(p.index) for p in profiles
+    ])
+    # Add importance as an extra feature dimension (scaled to match others)
+    importance_col = (importance * 3.0).reshape(-1, 1)  # weight importance heavily
+    features_boosted = np.hstack([features, importance_col])
+
+    # Seed with the most important bar (nearest to a boundary)
+    seed = int(np.argmax(importance)) if np.max(importance) > 0 else int(np.argmax([p.crest_factor for p in profiles]))
+    selected_idx = _greedy_farthest_point(features_boosted, seed, n)
+    selected = [profiles[i] for i in selected_idx]
+    return selected, features, selected_idx
+
+
+def _select_section_main_alt(
+    profiles: list[BeatProfile], n: int, weights: dict | None,
+    song_structure: "SongStructure",
+    alts_per_section: int = 2,
+    max_sections: int = 4,
+    phrase_bars: int = 1,
+) -> tuple[list[BeatProfile], np.ndarray, list[int]]:
+    """Per-section MAIN (centroid) + N ALTs (max-distant from MAIN).
+
+    Groups bars by their detected section LABEL (so all "A" bars across
+    the song pool together, regardless of which section instance they
+    came from). For each section type, the MAIN is the bar closest to
+    the section's feature-space centroid (most representative version);
+    ALTs are the bars maximally distant from MAIN within the same
+    section (variations on the canonical pattern).
+
+    Caller controls the slot allocation via `alts_per_section` and
+    `max_sections`. Total selections = up to max_sections × (1 + alts).
+    Sections are ordered by population (largest first) so backbone
+    sections get picked before fringe ones.
+    """
+    if not profiles:
+        return [], np.zeros((0, 20)), []
+    if not song_structure or not getattr(song_structure, "form", None):
+        # No structure detected — fall back to max-diversity.
+        if len(profiles) <= n:
+            feats = np.array([_feature_vector(p, weights) for p in profiles])
+            return profiles, feats, list(range(len(profiles)))
+        feats = _znorm(np.array([_feature_vector(p, weights) for p in profiles]))
+        seed = int(np.argmax([p.crest_factor for p in profiles]))
+        idx = _greedy_farthest_point(feats, seed, n)
+        return [profiles[i] for i in idx], feats, idx
+
+    # Build feature matrix for ALL filtered bars; section selection works
+    # against indices into this matrix.
+    feature_matrix = _znorm(np.array([_feature_vector(p, weights) for p in profiles]))
+
+    # Group profile indices by section label. profile.index is the
+    # 1-indexed slot in the curation dir — for phrase files, that's a
+    # phrase index, not a bar index. Convert via stride.
+    stride = max(1, int(phrase_bars or 1))
+    by_section: dict[str, list[int]] = {}
+    for i, p in enumerate(profiles):
+        bar_num = (int(p.index) - 1) * stride + 1
+        sec = song_structure.section_for_bar(bar_num)
+        if sec is None:
+            continue  # bar past the last detected segment — exclude
+        by_section.setdefault(sec, []).append(i)
+
+    if not by_section:
+        return [], feature_matrix, []
+
+    # Order sections by population (largest backbone first), cap at max_sections.
+    section_order = sorted(by_section.keys(), key=lambda s: -len(by_section[s]))
+    section_order = section_order[:max(1, max_sections)]
+
+    per_section_slots = max(1, alts_per_section + 1)
+    selected_idx: list[int] = []
+
+    for section in section_order:
+        if len(selected_idx) >= n:
+            break
+        sec_indices = by_section[section]
+        if not sec_indices:
+            continue
+        sec_features = feature_matrix[sec_indices]
+
+        # MAIN = bar closest to centroid (= lowest avg distance to others).
+        centroid = sec_features.mean(axis=0)
+        d_to_centroid = np.linalg.norm(sec_features - centroid, axis=1)
+        main_local = int(np.argmin(d_to_centroid))
+        sec_picks_local = [main_local]
+
+        # ALTs = bars max-distant from MAIN within this section.
+        if alts_per_section > 0 and len(sec_indices) > 1:
+            d_from_main = np.linalg.norm(
+                sec_features - sec_features[main_local], axis=1
+            )
+            ranked = np.argsort(-d_from_main).tolist()
+            for cand_local in ranked:
+                if cand_local == main_local:
+                    continue
+                sec_picks_local.append(cand_local)
+                if len(sec_picks_local) >= per_section_slots:
+                    break
+
+        for local in sec_picks_local:
+            global_idx = sec_indices[local]
+            if global_idx in selected_idx:
+                continue
+            selected_idx.append(global_idx)
+            if len(selected_idx) >= n:
+                break
+
+    selected = [profiles[i] for i in selected_idx]
+    return selected, feature_matrix, selected_idx
+
+
+def _select_transition(
+    profiles: list[BeatProfile], n: int, weights: dict | None,
+    song_structure: "SongStructure",
+) -> tuple[list[BeatProfile], np.ndarray, list[int]]:
+    """Select only bars near structural boundaries."""
+    if not profiles:
+        return [], np.zeros((0, 20)), []
+
+    # Filter to bars with importance > 0 (near boundaries)
+    transition_profiles = [
+        p for p in profiles
+        if song_structure.importance_for_bar(p.index) > 0
+    ]
+
+    if not transition_profiles:
+        # No transitions found — fall back to max-diversity on all bars
+        transition_profiles = profiles
+
+    if len(transition_profiles) <= n:
+        selected = transition_profiles
+        feature_matrix = np.array([_feature_vector(p, weights) for p in selected]) if selected else np.zeros((0, 20))
+        return selected, feature_matrix, list(range(len(selected)))
+
+    # Greedy-select diverse bars from the transition pool
+    features = _znorm(np.array([_feature_vector(p, weights) for p in transition_profiles]))
+    seed = int(np.argmax([p.crest_factor for p in transition_profiles]))
+    selected_idx = _greedy_farthest_point(features, seed, n)
+    selected = [transition_profiles[i] for i in selected_idx]
+    return selected, features, selected_idx
+
+
+def section_stratified_select(
+    beat_dir: Path,
+    n_bars: int,
+    song_structure: "SongStructure",
+    bar_times: np.ndarray | None = None,
+    rms_floor: float = 0.005,
+    crest_min: float = 4.0,
+    content_density_min: float = 0.0,
+    distance_weights: dict[str, float] | None = None,
+) -> list[Path]:
+    """
+    Select N bars stratified across song sections for maximum representation.
+
+    Allocates slots proportional to section length, then diversity-selects
+    within each section's allocation. Ensures the selection covers different
+    parts of the song rather than clustering in one section.
+
+    Used by melodic bottom_mode to pick 4 representative loops.
+    """
+    beat_dir = Path(beat_dir)
+    all_files = sorted(beat_dir.glob("*.wav"))
+    if not all_files or not song_structure or not song_structure.segments:
+        # No structure — fall back to regular curate
+        return curate(beat_dir, n_bars=n_bars, rms_floor=rms_floor,
+                      crest_min=crest_min, content_density_min=content_density_min,
+                      distance_weights=distance_weights)
+
+    # Map each bar file to its section by index
+    # Bar files are named stem_bar_NNN.wav or stem_phrase_NNN.wav
+    import re
+    file_by_section: dict[str, list[Path]] = {}
+    for f in all_files:
+        m = re.search(r"_(?:bar|phrase)_(\d+)\.wav$", f.name)
+        if not m:
+            continue
+        bar_idx = int(m.group(1))
+        section = song_structure.section_for_bar(bar_idx)
+        if section is None:
+            section = "?"
+        file_by_section.setdefault(section, []).append(f)
+
+    if not file_by_section:
+        return curate(beat_dir, n_bars=n_bars, rms_floor=rms_floor,
+                      crest_min=crest_min, content_density_min=content_density_min,
+                      distance_weights=distance_weights)
+
+    # Allocate slots per section proportional to file count, at least 1 each
+    total_files = sum(len(fs) for fs in file_by_section.values())
+    remaining = n_bars
+    allocation: dict[str, int] = {}
+    for section in sorted(file_by_section.keys()):
+        count = len(file_by_section[section])
+        slots = max(1, round(count / total_files * n_bars))
+        allocation[section] = min(slots, remaining)
+        remaining -= allocation[section]
+        if remaining <= 0:
+            break
+
+    # Distribute any remaining slots to the largest sections
+    if remaining > 0:
+        for section in sorted(file_by_section.keys(), key=lambda s: -len(file_by_section[s])):
+            if remaining <= 0:
+                break
+            allocation[section] = allocation.get(section, 0) + 1
+            remaining -= 1
+
+    # Diversity-select within each section's allocation
+    import tempfile
+    selected: list[Path] = []
+    for section, slots in allocation.items():
+        if slots <= 0:
+            continue
+        section_files = file_by_section.get(section, [])
+        if not section_files:
+            continue
+
+        # Build temp dir for this section's files
+        section_pool = Path(tempfile.mkdtemp(prefix=f"sf_sect_{section}_"))
+        # Map temp filenames back to originals
+        original_by_name = {f.name: f for f in section_files}
+        for f in section_files:
+            shutil.copy2(f, section_pool / f.name)
+
+        section_selected = curate(
+            section_pool, n_bars=slots,
+            rms_floor=rms_floor, crest_min=crest_min,
+            content_density_min=content_density_min,
+            distance_weights=distance_weights,
+        )
+        # Map temp paths back to original source paths
+        for sp in section_selected:
+            original = original_by_name.get(sp.name)
+            if original:
+                selected.append(original)
+        shutil.rmtree(section_pool, ignore_errors=True)
+
+    return selected[:n_bars]
+
+
 def curate(
     beat_dir: Path,
     n_bars: int = 14,
     strategy: str = "max-diversity",
     rms_floor: float = 0.005,
     crest_min: float = 4.0,
+    content_density_min: float = 0.0,
+    distance_weights: dict[str, float] | None = None,
+    song_structure: "SongStructure | None" = None,
+    alts_per_section: int = 2,
+    max_sections: int = 4,
+    phrase_bars: int = 1,
 ) -> list[Path]:
     """
-    Analyze every WAV in `beat_dir`, filter by rms_floor and crest_min,
-    then greedy-select `n_bars` most diverse bars. Writes `manifest.json`
-    into `beat_dir` with selected bar paths and their feature vectors.
+    Analyze every WAV in `beat_dir`, filter by rms_floor, crest_min, and
+    content_density_min, then select `n_bars` bars using the specified strategy.
+
+    content_density_min filters bars where less than this fraction of 20ms frames
+    have energy above the RMS threshold. Catches "sparse stab in silence" bars
+    that pass overall RMS but are mostly empty.
+
+    Strategies:
+      - max-diversity: Greedy farthest-point in feature space (default)
+      - rhythm-taxonomy: Cluster by rhythm fingerprint, pick diverse variants per cluster
+      - sectional: Weight bars by structural importance (needs song_structure)
+      - transition: Select only bars near structural boundaries (needs song_structure)
+      - section-main-alt: Per detected section type, pick MAIN (centroid) +
+        N ALTs (most distant from MAIN). Captures both the canonical
+        backbone of each section and its variations. (needs song_structure;
+        alts_per_section + max_sections control slot allocation)
 
     Returns list of selected Paths in selection order.
     """
     beat_dir = Path(beat_dir)
-    if strategy in ("rhythm-taxonomy", "sectional"):
+    valid_strategies = (
+        "max-diversity", "rhythm-taxonomy", "sectional", "transition",
+        "section-main-alt",
+    )
+    if strategy not in valid_strategies:
+        raise ValueError(f"Unknown strategy: {strategy}. Valid: {valid_strategies}")
+
+    # Strategies needing song structure — fall back if missing
+    if strategy in ("sectional", "transition", "section-main-alt") and song_structure is None:
         warnings.warn(
-            f"Strategy '{strategy}' not yet implemented; falling back to max-diversity.",
+            f"Strategy '{strategy}' requires song_structure; falling back to max-diversity.",
             stacklevel=2,
         )
         strategy = "max-diversity"
-    if strategy != "max-diversity":
-        raise ValueError(f"Unknown strategy: {strategy}")
 
     profiles = analyze_all_beats(beat_dir)
     if not profiles:
         return []
 
-    filtered = [p for p in profiles if p.rms >= rms_floor and p.crest_factor >= crest_min]
+    filtered = [
+        p for p in profiles
+        if p.rms >= rms_floor
+        and p.crest_factor >= crest_min
+        and p.content_density >= content_density_min
+    ]
+    if not filtered:
+        # Relax content_density first, then crest, then take everything
+        filtered = [p for p in profiles if p.rms >= rms_floor and p.content_density >= content_density_min]
     if not filtered:
         filtered = [p for p in profiles if p.rms >= rms_floor] or profiles
 
-    if len(filtered) <= n_bars:
-        selected = filtered
-        feature_matrix = np.array([_feature_vector(p) for p in filtered]) if filtered else np.zeros((0, 20))
-        selected_idx = list(range(len(filtered)))
+    # ── Strategy dispatch ────────────────────────────────────────────────
+    if strategy == "rhythm-taxonomy":
+        selected, feature_matrix, selected_idx = _select_rhythm_taxonomy(
+            filtered, n_bars, distance_weights
+        )
+    elif strategy == "sectional":
+        selected, feature_matrix, selected_idx = _select_sectional(
+            filtered, n_bars, distance_weights, song_structure
+        )
+    elif strategy == "transition":
+        selected, feature_matrix, selected_idx = _select_transition(
+            filtered, n_bars, distance_weights, song_structure
+        )
+    elif strategy == "section-main-alt":
+        selected, feature_matrix, selected_idx = _select_section_main_alt(
+            filtered, n_bars, distance_weights, song_structure,
+            alts_per_section=alts_per_section, max_sections=max_sections,
+            phrase_bars=phrase_bars,
+        )
     else:
-        feature_matrix = _znorm(np.array([_feature_vector(p) for p in filtered]))
-        seed = int(np.argmax([p.crest_factor for p in filtered]))
-        selected_idx = _greedy_farthest_point(feature_matrix, seed, n_bars)
-        selected = [filtered[i] for i in selected_idx]
+        # max-diversity (default)
+        if len(filtered) <= n_bars:
+            selected = filtered
+            feature_matrix = np.array([_feature_vector(p, distance_weights) for p in filtered]) if filtered else np.zeros((0, 20))
+            selected_idx = list(range(len(filtered)))
+        else:
+            feature_matrix = _znorm(np.array([_feature_vector(p, distance_weights) for p in filtered]))
+            # Seed: mostly crest factor, mild early-onset tiebreaker
+            def _seed_score(p):
+                onset_ratio = min(p.first_onset_time / (p.duration + 1e-10), 1.0)
+                early_bonus = 1.0 - onset_ratio
+                return p.crest_factor * (0.85 + 0.15 * early_bonus)
+            seed = int(np.argmax([_seed_score(p) for p in filtered]))
+            selected_idx = _greedy_farthest_point(feature_matrix, seed, n_bars)
+            selected = [filtered[i] for i in selected_idx]
 
     manifest = {
         "strategy": strategy,
         "n_bars": n_bars,
         "rms_floor": rms_floor,
         "crest_min": crest_min,
+        "content_density_min": content_density_min,
         "total_analyzed": len(profiles),
         "total_after_filter": len(filtered),
         "bars": [
@@ -284,6 +670,7 @@ def curate(
                 "source_index": selected[i].index,
                 "feature_vector": feature_matrix[selected_idx[i]].tolist() if len(feature_matrix) else [],
                 "rms": round(selected[i].rms, 6),
+                "content_density": round(selected[i].content_density, 3),
                 "crest_factor": round(selected[i].crest_factor, 3),
                 "onset_count": selected[i].onset_count,
                 "onset_density": round(selected[i].onset_density, 3),

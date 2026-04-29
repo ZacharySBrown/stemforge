@@ -1,0 +1,2065 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StemForge — UI Design + Workflow Spec</title>
+<style>
+  :root {
+    --bg: #0e0e0e;
+    --bg-deep: #070707;
+    --surface: #181818;
+    --card: #1e1e1e;
+    --card-hi: #242424;
+    --border: #2a2a2a;
+    --border-hi: #3a3a3a;
+    --text: #e0e0e0;
+    --muted: #888;
+    --dim: #555;
+    --accent: #c084fc;        /* signature violet — the FORGE color */
+    --accent2: #818cf8;       /* indigo */
+    --accent-deep: #7c3aed;
+    --green: #4ade80;
+    --yellow: #fbbf24;
+    --red: #f87171;
+    --teal: #2dd4bf;
+    --blue: #60a5fa;
+    --orange: #fb923c;
+    --pink: #f472b6;
+
+    /* stem-channel colors, from tracks.yaml */
+    --stem-drums:    #ff4444;
+    --stem-drums-2:  #882222;
+    --stem-bass:     #4477ff;
+    --stem-vox:      #ffaa44;
+    --stem-verb:     #44dd77;
+    --stem-crystal:  #44cccc;
+    --stem-simpler:  #ff6b35;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', ui-monospace, monospace;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.65;
+    font-size: 13.5px;
+    padding: 0;
+    background-image:
+      radial-gradient(circle at 20% -10%, rgba(192, 132, 252, 0.08), transparent 40%),
+      radial-gradient(circle at 100% 50%, rgba(129, 140, 248, 0.05), transparent 50%),
+      linear-gradient(var(--bg), var(--bg));
+    min-height: 100vh;
+  }
+
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 3rem 2rem 6rem;
+  }
+
+  /* ─── HEADER ─── */
+  header.doc-head {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 2rem;
+    margin-bottom: 3rem;
+  }
+  header.doc-head .tag {
+    display: inline-block;
+    font-size: 0.7rem;
+    letter-spacing: 0.15em;
+    color: var(--accent);
+    background: rgba(192, 132, 252, 0.08);
+    padding: 0.25rem 0.6rem;
+    border: 1px solid rgba(192, 132, 252, 0.25);
+    border-radius: 3px;
+    margin-bottom: 1rem;
+  }
+  header.doc-head h1 {
+    font-size: 2.4rem;
+    letter-spacing: -1.2px;
+    color: var(--text);
+    font-weight: 600;
+    line-height: 1.1;
+  }
+  header.doc-head h1 .stem { color: var(--accent); }
+  header.doc-head h1 .forge { color: var(--accent2); }
+  header.doc-head .sub {
+    color: var(--muted);
+    font-size: 0.88rem;
+    margin-top: 0.75rem;
+    max-width: 62ch;
+  }
+  header.doc-head .meta {
+    display: flex;
+    gap: 2rem;
+    margin-top: 1.5rem;
+    font-size: 0.78rem;
+    color: var(--dim);
+    flex-wrap: wrap;
+  }
+  header.doc-head .meta span strong {
+    color: var(--muted);
+    font-weight: 400;
+  }
+
+  /* ─── SECTION HEADERS ─── */
+  h2.section {
+    font-size: 1.35rem;
+    color: var(--yellow);
+    margin: 4rem 0 1.5rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    letter-spacing: -0.3px;
+  }
+  h2.section .num {
+    font-size: 0.72rem;
+    color: var(--bg);
+    background: var(--yellow);
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+  }
+  h2.section .trail {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(to right, var(--border), transparent);
+    margin-left: 1rem;
+  }
+
+  h3 {
+    font-size: 1rem;
+    color: var(--accent);
+    margin: 2rem 0 0.9rem;
+    letter-spacing: -0.2px;
+  }
+
+  h4 {
+    font-size: 0.85rem;
+    color: var(--accent2);
+    margin: 1.5rem 0 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  p { margin-bottom: 0.9rem; color: var(--text); }
+  p.lede { color: var(--muted); font-size: 0.92rem; max-width: 70ch; }
+
+  code, kbd {
+    background: #252525;
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    font-size: 0.82em;
+    color: var(--accent2);
+    border: 1px solid var(--border);
+  }
+  kbd { color: var(--text); }
+  pre code { background: transparent; border: none; padding: 0; color: inherit; }
+
+  pre {
+    background: var(--bg-deep);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    padding: 1rem 1.25rem;
+    overflow-x: auto;
+    font-size: 0.78rem;
+    line-height: 1.55;
+    color: #b4b4b4;
+    margin: 1rem 0;
+  }
+  pre .c { color: var(--dim); font-style: italic; }
+  pre .k { color: var(--accent); }
+  pre .s { color: var(--green); }
+  pre .n { color: var(--orange); }
+
+  /* ─── CARD ─── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1.25rem 1.5rem;
+    margin: 1rem 0;
+  }
+
+  /* ─── CALLOUTS ─── */
+  .cal {
+    padding: 0.8rem 1.1rem;
+    border-radius: 0 4px 4px 0;
+    font-size: 0.83rem;
+    margin: 1rem 0;
+    line-height: 1.6;
+  }
+  .cal strong { font-size: 0.8rem; letter-spacing: 0.05em; text-transform: uppercase; display: block; margin-bottom: 0.3rem; }
+  .cal.tip  { background: rgba(74, 222, 128, 0.05); border-left: 3px solid var(--green); color: #a3d9a5; }
+  .cal.warn { background: rgba(251, 191, 36, 0.05); border-left: 3px solid var(--yellow); color: #d4c87a; }
+  .cal.info { background: rgba(129, 140, 248, 0.05); border-left: 3px solid var(--accent2); color: #a5a8fc; }
+  .cal.crit { background: rgba(248, 113, 113, 0.05); border-left: 3px solid var(--red); color: #f4a7a7; }
+
+  ul, ol { margin: 0.5rem 0 1rem 0; padding-left: 0; list-style: none; }
+  li {
+    padding: 0.2rem 0 0.2rem 1.3rem;
+    position: relative;
+    font-size: 0.88rem;
+    line-height: 1.6;
+  }
+  li::before {
+    content: '▸';
+    position: absolute;
+    left: 0.2rem;
+    color: var(--accent);
+    font-size: 0.8em;
+  }
+  ol { counter-reset: step; }
+  ol li::before {
+    content: counter(step, decimal-leading-zero);
+    counter-increment: step;
+    color: var(--accent2);
+    font-size: 0.7em;
+    top: 0.35rem;
+  }
+  ol li { padding-left: 2.2rem; }
+
+  /* ─── TWO-COL ─── */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin: 1.5rem 0;
+  }
+  .three-col {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin: 1.5rem 0;
+  }
+  @media (max-width: 780px) {
+    .two-col, .three-col { grid-template-columns: 1fr; }
+  }
+
+  /* ─── COLOR SWATCH ROW ─── */
+  .swatches {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 0.5rem;
+    margin: 1rem 0;
+  }
+  .sw {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .sw .chip {
+    height: 48px;
+    border-bottom: 1px solid var(--border);
+  }
+  .sw .lbl {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.7rem;
+  }
+  .sw .lbl .name { color: var(--text); }
+  .sw .lbl .hex { color: var(--dim); font-size: 0.65rem; display: block; margin-top: 0.1rem; }
+
+  /* ──────────────────────────────────────────────────────────────
+     DEVICE MOCKUP
+     ────────────────────────────────────────────────────────────── */
+  .device-stage {
+    background:
+      linear-gradient(180deg, #080808 0%, #141414 100%);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 3rem 2rem;
+    margin: 2rem 0;
+    display: flex;
+    justify-content: center;
+    box-shadow: inset 0 0 60px rgba(0,0,0,0.5);
+    position: relative;
+    overflow: hidden;
+  }
+  .device-stage::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-image:
+      radial-gradient(circle at 30% 20%, rgba(192, 132, 252, 0.06), transparent 40%),
+      radial-gradient(circle at 80% 80%, rgba(129, 140, 248, 0.04), transparent 40%);
+    pointer-events: none;
+  }
+  .device-stage .stage-label {
+    position: absolute;
+    top: 0.7rem; left: 1rem;
+    font-size: 0.65rem;
+    color: var(--dim);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+
+  /* The M4L device itself */
+  .m4l {
+    width: 780px;
+    background: #161616;
+    border: 1px solid #2e2e2e;
+    border-radius: 4px;
+    color: #d4d4d4;
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+    font-size: 10.5px;
+    box-shadow:
+      0 0 0 1px #000,
+      0 20px 50px rgba(0,0,0,0.8),
+      inset 0 1px 0 rgba(255,255,255,0.04);
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Ableton-style titlebar */
+  .m4l-bar {
+    background: linear-gradient(180deg, #2a2a2a 0%, #1f1f1f 100%);
+    border-bottom: 1px solid #000;
+    padding: 5px 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 10px;
+    color: #888;
+    letter-spacing: 0.05em;
+  }
+  .m4l-bar .m4l-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+  }
+  .m4l-bar .m4l-title {
+    color: var(--accent);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+  }
+  .m4l-bar .m4l-ver {
+    margin-left: auto;
+    color: #555;
+    font-size: 9px;
+  }
+
+  /* Main body */
+  .m4l-body {
+    padding: 14px 14px 12px;
+    display: grid;
+    grid-template-columns: 1fr 260px;
+    gap: 14px;
+  }
+
+  /* Left column: waveform + spectroscope + status */
+  .m4l-left {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  /* Waveform panel */
+  .m4l-wave {
+    background: #0c0c0c;
+    border: 1px solid #2a2a2a;
+    border-radius: 3px;
+    height: 100px;
+    position: relative;
+    overflow: hidden;
+  }
+  .m4l-wave .wave-label {
+    position: absolute;
+    top: 4px; left: 6px;
+    font-size: 8px;
+    color: #555;
+    letter-spacing: 0.15em;
+    z-index: 2;
+  }
+  .m4l-wave .wave-bpm {
+    position: absolute;
+    top: 4px; right: 6px;
+    font-size: 9px;
+    color: var(--accent);
+    z-index: 2;
+  }
+  .m4l-wave .wave-bpm .num { font-size: 11px; font-weight: 600; }
+  .m4l-wave .wave-canvas {
+    position: absolute;
+    inset: 16px 6px 14px 6px;
+    display: flex;
+    align-items: center;
+    gap: 1px;
+  }
+  .m4l-wave .wave-canvas .bar {
+    flex: 1;
+    background: #c084fc;
+    opacity: 0.85;
+    border-radius: 1px;
+  }
+  /* grid markers for bar boundaries */
+  .m4l-wave .grid-line {
+    position: absolute;
+    top: 14px; bottom: 12px;
+    width: 1px;
+    background: rgba(255, 170, 68, 0.4);
+    z-index: 1;
+  }
+  .m4l-wave .grid-line.major { background: rgba(251, 191, 36, 0.55); }
+  .m4l-wave .grid-line.playhead {
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+    width: 2px;
+    z-index: 3;
+  }
+  .m4l-wave .beat-row {
+    position: absolute;
+    bottom: 0; left: 6px; right: 6px;
+    height: 10px;
+    display: flex;
+    align-items: center;
+    font-size: 7px;
+    color: var(--dim);
+    letter-spacing: 0.1em;
+    justify-content: space-between;
+    padding: 0 2px;
+  }
+
+  /* Spectroscope */
+  .m4l-spec {
+    background: #0c0c0c;
+    border: 1px solid #2a2a2a;
+    border-radius: 3px;
+    height: 64px;
+    position: relative;
+    overflow: hidden;
+  }
+  .m4l-spec .spec-label {
+    position: absolute;
+    top: 4px; left: 6px;
+    font-size: 8px;
+    color: #555;
+    letter-spacing: 0.15em;
+    z-index: 2;
+  }
+  .m4l-spec .spec-canvas {
+    position: absolute;
+    inset: 14px 6px 6px 6px;
+    display: flex;
+    align-items: flex-end;
+    gap: 1px;
+  }
+  .m4l-spec .spec-canvas .bar {
+    flex: 1;
+    background: linear-gradient(to top, var(--accent-deep), var(--accent));
+    border-radius: 1px 1px 0 0;
+    min-height: 1px;
+  }
+
+  /* Status bar */
+  .m4l-status {
+    background: #0c0c0c;
+    border: 1px solid #2a2a2a;
+    border-radius: 3px;
+    padding: 6px 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 9.5px;
+  }
+  .m4l-status .stat-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+  }
+  .m4l-status .stat-phase {
+    color: var(--green);
+    letter-spacing: 0.05em;
+  }
+  .m4l-status .stat-prog-wrap {
+    flex: 1;
+    height: 3px;
+    background: #1a1a1a;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .m4l-status .stat-prog {
+    height: 100%;
+    width: 62%;
+    background: linear-gradient(to right, var(--accent2), var(--accent));
+    box-shadow: 0 0 4px var(--accent);
+  }
+  .m4l-status .stat-pct {
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Right column: controls */
+  .m4l-right {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  /* FORGE button — the centerpiece */
+  .m4l-forge {
+    background: linear-gradient(180deg, var(--accent-deep) 0%, #5b21b6 100%);
+    border: 1px solid #9061e8;
+    border-radius: 3px;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    padding: 14px 0;
+    text-align: center;
+    cursor: pointer;
+    box-shadow:
+      0 0 20px rgba(192, 132, 252, 0.35),
+      inset 0 1px 0 rgba(255,255,255,0.15),
+      inset 0 -2px 4px rgba(0,0,0,0.3);
+    position: relative;
+  }
+  .m4l-forge::after {
+    content: '';
+    position: absolute;
+    top: 2px; left: 2px; right: 2px;
+    height: 40%;
+    background: linear-gradient(to bottom, rgba(255,255,255,0.08), transparent);
+    border-radius: 2px 2px 0 0;
+    pointer-events: none;
+  }
+
+  /* Control group */
+  .m4l-grp {
+    background: #111;
+    border: 1px solid #2a2a2a;
+    border-radius: 3px;
+    padding: 8px 9px;
+  }
+  .m4l-grp-title {
+    font-size: 8px;
+    color: #666;
+    letter-spacing: 0.15em;
+    margin-bottom: 7px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .m4l-grp-title .accent { color: var(--accent); }
+
+  /* Dropdown rows */
+  .m4l-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 0;
+    font-size: 9.5px;
+  }
+  .m4l-row .label { color: #888; }
+  .m4l-row .value {
+    color: var(--accent2);
+    background: #1c1c1c;
+    padding: 2px 8px;
+    border-radius: 2px;
+    border: 1px solid #2a2a2a;
+    font-weight: 600;
+    min-width: 80px;
+    text-align: center;
+  }
+  .m4l-row .value.toggle {
+    background: rgba(74, 222, 128, 0.1);
+    color: var(--green);
+    border-color: rgba(74, 222, 128, 0.3);
+  }
+
+  /* Backend / pipeline chips */
+  .m4l-chips {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .m4l-chip {
+    padding: 3px 7px;
+    border-radius: 2px;
+    font-size: 8.5px;
+    color: #666;
+    background: #151515;
+    border: 1px solid #2a2a2a;
+    letter-spacing: 0.05em;
+  }
+  .m4l-chip.active {
+    color: var(--accent);
+    background: rgba(192, 132, 252, 0.08);
+    border-color: rgba(192, 132, 252, 0.4);
+  }
+
+  /* Stem mixer dials */
+  .m4l-mixer {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    padding: 10px;
+    background: #111;
+    border: 1px solid #2a2a2a;
+    border-radius: 3px;
+  }
+  .m4l-dial {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .m4l-dial .ring {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    background: #0a0a0a;
+    border: 1px solid #2a2a2a;
+    position: relative;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.6);
+  }
+  .m4l-dial .ring::before {
+    content: '';
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 2px; height: 10px;
+    background: var(--stem-c, var(--accent));
+    transform-origin: 50% 100%;
+    transform: translate(-50%, -100%) rotate(var(--rot, 45deg));
+    box-shadow: 0 0 4px var(--stem-c, var(--accent));
+    border-radius: 1px;
+  }
+  .m4l-dial .ring::after {
+    content: '';
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 8px; height: 8px;
+    background: #181818;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    border: 1px solid #333;
+  }
+  .m4l-dial .lbl {
+    font-size: 8px;
+    color: var(--stem-c, var(--muted));
+    letter-spacing: 0.12em;
+    text-align: center;
+  }
+
+  /* Pad grid */
+  .m4l-pads-wrap {
+    background: #0f0f0f;
+    border: 1px solid #2a2a2a;
+    border-radius: 3px;
+    padding: 10px;
+  }
+  .m4l-pads-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 8px;
+    color: #666;
+    letter-spacing: 0.15em;
+    margin-bottom: 8px;
+  }
+  .m4l-pads-head .active { color: var(--accent); }
+  .m4l-pads {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+  }
+  .m4l-pad {
+    aspect-ratio: 1;
+    border-radius: 2px;
+    background: #151515;
+    border: 1px solid #2a2a2a;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 8px;
+    color: #444;
+    font-weight: 600;
+  }
+  .m4l-pad::after {
+    content: '';
+    position: absolute;
+    inset: 2px;
+    background: var(--pad-c, transparent);
+    opacity: var(--pad-op, 0.15);
+    border-radius: 1px;
+    box-shadow: 0 0 6px var(--pad-c, transparent);
+    pointer-events: none;
+  }
+  .m4l-pad span {
+    position: relative;
+    z-index: 1;
+    color: #999;
+    mix-blend-mode: screen;
+  }
+  .m4l-pad.playing {
+    border-color: var(--green);
+    box-shadow: 0 0 8px var(--green);
+  }
+  .m4l-pad.playing span { color: #fff; }
+
+  /* BPM sync row */
+  .m4l-sync {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 9px;
+    padding: 5px 8px;
+    background: #111;
+    border: 1px solid #2a2a2a;
+    border-radius: 3px;
+  }
+  .m4l-sync .left { display: flex; align-items: center; gap: 6px; color: #888; letter-spacing: 0.08em; }
+  .m4l-sync .led {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 5px var(--green);
+    animation: pulse 1s infinite;
+  }
+  @keyframes pulse { 50% { opacity: 0.4; } }
+  .m4l-sync .right { color: var(--accent); font-variant-numeric: tabular-nums; }
+  .m4l-sync .right .src { color: var(--muted); margin: 0 5px; }
+
+  /* ──────────────────────────────────────────────────────────────
+     SESSION MOCKUP (Ableton arrangement fake)
+     ────────────────────────────────────────────────────────────── */
+  .session {
+    background: #1c1c1c;
+    border: 1px solid #000;
+    border-radius: 4px;
+    overflow: hidden;
+    font-size: 10px;
+    margin: 1.5rem 0;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  }
+  .session-head {
+    background: #2a2a2a;
+    padding: 5px 12px;
+    border-bottom: 1px solid #000;
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    font-size: 9px;
+    color: #888;
+    letter-spacing: 0.1em;
+  }
+  .session-head .bpm { color: var(--accent); font-weight: 600; }
+  .session-head .bpm .n { font-size: 11px; }
+  .session-tracks {
+    display: flex;
+    flex-direction: column;
+  }
+  .session-track {
+    display: grid;
+    grid-template-columns: 180px 40px 1fr;
+    border-bottom: 1px solid #0a0a0a;
+    min-height: 28px;
+    align-items: stretch;
+  }
+  .session-track .tr-name {
+    padding: 6px 10px;
+    background: #222;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-right: 1px solid #0a0a0a;
+  }
+  .session-track .tr-color {
+    width: 4px;
+    height: 16px;
+    border-radius: 1px;
+    flex-shrink: 0;
+  }
+  .session-track .tr-label {
+    font-size: 9.5px;
+    color: #ccc;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .session-track .tr-label .pipe { color: var(--accent); margin: 0 4px; }
+  .session-track .tr-slot {
+    background: #1a1a1a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-right: 1px solid #0a0a0a;
+    position: relative;
+  }
+  .session-track .tr-arrangement {
+    background: repeating-linear-gradient(
+      to right,
+      #1a1a1a 0,
+      #1a1a1a 59px,
+      #252525 59px,
+      #252525 60px
+    );
+    position: relative;
+    height: 100%;
+  }
+  .session-track .clip {
+    position: absolute;
+    top: 3px;
+    bottom: 3px;
+    border-radius: 2px;
+    padding: 2px 6px;
+    font-size: 8.5px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    letter-spacing: 0.02em;
+    overflow: hidden;
+    white-space: nowrap;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.1);
+  }
+  .session-track .slot-clip {
+    width: 28px;
+    height: 16px;
+    border-radius: 2px;
+    font-size: 7px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    letter-spacing: 0.05em;
+    color: rgba(0,0,0,0.85);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.2);
+  }
+  .session-track .slot-midi {
+    background: var(--stem-simpler);
+    color: rgba(0,0,0,0.85);
+  }
+  .session-track.template {
+    opacity: 0.55;
+  }
+  .session-track.template .tr-name { background: #1a1a1a; }
+  .session-track.template .tr-label::before {
+    content: '◦ ';
+    color: var(--muted);
+  }
+  .session-gutter {
+    grid-column: 3;
+    display: flex;
+    height: 16px;
+    background: #0e0e0e;
+    border-bottom: 1px solid #000;
+    font-size: 8px;
+    color: #555;
+    align-items: center;
+    padding: 0 4px;
+    letter-spacing: 0.1em;
+  }
+  .bar-marker {
+    flex: 0 0 60px;
+    padding-left: 2px;
+  }
+
+  /* ──────────────────────────────────────────────────────────────
+     DATA-FLOW DIAGRAM (ASCII-style art)
+     ────────────────────────────────────────────────────────────── */
+  .flow {
+    background: var(--bg-deep);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1.5rem 1.25rem;
+    overflow-x: auto;
+    font-size: 0.72rem;
+    line-height: 1.6;
+    color: #bbb;
+    white-space: pre;
+    margin: 1.5rem 0;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .flow .a { color: var(--accent); }
+  .flow .b { color: var(--accent2); }
+  .flow .g { color: var(--green); }
+  .flow .y { color: var(--yellow); }
+  .flow .r { color: var(--red); }
+  .flow .o { color: var(--orange); }
+  .flow .t { color: var(--teal); }
+  .flow .d { color: var(--dim); }
+  .flow .m { color: var(--muted); }
+
+  /* ─── spec tables ─── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.82rem;
+  }
+  table th, table td {
+    text-align: left;
+    padding: 0.55rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+  }
+  table th {
+    color: var(--muted);
+    font-weight: 500;
+    font-size: 0.73rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: var(--surface);
+  }
+  table td code { font-size: 0.78rem; }
+  table tr:hover td { background: rgba(192, 132, 252, 0.03); }
+
+  /* ─── Footer ─── */
+  footer {
+    margin-top: 5rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--border);
+    color: var(--dim);
+    font-size: 0.75rem;
+    text-align: center;
+    letter-spacing: 0.08em;
+  }
+  footer .dot { color: var(--accent); }
+
+  /* ─── TOC ─── */
+  .toc {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1rem 1.25rem;
+    margin: 2rem 0 3rem;
+  }
+  .toc-title {
+    font-size: 0.72rem;
+    color: var(--muted);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 0.6rem;
+  }
+  .toc a {
+    color: var(--text);
+    text-decoration: none;
+    font-size: 0.85rem;
+    display: block;
+    padding: 0.2rem 0;
+    transition: color 0.15s, padding-left 0.15s;
+  }
+  .toc a:hover {
+    color: var(--accent);
+    padding-left: 0.4rem;
+  }
+  .toc a .num {
+    color: var(--accent);
+    font-size: 0.7rem;
+    margin-right: 0.75rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ─── tempo math illustration ─── */
+  .tempo-math {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr auto 1fr;
+    gap: 1rem;
+    align-items: center;
+    margin: 1.5rem 0;
+    padding: 1.25rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+  .tempo-box {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.9rem;
+    text-align: center;
+  }
+  .tempo-box .tbl { font-size: 0.7rem; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 0.3rem; }
+  .tempo-box .tbv { font-size: 1.2rem; color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .tempo-box .tbu { font-size: 0.7rem; color: var(--muted); }
+  .tempo-arrow { color: var(--accent2); font-size: 1.2rem; }
+  @media (max-width: 780px) {
+    .tempo-math { grid-template-columns: 1fr; }
+    .tempo-arrow { transform: rotate(90deg); }
+  }
+
+  /* Legend dots */
+  .legend {
+    display: flex;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+    font-size: 0.75rem;
+    margin: 1rem 0 1.5rem;
+    color: var(--muted);
+  }
+  .legend .lg-item { display: flex; align-items: center; gap: 0.4rem; }
+  .legend .lg-dot { width: 10px; height: 10px; border-radius: 2px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ═══════════════════════════════════════════════════════════════
+     HEADER
+     ═══════════════════════════════════════════════════════════════ -->
+<header class="doc-head">
+  <span class="tag">COMPREHENSIVE SPEC · v3-device + workflow</span>
+  <h1><span class="stem">Stem</span><span class="forge">Forge</span> — UI Design &amp; Workflow</h1>
+  <p class="sub">
+    A single Max for Live device that drops onto an audio track, reads Ableton's
+    warp-analysis through the LOM, splits stems via ONNX/CoreML, slices at bar
+    boundaries, lands audio into pre-templated tracks on the shared session
+    clock, and exposes curated bars on a MIDI-mappable pad grid.
+  </p>
+  <div class="meta">
+    <span><strong>Branch:</strong> feat/harness-patterns</span>
+    <span><strong>Scope:</strong> v0 device.yaml ∪ v3 rich-UI ambition</span>
+    <span><strong>Target:</strong> Ableton Live 12.1.x · Apple Silicon</span>
+    <span><strong>Device:</strong> Max Audio Effect, 780×460 presentation</span>
+  </div>
+</header>
+
+<!-- ─── TOC ─── -->
+<nav class="toc">
+  <div class="toc-title">Contents</div>
+  <a href="#part1"><span class="num">00</span>Two-dimensional brief</a>
+  <a href="#aesthetic"><span class="num">01</span>Aesthetic system</a>
+  <a href="#anatomy"><span class="num">02</span>Device anatomy</a>
+  <a href="#mockup"><span class="num">03</span>Device mockup (at size)</a>
+  <a href="#panels"><span class="num">04</span>Panel-by-panel spec</a>
+  <a href="#workflow"><span class="num">05</span>Workflow — press to playback</a>
+  <a href="#tracks"><span class="num">06</span>Where clips land</a>
+  <a href="#tempo"><span class="num">07</span>The shared tempo contract</a>
+  <a href="#states"><span class="num">08</span>State machine &amp; feedback</a>
+  <a href="#tech"><span class="num">09</span>Technical contract (LOM/NDJSON)</a>
+  <a href="#roadmap"><span class="num">10</span>v0 → v3 migration</a>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     PART 1 — THE BRIEF
+     ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section" id="part1"><span class="num">00</span>The two-dimensional brief<span class="trail"></span></h2>
+
+<p class="lede">
+  You asked for two things: a UI design for the device, and a coherent spec for
+  how the workflow lays out tracks and clips on the shared session clock. This
+  document treats them as one problem — the UI is the workflow, made visible.
+</p>
+
+<div class="two-col">
+  <div class="card">
+    <h4 style="margin-top:0">Dimension 1 · Device UI</h4>
+    <p style="font-size:0.85rem;">
+      The .amxd patch a user sees in a device slot. v0 spec says 400×260 with
+      a drop target + two dropdowns + a split button. v3 ambition (per
+      <code>specs/m4l-integrated-forge-device.md</code>) pushes to a waveform,
+      spectroscope, pad grid, stem mixer. This spec designs the <strong>v3
+      destination</strong> and flags which subset is the v0 floor.
+    </p>
+  </div>
+  <div class="card">
+    <h4 style="margin-top:0">Dimension 2 · Session choreography</h4>
+    <p style="font-size:0.85rem;">
+      What happens inside the Live set <em>around</em> the device when FORGE
+      fires: template-track duplication, clip placement, warp-mode per stem,
+      BPM propagation, beat-chop landing in Simpler, and the tempo contract
+      that lets curated bars from different source tracks play in time
+      together.
+    </p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     AESTHETIC
+     ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section" id="aesthetic"><span class="num">01</span>Aesthetic system<span class="trail"></span></h2>
+
+<p>
+  The visual system is pulled directly out of <code>m4l/build_guide_device.html</code>,
+  <code>m4l/dev_log.html</code>, and the color values already baked into
+  <code>pipelines/default.yaml</code> and <code>v0/interfaces/tracks.yaml</code>.
+  Nothing here is invented — it's the palette you're already using for docs,
+  carried into the device itself so the tool looks like the toolchain.
+</p>
+
+<h3>Core palette</h3>
+<div class="swatches">
+  <div class="sw"><div class="chip" style="background:#0e0e0e"></div><div class="lbl"><span class="name">bg</span><span class="hex">#0e0e0e</span></div></div>
+  <div class="sw"><div class="chip" style="background:#181818"></div><div class="lbl"><span class="name">surface</span><span class="hex">#181818</span></div></div>
+  <div class="sw"><div class="chip" style="background:#1e1e1e"></div><div class="lbl"><span class="name">card</span><span class="hex">#1e1e1e</span></div></div>
+  <div class="sw"><div class="chip" style="background:#2a2a2a"></div><div class="lbl"><span class="name">border</span><span class="hex">#2a2a2a</span></div></div>
+  <div class="sw"><div class="chip" style="background:#c084fc"></div><div class="lbl"><span class="name">accent</span><span class="hex">#c084fc</span></div></div>
+  <div class="sw"><div class="chip" style="background:#818cf8"></div><div class="lbl"><span class="name">accent2</span><span class="hex">#818cf8</span></div></div>
+  <div class="sw"><div class="chip" style="background:#4ade80"></div><div class="lbl"><span class="name">green</span><span class="hex">#4ade80</span></div></div>
+  <div class="sw"><div class="chip" style="background:#fbbf24"></div><div class="lbl"><span class="name">yellow</span><span class="hex">#fbbf24</span></div></div>
+  <div class="sw"><div class="chip" style="background:#f87171"></div><div class="lbl"><span class="name">red</span><span class="hex">#f87171</span></div></div>
+  <div class="sw"><div class="chip" style="background:#2dd4bf"></div><div class="lbl"><span class="name">teal</span><span class="hex">#2dd4bf</span></div></div>
+</div>
+
+<h3>Stem-channel palette (from tracks.yaml)</h3>
+<p style="font-size:0.85rem;">
+  These are semantic: every drums-routed clip everywhere in the UI — the
+  waveform highlight, the mixer dial, the pad LED, the track stripe color — uses the
+  same red. The device becomes legible at a glance.
+</p>
+<div class="swatches">
+  <div class="sw"><div class="chip" style="background:#ff4444"></div><div class="lbl"><span class="name">Drums Raw</span><span class="hex">#FF4444</span></div></div>
+  <div class="sw"><div class="chip" style="background:#882222"></div><div class="lbl"><span class="name">Drums Crushed</span><span class="hex">#882222</span></div></div>
+  <div class="sw"><div class="chip" style="background:#4477ff"></div><div class="lbl"><span class="name">Bass</span><span class="hex">#4477FF</span></div></div>
+  <div class="sw"><div class="chip" style="background:#44dd77"></div><div class="lbl"><span class="name">Texture Verb</span><span class="hex">#44DD77</span></div></div>
+  <div class="sw"><div class="chip" style="background:#44cccc"></div><div class="lbl"><span class="name">Texture Crystal</span><span class="hex">#44CCCC</span></div></div>
+  <div class="sw"><div class="chip" style="background:#ffaa44"></div><div class="lbl"><span class="name">Vocals</span><span class="hex">#FFAA44</span></div></div>
+  <div class="sw"><div class="chip" style="background:#ff6b35"></div><div class="lbl"><span class="name">Beat Chop</span><span class="hex">#FF6B35</span></div></div>
+</div>
+
+<h3>Typography &amp; rhythm</h3>
+<ul>
+  <li><strong>Face:</strong> JetBrains Mono (primary) with SF Mono / Fira Code
+  fallback. Max itself defaults to Ableton Sans; we override per-element
+  <code>fontname</code> to <code>Menlo</code> (the closest shipped monospace
+  Max guarantees). No prose body text — this is a control surface.</li>
+  <li><strong>Sizes:</strong> 8px ALL-CAPS tracking-0.15em labels; 9.5–10.5px
+  values; 14px for the FORGE wordmark; 11px for the title bar. Nothing else.</li>
+  <li><strong>Letter-spacing:</strong> generous on labels (0.1–0.2em), tight
+  on values. Labels whisper, values shout.</li>
+  <li><strong>Numerals:</strong> <code>font-variant-numeric: tabular-nums</code>
+  everywhere BPM, percentages, or beat counts appear. No jitter.</li>
+</ul>
+
+<h3>Design principles</h3>
+<div class="three-col">
+  <div class="card" style="margin:0">
+    <h4 style="margin-top:0">Dark. Flat. Fluorescent.</h4>
+    <p style="font-size:0.82rem; color:var(--muted)">
+      Near-black surfaces, hair-thin borders, one glow color. The violet is
+      the only source of light. Everything else gets out of its way.
+    </p>
+  </div>
+  <div class="card" style="margin:0">
+    <h4 style="margin-top:0">One FORGE, one focus.</h4>
+    <p style="font-size:0.82rem; color:var(--muted)">
+      The device has exactly one primary action. The button is visually
+      dominant before action, dims while running, returns on complete.
+    </p>
+  </div>
+  <div class="card" style="margin:0">
+    <h4 style="margin-top:0">Data over chrome.</h4>
+    <p style="font-size:0.82rem; color:var(--muted)">
+      No skeuomorphic racks, no fake LCDs. The waveform, the spectroscope,
+      the LEDs on the pads — those are the only ornaments, because they're
+      telling the truth about audio.
+    </p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     ANATOMY
+     ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section" id="anatomy"><span class="num">02</span>Device anatomy<span class="trail"></span></h2>
+
+<p>
+  The device is <strong>780 × 460 px</strong> in v3 form. That's a departure
+  from the v0 400 × 260 — v0 is a stripe, v3 is a full working surface. Both
+  are valid depending on ship horizon; the v0 dimensions still work for the
+  "no curated grid" subset (bottom-left quadrant only).
+</p>
+
+<div class="flow"><span class="m">┌─────────────────────────────────────────────────────────────────────────────────┐</span>
+<span class="m">│</span>  <span class="a">● StemForge</span>                                                          <span class="d">v0.3.0</span>  <span class="m">│</span>  <span class="d">← Ableton-style title</span>
+<span class="m">├────────────────────────────────────────────────────────┬────────────────────────┤</span>
+<span class="m">│</span>                                                        <span class="m">│</span>                        <span class="m">│</span>
+<span class="m">│</span>  <span class="a">▓▒░▒▓▒░░▒▓▒░▒▓▓▒░▒▓▒░▓▒░▒▓▒░▒▓▒░▒▓▓</span>  <span class="y">WAVEFORM + GRID</span>    <span class="m">│</span>   <span class="b">┌─ FORGE ─────────┐</span>  <span class="m">│</span>  <span class="d">← 14px button,</span>
+<span class="m">│</span>  <span class="d">│    │    │    │    │    │    │</span>                         <span class="m">│</span>   <span class="b">│                 │</span>  <span class="m">│</span>    <span class="d">signature violet</span>
+<span class="m">│</span>  <span class="d">1    2    3    4    5    6    7</span>  ← bars (from LOM)      <span class="m">│</span>   <span class="b">└─────────────────┘</span>  <span class="m">│</span>
+<span class="m">│</span>                                                        <span class="m">│</span>                        <span class="m">│</span>
+<span class="m">│</span>  <span class="a">▁▂▃▅▆▇█▇▅▃▂▁▁▂▃▄▅▄▃▂▁</span>  <span class="y">SPECTROSCOPE</span>                 <span class="m">│</span>   <span class="d">PIPELINE</span>  <span class="d">BACKEND</span>     <span class="m">│</span>
+<span class="m">│</span>                                                        <span class="m">│</span>   <span class="a">idm_crushed</span>  <span class="a">auto</span>      <span class="m">│</span>  <span class="d">← dropdowns</span>
+<span class="m">│</span>                                                        <span class="m">│</span>                        <span class="m">│</span>
+<span class="m">│</span>  <span class="g">●</span> <span class="g">complete</span>   <span class="a">▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇</span> 100%              <span class="m">│</span>   <span class="d">SLICE</span>   <span class="g">● on</span>        <span class="m">│</span>
+<span class="m">│</span>                                                        <span class="m">│</span>   <span class="d">N_BARS</span>  <span class="a">14</span>          <span class="m">│</span>
+<span class="m">├────────────────────────────────────────────────────────┼────────────────────────┤</span>
+<span class="m">│</span>  <span class="y">STEM MIXER</span>                                            <span class="m">│</span>   <span class="y">CURATED BAR GRID</span>     <span class="m">│</span>
+<span class="m">│</span>                                                        <span class="m">│</span>                        <span class="m">│</span>
+<span class="m">│</span>   <span class="r">◉</span>      <span class="b">◉</span>      <span class="o">◉</span>      <span class="g">◉</span>                               <span class="m">│</span>   <span class="r">▓</span> <span class="r">▓</span> <span class="o">▓</span> <span class="g">▓</span>              <span class="m">│</span>  <span class="d">← 4×4 pads, LED color</span>
+<span class="m">│</span>  <span class="r">drums</span>  <span class="b">bass</span>   <span class="o">vox</span>    <span class="g">other</span>                            <span class="m">│</span>   <span class="b">▓</span> <span class="t">▓</span> <span class="b">▓</span> <span class="o">▓</span>              <span class="m">│</span>    <span class="d">= spectral centroid</span>
+<span class="m">│</span>                                                        <span class="m">│</span>   <span class="g">▓</span> <span class="r">▓</span> <span class="t">▓</span> <span class="r">▓</span>              <span class="m">│</span>    <span class="d">brightness = crest</span>
+<span class="m">│</span>                                                        <span class="m">│</span>   <span class="o">▓</span> <span class="b">▓</span> <span class="g">▓</span> <span class="t">▓</span>              <span class="m">│</span>
+<span class="m">├────────────────────────────────────────────────────────┴────────────────────────┤</span>
+<span class="m">│</span>  <span class="g">●</span> <span class="d">SYNC</span>  session <span class="a">112.35</span> BPM <span class="m">→</span> bar <span class="a">112.35</span> BPM  <span class="d">│</span>  strategy <span class="a">max-diversity</span>     <span class="m">│</span>
+<span class="m">└─────────────────────────────────────────────────────────────────────────────────┘</span></div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     MOCKUP
+     ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section" id="mockup"><span class="num">03</span>Device mockup — at-size<span class="trail"></span></h2>
+
+<p class="lede">
+  Pixel-accurate HTML mockup at 780px to preview proportions and color balance.
+  The state shown is <em>post-FORGE, bars loaded, idle</em>. Earlier states
+  (empty, running) are specified in §08.
+</p>
+
+<div class="device-stage">
+  <span class="stage-label">m4l · 780 × 460</span>
+
+  <div class="m4l">
+    <!-- Title bar -->
+    <div class="m4l-bar">
+      <div class="m4l-dot"></div>
+      <div class="m4l-title">StemForge</div>
+      <span style="color:#555;">Integrated Forge</span>
+      <div class="m4l-ver">v0.3.0 · ft-fused · coreml</div>
+    </div>
+
+    <!-- Body -->
+    <div class="m4l-body">
+
+      <!-- LEFT column -->
+      <div class="m4l-left">
+
+        <!-- Waveform -->
+        <div class="m4l-wave">
+          <span class="wave-label">SOURCE · hot_pants.wav</span>
+          <span class="wave-bpm"><span class="num">112.35</span> BPM · 4/4</span>
+
+          <!-- bar grid lines (at ~12.5% intervals for 8 bars) -->
+          <div class="grid-line major" style="left:6px;"></div>
+          <div class="grid-line" style="left:calc(6px + 12.5% * 1);"></div>
+          <div class="grid-line" style="left:calc(6px + 12.5% * 2);"></div>
+          <div class="grid-line" style="left:calc(6px + 12.5% * 3);"></div>
+          <div class="grid-line major" style="left:calc(6px + 12.5% * 4);"></div>
+          <div class="grid-line" style="left:calc(6px + 12.5% * 5);"></div>
+          <div class="grid-line" style="left:calc(6px + 12.5% * 6);"></div>
+          <div class="grid-line" style="left:calc(6px + 12.5% * 7);"></div>
+          <div class="grid-line playhead" style="left:calc(6px + 12.5% * 2.3);"></div>
+
+          <div class="wave-canvas" id="wavecanvas"></div>
+          <div class="beat-row">
+            <span>1</span><span>2</span><span>3</span><span>4</span>
+            <span>5</span><span>6</span><span>7</span><span>8</span>
+          </div>
+        </div>
+
+        <!-- Spectroscope -->
+        <div class="m4l-spec">
+          <span class="spec-label">SPECTRUM · drums</span>
+          <div class="spec-canvas" id="speccanvas"></div>
+        </div>
+
+        <!-- Status -->
+        <div class="m4l-status">
+          <div class="stat-dot"></div>
+          <div class="stat-phase">COMPLETE</div>
+          <div class="stat-prog-wrap">
+            <div class="stat-prog"></div>
+          </div>
+          <div class="stat-pct">14/14 bars</div>
+        </div>
+
+        <!-- Stem mixer -->
+        <div class="m4l-mixer">
+          <div class="m4l-dial" style="--stem-c: var(--stem-drums);">
+            <div class="ring" style="--rot: 40deg;"></div>
+            <div class="lbl">DRUMS</div>
+          </div>
+          <div class="m4l-dial" style="--stem-c: var(--stem-bass);">
+            <div class="ring" style="--rot: 10deg;"></div>
+            <div class="lbl">BASS</div>
+          </div>
+          <div class="m4l-dial" style="--stem-c: var(--stem-vox);">
+            <div class="ring" style="--rot: -80deg;"></div>
+            <div class="lbl">VOX</div>
+          </div>
+          <div class="m4l-dial" style="--stem-c: var(--stem-verb);">
+            <div class="ring" style="--rot: 60deg;"></div>
+            <div class="lbl">OTHER</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- RIGHT column -->
+      <div class="m4l-right">
+
+        <!-- FORGE button -->
+        <div class="m4l-forge">FORGE</div>
+
+        <!-- Pipeline / Backend -->
+        <div class="m4l-grp">
+          <div class="m4l-grp-title">
+            <span>PIPELINE</span>
+            <span class="accent">idm_crushed</span>
+          </div>
+          <div class="m4l-chips">
+            <div class="m4l-chip">default</div>
+            <div class="m4l-chip active">idm_crushed</div>
+            <div class="m4l-chip">glitch</div>
+            <div class="m4l-chip">ambient</div>
+          </div>
+        </div>
+
+        <div class="m4l-grp">
+          <div class="m4l-grp-title">
+            <span>BACKEND</span>
+            <span class="accent">ft-fused</span>
+          </div>
+          <div class="m4l-chips">
+            <div class="m4l-chip active">auto</div>
+            <div class="m4l-chip">demucs</div>
+            <div class="m4l-chip">lalal</div>
+            <div class="m4l-chip">musicai</div>
+          </div>
+        </div>
+
+        <div class="m4l-grp">
+          <div class="m4l-grp-title">
+            <span>CURATION</span>
+          </div>
+          <div class="m4l-row">
+            <span class="label">strategy</span>
+            <span class="value">max-diversity</span>
+          </div>
+          <div class="m4l-row">
+            <span class="label">n_bars</span>
+            <span class="value">14</span>
+          </div>
+          <div class="m4l-row">
+            <span class="label">slice beats</span>
+            <span class="value toggle">ON</span>
+          </div>
+        </div>
+
+        <!-- Pad grid -->
+        <div class="m4l-pads-wrap">
+          <div class="m4l-pads-head">
+            <span>CURATED BARS</span>
+            <span class="active">▸ playing 04</span>
+          </div>
+          <div class="m4l-pads">
+            <div class="m4l-pad" style="--pad-c: #ff4444; --pad-op: 0.35;"><span>01</span></div>
+            <div class="m4l-pad" style="--pad-c: #ff6b35; --pad-op: 0.45;"><span>02</span></div>
+            <div class="m4l-pad" style="--pad-c: #ffaa44; --pad-op: 0.25;"><span>03</span></div>
+            <div class="m4l-pad playing" style="--pad-c: #4ade80; --pad-op: 0.65;"><span>04</span></div>
+
+            <div class="m4l-pad" style="--pad-c: #44cccc; --pad-op: 0.4;"><span>05</span></div>
+            <div class="m4l-pad" style="--pad-c: #4477ff; --pad-op: 0.3;"><span>06</span></div>
+            <div class="m4l-pad" style="--pad-c: #818cf8; --pad-op: 0.5;"><span>07</span></div>
+            <div class="m4l-pad" style="--pad-c: #c084fc; --pad-op: 0.6;"><span>08</span></div>
+
+            <div class="m4l-pad" style="--pad-c: #ff4444; --pad-op: 0.5;"><span>09</span></div>
+            <div class="m4l-pad" style="--pad-c: #44dd77; --pad-op: 0.2;"><span>10</span></div>
+            <div class="m4l-pad" style="--pad-c: #fbbf24; --pad-op: 0.35;"><span>11</span></div>
+            <div class="m4l-pad" style="--pad-c: #ff6b35; --pad-op: 0.3;"><span>12</span></div>
+
+            <div class="m4l-pad" style="--pad-c: #44cccc; --pad-op: 0.25;"><span>13</span></div>
+            <div class="m4l-pad" style="--pad-c: #c084fc; --pad-op: 0.45;"><span>14</span></div>
+            <div class="m4l-pad" style="--pad-c: #333; --pad-op: 1;"><span style="color:#444">·</span></div>
+            <div class="m4l-pad" style="--pad-c: #333; --pad-op: 1;"><span style="color:#444">·</span></div>
+          </div>
+        </div>
+
+        <!-- Sync -->
+        <div class="m4l-sync">
+          <div class="left"><span class="led"></span>SYNC</div>
+          <div class="right">
+            112.35<span class="src">bar</span><span style="color:#666">→</span><span class="src">session</span>120.00
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+  // draw waveform bars (deterministic seeded random-ish)
+  (function(){
+    var wc = document.getElementById('wavecanvas');
+    if (!wc) return;
+    var n = 180;
+    var seeds = [];
+    // a rhythmic pattern — 4/4 kick pulse with envelope
+    for (var i = 0; i < n; i++) {
+      var beat = (i / (n / 32)) % 4;  // 32 beats visible
+      var env = Math.pow(Math.max(0, 1 - Math.abs((beat % 1) - 0.05) * 6), 2);
+      var noise = Math.sin(i * 1.47) * 0.3 + Math.sin(i * 3.21 + 1) * 0.2;
+      var v = Math.max(0.08, Math.min(1, env * 0.9 + noise + 0.15));
+      seeds.push(v);
+    }
+    seeds.forEach(function(v){
+      var b = document.createElement('div');
+      b.className = 'bar';
+      b.style.height = (v * 70) + 'px';
+      wc.appendChild(b);
+    });
+  })();
+  // spectrum
+  (function(){
+    var sc = document.getElementById('speccanvas');
+    if (!sc) return;
+    var n = 64;
+    for (var i = 0; i < n; i++) {
+      var freq = i / n;
+      var v = Math.pow(1 - freq, 0.7) * (0.6 + 0.4 * Math.sin(i * 0.8)) * (0.5 + Math.random() * 0.5);
+      v = Math.max(0.05, Math.min(1, v));
+      var b = document.createElement('div');
+      b.className = 'bar';
+      b.style.height = (v * 46) + 'px';
+      sc.appendChild(b);
+    }
+  })();
+</script>
+
+<div class="cal info">
+  <strong>Mockup fidelity note</strong>
+  The mockup above is an HTML approximation. In the actual .amxd, the
+  waveform is Max's <code>waveform~</code> object, the spectrum is
+  <code>spectroscope~</code>, the pad grid is <code>matrixctrl</code>, and
+  the FORGE button is <code>textbutton</code> with a custom bgfillcolor. Max
+  cannot do CSS gradients on buttons — the button glow is approximated by
+  a panel behind the button with a slightly brighter fill and <code>blur</code>
+  masking where supported, or an LED strip above it for lo-fi fallback.
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     PANEL SPEC
+     ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section" id="panels"><span class="num">04</span>Panel-by-panel spec<span class="trail"></span></h2>
+
+<h3>A · Titlebar</h3>
+<div class="card">
+  <table>
+    <tr><th>Element</th><th>Max class</th><th>Notes</th></tr>
+    <tr><td>Violet status dot</td><td><code>live.led</code></td><td>green=idle, violet=has source, yellow=running, red=error</td></tr>
+    <tr><td>"StemForge" wordmark</td><td><code>comment</code>, 11px bold</td><td>Color <code>#c084fc</code>. Letter-space 0.08em.</td></tr>
+    <tr><td>Subtitle "Integrated Forge"</td><td><code>comment</code>, 10px</td><td>Color <code>#555</code></td></tr>
+    <tr><td>Version + model tag</td><td><code>comment</code>, right-aligned</td><td>Reads from binary <code>--version</code> and manifest. Dims if mismatch.</td></tr>
+  </table>
+</div>
+
+<h3>B · Waveform + bar-grid display</h3>
+<div class="card">
+  <p style="font-size:0.85rem;">
+    The anchoring UI element. Shows the source clip's waveform with <strong>bar
+    boundaries drawn from Ableton's warp markers</strong>, not from a rigid
+    grid. This is the user's visual confirmation that warp analysis is correct
+    before they forge.
+  </p>
+  <ul>
+    <li><strong>Source:</strong> <code>waveform~</code> fed by the clip file path via <code>sfinfo~</code> / <code>buffer~</code></li>
+    <li><strong>Grid overlay:</strong> vertical 1px lines at every bar boundary computed from <code>warp_markers</code> + <code>signature_numerator</code>. Major bar (every 4 bars) is slightly brighter yellow.</li>
+    <li><strong>Playhead:</strong> green 2px line driven by <code>live.thisdevice</code> → <code>plugsync~</code> when parent clip is playing.</li>
+    <li><strong>Color:</strong> waveform in violet <code>#c084fc</code> at 0.85 alpha; grid lines yellow <code>#fbbf24</code> at 0.4 / 0.55; playhead green.</li>
+    <li><strong>Top-right BPM readout:</strong> detected tempo + time signature. Click to toggle between <em>clip BPM</em> and <em>session BPM</em> readout.</li>
+    <li><strong>Beat numbers underneath:</strong> bar-accurate, drawn from the warp-marker interpolation.</li>
+  </ul>
+  <div class="cal warn">
+    <strong>Fallback state</strong>
+    If the clip isn't warped or <code>get_warp_markers</code> returns empty,
+    the grid is drawn rigid at the session tempo and a small yellow triangle
+    appears next to the BPM readout with tooltip: "Rigid grid — warp the clip
+    for accurate bar detection". Do <em>not</em> refuse to forge; the librosa
+    fallback still works.
+  </div>
+</div>
+
+<h3>C · Spectroscope</h3>
+<div class="card">
+  <ul>
+    <li><strong>Source:</strong> <code>spectroscope~</code>. By default follows whichever stem is soloed in the mixer; otherwise the source clip.</li>
+    <li><strong>Label:</strong> top-left, shows which signal is being analyzed.</li>
+    <li><strong>Style:</strong> bars from deep-violet at bottom to light-violet at peak, matching the waveform gradient. 64 bins, log-spaced.</li>
+    <li><strong>Secondary function:</strong> when a pad is held, the scope switches to showing that bar's average spectrum (still frame) so the user can see <em>why</em> the curator selected it.</li>
+  </ul>
+</div>
+
+<h3>D · Status strip</h3>
+<div class="card">
+  <p style="font-size:0.85rem;">
+    The narrow horizontal row binding the workflow to time. Reads the NDJSON
+    event stream from <code>stemforge-native forge --json-events</code>.
+  </p>
+  <table>
+    <tr><th>Dot color</th><th>Phase word</th><th>Meaning</th></tr>
+    <tr><td style="color:#555">grey</td><td>IDLE</td><td>No source yet; drop audio or select clip</td></tr>
+    <tr><td style="color:var(--accent)">violet</td><td>READY</td><td>Source present, analysis extracted, FORGE enabled</td></tr>
+    <tr><td style="color:var(--yellow)">yellow</td><td>LOADING_MODEL</td><td>First run cold-compile (≤125s). Should not appear on warm installs.</td></tr>
+    <tr><td style="color:var(--yellow)">yellow</td><td>SPLITTING</td><td>ONNX inference running. Progress % fills bar.</td></tr>
+    <tr><td style="color:var(--yellow)">yellow</td><td>SLICING</td><td>Bar-grid slicing via warp markers</td></tr>
+    <tr><td style="color:var(--yellow)">yellow</td><td>CURATING</td><td>Diversity-search for n_bars</td></tr>
+    <tr><td style="color:var(--yellow)">yellow</td><td>LOADING</td><td>Duplicating tracks, placing clips, hydrating polybuffer</td></tr>
+    <tr><td style="color:var(--green)">green</td><td>COMPLETE</td><td>Terminal state. Right side shows "14/14 bars" or "4 stems loaded".</td></tr>
+    <tr><td style="color:var(--red)">red</td><td>ERROR</td><td>Right side shows the error. Click to copy full trace.</td></tr>
+  </table>
+</div>
+
+<h3>E · Stem mixer (4 dials)</h3>
+<div class="card">
+  <ul>
+    <li><strong>Objects:</strong> <code>live.dial</code> × 4, routed to per-stem <code>*~</code> output gain on the device's internal stem-sum output.</li>
+    <li><strong>Color coding:</strong> each dial's indicator line uses that stem's channel color. When the dial is at zero the color drops to 20% opacity.</li>
+    <li><strong>Purpose is pre-split auditioning:</strong> after FORGE the device routes all four stems through its output so you can monitor a pre-mix <em>before</em> you commit the clips to the new tracks. MIDI-mappable.</li>
+    <li><strong>Alt-click to solo:</strong> standard Ableton convention. Soloing a stem also switches the spectroscope feed.</li>
+  </ul>
+  <div class="cal info">
+    <strong>Why it's here even though there are separate tracks</strong>
+    The per-track gain in the Live session is downstream of the pipeline's
+    heavy processing (bitcrush, reverb, etc.). The device-internal mixer is a
+    dry-stem preview, useful to hear what the separation <em>actually</em> pulled
+    out before deciding whether to re-forge with a different backend.
+  </div>
+</div>
+
+<h3>F · FORGE button</h3>
+<div class="card">
+  <ul>
+    <li><strong>Object:</strong> <code>textbutton</code> with custom <code>bgoncolor</code> <code>#7c3aed</code>, <code>bgcolor</code> <code>#1a1a1a</code> (disabled), <code>textcolor</code> white.</li>
+    <li><strong>States:</strong>
+      <ul>
+        <li><em>Disabled:</em> background <code>#1a1a1a</code>, text <code>#555</code>, no glow. Shown when no source clip present.</li>
+        <li><em>Ready:</em> full violet, glow <code>0 0 20px rgba(192,132,252,0.35)</code>.</li>
+        <li><em>Running:</em> label swaps to <code>CANCEL</code>, background desaturates to <code>#4a3878</code>, kills Python subprocess on click.</li>
+        <li><em>Complete:</em> label swaps back to <code>FORGE</code> with a subtle green border-flash (150ms) to confirm.</li>
+      </ul>
+    </li>
+    <li><strong>Keybind:</strong> none (devices can't register global keys), but MIDI-mappable.</li>
+  </ul>
+</div>
+
+<h3>G · Pipeline / Backend / Curation groups</h3>
+<div class="card">
+  <ul>
+    <li><strong>Pipeline chips:</strong> 4 chips (<code>default</code> / <code>idm_crushed</code> / <code>glitch</code> / <code>ambient</code>) as selectable tabs. Active chip gets violet border + violet tinted background. Value mirrored in the group header label for redundancy.</li>
+    <li><strong>Backend chips:</strong> 4 chips (<code>auto</code> / <code>demucs</code> / <code>lalal</code> / <code>musicai</code>). <code>auto</code> resolves to <code>ft-fused</code> locally. When <code>lalal</code> or <code>musicai</code> is selected, a tiny "$" balance indicator appears to the right of the group title (reads from <code>stemforge balance</code>).</li>
+    <li><strong>Curation group:</strong> <code>strategy</code> (dropdown: <code>max-diversity</code> / <code>rhythm-taxonomy</code> / <code>sectional</code>), <code>n_bars</code> (live.numbox, 4–32, default 14), <code>slice beats</code> (toggle).</li>
+  </ul>
+</div>
+
+<h3>H · Curated pad grid</h3>
+<div class="card">
+  <p style="font-size:0.85rem;">
+    The v3 centerpiece and the reason the device is 780px wide, not 400.
+  </p>
+  <ul>
+    <li><strong>Object:</strong> <code>matrixctrl</code> 4×4 + <code>live.button</code> overlay per cell for discrete LED control.</li>
+    <li><strong>Per-pad data:</strong> each pad backs one entry in <code>polybuffer~ sf_bars</code>, fed by the curated <code>*_beat_NNN.wav</code> files. Extra pads beyond n_bars render as dimmed dots.</li>
+    <li><strong>LED color</strong> = spectral centroid of that bar → warm (red) low, cool (teal/violet) high. Derived by the curator, stamped in manifest.</li>
+    <li><strong>LED brightness</strong> = crest factor → punchy bars are brighter.</li>
+    <li><strong>Click</strong>: one-shot trigger, plays through <code>groove~</code> time-stretched to session tempo. <strong>Click + hold</strong>: loop until release. <strong>Shift-click</strong>: latch loop.</li>
+    <li><strong>MIDI mapping:</strong> each pad is a <code>live.button</code> and is independently mappable. Push / Launchpad / keyboard all work. A "map all" button in the group header auto-maps to the 16 notes starting at C2.</li>
+    <li><strong>Right-click on pad:</strong> opens contextual — "Drag to Simpler" (writes a drag-ref to the .wav), "Reject bar" (re-runs curator for a replacement), "Lock" (bar stays across re-curation).</li>
+  </ul>
+  <div class="cal tip">
+    <strong>IDM-specific behavior</strong>
+    Held pads crossfade into each other via <code>groove~</code>'s release ramp
+    (20ms), so mashing keys for glitchy retriggers doesn't click. The curator's
+    <code>rhythm-taxonomy</code> strategy can be used to deliberately pick pads
+    that are structurally-adjacent (same rhythm class), giving organized chaos.
+  </div>
+</div>
+
+<h3>I · Sync strip (footer)</h3>
+<div class="card">
+  <ul>
+    <li><strong>SYNC LED:</strong> green pulsing while playback is in sync, red if <code>groove~</code> reports drift &gt; 5ms, yellow if the session tempo has drifted from the BPM inferred at forge time.</li>
+    <li><strong>Tempo readout:</strong> <code>BAR_BPM → SESSION_BPM</code>. If they match, a single number. If different, both with arrow — pads are being stretched.</li>
+    <li><strong>Strategy confirmation:</strong> right-side reminder of which curation strategy produced the current pad set (so you can A/B by re-running with a different one without forgetting which set you're listening to).</li>
+  </ul>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     WORKFLOW
+     ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section" id="workflow"><span class="num">05</span>Workflow — press to playback<span class="trail"></span></h2>
+
+<p class="lede">
+  The canonical happy path, end-to-end. Numbers match state transitions in §08
+  and the NDJSON events in <code>v0/interfaces/ndjson.schema.json</code>.
+</p>
+
+<ol>
+  <li><strong>User drops StemForge.amxd on any audio track.</strong> The track already has a source audio clip in slot 0 (warped by Ableton's auto-warp).</li>
+  <li><strong>Device boots.</strong> <code>stemforge_lom.js</code> walks <code>live_set this_device canonical_parent clip_slots</code> and finds the first populated slot. It reads <code>file_path</code>, <code>signature_numerator</code>, <code>warp_markers</code>, session <code>tempo</code>. The waveform and bar-grid render from this.</li>
+  <li><strong>User picks a pipeline</strong> (or accepts <code>default</code>) and toggles <code>slice beats</code>. <code>n_bars</code> and <code>strategy</code> live in the curation group.</li>
+  <li><strong>User presses FORGE.</strong> <code>stemforge_bridge.js</code> writes the LOM analysis to <code>/tmp/sf-analysis-XXXX.json</code> and spawns <code>stemforge-native forge --analysis &lt;json&gt; --pipeline &lt;p&gt; --json-events</code>. NDJSON flows back to stdout.</li>
+  <li><strong>Python emits <code>started</code>.</strong> Status strip flips to yellow, phase label reads <code>LOADING_MODEL</code> if cold (warmup should have prevented this on installed packages), else <code>SPLITTING</code>.</li>
+  <li><strong>ONNX + CoreML runs htdemucs_ft_fused.</strong> <code>progress</code> events fire roughly every 250ms, pushing percentage into the status bar. Spectroscope shows live input spectrum.</li>
+  <li><strong>Slicer runs.</strong> Using <code>warp_markers</code> + <code>signature_numerator</code>, per-beat sample positions are interpolated, grouped every <code>numerator</code> beats into bars. Slices are written to <code>~/stemforge/processed/{track}/{stem}_beats/beat_001.wav</code> …</li>
+  <li><strong>Curator runs.</strong> Greedy max-diversity selects <code>n_bars</code> from all bars, writes <code>curated/{stem}/</code>, emits per-bar fingerprint metadata.</li>
+  <li><strong>Manifest emitted.</strong> <code>stems.json</code> holds: <code>bpm</code>, <code>track_name</code>, <code>pipeline</code>, per-stem <code>wav_path</code> + <code>beats_dir</code> + curation, plus processed_at timestamp.</li>
+  <li><strong><code>complete</code> event.</strong> Bridge reads the manifest path, hands it to <code>stemforge_loader.js</code>.</li>
+  <li><strong>Loader sets session tempo</strong> from <code>manifest.bpm</code> via <code>LiveAPI("live_set").set("tempo", bpm)</code>. This is the moment the session adopts the source's clock.</li>
+  <li><strong>Loader places clips.</strong> Per the rules in §06 — find-or-duplicate template tracks per <code>stem_target</code>, call <code>create_audio_clip</code>, set <code>warp_mode</code> from the pipeline config, <code>looping=1</code>.</li>
+  <li><strong>Beat-chop path.</strong> The drums <code>_beats/</code> directory is passed to the duplicated <code>SF | Beat Chop Simpler</code> track's Simpler (slice mode, warp off).</li>
+  <li><strong>Curated bars hydrate <code>polybuffer~</code></strong> in the device. When done, pad LEDs light up and the grid becomes playable.</li>
+  <li><strong>Device flips to COMPLETE.</strong> Green dot, grid ready, stem mixer live, waveform still showing source with playhead active when source is playing.</li>
+</ol>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     TRACKS
+     ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section" id="tracks"><span class="num">06</span>Where clips land (and how)<span class="trail"></span></h2>
+
+<p class="lede">
+  This is the choreography part of your brief. The session transforms from
+  "one track with a device" to a laid-out multi-track scene in under 30
+  seconds. The placement rules are fully determined by <code>tracks.yaml</code>
+  stem_target mappings and the pipeline's stem configs.
+</p>
+
+<h3>Before FORGE</h3>
+<div class="session">
+  <div class="session-head">
+    <span>Session</span>
+    <span class="bpm">Session BPM <span class="n">120.00</span></span>
+    <span style="color:var(--muted)">4/4</span>
+    <span style="color:var(--muted); margin-left:auto;">Live 12.1.5</span>
+  </div>
+  <div class="session-tracks">
+    <div class="session-gutter">
+      <div class="bar-marker">1</div><div class="bar-marker">2</div><div class="bar-marker">3</div><div class="bar-marker">4</div>
+      <div class="bar-marker">5</div><div class="bar-marker">6</div><div class="bar-marker">7</div><div class="bar-marker">8</div>
+    </div>
+    <div class="session-track">
+      <div class="tr-name"><div class="tr-color" style="background:#888"></div><div class="tr-label">1 Audio · hot_pants</div></div>
+      <div class="tr-slot"><div class="slot-clip" style="background:#888">◼</div></div>
+      <div class="tr-arrangement">
+        <div class="clip" style="background:#888; color:rgba(0,0,0,0.8); left:0; width:60%;">hot_pants.wav  [StemForge ●]</div>
+      </div>
+    </div>
+    <div class="session-track template">
+      <div class="tr-name"><div class="tr-color" style="background:var(--stem-drums)"></div><div class="tr-label">2 <span class="pipe">SF</span>Drums Raw</div></div>
+      <div class="tr-slot"></div><div class="tr-arrangement"></div>
+    </div>
+    <div class="session-track template">
+      <div class="tr-name"><div class="tr-color" style="background:var(--stem-drums-2)"></div><div class="tr-label">3 <span class="pipe">SF</span>Drums Crushed</div></div>
+      <div class="tr-slot"></div><div class="tr-arrangement"></div>
+    </div>
+    <div class="session-track template">
+      <div class="tr-name"><div class="tr-color" style="background:var(--stem-bass)"></div><div class="tr-label">4 <span class="pipe">SF</span>Bass</div></div>
+      <div class="tr-slot"></div><div class="tr-arrangement"></div>
+    </div>
+    <div class="session-track template">
+      <div class="tr-name"><div class="tr-color" style="background:var(--stem-verb)"></div><div class="tr-label">5 <span class="pipe">SF</span>Texture Verb</div></div>
+      <div class="tr-slot"></div><div class="tr-arrangement"></div>
+    </div>
+    <div class="session-track template">
+      <div class="tr-name"><div class="tr-color" style="background:var(--stem-crystal)"></div><div class="tr-label">6 <span class="pipe">SF</span>Texture Crystallized</div></div>
+      <div class="tr-slot"></div><div class="tr-arrangement"></div>
+    </div>
+    <div class="session-track template">
+      <div class="tr-name"><div class="tr-color" style="background:var(--stem-vox)"></div><div class="tr-label">7 <span class="pipe">SF</span>Vocals</div></div>
+      <div class="tr-slot"></div><div class="tr-arrangement"></div>
+    </div>
+    <div class="session-track template">
+      <div class="tr-name"><div class="tr-color" style="background:var(--stem-simpler)"></div><div class="tr-label">8 <span class="pipe">SF</span>Beat Chop Simpler <span style="color:var(--muted); font-size:8px;">(MIDI)</span></div></div>
+      <div class="tr-slot"></div><div class="tr-arrangement"></div>
+    </div>
+  </div>
+</div>
+
+<p style="font-size:0.85rem; color:var(--muted);">
+  The 7 template tracks (faded) are present from <code>StemForge.als</code> or
+  built manually per <code>setup.md</code>. Each has its processing chain
+  pre-wired (Compressor, EQ Eight, LO-FI-AF, Decapitator, etc., per
+  <code>tracks.yaml</code>). They are the <em>factories</em>, not the output.
+</p>
+
+<h3>After FORGE — pipeline <code>idm_crushed</code></h3>
+<div class="session">
+  <div class="session-head">
+    <span>Session</span>
+    <span class="bpm">Session BPM <span class="n">112.35</span></span>
+    <span style="color:var(--green)">▲ set from manifest</span>
+    <span style="color:var(--muted)">4/4</span>
+    <span style="color:var(--muted); margin-left:auto;">Live 12.1.5</span>
+  </div>
+  <div class="session-tracks">
+    <div class="session-gutter">
+      <div class="bar-marker">1</div><div class="bar-marker">2</div><div class="bar-marker">3</div><div class="bar-marker">4</div>
+      <div class="bar-marker">5</div><div class="bar-marker">6</div><div class="bar-marker">7</div><div class="bar-marker">8</div>
+    </div>
+
+    <div class="session-track">
+      <div class="tr-name"><div class="tr-color" style="background:#888"></div><div class="tr-label">1 Audio · hot_pants</div></div>
+      <div class="tr-slot"><div class="slot-clip" style="background:#888">◼</div></div>
+      <div class="tr-arrangement">
+        <div class="clip" style="background:#888; color:rgba(0,0,0,0.8); left:0; width:60%;">hot_pants.wav  [StemForge ●]</div>
+      </div>
+    </div>
+
+    <div class="session-track template">
+      <div class="tr-name"><div class="tr-color" style="background:var(--stem-drums-2)"></div><div class="tr-label">2 <span class="pipe">SF</span>Drums Crushed <span style="color:var(--muted); font-size:8px;">(template)</span></div></div>
+      <div class="tr-slot"></div><div class="tr-arrangement"></div>
+    </div>
+    <div class="session-track">
+      <div class="tr-name"><div class="tr-color" style="background:var(--stem-drums-2)"></div><div class="tr-label">3 <span class="pipe">SF</span>Drums Crushed · hot_pants <span style="color:var(--green); font-size:8px;">▶ NEW</span></div></div>
+      <div class="tr-slot"><div class="slot-clip" style="background:var(--stem-drums-2); color:#fff">◼</div></div>
+      <div class="tr-arrangement">
+        <div class="clip" style="background:var(--stem-drums-2); color:#fff; left:0; width:25%;">hot_pants-drums</div>
+        <div class="clip" style="background:var(--stem-drums-2); color:#fff; left:25%; width:25%; opacity:0.7;">loop</div>
+        <div class="clip" style="background:var(--stem-drums-2); color:#fff; left:50%; width:25%; opacity:0.55;">loop</div>
+      </div>
+    </div>
+
+    <div class="session-track template">
+      <div class="tr-name"><div class="tr-color" style="background:var(--stem-bass)"></div><div class="tr-label">4 <span class="pipe">SF</span>Bass <span style="color:var(--muted); font-size:8px;">(template)</span></div></div>
+      <div class="tr-slot"></div><div class="tr-arrangement"></div>
+    </div>
+    <div class="session-track">
+      <div class="tr-name"><div class="tr-color" style="background:var(--stem-bass)"></div><div class="tr-label">5 <span class="pipe">SF</span>Bass · hot_pants <span style="color:var(--green); font-size:8px;">▶ NEW</span></div></div>
+      <div class="tr-slot"><div class="slot-clip" style="background:var(--stem-bass); color:#fff">◼</div></div>
+      <div class="tr-arrangement">
+        <div class="clip" style="background:var(--stem-bass); color:#fff; left:0; width:25%;">hot_pants-bass</div>
+        <div class="clip" style="background:var(--stem-bass); color:#fff; left:25%; width:25%; opacity:0.7;">loop</div>
+        <div class="clip" style="background:var(--stem-bass); color:#fff; left:50%; width:25%; opacity:0.55;">loop</div>
+      </div>
+    </div>
+
+    <div class="session-track template">
+      <div class="tr-name"><div class="tr-color" style="background:var(--stem-verb)"></div><div class="tr-label">6 <span class="pipe">SF</span>Texture Verb <span style="color:var(--muted); font-size:8px;">(template)</span></div></div>
+      <div class="tr-slot"></div><div class="tr-arrangement"></div>
+    </div>
+    <div class="session-track">
+      <div class="tr-name"><div class="tr-color" style="background:var(--stem-verb)"></div><div class="tr-label">7 <span class="pipe">SF</span>Texture Verb · hot_pants <span style="color:var(--green); font-size:8px;">▶ NEW</span></div></div>
+      <div class="tr-slot"><div class="slot-clip" style="background:var(--stem-verb); color:#000">◼</div></div>
+      <div class="tr-arrangement">
+        <div class="clip" style="background:var(--stem-verb); color:#000; left:0; width:25%;">hot_pants-other</div>
+        <div class="clip" style="background:var(--stem-verb); color:#000; left:25%; width:25%; opacity:0.7;">loop</div>
+      </div>
+    </div>
+
+    <div class="session-track template">
+      <div class="tr-name"><div class="tr-color" style="background:var(--stem-vox)"></div><div class="tr-label">8 <span class="pipe">SF</span>Vocals <span style="color:var(--muted); font-size:8px;">(template)</span></div></div>
+      <div class="tr-slot"></div><div class="tr-arrangement"></div>
+    </div>
+    <div class="session-track">
+      <div class="tr-name"><div class="tr-color" style="background:var(--stem-vox)"></div><div class="tr-label">9 <span class="pipe">SF</span>Vocals · hot_pants <span style="color:var(--green); font-size:8px;">▶ NEW</span></div></div>
+      <div class="tr-slot"><div class="slot-clip" style="background:var(--stem-vox); color:#000">◼</div></div>
+      <div class="tr-arrangement">
+        <div class="clip" style="background:var(--stem-vox); color:#000; left:0; width:25%;">hot_pants-vocals</div>
+        <div class="clip" style="background:var(--stem-vox); color:#000; left:25%; width:25%; opacity:0.7;">loop</div>
+      </div>
+    </div>
+
+    <div class="session-track template">
+      <div class="tr-name"><div class="tr-color" style="background:var(--stem-simpler)"></div><div class="tr-label">10 <span class="pipe">SF</span>Beat Chop Simpler <span style="color:var(--muted); font-size:8px;">(template MIDI)</span></div></div>
+      <div class="tr-slot"></div><div class="tr-arrangement"></div>
+    </div>
+    <div class="session-track">
+      <div class="tr-name"><div class="tr-color" style="background:var(--stem-simpler)"></div><div class="tr-label">11 <span class="pipe">SF</span>hot_pants | chop <span style="color:var(--green); font-size:8px;">▶ NEW</span></div></div>
+      <div class="tr-slot"><div class="slot-clip slot-midi">MIDI</div></div>
+      <div class="tr-arrangement">
+        <div class="clip" style="background:var(--stem-simpler); color:#000; left:0; width:25%;">14 slices in Simpler</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="lg-item"><div class="lg-dot" style="background:var(--stem-drums-2)"></div>Drums Crushed</div>
+  <div class="lg-item"><div class="lg-dot" style="background:var(--stem-bass)"></div>Bass</div>
+  <div class="lg-item"><div class="lg-dot" style="background:var(--stem-verb)"></div>Texture</div>
+  <div class="lg-item"><div class="lg-dot" style="background:var(--stem-vox)"></div>Vocals</div>
+  <div class="lg-item"><div class="lg-dot" style="background:var(--stem-simpler)"></div>Beat Chop (MIDI)</div>
+  <div class="lg-item" style="opacity:0.55"><div class="lg-dot" style="background:var(--muted)"></div>Templates (factories)</div>
+</div>
+
+<h3>The placement rules, explicit</h3>
+<div class="card">
+  <ol>
+    <li><strong>Template lookup</strong> — for each stem in the manifest, match against <code>tracks.yaml</code> <code>stem_target</code>. If the pipeline's <code>template</code> field overrides (e.g. <code>idm_crushed</code> routes <code>drums → "SF | Drums Crushed"</code> instead of <code>Drums Raw</code>), that wins.</li>
+    <li><strong>Track duplication</strong> — <code>LiveAPI("live_set").call("duplicate_track", templateIndex)</code>. The new track lands at <code>templateIndex + 1</code>. <span style="color:var(--yellow)">Known limitation:</span> Live does not let us insert tracks at arbitrary indices from JS, so post-forge track order is <em>template, copy, template, copy, …</em> not grouped by type. A follow-up enhancement is post-hoc grouping via <code>group_track</code> — traceable in a future W-work item.</li>
+    <li><strong>Rename + recolor</strong> — new track becomes <code>{source_track_name} · {stem}</code>, color set from pipeline YAML.</li>
+    <li><strong>Effect hydration</strong> — <code>applyEffects()</code> walks <code>pipeline.stems[stem].effects</code> and sets device parameters by name on the pre-existing chain devices (the templates already have their VSTs).</li>
+    <li><strong>Clip placement</strong> — <code>clip_slots[0].call("create_audio_clip", wav_path)</code>. Slot 0 by default; if occupied, walk slots for first empty.</li>
+    <li><strong>Warp mode per stem</strong> — <code>clip.set("warp_mode", WARP_MODES[pipeline.warp_mode])</code> — <code>beats=0</code> for drums/bass, <code>tones=1</code> for vocals, <code>complex=4</code> or <code>complex-pro=5</code> for textures.</li>
+    <li><strong>Loop</strong> — <code>clip.set("looping", 1)</code>. Every placed clip loops by default — this is an IDM-curation tool, you always want looping.</li>
+    <li><strong>Beat-chop path</strong> — <code>SF | Beat Chop Simpler</code> (MIDI) is duplicated, named <code>{track} | chop</code>, the duplicated Simpler's sample source is replaced with <code>{drums_beats_dir}</code> in slice mode, warp off. Slice count = bar-count (one slice per bar).</li>
+  </ol>
+</div>
+
+<h3>Multi-forge choreography</h3>
+<div class="card">
+  <p style="font-size:0.85rem;">
+    When a user forges a second track (different source), the device detects
+    the existing stem-routed tracks and <strong>does not re-duplicate the
+    templates</strong>. Instead, it appends a new clip slot to each
+    already-duplicated track:
+  </p>
+  <ul>
+    <li>First forge: clips land in slot 0</li>
+    <li>Second forge: clips land in slot 1 (same tracks, new scene)</li>
+    <li>Third forge: slot 2, and so on</li>
+  </ul>
+  <p style="font-size:0.85rem;">
+    This means scenes line up horizontally across all stem tracks — press a
+    scene launch and you're auditioning one forge's complete stem set. Session
+    tempo is <em>not</em> re-set on subsequent forges (first forge wins);
+    curated bars from forge 2 will time-stretch to forge 1's tempo via
+    <code>groove~</code>.
+  </p>
+  <div class="cal info">
+    <strong>The "shared tempo across forges" story</strong>
+    This is exactly why the device-internal pad grid uses <code>groove~</code>
+    rather than playing at native speed: so you can pull breaks from a 94 BPM
+    funk record and an 170 BPM d&amp;b record and play them interleaved at the
+    session's 128 BPM, all on the same grid. The session BPM is the canonical
+    clock; everything else bends.
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     TEMPO
+     ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section" id="tempo"><span class="num">07</span>The shared tempo contract<span class="trail"></span></h2>
+
+<p class="lede">
+  One BPM. Three points where it matters. Every piece of audio that enters the
+  session or lives on a pad negotiates with this single value.
+</p>
+
+<div class="tempo-math">
+  <div class="tempo-box">
+    <div class="tbl">Source clip</div>
+    <div class="tbv">112.35</div>
+    <div class="tbu">BPM (from warp analysis)</div>
+  </div>
+  <div class="tempo-arrow">→</div>
+  <div class="tempo-box" style="border-color: var(--accent);">
+    <div class="tbl" style="color: var(--accent);">Session</div>
+    <div class="tbv">112.35</div>
+    <div class="tbu">BPM (set from manifest)</div>
+  </div>
+  <div class="tempo-arrow">→</div>
+  <div class="tempo-box">
+    <div class="tbl">Stretched on pads</div>
+    <div class="tbv">112.35</div>
+    <div class="tbu">via <code>groove~</code></div>
+  </div>
+</div>
+
+<h3>The three anchor points</h3>
+<div class="card">
+  <ol>
+    <li><strong>Source clip BPM</strong> — computed by Ableton's warp engine when the user drops audio. Read via <code>LiveAPI("live_set").get("tempo")</code> at forge-time. This is the <em>authority</em> for the source's intended tempo.</li>
+    <li><strong>Session BPM</strong> — set by the loader via <code>setBPM(manifest.bpm)</code>. On first forge, session tempo adopts the source's BPM. On subsequent forges <em>against the same session</em>, session tempo is <strong>not</strong> overwritten — the user is curating across tempos and wants stability.</li>
+    <li><strong>Pad-bar BPM</strong> — each curated bar carries its source tempo as manifest metadata. When a pad triggers, <code>groove~</code> computes the stretch ratio <code>session / bar</code> and plays the bar at session tempo. No clicks, no phase weirdness, because <code>groove~</code>'s <code>interp 1</code> mode handles small ratios cleanly.</li>
+  </ol>
+</div>
+
+<h3>The grid contract</h3>
+<div class="card">
+  <p style="font-size:0.88rem;">
+    All curated bars are exactly <strong><code>signature_numerator</code> beats long</strong>
+    as measured at the bar's source tempo. Because warp analysis gave us
+    bar boundaries in <em>sample</em> positions, the .wav is trimmed
+    sample-accurate to the bar. When <code>groove~</code> stretches it to
+    session tempo, the result lines up to the session's 1 / 2 / 3 / 4 grid
+    without drift, regardless of source tempo or source time-signature.
+  </p>
+  <p style="font-size:0.88rem;">
+    This is why 7/4 tracks work: the bar is simply seven beats long at source
+    tempo. The pad plays it as a 7-beat loop at session tempo; if session is
+    in 4/4, the loop repeats every 1.75 measures — audibly polyrhythmic but
+    rhythmically honest. Users hear the groove the way JB intended,
+    projected into their host rhythm.
+  </p>
+</div>
+
+<h3>Edge cases the UI surfaces</h3>
+<table>
+  <tr><th>Condition</th><th>UI signal</th><th>Behavior</th></tr>
+  <tr><td>source BPM &gt; 1.5× session BPM</td><td>yellow SYNC LED</td><td>Groove~ handles it, but above ~50% stretch ratio quality degrades. UI hints: "Consider 2x or halve session tempo."</td></tr>
+  <tr><td>source is unwarped</td><td>yellow triangle on waveform BPM</td><td>Device warps via Ableton's auto-warp before analysis; bar grid may be off. "Warp manually for best results."</td></tr>
+  <tr><td>source time-sig ≠ session</td><td>info line above pad grid</td><td>Bars play their native duration; session grid polyrhythms. Explicit, not hidden.</td></tr>
+  <tr><td>subsequent forge, session BPM differs from new source</td><td>sync strip shows both</td><td>Session wins; new bars stretch. User can click the session BPM readout to flip the rule.</td></tr>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     STATES
+     ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section" id="states"><span class="num">08</span>State machine &amp; feedback<span class="trail"></span></h2>
+
+<p class="lede">
+  The device has seven canonical states. Every UI affordance is some
+  projection of these. State transitions are driven by NDJSON events from
+  the Python backend; missing events (timeout &gt; 180s on any phase) force
+  the state machine back to <code>error</code> with a copy-trace affordance.
+</p>
+
+<div class="flow"><span class="m">                       ┌──────────┐</span>
+<span class="m">                       │</span>  <span class="d">EMPTY</span>   <span class="m">│</span>  <span class="d">no clip on track</span>
+<span class="m">                       └────┬─────┘</span>
+<span class="m">        (clip dropped)       │</span>  <span class="d">→ stemforge_lom reads analysis</span>
+<span class="m">                             ▼</span>
+<span class="m">                       ┌──────────┐</span>
+<span class="m">                       │</span>  <span class="a">READY</span>   <span class="m">│</span>  <span class="d">waveform + grid render; FORGE enabled</span>
+<span class="m">                       └────┬─────┘</span>
+<span class="m">        (FORGE pressed)      │</span>  <span class="d">→ bridge spawns stemforge-native</span>
+<span class="m">                             ▼</span>
+<span class="m">       ┌────────────────────────────────────────────┐</span>
+<span class="m">       │</span> <span class="y">RUNNING</span> <span class="m">                                    │</span>
+<span class="m">       │   ┌──────────┐  ┌──────────┐  ┌──────────┐ │</span>
+<span class="m">       │   │</span> <span class="y">SPLIT</span>    <span class="m">│→ │</span> <span class="y">SLICE</span>    <span class="m">│→ │</span> <span class="y">CURATE</span>   <span class="m">│ │</span>
+<span class="m">       │   └──────────┘  └──────────┘  └──────────┘ │</span>
+<span class="m">       └────────────────────────────────────────────┘</span>
+<span class="m">              │                    │</span>
+<span class="m">              │                    │ (cancel pressed)</span>
+<span class="m">              │                    ▼</span>
+<span class="m">              │              ┌──────────┐</span>
+<span class="m">              │              │</span>  <span class="r">CANCEL</span>  <span class="m">│  → READY (no output)</span>
+<span class="m">              │              └──────────┘</span>
+<span class="m">              ▼</span>
+<span class="m">        ┌──────────┐</span>
+<span class="m">        │</span>  <span class="a">LOADING</span> <span class="m">│</span>  <span class="d">loader.js places clips + hydrates pads</span>
+<span class="m">        └────┬─────┘</span>
+<span class="m">             ▼</span>
+<span class="m">        ┌──────────┐                       ┌──────────┐</span>
+<span class="m">        │</span> <span class="g">COMPLETE</span> <span class="m">│ ─── (error any stage) ── │</span>  <span class="r">ERROR</span>   <span class="m">│</span>
+<span class="m">        └──────────┘                       └──────────┘</span>
+<span class="m">                                                 │</span>
+<span class="m">                                                 │ (dismiss)</span>
+<span class="m">                                                 ▼</span>
+<span class="m">                                           ┌──────────┐</span>
+<span class="m">                                           │</span>  <span class="a">READY</span>   <span class="m">│</span>
+<span class="m">                                           └──────────┘</span></div>
+
+<h3>Which panels are alive per state</h3>
+<table>
+  <tr><th>State</th><th>Wave/Grid</th><th>Spec</th><th>Status</th><th>Mixer</th><th>FORGE</th><th>Pads</th></tr>
+  <tr><td>EMPTY</td><td>placeholder "drop audio"</td><td>dim</td><td>grey dot, IDLE</td><td>dimmed</td><td>disabled</td><td>all dim</td></tr>
+  <tr><td>READY</td><td>live</td><td>live (source)</td><td>violet dot, READY</td><td>dimmed (no stems yet)</td><td>violet, enabled</td><td>dim</td></tr>
+  <tr><td>RUNNING</td><td>live, frozen grid</td><td>live (input)</td><td>yellow dot + %</td><td>dimmed</td><td>CANCEL, desat violet</td><td>dim, "preparing…"</td></tr>
+  <tr><td>LOADING</td><td>live</td><td>live (input)</td><td>yellow dot, LOADING</td><td>dimmed</td><td>CANCEL</td><td>fading in</td></tr>
+  <tr><td>COMPLETE</td><td>live + playhead</td><td>follows solo</td><td>green dot, COMPLETE</td><td>live</td><td>green flash → violet</td><td>lit, playable</td></tr>
+  <tr><td>ERROR</td><td>live</td><td>frozen</td><td>red dot, error text</td><td>dimmed</td><td>violet, enabled</td><td>dim</td></tr>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     TECH
+     ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section" id="tech"><span class="num">09</span>Technical contract<span class="trail"></span></h2>
+
+<h3>LOM read shape (what the device extracts before FORGE)</h3>
+<pre><code><span class="c">// stemforge_lom.js — unchanged from specs/m4l-integrated-forge-device.md §2.1</span>
+<span class="k">const</span> analysis = {
+  file_path:         clip.get(<span class="s">"file_path"</span>),
+  tempo:             parseFloat(song.get(<span class="s">"tempo"</span>)),
+  time_signature:    { numerator: 4, denominator: 4 },
+  is_warped:         <span class="n">true</span>,
+  warp_markers: [
+    { beat_time: <span class="n">0.0</span>, sample_time: <span class="n">0</span> },
+    { beat_time: <span class="n">1.0</span>, sample_time: <span class="n">23523</span> },
+    <span class="c">// … sparse, interpolated by slicer</span>
+  ],
+  start_marker:      <span class="n">0.0</span>,
+  end_marker:        <span class="n">128.0</span>,
+  sample_rate:       <span class="n">44100</span>
+};</code></pre>
+
+<h3>NDJSON events driving UI (from v0/interfaces/ndjson.schema.json)</h3>
+<pre><code>{<span class="s">"event"</span>: <span class="s">"started"</span>,  <span class="s">"track"</span>: <span class="s">"hot_pants"</span>, <span class="s">"audio"</span>: <span class="s">"/path/in.wav"</span>, <span class="s">"output_dir"</span>: <span class="s">"…"</span>}
+{<span class="s">"event"</span>: <span class="s">"progress"</span>, <span class="s">"phase"</span>: <span class="s">"splitting"</span>,   <span class="s">"pct"</span>: <span class="n">34</span>}
+{<span class="s">"event"</span>: <span class="s">"progress"</span>, <span class="s">"phase"</span>: <span class="s">"slicing"</span>,     <span class="s">"pct"</span>: <span class="n">0</span>,  <span class="s">"bars"</span>: <span class="n">67</span>}
+{<span class="s">"event"</span>: <span class="s">"progress"</span>, <span class="s">"phase"</span>: <span class="s">"curating"</span>,    <span class="s">"pct"</span>: <span class="n">50</span>}
+{<span class="s">"event"</span>: <span class="s">"stem"</span>,     <span class="s">"name"</span>: <span class="s">"drums"</span>, <span class="s">"path"</span>: <span class="s">"…/drums.wav"</span>}
+{<span class="s">"event"</span>: <span class="s">"bpm"</span>,      <span class="s">"bpm"</span>: <span class="n">112.35</span>, <span class="s">"beat_count"</span>: <span class="n">260</span>}
+{<span class="s">"event"</span>: <span class="s">"slice_dir"</span>,<span class="s">"stem"</span>: <span class="s">"drums"</span>, <span class="s">"dir"</span>: <span class="s">"…/drums_beats"</span>, <span class="s">"count"</span>: <span class="n">67</span>}
+{<span class="s">"event"</span>: <span class="s">"complete"</span>, <span class="s">"manifest"</span>: <span class="s">"…/stems.json"</span>, <span class="s">"bpm"</span>: <span class="n">112.35</span>, <span class="s">"stem_count"</span>: <span class="n">4</span>, <span class="s">"duration_sec"</span>: <span class="n">12.4</span>}</code></pre>
+
+<h3>Manifest shape the loader reads</h3>
+<pre><code>{
+  <span class="s">"track_name"</span>:  <span class="s">"hot_pants"</span>,
+  <span class="s">"pipeline"</span>:    <span class="s">"idm_crushed"</span>,
+  <span class="s">"bpm"</span>:         <span class="n">112.35</span>,
+  <span class="s">"processed_at"</span>: <span class="s">"2026-04-16T14:22:11Z"</span>,
+  <span class="s">"stems"</span>: [
+    { <span class="s">"name"</span>: <span class="s">"drums"</span>,
+      <span class="s">"wav_path"</span>:  <span class="s">"…/drums.wav"</span>,
+      <span class="s">"beats_dir"</span>: <span class="s">"…/drums_beats"</span>,
+      <span class="s">"curated_dir"</span>: <span class="s">"…/curated/drums"</span>,
+      <span class="s">"bars"</span>: [
+        { <span class="s">"idx"</span>: <span class="n">0</span>, <span class="s">"wav"</span>: <span class="s">"bar_001.wav"</span>, <span class="s">"centroid"</span>: <span class="n">1420</span>, <span class="s">"crest"</span>: <span class="n">8.4</span> },
+        <span class="c">// …</span>
+      ]
+    },
+    <span class="c">// bass, vocals, other …</span>
+  ]
+}</code></pre>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     ROADMAP
+     ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section" id="roadmap"><span class="num">10</span>v0 → v3 migration<span class="trail"></span></h2>
+
+<p class="lede">
+  You are shipping v0 this week. This spec describes v3. The plan for getting
+  from here to there without re-work:
+</p>
+
+<div class="card">
+  <h4 style="margin-top:0">v0 subset (ships now, 400 × 260)</h4>
+  <ul>
+    <li>Titlebar, file-drop target, pipeline + backend dropdowns, slice toggle, progress bar, status text, Split button — <strong>exactly as device.yaml specifies</strong>.</li>
+    <li>Clip placement via <code>stemforge_loader.v0.js</code> — working today per <code>v0-ableton-validation.md</code>.</li>
+    <li>Set tempo from manifest — working today.</li>
+    <li>All of §06 (where clips land) and §07 (tempo contract) work against v0 already. They're session-level behavior; the device UI surface is what grows.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h4 style="margin-top:0">v1 — device grows to 780 × 340</h4>
+  <ul>
+    <li>Add waveform display with warp-aware bar grid. This unlocks the "confirm warp before forge" moment.</li>
+    <li>Replace progress-bar + status line with the richer status strip.</li>
+    <li>Refactor dropdowns as chip selectors (same underlying <code>live.menu</code>, re-skinned).</li>
+    <li>Still no pad grid, still no mixer — clips in the session are your pads.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h4 style="margin-top:0">v2 — stem mixer + spectroscope</h4>
+  <ul>
+    <li>Add internal <code>polybuffer~</code> holding the 4 stems for auditioning.</li>
+    <li>Stem mixer dials with color coding.</li>
+    <li>Spectroscope wired to mixer solo state.</li>
+    <li>Device grows to 780 × 400.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h4 style="margin-top:0">v3 — curated pad grid (the final form)</h4>
+  <ul>
+    <li>Add 4×4 pad grid with <code>groove~</code> per pad, spectral-centroid LED coloring, MIDI mapping.</li>
+    <li>Right-click contextual: drag to Simpler, reject bar, lock bar across re-curations.</li>
+    <li>Curation strategy selector + n_bars in the curation group.</li>
+    <li>Sync strip with live tempo-ratio readout.</li>
+    <li>Final dimensions 780 × 460.</li>
+  </ul>
+</div>
+
+<div class="cal crit">
+  <strong>Invariants to protect across versions</strong>
+  The <strong>track-placement rules (§6)</strong>, the <strong>tempo contract (§7)</strong>, the
+  <strong>NDJSON schema</strong>, the <strong>manifest shape</strong>, and the <strong>tracks.yaml stem_target
+  mapping</strong> must remain stable from v0 → v3. Everything else is surface. The
+  loader/bridge JS contracts in <code>v0/src/m4l-js/</code> should survive
+  untouched; the .amxd patcher grows around them.
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     FOOTER
+     ═══════════════════════════════════════════════════════════════ -->
+<footer>
+  <span class="dot">●</span> stemforge ui+workflow spec · built from feat/harness-patterns @ 2026-04-16
+  <span class="dot">●</span>
+</footer>
+
+</div>
+</body>
+</html>

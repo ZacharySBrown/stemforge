@@ -311,7 +311,7 @@
 			},
 			{
 				"box": {
-					"id": "obj-pipeline",
+					"id": "obj-preset",
 					"maxclass": "umenu",
 					"numinlets": 1,
 					"numoutlets": 3,
@@ -333,10 +333,84 @@
 						136.0,
 						22.0
 					],
-					"items": "default idm_crushed glitch ambient",
+					"items": "",
 					"arrow": 1,
-					"autopopulate": 1,
-					"prefix": "Pipeline: "
+					"prefix": "Preset: "
+				}
+			},
+			{
+				"box": {
+					"id": "obj-preset-dict",
+					"maxclass": "newobj",
+					"numinlets": 2,
+					"numoutlets": 4,
+					"patching_rect": [
+						152,
+						138,
+						140.0,
+						22.0
+					],
+					"outlettype": [
+						"dictionary",
+						"",
+						"",
+						""
+					],
+					"text": "dict sf_preset"
+				}
+			},
+			{
+				"box": {
+					"id": "obj-preset-prepend",
+					"maxclass": "newobj",
+					"numinlets": 1,
+					"numoutlets": 1,
+					"patching_rect": [
+						292,
+						108,
+						140.0,
+						22.0
+					],
+					"outlettype": [
+						""
+					],
+					"text": "prepend loadPreset"
+				}
+			},
+			{
+				"box": {
+					"id": "obj-scan-deferlow",
+					"maxclass": "newobj",
+					"numinlets": 1,
+					"numoutlets": 1,
+					"patching_rect": [
+						292,
+						138,
+						60.0,
+						22.0
+					],
+					"outlettype": [
+						""
+					],
+					"text": "deferlow"
+				}
+			},
+			{
+				"box": {
+					"id": "obj-scan-presets-msg",
+					"maxclass": "message",
+					"numinlets": 2,
+					"numoutlets": 1,
+					"patching_rect": [
+						292,
+						164,
+						100.0,
+						22.0
+					],
+					"outlettype": [
+						""
+					],
+					"text": "scanPresets"
 				}
 			},
 			{
@@ -638,7 +712,7 @@
 					"id": "obj-loader",
 					"maxclass": "newobj",
 					"numinlets": 1,
-					"numoutlets": 2,
+					"numoutlets": 3,
 					"patching_rect": [
 						16.0,
 						300,
@@ -646,6 +720,7 @@
 						22.0
 					],
 					"outlettype": [
+						"",
 						"",
 						""
 					],
@@ -1047,6 +1122,66 @@
 			{
 				"patchline": {
 					"source": [
+						"obj-preset",
+						1
+					],
+					"destination": [
+						"obj-preset-prepend",
+						0
+					]
+				}
+			},
+			{
+				"patchline": {
+					"source": [
+						"obj-preset-prepend",
+						0
+					],
+					"destination": [
+						"obj-loader",
+						0
+					]
+				}
+			},
+			{
+				"patchline": {
+					"source": [
+						"obj-loadbang",
+						0
+					],
+					"destination": [
+						"obj-scan-deferlow",
+						0
+					]
+				}
+			},
+			{
+				"patchline": {
+					"source": [
+						"obj-scan-deferlow",
+						0
+					],
+					"destination": [
+						"obj-scan-presets-msg",
+						0
+					]
+				}
+			},
+			{
+				"patchline": {
+					"source": [
+						"obj-scan-presets-msg",
+						0
+					],
+					"destination": [
+						"obj-loader",
+						0
+					]
+				}
+			},
+			{
+				"patchline": {
+					"source": [
 						"obj-path-convert",
 						0
 					],
@@ -1208,6 +1343,18 @@
 					],
 					"destination": [
 						"obj-status-text",
+						0
+					]
+				}
+			},
+			{
+				"patchline": {
+					"source": [
+						"obj-loader",
+						2
+					],
+					"destination": [
+						"obj-preset",
 						0
 					]
 				}

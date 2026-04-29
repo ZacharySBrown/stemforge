@@ -1,0 +1,96 @@
+{
+  "preset": {
+    "name": "Clean",
+    "version": "1.0.0",
+    "description": "No effects \u2014 clean stems with clips and drum rack only"
+  },
+  "stems": {
+    "drums": {
+      "targets": [
+        {
+          "name": "loops",
+          "type": "clips",
+          "color": {
+            "name": "red",
+            "index": 14,
+            "hex": "#FF3A34"
+          },
+          "params": {
+            "phrase_bars": 1,
+            "loop_count": 16
+          },
+          "chain": []
+        },
+        {
+          "name": "rack",
+          "type": "rack",
+          "color": {
+            "name": "red",
+            "index": 14,
+            "hex": "#FF3A34"
+          },
+          "params": {
+            "oneshot_count": 16,
+            "oneshot_mode": "classify",
+            "use_larsnet": true
+          },
+          "chain": []
+        }
+      ]
+    },
+    "bass": {
+      "targets": [
+        {
+          "name": "loops",
+          "type": "clips",
+          "color": {
+            "name": "blue",
+            "index": 9,
+            "hex": "#5480E4"
+          },
+          "params": {
+            "phrase_bars": 2,
+            "loop_count": 16
+          },
+          "chain": []
+        }
+      ]
+    },
+    "vocals": {
+      "targets": [
+        {
+          "name": "phrases",
+          "type": "clips",
+          "color": {
+            "name": "orange",
+            "index": 1,
+            "hex": "#FFA529"
+          },
+          "params": {
+            "phrase_bars": 4,
+            "loop_count": 16
+          },
+          "chain": []
+        }
+      ]
+    },
+    "other": {
+      "targets": [
+        {
+          "name": "loops",
+          "type": "clips",
+          "color": {
+            "name": "mint",
+            "index": 6,
+            "hex": "#25FFA8"
+          },
+          "params": {
+            "phrase_bars": 2,
+            "loop_count": 16
+          },
+          "chain": []
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "role": "architect",
+  "mode": "team",
+  "started": "2026-04-16T17:02:00Z",
+  "focus": "v0 full-ship orchestration: spec docs/v0-ship-spec.md, create gh issues, dispatch Engineer agents for canonicalize+installer+validation. Not implementing — planning and dispatch only."
+}

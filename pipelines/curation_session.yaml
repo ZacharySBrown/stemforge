@@ -1,0 +1,206 @@
+# StemForge Curation Engine v2 — SESSION-mode for EP-133 hybrid layout.
+#
+# - phrase_bars = 2 for ALL stems (drums/bass/vocals/other). EP-133 hybrid
+#   spec wants 2-bar drum loops for Group A pads 7-12.
+# - trim_pad.bars = 2 per side for all stems. Each curated WAV is therefore
+#   6 bars total (2 pre + 2 musical + 2 post). Generous wiggle room when
+#   editing in Ableton: drag the start marker into the pre-pad to reveal
+#   pickups / drag end marker into post-pad to extend tails. The export
+#   tool bakes a 2-bar slice from your committed start_offset, so the
+#   final EP-133 WAV is unpadded regardless.
+# - max-diversity strategy + bass-onset alignment + duration normalize
+#   (the same quality pass that landed in the nopad runs).
+#
+# Usage:
+#   uv run stemforge forge track.wav --backend demucs \
+#     --curation pipelines/curation_session.yaml
+
+version: 2
+
+curation:
+  trim_pad:
+    default_bars: 2.0
+    unit: bars
+  warp_markers:
+    enabled: true
+    mode: auto
+    auto_snap: transient
+  loop:
+    enabled: true
+    loop_mode: none
+  stems:
+    drums:
+      trim_pad: { bars: 2.0 }
+      warp_markers: { auto_snap: transient }
+      loop: { enabled: true, loop_mode: none }
+    bass:
+      trim_pad: { bars: 2.0 }
+      warp_markers: { auto_snap: downbeat }
+      loop: { enabled: true, loop_mode: none }
+    vocals:
+      trim_pad: { bars: 2.0 }
+      warp_markers: { auto_snap: transient }
+      loop: { enabled: true, loop_mode: none }
+    other:
+      trim_pad: { bars: 2.0 }
+      warp_markers: { auto_snap: transient }
+      loop: { enabled: true, loop_mode: none }
+
+layout:
+  mode: production
+  pad_grid: 8x8
+  quadrant_size: 4x4
+
+stems:
+  drums:
+    phrase_bars: 2
+    loop_count: 8
+    oneshot_count: 8
+    strategy: max-diversity
+    oneshot_mode: classify
+    chromatic: false
+    midi_extract: false
+    rms_floor: 0.01
+    crest_min: 4.0
+    content_density_min: 0.15
+    distance_weights:
+      rhythm: 0.6
+      spectral: 0.2
+      energy: 0.2
+    processing:
+      - pipeline: default
+
+  bass:
+    phrase_bars: 2
+    loop_count: 4
+    oneshot_count: 0
+    strategy: max-diversity
+    oneshot_mode: diverse
+    midi_extract: true
+    midi_quantize: "1/16"
+    bottom_mode: melodic
+    chromatic: true
+    chromatic_root: auto
+    rms_floor: 0.01
+    crest_min: 2.0
+    content_density_min: 0.3
+    distance_weights:
+      rhythm: 0.3
+      spectral: 0.4
+      energy: 0.3
+    processing:
+      - pipeline: default
+
+  vocals:
+    phrase_bars: 2
+    loop_count: 12
+    oneshot_count: 4
+    strategy: sectional
+    oneshot_mode: diverse
+    midi_extract: false
+    chromatic: false
+    rms_floor: 0.02
+    crest_min: 3.0
+    content_density_min: 0.3
+    distance_weights:
+      rhythm: 0.2
+      spectral: 0.5
+      energy: 0.3
+    processing:
+      - pipeline: default
+
+  other:
+    phrase_bars: 2
+    loop_count: 10
+    oneshot_count: 6
+    strategy: max-diversity
+    oneshot_mode: diverse
+    midi_extract: false
+    chromatic: false
+    rms_floor: 0.015
+    crest_min: 2.0
+    content_density_min: 0.2
+    distance_weights:
+      rhythm: 0.3
+      spectral: 0.4
+      energy: 0.3
+    processing:
+      - pipeline: default
+      - pipeline: glitch
+
+song:
+  boundary_method: recurrence
+  min_segment_bars: 4
+  max_segments: 8
+  prefer_transitions: true
+  transition_window_bars: 2
+
+dj:
+  base_position: top_left
+  subloop_axis: vertical
+  oneshot_axis: horizontal
+  subloop_divisions: [1, 0.5, 0.5, 0.25]
+  fill_mode: combo
+
+defaults:
+  phrase_bars: 1
+  loop_count: 8
+  oneshot_count: 8
+  strategy: max-diversity
+  oneshot_mode: diverse
+  chromatic: false
+  midi_extract: false
+  rms_floor: 0.01
+  crest_min: 4.0
+  content_density_min: 0.15
+  distance_weights:
+    rhythm: 0.5
+    spectral: 0.25
+    energy: 0.25
+
+ep133_export:
+  enabled: true
+  sync:
+    mode: midi_clock
+    master: ableton
+  defaults:
+    play_mode: key
+    loop: false
+    mute_group: 0
+    time_stretch:
+      mode: bpm
+      source_bpm: null
+  stems:
+    drums:
+      play_mode: oneshot
+      loop: true
+      mute_group: 0
+      time_stretch:
+        mode: bar
+        bars: 4
+    bass:
+      play_mode: oneshot
+      loop: true
+      mute_group: 1
+      time_stretch:
+        mode: bpm
+        source_bpm: null
+    vocals:
+      play_mode: key
+      loop: false
+      mute_group: 2
+      time_stretch:
+        mode: bpm
+        source_bpm: null
+    other:
+      play_mode: legato
+      loop: false
+      mute_group: 0
+      time_stretch:
+        mode: bpm
+        source_bpm: null
+  pad_map:
+    drums:  { group: A, pad: 1 }
+    bass:   { group: A, pad: 2 }
+    vocals: { group: A, pad: 3 }
+    other:  { group: A, pad: 4 }

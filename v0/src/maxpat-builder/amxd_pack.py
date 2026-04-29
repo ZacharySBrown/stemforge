@@ -88,11 +88,19 @@ def _build_patch_chunk(patcher_json: str, embed_files: list[tuple[str, bytes]] |
     return header + body_after_header
 
 
+DEVICE_CLASS_SENTINEL = {
+    "audio": b"aaaa",
+    "midi": b"mmmm",
+    "instrument": b"iiii",
+}
+
+
 def pack_amxd(
     patcher: dict[str, Any] | str,
     out_path: str | Path,
     *,
     device_type: int = DEFAULT_DEVICE_TYPE,
+    device_class: str = "audio",
     pretty: bool = True,
     embed_files: list[tuple[str, bytes]] | None = None,
 ) -> Path:
@@ -128,7 +136,8 @@ def pack_amxd(
     blob = bytearray()
     blob += AMPF_MAGIC
     blob += _u32_le(AMPF_VERSION)
-    blob += AAAA_SENTINEL
+    sentinel = DEVICE_CLASS_SENTINEL.get(device_class, AAAA_SENTINEL)
+    blob += sentinel
     blob += META_TAG
     blob += _u32_le(4)
     blob += _u32_le(int(device_type))

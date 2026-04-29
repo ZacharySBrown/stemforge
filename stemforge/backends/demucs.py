@@ -53,8 +53,12 @@ class DemucsBackend(AbstractBackend):
         model = get_model(model_name)
         model.to(device)
 
-        # Load audio — force soundfile backend (torchaudio ≥2.11 defaults to torchcodec)
-        waveform, sr = torchaudio.load(str(audio_path), backend="soundfile")
+        # Load audio via soundfile directly — torchaudio ≥2.11 routes through
+        # torchcodec regardless of backend=, and torchcodec is an optional dep
+        # we don't want to require.
+        import soundfile as sf
+        audio_np, sr = sf.read(str(audio_path), dtype="float32", always_2d=True)
+        waveform = torch.from_numpy(audio_np.T).contiguous()  # [channels, samples]
 
         # Resample if needed
         if sr != model.samplerate:
@@ -82,11 +86,17 @@ class DemucsBackend(AbstractBackend):
         output_dir.mkdir(parents=True, exist_ok=True)
         stem_paths = {}
 
+        import soundfile as sf
         for stem_name, source in zip(model.sources, sources):
             out_path = output_dir / f"{stem_name}.wav"
-            torchaudio.save(
-                str(out_path), source, model.samplerate,
-                encoding="PCM_S", bits_per_sample=24,
+            # Write via soundfile directly — torchaudio ≥2.11 routes save
+            # through torchcodec which is an optional dep we don't require.
+            # soundfile expects [samples, channels]; source is [channels, samples].
+            sf.write(
+                str(out_path),
+                source.numpy().T,
+                model.samplerate,
+                subtype="PCM_24",
             )
             stem_paths[stem_name] = out_path
             console.print(f"  [green]OK[/green] {stem_name}: {out_path.name}")

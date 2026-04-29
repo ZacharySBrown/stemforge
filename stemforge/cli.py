@@ -65,6 +65,14 @@ from .slicer import (
 )
 from . import curator as _curator
 from .manifest import write_manifest
+from .manifest_schema import (
+    BAR_INDEX_TO_LABEL,
+    BatchManifest,
+    SampleMeta,
+    display_name,
+    write_batch,
+    write_sidecar,
+)
 from .config import (
     PROCESSED_DIR, LALAL_PRESETS, LALAL_STEMS, LALAL_DEFAULT_PRESET,
     DEMUCS_MODELS, MUSIC_AI_WORKFLOWS, MUSIC_AI_DEFAULT_WORKFLOW,
@@ -82,9 +90,9 @@ def cli():
 @cli.command()
 @click.argument("audio_file", type=click.Path(exists=True, path_type=Path))
 @click.option("--backend", "-b",
-              type=click.Choice(["lalal", "demucs", "musicai", "modal", "auto"]),
+              type=click.Choice(["lalal", "demucs", "musicai", "auto"]),
               default="auto",
-              help="'auto' uses LALAL if key is set, else Demucs. 'modal' for Modal cloud GPU.")
+              help="'auto' uses LALAL if key is set, else Demucs.")
 @click.option("--stems", "-s", default=None,
               help=f"[lalal] Preset ({', '.join(LALAL_PRESETS)}) or "
                    f"comma-separated stems. Default: {LALAL_DEFAULT_PRESET}")
@@ -112,7 +120,6 @@ def split(audio_file, backend, stems, model, pipeline, output, no_slice, no_norm
       stemforge split track.wav --stems chop             # drum+bass only (LALAL)
       stemforge split track.wav --model 6stem            # 6-stem Demucs model
       stemforge split track.wav --pipeline glitch        # use 'glitch' pipeline config
-      stemforge split track.wav --backend modal           # Modal cloud GPU (fast)
       stemforge split track.wav --no-slice               # full stems, no beat files
       stemforge split track.mp3                          # auto-converts to WAV
     """
@@ -135,9 +142,6 @@ def split(audio_file, backend, stems, model, pipeline, output, no_slice, no_norm
         be = LalalBackend()
     elif backend == "musicai":
         be = MusicAiBackend()
-    elif backend == "modal":
-        from .backends.modal_backend import ModalBackend
-        be = ModalBackend()
     else:
         be = DemucsBackend()
 
@@ -503,17 +507,31 @@ def clean_beats(threshold, target_dir, dry_run):
 @click.option("--pipeline-dir", default=None, type=click.Path(path_type=Path))
 def generate_pipeline_json(pipeline_dir):
     """
-    Convert pipelines/default.yaml → pipelines/default.json for M4L device.
-    Run this after editing default.yaml.
+    Compile YAML → JSON for M4L device.
+    Processes both pipelines/ and presets/ directories.
     """
     import yaml
-    p_dir = pipeline_dir or (Path(__file__).parent.parent / "pipelines")
+    repo_root = Path(__file__).parent.parent
+
+    # Process pipelines
+    p_dir = pipeline_dir or (repo_root / "pipelines")
     for yaml_file in p_dir.glob("*.yaml"):
         with open(yaml_file) as f:
             data = yaml.safe_load(f)
         json_file = yaml_file.with_suffix(".json")
         json_file.write_text(json.dumps(data, indent=2))
         console.print(f"[green]OK[/green] {yaml_file.name} → {json_file.name}")
+
+    # Process presets
+    pr_dir = repo_root / "presets"
+    if pr_dir.exists():
+        for yaml_file in pr_dir.glob("*.yaml"):
+            with open(yaml_file) as f:
+                data = yaml.safe_load(f)
+            json_file = yaml_file.with_suffix(".json")
+            json_file.write_text(json.dumps(data, indent=2))
+            console.print(f"[green]OK[/green] {yaml_file.name} → {json_file.name} [dim](preset)[/dim]")
+
     console.print("\nRestart or reload the M4L device to pick up changes.")
 
 
@@ -522,7 +540,7 @@ def generate_pipeline_json(pipeline_dir):
 @click.option("--analysis", type=click.Path(exists=True, path_type=Path), default=None,
               help="Ableton analysis JSON. If omitted, uses librosa beat detection.")
 @click.option("--backend", "-b", default="demucs",
-              type=click.Choice(["demucs"]))
+              type=click.Choice(["demucs", "lalal", "musicai"]))
 @click.option("--model", "-m", default="default")
 @click.option("--strategy", "-s", default="max-diversity",
               type=click.Choice(["max-diversity", "rhythm-taxonomy", "sectional"]))
@@ -530,7 +548,12 @@ def generate_pipeline_json(pipeline_dir):
 @click.option("--time-sig", default="4/4",
               help="Time signature (librosa fallback only). Format: numerator/denominator.")
 @click.option("--output", "-o", default=None, type=click.Path(path_type=Path))
-def forge(audio_file, analysis, backend, model, strategy, n_bars, time_sig, output):
+@click.option("--curation", type=click.Path(exists=True, path_type=Path), default=None,
+              help="Curation config YAML (e.g. pipelines/curation.yaml). When provided, "
+                   "delegates bar-slicing + curation to v0/src/stemforge_curate_bars.py and "
+                   "produces a production-mode manifest (layout_mode=production, version=2). "
+                   "Omit to use forge's built-in v1 curation path.")
+def forge(audio_file, analysis, backend, model, strategy, n_bars, time_sig, output, curation):
     """
     Full pipeline: split → slice at bars → curate → curated WAVs + manifest.
 
@@ -560,16 +583,58 @@ def forge(audio_file, analysis, backend, model, strategy, n_bars, time_sig, outp
 
     # ── 1. Separation ──
     emit("progress", phase="splitting", pct=0)
-    be = DemucsBackend()
+    if backend == "lalal":
+        be = LalalBackend()
+    elif backend == "musicai":
+        be = MusicAiBackend()
+    else:
+        be = DemucsBackend()
     try:
-        stem_paths = be.separate(audio_file, track_out, model=model)
+        if backend == "demucs":
+            stem_paths = be.separate(audio_file, track_out, model=model)
+        else:
+            stem_paths = be.separate(audio_file, track_out)
     except Exception as e:
         emit("error", phase="splitting", message=str(e))
         sys.exit(1)
     emit("progress", phase="splitting", pct=100,
          stems=[str(p) for p in stem_paths.values()])
 
-    # ── 2. Slicing at bar boundaries ──
+    # ── 2+3. Production curation (opt-in via --curation) ──
+    # When a curation config is provided, delegate bar-slicing + curation to
+    # v0/src/stemforge_curate_bars.py which writes a production-mode manifest
+    # (layout_mode=production, version=2, drum oneshots, phrase structure).
+    # When omitted, falls through to forge's legacy inline curator below.
+    if curation is not None:
+        import subprocess
+        script = Path(__file__).resolve().parents[1] / "v0/src/stemforge_curate_bars.py"
+        if not script.exists():
+            emit("error", phase="curating",
+                 message=f"stemforge_curate_bars.py not found at {script}")
+            sys.exit(1)
+        result = subprocess.run(
+            [sys.executable, str(script),
+             "--stems-dir", str(track_out),
+             "--curation", str(curation),
+             "--json-events",
+             "--n-bars", str(n_bars),
+             "--strategy", strategy,
+             "--time-sig", str(fallback_numerator)],
+            check=False,
+        )
+        if result.returncode != 0:
+            emit("error", phase="curating",
+                 message=f"stemforge_curate_bars.py exited {result.returncode}")
+            sys.exit(1)
+        manifest_path = track_out / "curated" / "manifest.json"
+        emit("complete",
+             output_dir=str(manifest_path.parent),
+             manifest=str(manifest_path),
+             bars=n_bars,
+             mode="production")
+        return
+
+    # ── 2. Slicing at bar boundaries (legacy inline path) ──
     emit("progress", phase="slicing", pct=0)
 
     analysis_data = None
@@ -581,10 +646,16 @@ def forge(audio_file, analysis, backend, model, strategy, n_bars, time_sig, outp
 
     # When no analysis, reuse a single beat detection on drums for all stems.
     shared_beat_times = None
+    detected_bpm: float | None = None
     if analysis_data is None:
         bpm_source = (stem_paths.get("drums") or stem_paths.get("drum")
                       or next(iter(stem_paths.values())))
-        _bpm, shared_beat_times = detect_bpm_and_beats(bpm_source)
+        detected_bpm, shared_beat_times = detect_bpm_and_beats(bpm_source)
+    else:
+        # Ableton analysis JSON carries the project tempo at the top level.
+        ab_bpm = analysis_data.get("bpm") or analysis_data.get("tempo")
+        if ab_bpm is not None:
+            detected_bpm = float(ab_bpm)
 
     for i, (stem_name, stem_path) in enumerate(non_residual):
         if analysis_data is not None:
@@ -665,11 +736,301 @@ def forge(audio_file, analysis, backend, model, strategy, n_bars, time_sig, outp
     manifest_path = curated_root / "manifest.json"
     manifest_path.write_text(json.dumps(curated_manifest, indent=2))
 
+    # ── 4. Emit per-sample sidecars + a BatchManifest (manifest-spec) ──
+    # Producer-side rotation: drums→A, bass→B, vocals→C, other→D, with
+    # bottom-up pad layout per BAR_INDEX_TO_LABEL. Consumers (ep133-ppak's
+    # loaders) honor `suggested_pad`/`suggested_group` directly.
+    STEM_TO_GROUP = {"drums": "A", "bass": "B", "vocals": "C", "other": "D"}
+    PLAYMODE_BY_STEM = {"drums": "oneshot"}  # everything else defaults to "key"
+
+    batch_samples: list[SampleMeta] = []
+    for stem_name, entries in curated_manifest["stems"].items():
+        group = STEM_TO_GROUP.get(stem_name)
+        playmode = PLAYMODE_BY_STEM.get(stem_name, "key")
+
+        for entry in entries:
+            pos = entry["position"]
+            wav_rel = Path(entry["file"])  # relative to track_out
+            wav_abs = track_out / wav_rel
+
+            pad_idx = pos - 1  # 1-based → 0-based
+            suggested_pad = (
+                BAR_INDEX_TO_LABEL[pad_idx]
+                if pad_idx < len(BAR_INDEX_TO_LABEL) else None
+            )
+
+            meta = SampleMeta(
+                name=display_name(f"{track_name} {stem_name} {pos}"),
+                bpm=detected_bpm,
+                time_mode="bpm" if detected_bpm is not None else None,
+                bars=1.0,
+                playmode=playmode,
+                source_track=track_name,
+                stem=stem_name if stem_name in {"drums", "bass", "vocals", "other"} else None,
+                role="loop",
+                suggested_group=group,
+                suggested_pad=suggested_pad,
+            )
+
+            # Per-file sidecar (auto-fills file + audio_hash)
+            write_sidecar(wav_abs, meta)
+
+            # Add to batch with curated-root-relative file path
+            batch_samples.append(meta.model_copy(update={
+                "file": str(wav_abs.relative_to(curated_root)),
+            }))
+
+    batch = BatchManifest(
+        version=1,
+        track=track_name,
+        bpm=detected_bpm,
+        samples=batch_samples,
+    )
+    batch_path = write_batch(curated_root, batch)
+
     emit("progress", phase="curating", pct=100, selected=len(selected_indices))
     emit("complete",
          output_dir=str(curated_root),
          manifest=str(manifest_path),
+         batch_manifest=str(batch_path),
+         sidecars=len(batch_samples),
          bars=len(selected_indices))
+
+
+@cli.command()
+@click.argument("input_path", required=False, default=None,
+                type=click.Path(exists=True, path_type=Path))
+@click.option("--target", "-t", required=True,
+              type=click.Choice(["ep133", "chompi", "both"]),
+              help="Target device.")
+@click.option("--workflow", "-w", default="compose",
+              type=click.Choice(["compose", "perform"]),
+              help="compose=single track deep, perform=multi-track curated.")
+@click.option("--output", "-o", default=None, type=click.Path(path_type=Path),
+              help="Output directory.")
+@click.option("--budget", is_flag=True, default=False,
+              help="EP-133: render at 22050 Hz to double memory capacity.")
+@click.option("--firmware", default="tempo",
+              type=click.Choice(["tempo", "tape"]),
+              help="Chompi firmware variant.")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Show plan without writing files.")
+@click.option("--upload", is_flag=True, default=False,
+              help="EP-133: upload samples via USB-MIDI SysEx after export.")
+@click.option("--start-slot", default=1, type=int,
+              help="EP-133: starting sound slot for upload (default: 1).")
+@click.option("--manifest", default=None, type=click.Path(exists=True, path_type=Path),
+              help="EP-133 v2 manifest-driven export. When provided, loads a curated "
+                   "manifest.json (Curation Stage v2 schema) and produces per-loop "
+                   "WAVs + SETUP.md sized for EP Sample Tool. Skips legacy "
+                   "directory-scan. Pairs with --config.")
+@click.option("--config", "config_path", default=None,
+              type=click.Path(exists=True, path_type=Path),
+              help="EP-133 v2 curation config YAML (e.g. pipelines/curation.yaml). "
+                   "Reads the `ep133_export:` block. Used with --manifest.")
+def export(input_path, target, workflow, output, budget, firmware, dry_run,
+           upload, start_slot, manifest, config_path):
+    """
+    Export stems/slices for hardware samplers.
+
+    \b
+    Examples:
+      stemforge export track_dir/ --target ep133 --workflow compose
+      stemforge export processed/ --target chompi --workflow perform
+      stemforge export track_dir/ --target both --workflow compose
+      stemforge export track_dir/ --target ep133 --workflow compose --budget
+
+    \b
+    EP-133 v2 (manifest-driven):
+      stemforge export --target ep133 \\
+        --manifest processed/song/curated/manifest.json \\
+        --config pipelines/curation.yaml \\
+        --output export/ep133/
+    """
+    # ── EP-133 v2 manifest-driven path ───────────────────────────────────────
+    if manifest is not None:
+        if target != "ep133":
+            raise click.UsageError(
+                "--manifest is EP-133-specific; use --target ep133."
+            )
+        if input_path is not None:
+            console.print(
+                "[yellow]--manifest provided; ignoring positional INPUT_PATH.[/yellow]"
+            )
+        from .exporters.ep133_v2 import export_from_manifest
+
+        out_root = Path(output) if output else Path("./export/ep133")
+        if dry_run:
+            console.print(
+                f"[dim]DRY RUN: would export manifest {manifest} → {out_root}[/dim]"
+            )
+            return
+
+        try:
+            song_out = export_from_manifest(
+                manifest_path=Path(manifest),
+                config_path=Path(config_path) if config_path else None,
+                out_dir=Path(out_root),
+            )
+        except (ValueError, FileNotFoundError, OSError) as e:
+            console.print(f"[red]EP-133 v2 export failed:[/red] {e}")
+            sys.exit(1)
+
+        report_file = song_out / "_ep133_export_report.json"
+        if report_file.exists():
+            r = json.loads(report_file.read_text())
+            console.print(
+                f"  [green]OK[/green] ep133 v2: "
+                f"{r['loops_exported']} loops → {song_out}"
+            )
+            for w in r.get("warnings", []):
+                console.print(f"  [yellow]warn:[/yellow] {w}")
+        else:
+            console.print(f"  [green]OK[/green] ep133 v2: → {song_out}")
+        return
+
+    # ── Legacy directory-scan path ────────────────────────────────────────────
+    if input_path is None:
+        raise click.UsageError(
+            "INPUT_PATH is required unless --manifest is provided."
+        )
+
+    from .exporters.ep133 import EP133Exporter
+    from .exporters.chompi import ChompiExporter
+
+    if output is None:
+        output = Path("./export")
+
+    is_single_track = (input_path / "drums.wav").exists()
+    targets = ["ep133", "chompi"] if target == "both" else [target]
+
+    for tgt in targets:
+        if tgt == "ep133":
+            exporter = EP133Exporter(budget=budget)
+        else:
+            exporter = ChompiExporter(firmware=firmware)
+
+        tgt_output = output / tgt
+        if dry_run:
+            console.print(f"[dim]DRY RUN: {tgt} {workflow} → {tgt_output}[/dim]")
+            continue
+
+        if workflow == "compose" and is_single_track:
+            manifest = exporter.export_compose(input_path, tgt_output)
+        elif workflow == "perform" or not is_single_track:
+            manifest = exporter.export_perform(input_path, tgt_output)
+        else:
+            manifest = exporter.export_compose(input_path, tgt_output)
+
+        console.print(f"  [green]OK[/green] {tgt}: {len(manifest.slots)} slots → {tgt_output}")
+
+        # Upload to EP-133 if requested
+        if upload and tgt == "ep133":
+            from .exporters.ep133_upload import upload_export
+            upload_export(tgt_output, start_slot=start_slot, dry_run=dry_run)
+
+
+@cli.command("export-song")
+@click.option("--arrangement", "arrangement_path",
+              required=True, type=click.Path(exists=True, path_type=Path),
+              help="snapshot.json from the M4L arrangement reader (Track B output).")
+@click.option("--manifest", "manifest_path",
+              required=True, type=click.Path(exists=True, path_type=Path),
+              help="stems.json with a session_tracks block.")
+@click.option("--reference-template",
+              required=False, type=click.Path(exists=True, path_type=Path), default=None,
+              help="Captured reference .ppak used as a byte template by the writer.")
+@click.option("--project", "project_slot", default=1, type=click.IntRange(1, 9),
+              help="EP-133 project slot (1..9). Default: 1.")
+@click.option("--out", "out_path", required=True, type=click.Path(path_type=Path),
+              help="Output .ppak path.")
+@click.option("--mode", default="locator",
+              type=click.Choice(["locator"]),
+              help="Scene-derivation mode. v1 only supports 'locator'.")
+def export_song(arrangement_path, manifest_path, reference_template, project_slot, out_path, mode):
+    """
+    Build an EP-133 K.O. II song-mode .ppak from an Ableton arrangement snapshot.
+
+    \b
+    Pipeline:
+      arrangement.json + stems.json → resolve_scenes → synthesize → build_ppak
+
+    \b
+    Example:
+      stemforge export-song \\
+        --arrangement snapshot.json \\
+        --manifest stems.json \\
+        --reference-template tests/ep133/fixtures/reference.ppak \\
+        --project 1 \\
+        --out song.ppak
+    """
+    import tempfile
+
+    from .exporters.ep133.ppak_writer import build_ppak, build_synthetic_template_ppak
+    from .exporters.ep133.song_resolver import resolve_scenes
+    from .exporters.ep133.song_synthesizer import synthesize
+
+    console.print(Rule(f"[bold cyan]StemForge[/bold cyan] — export-song (mode={mode})"))
+    console.print(f"  Arrangement: {arrangement_path}")
+    console.print(f"  Manifest:    {manifest_path}")
+    console.print(f"  Project:     [cyan]{project_slot}[/cyan]")
+    console.print(f"  Output:      {out_path}")
+    if reference_template:
+        console.print(f"  Template:    {reference_template}")
+    else:
+        console.print(
+            "  Template:    [yellow]<none>[/yellow] — synthesizing minimal template "
+            "(device boots, but pad metadata is zero-filled). Pass "
+            "--reference-template for a real device capture."
+        )
+
+    arrangement = json.loads(Path(arrangement_path).read_text())
+    manifest = json.loads(Path(manifest_path).read_text())
+
+    bpm = float(arrangement.get("tempo", 120.0))
+    sig_raw = arrangement.get("time_sig", [4, 4])
+    time_sig = (int(sig_raw[0]), int(sig_raw[1]))
+
+    console.print(f"  Tempo:       [cyan]{bpm:.2f}[/cyan]  Time sig: [cyan]{time_sig[0]}/{time_sig[1]}[/cyan]")
+
+    snapshots = resolve_scenes(arrangement, manifest)
+    console.print(f"  Snapshots:   [cyan]{len(snapshots)}[/cyan]")
+
+    arrangement_length_sec = arrangement.get("arrangement_length_sec")
+    spec = synthesize(
+        snapshots,
+        manifest,
+        bpm,
+        time_sig,
+        int(project_slot),
+        arrangement_length_sec=(
+            float(arrangement_length_sec)
+            if arrangement_length_sec is not None
+            else None
+        ),
+    )
+
+    console.print(
+        f"  Patterns:    [cyan]{len(spec.patterns)}[/cyan]  "
+        f"Scenes: [cyan]{len(spec.scenes)}[/cyan]  "
+        f"Pads: [cyan]{len(spec.pads)}[/cyan]  "
+        f"Sounds: [cyan]{len(spec.sounds)}[/cyan]"
+    )
+
+    if reference_template is None:
+        with tempfile.TemporaryDirectory() as td:
+            synth = Path(td) / "synthetic_template.ppak"
+            build_synthetic_template_ppak(synth, project_slot=int(project_slot))
+            payload = build_ppak(spec, synth)
+    else:
+        payload = build_ppak(spec, reference_template)
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_bytes(payload)
+
+    kb = len(payload) / 1024.0
+    console.print(Rule("[bold green]Done![/bold green]"))
+    console.print(f"  Wrote [bold]{out_path}[/bold] ({kb:.1f} KB)")
 
 
 if __name__ == "__main__":

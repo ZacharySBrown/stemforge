@@ -117,6 +117,65 @@ tracks:
       - device: "SoundToys.PrimalTap"
         params: { delay: "1/16", feedback: 0.5 }
 
+# ── Drum Rack templates for v2 quadrant layout ──────────────────────────
+# Each stem gets a MIDI track with a Drum Rack containing 16 empty Simpler
+# pads. The M4L loader populates pads at runtime from the curated manifest.
+# Pads 0-7 (bottom 2 rows) = one-shots, pads 8-15 (top 2 rows) = loops.
+# Push 2 auto-maps to Drum Rack pads natively.
+
+  - id: drums_rack
+    name: "SF | Drums Rack"
+    type: midi
+    color: "#FF4444"
+    stem_target: drums_curated
+    midi_channel: 1
+    chain:
+      - device: DrumRack
+        pads: 16
+        pad_layout:
+          # Bottom row: kick left, perc right
+          0: { type: oneshot, classification: kick }
+          1: { type: oneshot, classification: kick }
+          2: { type: oneshot, classification: perc }
+          3: { type: oneshot, classification: perc }
+          # Second row: snare left, hats right
+          4: { type: oneshot, classification: snare }
+          5: { type: oneshot, classification: hat_closed }
+          6: { type: oneshot, classification: hat_open }
+          7: { type: oneshot, classification: perc }
+          # Top 2 rows: loops
+          8-15: { type: loop }
+
+  - id: bass_rack
+    name: "SF | Bass Rack"
+    type: midi
+    color: "#4477FF"
+    stem_target: bass_curated
+    midi_channel: 2
+    chain:
+      - device: DrumRack
+        pads: 16
+
+  - id: vocals_rack
+    name: "SF | Vocals Rack"
+    type: midi
+    color: "#FFAA44"
+    stem_target: vocals_curated
+    midi_channel: 3
+    chain:
+      - device: DrumRack
+        pads: 16
+
+  - id: other_rack
+    name: "SF | Other Rack"
+    type: midi
+    color: "#44DD77"
+    stem_target: other_curated
+    midi_channel: 4
+    chain:
+      - device: DrumRack
+        pads: 16
+
 # Stems that don't have an explicit `stem_target` above (e.g., guitar, piano
 # from htdemucs_6s) get loaded into a generic audio track named
 # "SF | <stem-name>" with the default chain:

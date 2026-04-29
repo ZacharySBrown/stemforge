@@ -1,0 +1,394 @@
+{
+  "preset": {
+    "name": "Spectral Glitch",
+    "version": "1.0.0",
+    "description": "Disorienting textures — Spectral Resonator / Frequency Shifter / Resonators / high-chance Beat Repeat stutters. Makes source material strange."
+  },
+  "stems": {
+    "drums": {
+      "targets": [
+        {
+          "name": "loops",
+          "type": "clips",
+          "color": {
+            "name": "magenta",
+            "index": 11,
+            "hex": "#D86CE4"
+          },
+          "params": {
+            "phrase_bars": 1,
+            "loop_count": 16,
+            "strategy": "rhythm-taxonomy"
+          },
+          "chain": [
+            {
+              "insert": "Compressor",
+              "params": {
+                "Threshold": 0.5,
+                "Ratio": 0.7
+              }
+            }
+          ]
+        },
+        {
+          "name": "rack",
+          "type": "rack",
+          "color": {
+            "name": "hot_pink",
+            "index": 12,
+            "hex": "#E553A0"
+          },
+          "params": {
+            "oneshot_count": 16,
+            "oneshot_mode": "classify",
+            "use_larsnet": true,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "Frequency Shifter",
+              "params": {
+                "Mode": 0,
+                "Coarse": 120,
+                "Fine": 0,
+                "Dry/Wet": 0.4
+              }
+            }
+          ]
+        },
+        {
+          "name": "stutter",
+          "type": "clips",
+          "color": {
+            "name": "pink",
+            "index": 0,
+            "hex": "#FF94A6"
+          },
+          "params": {
+            "phrase_bars": 1,
+            "loop_count": 16,
+            "strategy": "rhythm-taxonomy"
+          },
+          "chain": [
+            {
+              "insert": "Beat Repeat",
+              "params": {
+                "Chance": 0.85,
+                "Grid": 6,
+                "Variation": 7,
+                "Variation Type": 4,
+                "Pitch Decay": 0.4,
+                "Decay": 0.35,
+                "Mix Type": 2,
+                "Gate": 8
+              }
+            },
+            {
+              "insert": "Reverb",
+              "params": {
+                "Decay Time": 0.45,
+                "Room Size": 0.5,
+                "Dry/Wet": 0.3
+              }
+            }
+          ]
+        },
+        {
+          "name": "resonated",
+          "type": "clips",
+          "color": {
+            "name": "purple",
+            "index": 24,
+            "hex": "#AB3CBF"
+          },
+          "params": {
+            "phrase_bars": 1,
+            "loop_count": 16,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "Resonators",
+              "params": {
+                "Filter On": 1,
+                "Frequency": 0.5,
+                "Filter Type": 2,
+                "Mode": 1,
+                "Decay": 50,
+                "Color": 60,
+                "I On": 1,
+                "I Note": 48,
+                "I Gain": 0.6,
+                "II On": 1,
+                "II Pitch": 7,
+                "II Gain": 0.5,
+                "III On": 1,
+                "III Pitch": 12,
+                "III Gain": 0.4,
+                "Dry/Wet": 0.55
+              }
+            }
+          ]
+        },
+        {
+          "name": "spectral",
+          "type": "clips",
+          "color": {
+            "name": "hot_pink",
+            "index": 12,
+            "hex": "#E553A0"
+          },
+          "params": {
+            "phrase_bars": 1,
+            "loop_count": 16,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "Spectral Resonator",
+              "params": {
+                "Note": 48,
+                "Decay": 0.7,
+                "Harmonics": 0.6,
+                "Pitch Mod": 0.3,
+                "Stretch": 0.5,
+                "Dry Wet": 0.65
+              }
+            },
+            {
+              "insert": "Reverb",
+              "params": {
+                "Decay Time": 0.5,
+                "Dry/Wet": 0.35
+              }
+            }
+          ]
+        },
+        {
+          "name": "shifted",
+          "type": "clips",
+          "color": {
+            "name": "periwinkle",
+            "index": 10,
+            "hex": "#92A7FF"
+          },
+          "params": {
+            "phrase_bars": 1,
+            "loop_count": 16,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "Frequency Shifter",
+              "params": {
+                "Mode": 0,
+                "Coarse": -200,
+                "Fine": 0,
+                "Dry/Wet": 0.55
+              }
+            },
+            {
+              "insert": "Reverb",
+              "params": {
+                "Decay Time": 0.5,
+                "Dry/Wet": 0.35
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "bass": {
+      "targets": [
+        {
+          "name": "resonated",
+          "type": "clips",
+          "color": {
+            "name": "dark_indigo",
+            "index": 23,
+            "hex": "#3C21A0"
+          },
+          "params": {
+            "phrase_bars": 2,
+            "loop_count": 16,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "Resonators",
+              "params": {
+                "Filter On": 1,
+                "Frequency": 0.35,
+                "Filter Type": 0,
+                "Mode": 1,
+                "Decay": 45,
+                "Color": 50,
+                "I On": 1,
+                "I Note": 36,
+                "I Gain": 0.7,
+                "Dry/Wet": 0.45
+              }
+            },
+            {
+              "insert": "EQ Eight",
+              "params": {}
+            }
+          ]
+        }
+      ]
+    },
+    "vocals": {
+      "targets": [
+        {
+          "name": "shifted",
+          "type": "clips",
+          "color": {
+            "name": "pink",
+            "index": 0,
+            "hex": "#FF94A6"
+          },
+          "params": {
+            "phrase_bars": 4,
+            "loop_count": 16,
+            "strategy": "sectional"
+          },
+          "chain": [
+            {
+              "insert": "Frequency Shifter",
+              "params": {
+                "Mode": 0,
+                "Coarse": -50,
+                "Fine": 0,
+                "Dry/Wet": 0.5
+              }
+            },
+            {
+              "insert": "Reverb",
+              "params": {
+                "Decay Time": 0.65,
+                "Room Size": 0.6,
+                "Dry/Wet": 0.45
+              }
+            }
+          ]
+        },
+        {
+          "name": "stuttered",
+          "type": "clips",
+          "color": {
+            "name": "hot_pink",
+            "index": 12,
+            "hex": "#E553A0"
+          },
+          "params": {
+            "phrase_bars": 4,
+            "loop_count": 16,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "Beat Repeat",
+              "params": {
+                "Chance": 0.55,
+                "Grid": 7,
+                "Variation": 3,
+                "Variation Type": 4,
+                "Pitch Decay": 0.3,
+                "Decay": 0.5,
+                "Mix Type": 2,
+                "Gate": 4
+              }
+            },
+            {
+              "insert": "Grain Delay",
+              "params": {
+                "Pitch": 0,
+                "Spray": 0.4,
+                "Frequency": 0.4,
+                "Feedback": 0.4,
+                "DryWet": 0.45
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "other": {
+      "targets": [
+        {
+          "name": "spectral",
+          "type": "clips",
+          "color": {
+            "name": "purple",
+            "index": 24,
+            "hex": "#AB3CBF"
+          },
+          "params": {
+            "phrase_bars": 2,
+            "loop_count": 16,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "Spectral Resonator",
+              "params": {
+                "Note": 60,
+                "Decay": 0.65,
+                "Harmonics": 0.55,
+                "Stretch": 0.45,
+                "Dry Wet": 0.6
+              }
+            },
+            {
+              "insert": "Reverb",
+              "params": {
+                "Decay Time": 0.55,
+                "Dry/Wet": 0.4
+              }
+            }
+          ]
+        },
+        {
+          "name": "phased",
+          "type": "clips",
+          "color": {
+            "name": "magenta",
+            "index": 11,
+            "hex": "#D86CE4"
+          },
+          "params": {
+            "phrase_bars": 2,
+            "loop_count": 16,
+            "strategy": "max-diversity"
+          },
+          "chain": [
+            {
+              "insert": "Phaser-Flanger",
+              "params": {
+                "Mode": 0,
+                "Amount": 0.55,
+                "Mod Sync": 1,
+                "Mod Rate": 4,
+                "Notches": 6,
+                "Feedback": 0.55,
+                "Dry/Wet": 0.55
+              }
+            },
+            {
+              "insert": "Echo",
+              "params": {
+                "L Synced": -2,
+                "R Synced": -3,
+                "L Sync Mode": 2,
+                "Feedback": 0.45,
+                "Dry Wet": 0.4
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "displayName": "Spectral Glitch",
+  "version": "1.0.0"
+}

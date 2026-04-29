@@ -38,3 +38,13 @@ v0/build/**
 !v0/build/stemforge-debug.maxpat
 # Track D output — Ableton Live Set template (small, checked in as build artifact).
 !v0/build/StemForge.als
+grooves.zip
+grooves/
+.env
+zak@mini
+
+# Per-device reference template for EP-133 song export.
+# Captured via tools/ep133_capture_reference.py; contains device serial.
+# Each user provides their own — not checked in.
+tests/ep133/fixtures/reference.ppak
+
