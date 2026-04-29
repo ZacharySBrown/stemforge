@@ -303,18 +303,42 @@ def test_build_ppak_rejects_missing_template(tmp_path: Path, silent_wav: Path):
         build_ppak(_minimal_spec(silent_wav), tmp_path / "nonexistent.ppak")
 
 
-def test_build_ppak_rejects_missing_sound(template_ppak: Path, tmp_path: Path):
+def test_build_ppak_soft_skips_missing_sound(
+    template_ppak: Path, silent_wav: Path, tmp_path: Path
+):
+    """Slots whose WAVs are missing on disk get warn-and-skipped rather
+    than crashing the export. Useful for upstream pipelines (bundle
+    curation, manifest staleness) that may reference slots whose audio
+    hasn't been rendered yet."""
     spec = PpakSpec(
         project_slot=1,
         bpm=120.0,
         time_sig=(4, 4),
-        patterns=[],
-        scenes=[],
-        pads=[],
-        sounds={100: tmp_path / "no-such.wav"},
+        patterns=[
+            Pattern(group="a", index=1, bars=1, events=[Event(0, 1, 60, 100, 96)]),
+        ],
+        scenes=[SceneSpec(a=1, b=0, c=0, d=0)],
+        pads=[
+            PadSpec("a", 1, sample_slot=200, play_mode="oneshot", time_stretch_bars=1),
+            # This pad's slot is missing — should be dropped from the output.
+            PadSpec("a", 2, sample_slot=999, play_mode="oneshot", time_stretch_bars=1),
+        ],
+        sounds={
+            200: silent_wav,
+            999: tmp_path / "no-such.wav",
+        },
     )
-    with pytest.raises(FileNotFoundError, match="sample slot 100"):
-        build_ppak(spec, template_ppak)
+    with pytest.warns(UserWarning, match="slot 999"):
+        data = build_ppak(spec, template_ppak)
+    _, members = _open_ppak(data)
+    # Pad referencing the missing slot got dropped.
+    assert "pads/a/p01" in members
+    assert "pads/a/p02" not in members
+    # Audio bundle only contains the present slot.
+    with zipfile.ZipFile(io.BytesIO(data), "r") as zf:
+        names = zf.namelist()
+    assert any(n.startswith("/sounds/200 ") for n in names)
+    assert not any(n.startswith("/sounds/999 ") for n in names)
 
 
 def test_build_ppak_rejects_invalid_project_slot(

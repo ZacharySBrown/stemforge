@@ -36,6 +36,7 @@ import io
 import json
 import re
 import tarfile
+import warnings
 import wave
 import zipfile
 from datetime import datetime, timezone
@@ -274,14 +275,28 @@ def build_ppak(
                 )
             sound_bpm_by_slot[pd.sample_slot] = pd.sound_bpm
 
+    # Soft-skip slots whose WAVs are missing on disk. Upstream curation
+    # can leave gaps (e.g. vocal phrases marked "no-range" before render)
+    # and we'd rather warn + skip the slot than crash the whole export.
+    # Missing slots get filtered out of the bundled audio AND out of the
+    # pad records so the device doesn't have ghost pad entries pointing
+    # at empty slots.
+    missing_slots: set[int] = set()
+    for slot, wav_path in sorted(spec.sounds.items()):
+        if not Path(wav_path).is_file():
+            missing_slots.add(slot)
+            warnings.warn(
+                f"slot {slot}: WAV missing, skipping ({wav_path})",
+                UserWarning,
+                stacklevel=2,
+            )
+
     converted_wavs: dict[int, bytes] = {}
     converted_frames: dict[int, int] = {}
     for slot, wav_path in sorted(spec.sounds.items()):
+        if slot in missing_slots:
+            continue
         wav_path = Path(wav_path)
-        if not wav_path.is_file():
-            raise FileNotFoundError(
-                f"sample slot {slot} wav missing: {wav_path}"
-            )
         slice_range = spec.slot_slices.get(slot)
         try:
             new_bytes, frames = convert_wav_to_ep133(
@@ -299,7 +314,7 @@ def build_ppak(
             converted_wavs[slot] = wav_path.read_bytes()
 
     # Build the inner TAR (POSIX format, no compression).
-    tar_data = _build_inner_tar(spec, template, converted_frames)
+    tar_data = _build_inner_tar(spec, template, converted_frames, missing_slots)
 
     # Build meta.json — preserve template fields, patch generated_at + author.
     meta = dict(template.meta)
@@ -335,6 +350,8 @@ def build_ppak(
         # picked up; the sample stays unloaded and pads referencing that
         # slot trigger the device's "restore complete with issues" flag.
         for slot, wav_path in sorted(spec.sounds.items()):
+            if slot in missing_slots:
+                continue
             wav_path = Path(wav_path)
             _zip_write_with_leading_slash(
                 zf,
@@ -393,6 +410,7 @@ def _build_inner_tar(
     spec: PpakSpec,
     template: _ReferenceTemplate,
     converted_frames_by_slot: dict[int, int] | None = None,
+    missing_slots: set[int] | None = None,
 ) -> bytes:
     """Build the inner ``project.tar`` (POSIX format, no compression).
 
@@ -400,9 +418,14 @@ def _build_inner_tar(
     46875Hz) frame counts for each sample slot, computed once during WAV
     bundling. Required for pad-record bytes 8..11 to match the actual
     audio data the device receives.
+
+    ``missing_slots`` lists slots whose WAVs were absent on disk; pad
+    records pointing at those slots are dropped so the device doesn't
+    hold ghost pads referencing empty slots.
     """
     pad_by_key = {(pd.group, pd.pad): pd for pd in spec.pads}
     length_frames_by_slot = converted_frames_by_slot or {}
+    missing_slots = missing_slots or set()
 
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w", format=tarfile.USTAR_FORMAT) as tf:
@@ -423,6 +446,8 @@ def _build_inner_tar(
             for pad in range(1, 13):
                 pd = pad_by_key.get((group, pad))
                 if pd is None:
+                    continue
+                if pd.sample_slot in missing_slots:
                     continue
                 tmpl = template.pad_templates.get(
                     (group, pad), DEVICE_DEFAULT_PAD
