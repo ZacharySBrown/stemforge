@@ -147,6 +147,7 @@ OBJ_CX_COMPLETE_PREP    = "obj-cx-complete-prepend"
 OBJ_CX_ERROR_PREP       = "obj-cx-error-prepend"
 OBJ_BOUNCE_CLIPS_MSG    = "obj-bounce-clips-msg"
 OBJ_EXPORT_SONG_MSG     = "obj-export-song-msg"
+OBJ_LOAD_ARR_MSG        = "obj-load-arrangement-msg"
 
 OBJ_PLUGIN_IN           = "obj-plugin-in"
 OBJ_PLUGOUT             = "obj-plugout"
@@ -744,13 +745,14 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
              # width
              860.0, 22.0),
             numinlets=1,
-            numoutlets=11,  # 10 events + unmatched
-            outlettype=["", "", "", "", "", "", "", "", "", "", ""],
+            numoutlets=12,  # 11 events + unmatched
+            outlettype=["", "", "", "", "", "", "", "", "", "", "", ""],
             extras={
                 "text": (
                     "route preset_click source_click forge_click "
                     "cancel_click retry_click done_click settings_click "
-                    "commit_click bounce_clips_click export_song_click"
+                    "commit_click bounce_clips_click export_song_click "
+                    "arrangement_load_click"
                 )
             },
         )
@@ -923,6 +925,54 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     )
     lines.append(_line(OBJ_ROUTE_UI_EVENTS, 9, OBJ_EXPORT_SONG_MSG, 0))
     lines.append(_line(OBJ_EXPORT_SONG_MSG, 0, OBJ_SF_LOM_LOADER, 0))
+
+    # Outlet 10 — arrangement_load_click → [opendialog] → regex strip HFS →
+    # prepend `loadArrangementFromManifest` → sf_lom_loader. Mirrors the
+    # browseManifest chain (lines ~697-736) — Max's [opendialog] is the only
+    # native picker available; the v8ui's onclick can't open a dialog itself,
+    # so it emits `arrangement_load_click` (no args) and the patcher drives
+    # the picker. The loader wrapper includes sf_arrangement_loader.js and
+    # dispatches to runArrangementLoad() with the POSIX path.
+    OBJ_LOAD_ARR_DIALOG = "obj-load-arr-dialog"
+    OBJ_LOAD_ARR_REGEX  = "obj-load-arr-regex"
+    OBJ_LOAD_ARR_PREPEND = "obj-load-arr-prepend"
+    boxes.append(
+        _box(
+            OBJ_LOAD_ARR_DIALOG,
+            "newobj",
+            (410.0 + 8 * 110, js_row_y - 10, 150.0, 22.0),
+            numinlets=1,
+            numoutlets=2,
+            outlettype=["", "bang"],
+            extras={"text": "opendialog"},
+        )
+    )
+    lines.append(_line(OBJ_ROUTE_UI_EVENTS, 10, OBJ_LOAD_ARR_DIALOG, 0))
+    boxes.append(
+        _box(
+            OBJ_LOAD_ARR_REGEX,
+            "newobj",
+            (410.0 + 8 * 110, js_row_y + 16, 230.0, 22.0),
+            numinlets=1,
+            numoutlets=5,
+            outlettype=["", "", "", "", ""],
+            extras={"text": "regexp (.+):(/.*) @substitute %2"},
+        )
+    )
+    lines.append(_line(OBJ_LOAD_ARR_DIALOG, 0, OBJ_LOAD_ARR_REGEX, 0))
+    boxes.append(
+        _box(
+            OBJ_LOAD_ARR_PREPEND,
+            "newobj",
+            (410.0 + 8 * 110, js_row_y + 42, 220.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "prepend loadArrangementFromManifest"},
+        )
+    )
+    lines.append(_line(OBJ_LOAD_ARR_REGEX, 0, OBJ_LOAD_ARR_PREPEND, 0))
+    lines.append(_line(OBJ_LOAD_ARR_PREPEND, 0, OBJ_SF_LOM_LOADER, 0))
 
     # sf_clip_export outlet 0 = status (currently logged inside the JS only;
     # could be wired to status text later). Outlet 1 = [shell] spawn commands

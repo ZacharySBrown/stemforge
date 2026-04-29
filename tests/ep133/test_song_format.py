@@ -85,18 +85,26 @@ def parse_pad(data: bytes) -> dict:
     ts_bars_raw = data[25]
     play_mode_raw = data[23]
     play_mode = (
-        "oneshot" if play_mode_raw == 0
-        else "key" if play_mode_raw == 1
-        else "legato" if play_mode_raw == 2
+        "oneshot"
+        if play_mode_raw == 0
+        else "key"
+        if play_mode_raw == 1
+        else "legato"
+        if play_mode_raw == 2
         else f"unknown({play_mode_raw})"
     )
     # Decode bars per parsers.ts.
     bars_decoded = (
-        1 if ts_bars_raw == 0
-        else 2 if ts_bars_raw == 1
-        else 4 if ts_bars_raw == 2
-        else 0.5 if ts_bars_raw == 255
-        else 0.25 if ts_bars_raw == 254
+        1
+        if ts_bars_raw == 0
+        else 2
+        if ts_bars_raw == 1
+        else 4
+        if ts_bars_raw == 2
+        else 0.5
+        if ts_bars_raw == 255
+        else 0.25
+        if ts_bars_raw == 254
         else None
     )
     return {
@@ -206,10 +214,7 @@ def test_build_pattern_sorts_events_by_position():
     ]
     blob = build_pattern(out_of_order, bars=1)
     # Read positions in order: at offset 4, 12, 20.
-    positions = [
-        struct.unpack_from("<H", blob, off)[0]
-        for off in (4, 12, 20)
-    ]
+    positions = [struct.unpack_from("<H", blob, off)[0] for off in (4, 12, 20)]
     assert positions == [0, 96, 192]
 
 
@@ -339,9 +344,7 @@ def test_build_pad_zero_template_round_trip():
 
 def test_build_pad_play_mode_encoding():
     for mode, code in (("oneshot", 0), ("key", 1), ("legato", 2)):
-        blob = build_pad(
-            sample_slot=1, play_mode=mode, time_stretch_bars=1, project_bpm=120.0
-        )
+        blob = build_pad(sample_slot=1, play_mode=mode, time_stretch_bars=1, project_bpm=120.0)
         assert blob[23] == code
 
 
@@ -349,8 +352,11 @@ def test_build_pad_time_stretch_bars_encoding():
     encoding = {1: 0, 2: 1, 4: 2}
     for bars, raw in encoding.items():
         blob = build_pad(
-            sample_slot=1, play_mode="oneshot", time_stretch_bars=bars,
-            project_bpm=120.0, stretch_mode="bars",
+            sample_slot=1,
+            play_mode="oneshot",
+            time_stretch_bars=bars,
+            project_bpm=120.0,
+            stretch_mode="bars",
         )
         assert blob[25] == raw
 

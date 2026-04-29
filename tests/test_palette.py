@@ -141,8 +141,9 @@ def test_compiled_production_idm_has_usable_colors(tmp_path, monkeypatch):
         assert isinstance(first.get("hex"), str), "dict form must have hex field"
         assert first["hex"].startswith("#")
     elif isinstance(first, str):
-        assert first.startswith("#") and len(first) == 7, \
+        assert first.startswith("#") and len(first) == 7, (
             f"hex-string form must be #RRGGBB; got {first!r}"
+        )
     else:
         raise AssertionError(
             f"color must be dict or hex string; got {type(first).__name__}: {first!r}"

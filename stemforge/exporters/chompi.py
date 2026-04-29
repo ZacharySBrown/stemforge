@@ -18,8 +18,13 @@ import soundfile as sf
 from rich.console import Console
 
 from .base import (
-    AbstractExporter, ExportManifest, ExportSlot,
-    resample_audio, to_stereo, peak_normalize, trim_to_duration,
+    AbstractExporter,
+    ExportManifest,
+    ExportSlot,
+    resample_audio,
+    to_stereo,
+    peak_normalize,
+    trim_to_duration,
     write_export_wav,
 )
 
@@ -56,7 +61,6 @@ def _bar_align_trim(audio: np.ndarray, sr: int, bpm: float, time_sig: int = 4) -
 
 
 class ChompiExporter(AbstractExporter):
-
     def __init__(self, firmware: str = "tempo"):
         self._firmware = firmware
 
@@ -103,6 +107,7 @@ class ChompiExporter(AbstractExporter):
     def _read_bpm(self, track_dir: Path) -> float:
         """Try to read BPM from stems.json or curated manifest."""
         import json
+
         for mf_name in ["curated/manifest.json", "stems.json"]:
             mf_path = track_dir / mf_name
             if mf_path.exists():
@@ -133,12 +138,19 @@ class ChompiExporter(AbstractExporter):
             fname = f"slice_a{slice_slot}.wav"
             size = write_export_wav(audio, sr, output_dir / fname, self.target_bit_depth)
 
-            manifest.slots.append(ExportSlot(
-                slot=slice_slot, group="slice", pad=slice_slot,
-                file=fname, source_track=track_name, source_stem=stem,
-                source_file=str(stem_path),
-                duration_s=audio.shape[-1] / sr, size_bytes=size,
-            ))
+            manifest.slots.append(
+                ExportSlot(
+                    slot=slice_slot,
+                    group="slice",
+                    pad=slice_slot,
+                    file=fname,
+                    source_track=track_name,
+                    source_stem=stem,
+                    source_file=str(stem_path),
+                    duration_s=audio.shape[-1] / sr,
+                    size_bytes=size,
+                )
+            )
             manifest.memory_used_bytes += size
             slice_slot += 1
 
@@ -155,12 +167,19 @@ class ChompiExporter(AbstractExporter):
                 audio, sr = self._prepare_for_chompi(wav, bpm)
                 fname = f"slice_a{slice_slot}.wav"
                 size = write_export_wav(audio, sr, output_dir / fname, self.target_bit_depth)
-                manifest.slots.append(ExportSlot(
-                    slot=slice_slot, group="slice", pad=slice_slot,
-                    file=fname, source_track=track_name, source_stem=stem,
-                    source_file=str(wav),
-                    duration_s=audio.shape[-1] / sr, size_bytes=size,
-                ))
+                manifest.slots.append(
+                    ExportSlot(
+                        slot=slice_slot,
+                        group="slice",
+                        pad=slice_slot,
+                        file=fname,
+                        source_track=track_name,
+                        source_stem=stem,
+                        source_file=str(wav),
+                        duration_s=audio.shape[-1] / sr,
+                        size_bytes=size,
+                    )
+                )
                 manifest.memory_used_bytes += size
                 slice_slot += 1
 
@@ -184,12 +203,19 @@ class ChompiExporter(AbstractExporter):
                 audio, sr = self._prepare_for_chompi(wav, bpm)
                 fname = f"chroma_a{chroma_slot}.wav"
                 size = write_export_wav(audio, sr, output_dir / fname, self.target_bit_depth)
-                manifest.slots.append(ExportSlot(
-                    slot=chroma_slot, group="chroma", pad=chroma_slot,
-                    file=fname, source_track=track_name, source_stem=stem,
-                    source_file=str(wav),
-                    duration_s=audio.shape[-1] / sr, size_bytes=size,
-                ))
+                manifest.slots.append(
+                    ExportSlot(
+                        slot=chroma_slot,
+                        group="chroma",
+                        pad=chroma_slot,
+                        file=fname,
+                        source_track=track_name,
+                        source_stem=stem,
+                        source_file=str(wav),
+                        duration_s=audio.shape[-1] / sr,
+                        size_bytes=size,
+                    )
+                )
                 manifest.memory_used_bytes += size
                 chroma_slot += 1
 
@@ -203,10 +229,9 @@ class ChompiExporter(AbstractExporter):
         """Export curated material across tracks for Chompi performance."""
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        track_dirs = sorted([
-            d for d in tracks_dir.iterdir()
-            if d.is_dir() and (d / "drums.wav").exists()
-        ])
+        track_dirs = sorted(
+            [d for d in tracks_dir.iterdir() if d.is_dir() and (d / "drums.wav").exists()]
+        )
         track_names = [d.name for d in track_dirs]
         manifest = self._new_manifest("perform", track_names)
 
@@ -226,16 +251,25 @@ class ChompiExporter(AbstractExporter):
             audio, sr = self._prepare_for_chompi(stem_path, bpm)
             fname = f"slice_a{slice_slot}.wav"
             size = write_export_wav(audio, sr, output_dir / fname, self.target_bit_depth)
-            manifest.slots.append(ExportSlot(
-                slot=slice_slot, group="slice", pad=slice_slot,
-                file=fname, source_track=td.name, source_stem="drums",
-                source_file=str(stem_path),
-                duration_s=audio.shape[-1] / sr, size_bytes=size,
-            ))
+            manifest.slots.append(
+                ExportSlot(
+                    slot=slice_slot,
+                    group="slice",
+                    pad=slice_slot,
+                    file=fname,
+                    source_track=td.name,
+                    source_stem="drums",
+                    source_file=str(stem_path),
+                    duration_s=audio.shape[-1] / sr,
+                    size_bytes=size,
+                )
+            )
             manifest.memory_used_bytes += size
             slice_slot += 1
 
-        console.print(f"    Slice engine: {slice_slot - 1} slots across {min(len(track_dirs), SLICE_SLOTS)} tracks")
+        console.print(
+            f"    Slice engine: {slice_slot - 1} slots across {min(len(track_dirs), SLICE_SLOTS)} tracks"
+        )
 
         # Chroma engine: melodic phrases across tracks
         chroma_slot = 1
@@ -258,12 +292,19 @@ class ChompiExporter(AbstractExporter):
                 audio, sr = self._prepare_for_chompi(wav, bpm)
                 fname = f"chroma_a{chroma_slot}.wav"
                 size = write_export_wav(audio, sr, output_dir / fname, self.target_bit_depth)
-                manifest.slots.append(ExportSlot(
-                    slot=chroma_slot, group="chroma", pad=chroma_slot,
-                    file=fname, source_track=td.name, source_stem=stem,
-                    source_file=str(wav),
-                    duration_s=audio.shape[-1] / sr, size_bytes=size,
-                ))
+                manifest.slots.append(
+                    ExportSlot(
+                        slot=chroma_slot,
+                        group="chroma",
+                        pad=chroma_slot,
+                        file=fname,
+                        source_track=td.name,
+                        source_stem=stem,
+                        source_file=str(wav),
+                        duration_s=audio.shape[-1] / sr,
+                        size_bytes=size,
+                    )
+                )
                 manifest.memory_used_bytes += size
                 chroma_slot += 1
                 break  # one phrase per track

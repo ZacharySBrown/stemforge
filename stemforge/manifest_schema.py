@@ -44,7 +44,18 @@ HASH_LENGTH = 16  # hex chars from sha256
 # Bottom-up, left-right pad rotation matching the EP-133 keypad face.
 # Index 0 → bottom-left ".", index 11 → top-right "9".
 BAR_INDEX_TO_LABEL: tuple[PadLabel, ...] = (
-    ".", "0", "ENTER", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+    ".",
+    "0",
+    "ENTER",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
 )
 
 
@@ -85,6 +96,7 @@ class BatchManifest(BaseModel):
 
 # ── Hashing ──────────────────────────────────────────────────────────────────
 
+
 def compute_audio_hash(path: Path, *, length: int = HASH_LENGTH) -> str:
     """Return sha256 of a file's raw bytes, lowercase hex, first `length` chars."""
     h = hashlib.sha256()
@@ -95,6 +107,7 @@ def compute_audio_hash(path: Path, *, length: int = HASH_LENGTH) -> str:
 
 
 # ── Sidecar / batch path helpers ─────────────────────────────────────────────
+
 
 def sidecar_path_for(wav_path: Path, *, audio_hash: str | None = None) -> Path:
     """Return the expected sidecar path for a given WAV. Hashes if needed."""
@@ -113,6 +126,7 @@ def find_batch(wav_path: Path) -> Path | None:
 
 
 # ── Read helpers (mirrored from ep133-ppak) ──────────────────────────────────
+
 
 def load_sidecar(wav_path: Path) -> SampleMeta | None:
     p = find_sidecar(wav_path)
@@ -187,6 +201,7 @@ def merge_batch_default_bpm(meta: SampleMeta, batch: BatchManifest) -> SampleMet
 
 
 # ── Producer-side write helpers (StemForge-only) ─────────────────────────────
+
 
 def display_name(stem_filename: str, *, max_len: int = 16) -> str:
     """Trim a filename to a device-friendly display string.

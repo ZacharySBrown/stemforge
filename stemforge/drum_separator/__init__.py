@@ -9,7 +9,6 @@ Model weights (562 MB) downloaded separately to ~/.stemforge/models/larsnet/
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 import soundfile as sf
@@ -44,6 +43,7 @@ def _make_config(models_dir: Path) -> Path:
         config["inference_models"][key] = str(model_file)
 
     import tempfile
+
     tmp_config = Path(tempfile.mktemp(prefix="sf_larsnet_", suffix=".yaml"))
     with open(tmp_config, "w") as f:
         yaml.dump(config, f)

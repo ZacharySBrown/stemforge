@@ -9,5 +9,5 @@ class ExportTarget(Enum):
 
 
 class ExportWorkflow(Enum):
-    COMPOSE = "compose"   # deep: all slices from one track
-    PERFORM = "perform"   # wide: curated across multiple tracks
+    COMPOSE = "compose"  # deep: all slices from one track
+    PERFORM = "perform"  # wide: curated across multiple tracks

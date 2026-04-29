@@ -43,20 +43,36 @@ SETTINGS_SIZE = 222
 # 01_song_5_positions_all_scene1.ppak) are non-canonical — Sample Tool
 # pads to 27, which the device tolerates on import but corrupts during
 # scene-switch iteration (off-by-one stride causes ERR PATTERN 189).
-DEVICE_DEFAULT_PAD = bytes([
-    0x00,                                # byte 0
-    0x00, 0x00,                          # bytes 1-2  : sample slot (uint16 LE) — 0 = unassigned
-    0x00, 0x00, 0x00, 0x00, 0x00,        # bytes 3-7
-    0x00, 0x00, 0x00, 0x00,              # bytes 8-11 : length frames (u32 LE)
-    0x00, 0x00, 0x00, 0x00,              # bytes 12-15: BPM float32 LE — factory default = 0.0
-    0x64,                                # byte 16    : amplitude (= 100)
-    0x00, 0x00, 0x00,                    # bytes 17-19
-    0xff,                                # byte 20    : envelope.release default
-    0x00,                                # byte 21    : stretch mode (0 = NONE)
-    0x00, 0x00,                          # bytes 22-23: (byte 23 = play mode = oneshot)
-    0x3c,                                # byte 24    : note (= 60)
-    0x00,                                # byte 25
-])
+DEVICE_DEFAULT_PAD = bytes(
+    [
+        0x00,  # byte 0
+        0x00,
+        0x00,  # bytes 1-2  : sample slot (uint16 LE) — 0 = unassigned
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,  # bytes 3-7
+        0x00,
+        0x00,
+        0x00,
+        0x00,  # bytes 8-11 : length frames (u32 LE)
+        0x00,
+        0x00,
+        0x00,
+        0x00,  # bytes 12-15: BPM float32 LE — factory default = 0.0
+        0x64,  # byte 16    : amplitude (= 100)
+        0x00,
+        0x00,
+        0x00,  # bytes 17-19
+        0xFF,  # byte 20    : envelope.release default
+        0x00,  # byte 21    : stretch mode (0 = NONE)
+        0x00,
+        0x00,  # bytes 22-23: (byte 23 = play mode = oneshot)
+        0x3C,  # byte 24    : note (= 60)
+        0x00,  # byte 25
+    ]
+)
 assert len(DEVICE_DEFAULT_PAD) == PAD_RECORD_SIZE
 
 # Device-default 222-byte settings file. Extracted byte-for-byte from
@@ -68,10 +84,10 @@ assert len(DEVICE_DEFAULT_PAD) == PAD_RECORD_SIZE
 # the device's per-pad/per-scene parameters need their -1.0 ("no override")
 # defaults baked in for transition validation to succeed.
 DEVICE_DEFAULT_SETTINGS = (
-    bytes(24)                            # bytes 0-23: BPM float32 LE goes at 4..7
-    + bytes.fromhex("000080bf") * 48     # bytes 24-215: 48 × float32 LE = -1.0
-    + bytes(4)                           # bytes 216-219: zero
-    + bytes([0x00, 0x02])                # bytes 220-221: trailer
+    bytes(24)  # bytes 0-23: BPM float32 LE goes at 4..7
+    + bytes.fromhex("000080bf") * 48  # bytes 24-215: 48 × float32 LE = -1.0
+    + bytes(4)  # bytes 216-219: zero
+    + bytes([0x00, 0x02])  # bytes 220-221: trailer
 )
 assert len(DEVICE_DEFAULT_SETTINGS) == SETTINGS_SIZE
 
@@ -91,24 +107,25 @@ PLAY_MODE_ENCODING = {"oneshot": 0, "key": 1, "legato": 2}
 
 # ----- Dataclasses -----------------------------------------------------------
 
+
 @dataclass
 class Event:
     """A single trigger event inside a pattern."""
 
-    position_ticks: int      # 0 .. bars*TICKS_PER_BAR - 1 (uint16 LE)
-    pad: int                 # 1..12 (encoded as pad*8 in byte 2)
-    note: int                # MIDI 0..127 (60 = C4, natural pitch)
-    velocity: int            # 0..127
-    duration_ticks: int      # uint16 LE
+    position_ticks: int  # 0 .. bars*TICKS_PER_BAR - 1 (uint16 LE)
+    pad: int  # 1..12 (encoded as pad*8 in byte 2)
+    note: int  # MIDI 0..127 (60 = C4, natural pitch)
+    velocity: int  # 0..127
+    duration_ticks: int  # uint16 LE
 
 
 @dataclass
 class Pattern:
     """One pattern file: ``patterns/{group}/{index:02d}``."""
 
-    group: str               # 'a' | 'b' | 'c' | 'd'
-    index: int               # 1..99
-    bars: int                # 1, 2, 4, ...
+    group: str  # 'a' | 'b' | 'c' | 'd'
+    index: int  # 1..99
+    bars: int  # 1, 2, 4, ...
     events: list[Event] = field(default_factory=list)
 
 
@@ -116,7 +133,7 @@ class Pattern:
 class SceneSpec:
     """One scene row in the ``scenes`` file. Pattern index 0 = silent."""
 
-    a: int                   # pattern index 1..99 or 0 (silent)
+    a: int  # pattern index 1..99 or 0 (silent)
     b: int
     c: int
     d: int
@@ -126,12 +143,12 @@ class SceneSpec:
 class PadSpec:
     """One pad assignment that produces a ``pads/{group}/p{NN}`` file."""
 
-    group: str               # 'a' | 'b' | 'c' | 'd'
-    pad: int                 # 1..12
-    sample_slot: int         # uint16 LE — sample-library slot
-    play_mode: str           # 'oneshot' | 'key' | 'legato'
-    time_stretch_bars: int   # 1, 2, or 4 (raw value before encoding)
-    stretch_mode: str = "none"     # 'none' | 'bars' | 'bpm'
+    group: str  # 'a' | 'b' | 'c' | 'd'
+    pad: int  # 1..12
+    sample_slot: int  # uint16 LE — sample-library slot
+    play_mode: str  # 'oneshot' | 'key' | 'legato'
+    time_stretch_bars: int  # 1, 2, or 4 (raw value before encoding)
+    stretch_mode: str = "none"  # 'none' | 'bars' | 'bpm'
     sound_bpm: float | None = None  # source BPM when stretch_mode='bpm'
 
 
@@ -139,13 +156,13 @@ class PadSpec:
 class PpakSpec:
     """Top-level spec consumed by :func:`stemforge.exporters.ep133.ppak_writer.build_ppak`."""
 
-    project_slot: int                # 1..9
+    project_slot: int  # 1..9
     bpm: float
     time_sig: tuple[int, int]
     patterns: list[Pattern]
     scenes: list[SceneSpec]
     pads: list[PadSpec]
-    sounds: dict[int, Path]          # sample_slot → wav file path
+    sounds: dict[int, Path]  # sample_slot → wav file path
     song_positions: list[int] | None = None  # song-mode positions (1-indexed scene refs)
     # sample_slot → (start_sec, end_sec) in the source WAV. Forge curation
     # renders multi-bar stems and addresses sub-regions via offsets in
@@ -155,6 +172,7 @@ class PpakSpec:
 
 
 # ----- Pattern builder -------------------------------------------------------
+
 
 def build_pattern(events: list[Event], bars: int) -> bytes:
     """Build one pattern file.
@@ -181,9 +199,7 @@ def build_pattern(events: list[Event], bars: int) -> bytes:
     if not (1 <= bars <= 255):
         raise ValueError(f"bars must be 1..255, got {bars}")
     if len(events) > PATTERN_MAX_EVENTS:
-        raise ValueError(
-            f"too many events: {len(events)} (max {PATTERN_MAX_EVENTS})"
-        )
+        raise ValueError(f"too many events: {len(events)} (max {PATTERN_MAX_EVENTS})")
 
     out = bytearray()
     out.append(0x00)
@@ -193,9 +209,7 @@ def build_pattern(events: list[Event], bars: int) -> bytes:
 
     for ev in sorted(events, key=lambda e: e.position_ticks):
         if not (0 <= ev.position_ticks <= 0xFFFF):
-            raise ValueError(
-                f"position_ticks out of uint16 range: {ev.position_ticks}"
-            )
+            raise ValueError(f"position_ticks out of uint16 range: {ev.position_ticks}")
         if not (1 <= ev.pad <= 12):
             raise ValueError(f"pad must be 1..12, got {ev.pad}")
         if not (0 <= ev.note <= 127):
@@ -203,9 +217,7 @@ def build_pattern(events: list[Event], bars: int) -> bytes:
         if not (0 <= ev.velocity <= 127):
             raise ValueError(f"velocity must be 0..127, got {ev.velocity}")
         if not (0 <= ev.duration_ticks <= 0xFFFF):
-            raise ValueError(
-                f"duration_ticks out of uint16 range: {ev.duration_ticks}"
-            )
+            raise ValueError(f"duration_ticks out of uint16 range: {ev.duration_ticks}")
 
         out += struct.pack("<H", ev.position_ticks)
         # IMPORTANT: pad encoding in event is 0-indexed (file path is
@@ -223,6 +235,7 @@ def build_pattern(events: list[Event], bars: int) -> bytes:
 
 
 # ----- Scenes builder --------------------------------------------------------
+
 
 def build_scenes(
     scenes: list[SceneSpec],
@@ -268,17 +281,13 @@ def build_scenes(
     # An incomplete/short scenes file causes the device to error on load
     # ("ERR PATTERN ...").
     SCENES_TOTAL_SIZE = 712
-    SCENES_TRAILER_SIZE = (
-        SCENES_TOTAL_SIZE - SCENES_HEADER_SIZE - SCENES_MAX * 6
-    )
+    SCENES_TRAILER_SIZE = SCENES_TOTAL_SIZE - SCENES_HEADER_SIZE - SCENES_MAX * 6
 
     # Validate populated scenes
     for sc in scenes:
         for v, name in ((sc.a, "a"), (sc.b, "b"), (sc.c, "c"), (sc.d, "d")):
             if not (0 <= v <= 99):
-                raise ValueError(
-                    f"scene.{name} pattern index must be 0..99, got {v}"
-                )
+                raise ValueError(f"scene.{name} pattern index must be 0..99, got {v}")
 
     out = bytearray(SCENES_HEADER_SIZE)
     out[5] = num
@@ -314,21 +323,18 @@ def build_scenes(
         raise ValueError(f"too many song positions: {len(positions)} (max 99)")
     for i, p in enumerate(positions):
         if not (1 <= p <= 99):
-            raise ValueError(
-                f"song_positions[{i}] = {p} out of range 1..99"
-            )
+            raise ValueError(f"song_positions[{i}] = {p} out of range 1..99")
     trailer[11] = len(positions)
     for i, p in enumerate(positions):
         trailer[12 + i] = p
     out += bytes(trailer)
 
-    assert len(out) == SCENES_TOTAL_SIZE, (
-        f"scenes file size {len(out)} != {SCENES_TOTAL_SIZE}"
-    )
+    assert len(out) == SCENES_TOTAL_SIZE, f"scenes file size {len(out)} != {SCENES_TOTAL_SIZE}"
     return bytes(out)
 
 
 # ----- Pad builder -----------------------------------------------------------
+
 
 def build_pad(
     sample_slot: int,
@@ -372,9 +378,7 @@ def build_pad(
         data = bytearray(DEVICE_DEFAULT_PAD)
     else:
         if len(template) != PAD_RECORD_SIZE:
-            raise ValueError(
-                f"pad template must be {PAD_RECORD_SIZE} bytes, got {len(template)}"
-            )
+            raise ValueError(f"pad template must be {PAD_RECORD_SIZE} bytes, got {len(template)}")
         data = bytearray(template)
 
     if not (0 <= sample_slot <= 0xFFFF):
@@ -384,9 +388,7 @@ def build_pad(
             f"play_mode must be one of {sorted(PLAY_MODE_ENCODING)}, got {play_mode!r}"
         )
     if stretch_mode not in {"none", "bars", "bpm"}:
-        raise ValueError(
-            f"stretch_mode must be 'none', 'bars', or 'bpm', got {stretch_mode!r}"
-        )
+        raise ValueError(f"stretch_mode must be 'none', 'bars', or 'bpm', got {stretch_mode!r}")
     if stretch_mode == "bars" and time_stretch_bars not in TIME_STRETCH_BARS_ENCODING:
         raise ValueError(
             f"time_stretch_bars must be one of "
@@ -399,9 +401,7 @@ def build_pad(
             # Device rejects sound.bpm outside 1..200 (PROTOCOL.md §5);
             # the binary record's float32 at bytes 12..15 follows the same
             # range to keep slot/pad metadata in sync.
-            raise ValueError(
-                f"sound_bpm {sound_bpm} must be 1.0..200.0 (device rejects higher)"
-            )
+            raise ValueError(f"sound_bpm {sound_bpm} must be 1.0..200.0 (device rejects higher)")
 
     # Bytes 1..2 — instrument number / sample slot
     struct.pack_into("<H", data, 1, sample_slot)
@@ -409,9 +409,7 @@ def build_pad(
     # Bytes 8..11 — sample length in frames (uint32 LE).
     if sample_length_frames is not None:
         if not (0 <= sample_length_frames <= 0xFFFFFFFF):
-            raise ValueError(
-                f"sample_length_frames must fit in uint32, got {sample_length_frames}"
-            )
+            raise ValueError(f"sample_length_frames must fit in uint32, got {sample_length_frames}")
         struct.pack_into("<I", data, 8, sample_length_frames)
 
     if stretch_mode == "bars":
@@ -440,6 +438,7 @@ def build_pad(
 
 # ----- Settings builder ------------------------------------------------------
 
+
 def build_settings(bpm: float, template: bytes) -> bytes:
     """Patch BPM into a 222-byte settings template.
 
@@ -452,15 +451,14 @@ def build_settings(bpm: float, template: bytes) -> bytes:
     ``template`` is copied verbatim.
     """
     if len(template) != SETTINGS_SIZE:
-        raise ValueError(
-            f"settings template must be {SETTINGS_SIZE} bytes, got {len(template)}"
-        )
+        raise ValueError(f"settings template must be {SETTINGS_SIZE} bytes, got {len(template)}")
     data = bytearray(template)
     struct.pack_into("<f", data, 4, float(bpm))
     return bytes(data)
 
 
 # ----- Path helpers (used by the .ppak writer) -------------------------------
+
 
 def pattern_filename(group: str, index: int) -> str:
     """``patterns/{group}{NN}`` — index zero-padded to 2 digits.

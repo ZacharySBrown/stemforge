@@ -1,7 +1,6 @@
 """Tests for one-shot extraction and drum classification."""
 
 import numpy as np
-import pytest
 import soundfile as sf
 
 from stemforge.oneshot import (
@@ -32,7 +31,7 @@ def _write_drum_pattern(path, sr=SR, duration=2.0):
         start = int(offset * sr)
         kick = 0.8 * np.sin(2 * np.pi * 60 * t) * np.exp(-t * 30)
         end = min(start + len(kick), n)
-        audio[start:end] += kick[:end - start]
+        audio[start:end] += kick[: end - start]
 
     # Snare at beat 2 (0.25s) and beat 4 (0.75s) — mid freq + noise burst
     for offset in [0.25, 0.75, 1.25, 1.75]:
@@ -41,7 +40,7 @@ def _write_drum_pattern(path, sr=SR, duration=2.0):
         snare_noise = 0.3 * np.random.randn(len(t)).astype(np.float32) * np.exp(-t * 50)
         snare = snare_tone + snare_noise
         end = min(start + len(snare), n)
-        audio[start:end] += snare[:end - start]
+        audio[start:end] += snare[: end - start]
 
     # Hi-hat every 1/8th — high freq noise burst
     for i in range(int(duration / 0.125)):
@@ -51,7 +50,7 @@ def _write_drum_pattern(path, sr=SR, duration=2.0):
         hat_t = np.arange(hat_len) / sr
         hat = 0.2 * np.random.randn(hat_len).astype(np.float32) * np.exp(-hat_t * 100)
         end = min(start + len(hat), n)
-        audio[start:end] += hat[:end - start]
+        audio[start:end] += hat[: end - start]
 
     stereo = np.stack([audio, audio], axis=1)
     sf.write(str(path), stereo, sr, subtype="PCM_24")
@@ -68,7 +67,7 @@ def _write_bass_stem(path, sr=SR, duration=2.0):
         freq = 80 + (i % 4) * 20  # vary pitch
         pluck = 0.6 * np.sin(2 * np.pi * freq * t) * np.exp(-t * 15)
         end = min(start + len(pluck), n)
-        audio[start:end] += pluck[:end - start]
+        audio[start:end] += pluck[: end - start]
 
     stereo = np.stack([audio, audio], axis=1)
     sf.write(str(path), stereo, sr, subtype="PCM_24")
@@ -145,7 +144,9 @@ class TestOneshotExtraction:
 class TestDrumClassifier:
     def _make_profile(self, centroid, flatness, crest, bandwidth, duration, attack=0.005):
         return OneshotProfile(
-            path=None, index=0, onset_time=0,
+            path=None,
+            index=0,
+            onset_time=0,
             duration=duration,
             spectral_centroid=centroid,
             spectral_bandwidth=bandwidth,
@@ -168,15 +169,21 @@ class TestDrumClassifier:
         assert classify_drum_hit(p) == "snare"
 
     def test_hat_closed(self):
-        p = self._make_profile(centroid=8000, flatness=0.6, crest=5.0, bandwidth=4000, duration=0.05)
+        p = self._make_profile(
+            centroid=8000, flatness=0.6, crest=5.0, bandwidth=4000, duration=0.05
+        )
         assert classify_drum_hit(p) == "hat_closed"
 
     def test_hat_open(self):
-        p = self._make_profile(centroid=7000, flatness=0.5, crest=4.0, bandwidth=3000, duration=0.25)
+        p = self._make_profile(
+            centroid=7000, flatness=0.5, crest=4.0, bandwidth=3000, duration=0.25
+        )
         assert classify_drum_hit(p) == "hat_open"
 
     def test_rim(self):
-        p = self._make_profile(centroid=3000, flatness=0.3, crest=12.0, bandwidth=2000, duration=0.02)
+        p = self._make_profile(
+            centroid=3000, flatness=0.3, crest=12.0, bandwidth=2000, duration=0.02
+        )
         assert classify_drum_hit(p) == "rim"
 
     def test_perc_fallback(self):
@@ -186,7 +193,9 @@ class TestDrumClassifier:
     def test_classify_and_assign(self):
         profiles = [
             self._make_profile(centroid=100, flatness=0.2, crest=8.0, bandwidth=200, duration=0.15),
-            self._make_profile(centroid=8000, flatness=0.6, crest=5.0, bandwidth=4000, duration=0.05),
+            self._make_profile(
+                centroid=8000, flatness=0.6, crest=5.0, bandwidth=4000, duration=0.05
+            ),
         ]
         classified = classify_and_assign(profiles)
         assert classified[0].classification == "kick"
@@ -195,8 +204,12 @@ class TestDrumClassifier:
     def test_arrange_drum_pads(self):
         profiles = [
             self._make_profile(centroid=100, flatness=0.2, crest=8.0, bandwidth=200, duration=0.15),
-            self._make_profile(centroid=2000, flatness=0.3, crest=7.0, bandwidth=3000, duration=0.1),
-            self._make_profile(centroid=8000, flatness=0.6, crest=5.0, bandwidth=4000, duration=0.05),
+            self._make_profile(
+                centroid=2000, flatness=0.3, crest=7.0, bandwidth=3000, duration=0.1
+            ),
+            self._make_profile(
+                centroid=8000, flatness=0.6, crest=5.0, bandwidth=4000, duration=0.05
+            ),
         ]
         classify_and_assign(profiles)
         pads = arrange_drum_pads(profiles, n_pads=8)
@@ -211,7 +224,14 @@ class TestCurationConfig:
     def test_load_default_config(self):
         cfg = load_curation_config()
         assert cfg.version == 2
-        assert cfg.layout.mode in ("stems", "loops-only", "production", "dj", "dual-deck", "session")
+        assert cfg.layout.mode in (
+            "stems",
+            "loops-only",
+            "production",
+            "dj",
+            "dual-deck",
+            "session",
+        )
         assert "drums" in cfg.stems
         assert cfg.stems["drums"].phrase_bars == 1
 

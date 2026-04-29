@@ -8,7 +8,6 @@ console = Console()
 
 
 class DemucsBackend(AbstractBackend):
-
     @property
     def name(self) -> str:
         return "Demucs (local)"
@@ -57,6 +56,7 @@ class DemucsBackend(AbstractBackend):
         # torchcodec regardless of backend=, and torchcodec is an optional dep
         # we don't want to require.
         import soundfile as sf
+
         audio_np, sr = sf.read(str(audio_path), dtype="float32", always_2d=True)
         waveform = torch.from_numpy(audio_np.T).contiguous()  # [channels, samples]
 
@@ -87,6 +87,7 @@ class DemucsBackend(AbstractBackend):
         stem_paths = {}
 
         import soundfile as sf
+
         for stem_name, source in zip(model.sources, sources):
             out_path = output_dir / f"{stem_name}.wav"
             # Write via soundfile directly — torchaudio ≥2.11 routes save

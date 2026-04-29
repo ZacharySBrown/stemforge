@@ -81,18 +81,14 @@ def convert_wav_to_ep133(
     if start_sec < 0:
         raise ValueError(f"start_sec must be >= 0, got {start_sec}")
     if end_sec is not None and end_sec <= start_sec:
-        raise ValueError(
-            f"end_sec ({end_sec}) must be > start_sec ({start_sec})"
-        )
+        raise ValueError(f"end_sec ({end_sec}) must be > start_sec ({start_sec})")
 
     # Slice before any conversion so the frame indices line up exactly
     # with the input WAV's sample rate.
     if start_sec > 0 or end_sec is not None:
         bytes_per_frame = width * channels
         start_frame = int(round(start_sec * rate))
-        end_frame = (
-            int(round(end_sec * rate)) if end_sec is not None else nframes
-        )
+        end_frame = int(round(end_sec * rate)) if end_sec is not None else nframes
         start_frame = max(0, min(start_frame, nframes))
         end_frame = max(start_frame, min(end_frame, nframes))
         data = data[start_frame * bytes_per_frame : end_frame * bytes_per_frame]
@@ -105,9 +101,7 @@ def convert_wav_to_ep133(
     if channels == 2:
         data = audioop.tomono(data, EP133_SAMPLE_WIDTH, 0.5, 0.5)
     elif channels != 1:
-        raise ValueError(
-            f"unsupported channel count {channels} (need 1 or 2)"
-        )
+        raise ValueError(f"unsupported channel count {channels} (need 1 or 2)")
 
     # 3. Sample rate → 46875 Hz
     if rate != EP133_SAMPLE_RATE:
@@ -130,9 +124,7 @@ def _build_metadata_json(sound_bpm: float | None) -> bytes:
         return DEFAULT_SOUND_METADATA_JSON.encode("utf-8")
     if not (1.0 <= sound_bpm <= 200.0):
         # Device rejects writes outside this range (PROTOCOL.md §5).
-        raise ValueError(
-            f"sound_bpm {sound_bpm} must be 1.0..200.0 (device rejects higher)"
-        )
+        raise ValueError(f"sound_bpm {sound_bpm} must be 1.0..200.0 (device rejects higher)")
     # Match ep133-ppak SampleParams: 2-decimal float, formatted without
     # exponent notation. json.dumps gives the right shape.
     bpm_str = json.dumps(round(float(sound_bpm), 2))
@@ -156,26 +148,26 @@ def _build_ep133_wav(pcm_data: bytes, *, sound_bpm: float | None = None) -> byte
     block_align = EP133_CHANNELS * EP133_SAMPLE_WIDTH
     fmt_payload = struct.pack(
         "<HHIIHH",
-        1,                            # PCM format
+        1,  # PCM format
         EP133_CHANNELS,
         EP133_SAMPLE_RATE,
         byte_rate,
         block_align,
-        EP133_SAMPLE_WIDTH * 8,       # bits per sample
+        EP133_SAMPLE_WIDTH * 8,  # bits per sample
     )
 
     # smpl chunk (36 bytes): only MIDIUnityNote (=60) is non-zero
     smpl_payload = struct.pack(
         "<9I",
-        0,    # Manufacturer
-        0,    # Product
-        0,    # SamplePeriod (ns)
-        60,   # MIDIUnityNote
-        0,    # MIDIPitchFraction
-        0,    # SMPTEFormat
-        0,    # SMPTEOffset
-        0,    # NumSampleLoops
-        0,    # SamplerDataLen
+        0,  # Manufacturer
+        0,  # Product
+        0,  # SamplePeriod (ns)
+        60,  # MIDIUnityNote
+        0,  # MIDIPitchFraction
+        0,  # SMPTEFormat
+        0,  # SMPTEOffset
+        0,  # NumSampleLoops
+        0,  # SamplerDataLen
     )
 
     # LIST/INFO/TNGE: JSON metadata padded to a chunk slot. Factory uses
@@ -184,9 +176,7 @@ def _build_ep133_wav(pcm_data: bytes, *, sound_bpm: float | None = None) -> byte
     json_bytes = _build_metadata_json(sound_bpm)
     payload_size = max(TNGE_PAYLOAD_SIZE, (len(json_bytes) + 3) & ~3)
     if len(json_bytes) > payload_size:
-        raise ValueError(
-            f"metadata JSON too large: {len(json_bytes)} > {payload_size}"
-        )
+        raise ValueError(f"metadata JSON too large: {len(json_bytes)} > {payload_size}")
     json_padded = json_bytes + b"\x00" * (payload_size - len(json_bytes))
     tnge_chunk = b"TNGE" + struct.pack("<I", payload_size) + json_padded
     list_payload = b"INFO" + tnge_chunk

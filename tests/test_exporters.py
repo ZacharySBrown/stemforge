@@ -1,16 +1,19 @@
 """Tests for hardware sample exporters (EP-133 + Chompi)."""
 
 import json
-from pathlib import Path
 
 import numpy as np
-import pytest
 import soundfile as sf
 
-from stemforge.exporters import ExportTarget, ExportWorkflow
 from stemforge.exporters.base import (
-    resample_audio, to_mono, to_stereo, peak_normalize,
-    trim_to_duration, write_export_wav, ExportManifest, ExportSlot,
+    resample_audio,
+    to_mono,
+    to_stereo,
+    peak_normalize,
+    trim_to_duration,
+    write_export_wav,
+    ExportManifest,
+    ExportSlot,
 )
 from stemforge.exporters.ep133 import EP133Exporter
 from stemforge.exporters.chompi import ChompiExporter, _bar_align_trim
@@ -41,7 +44,7 @@ def _make_track_dir(tmp_path, track_name="test_track", bpm=120.0):
         beats_dir = td / f"{stem}_beats"
         beats_dir.mkdir()
         for i in range(8):
-            _make_stem(beats_dir / f"{stem}_beat_{i+1:03d}.wav", duration=0.5, freq=100 + i * 50)
+            _make_stem(beats_dir / f"{stem}_beat_{i + 1:03d}.wav", duration=0.5, freq=100 + i * 50)
 
     # Create curated bars
     curated = td / "curated"
@@ -49,14 +52,14 @@ def _make_track_dir(tmp_path, track_name="test_track", bpm=120.0):
         stem_dir = curated / stem
         stem_dir.mkdir(parents=True)
         for i in range(4):
-            _make_stem(stem_dir / f"bar_{i+1:03d}.wav", duration=2.0, freq=100 + i * 30)
+            _make_stem(stem_dir / f"bar_{i + 1:03d}.wav", duration=2.0, freq=100 + i * 30)
 
         # Oneshots subdir for drums
         if stem == "drums":
             os_dir = stem_dir / "oneshots"
             os_dir.mkdir()
             for i in range(6):
-                _make_stem(os_dir / f"os_{i+1:03d}.wav", duration=0.3, freq=60 + i * 100)
+                _make_stem(os_dir / f"os_{i + 1:03d}.wav", duration=0.3, freq=60 + i * 100)
 
     # Write manifest with BPM
     manifest = {"track": track_name, "bpm": bpm, "stems": {}}
@@ -67,6 +70,7 @@ def _make_track_dir(tmp_path, track_name="test_track", bpm=120.0):
 
 
 # ── Base utilities ───────────────────────────────────────────────────────
+
 
 class TestBaseUtilities:
     def test_resample_mono(self):
@@ -139,7 +143,7 @@ class TestBaseUtilities:
     def test_write_export_wav_stereo(self, tmp_path):
         audio = np.random.randn(2, 1000).astype(np.float32) * 0.5
         path = tmp_path / "test_stereo.wav"
-        size = write_export_wav(audio, 48000, path, bit_depth=16)
+        write_export_wav(audio, 48000, path, bit_depth=16)
         info = sf.info(str(path))
         assert info.channels == 2
         assert info.samplerate == 48000
@@ -147,29 +151,35 @@ class TestBaseUtilities:
 
 class TestExportManifest:
     def test_memory_pct(self):
-        m = ExportManifest(device="test", workflow="compose",
-                          memory_used_bytes=1024, memory_total_bytes=4096)
+        m = ExportManifest(
+            device="test", workflow="compose", memory_used_bytes=1024, memory_total_bytes=4096
+        )
         assert m.memory_pct == 25.0
 
     def test_memory_pct_zero(self):
-        m = ExportManifest(device="test", workflow="compose",
-                          memory_used_bytes=0, memory_total_bytes=0)
+        m = ExportManifest(
+            device="test", workflow="compose", memory_used_bytes=0, memory_total_bytes=0
+        )
         assert m.memory_pct == 0
 
     def test_to_dict(self):
-        m = ExportManifest(device="ep133", workflow="compose",
-                          sample_rate=46875, slots=[
-                              ExportSlot(slot=1, group="A", pad=1, file="test.wav",
-                                        duration_s=0.5, size_bytes=1024)
-                          ])
+        m = ExportManifest(
+            device="ep133",
+            workflow="compose",
+            sample_rate=46875,
+            slots=[
+                ExportSlot(
+                    slot=1, group="A", pad=1, file="test.wav", duration_s=0.5, size_bytes=1024
+                )
+            ],
+        )
         d = m.to_dict()
         assert d["device"] == "ep133"
         assert len(d["slots"]) == 1
         assert d["slots"][0]["group"] == "A"
 
     def test_write(self, tmp_path):
-        m = ExportManifest(device="chompi", workflow="perform",
-                          exported_at="2026-04-19T00:00:00Z")
+        m = ExportManifest(device="chompi", workflow="perform", exported_at="2026-04-19T00:00:00Z")
         path = tmp_path / "export.json"
         m.write(path)
         assert path.exists()
@@ -178,6 +188,7 @@ class TestExportManifest:
 
 
 # ── EP-133 ───────────────────────────────────────────────────────────────
+
 
 class TestEP133Exporter:
     def test_properties(self):
@@ -240,6 +251,7 @@ class TestEP133Exporter:
 
         # No group should exceed 12 pads
         from collections import Counter
+
         group_counts = Counter(s.group for s in manifest.slots)
         for group, count in group_counts.items():
             assert count <= 12, f"Group {group} has {count} slots (max 12)"
@@ -247,7 +259,7 @@ class TestEP133Exporter:
     def test_export_perform(self, tmp_path):
         # Create 3 track dirs
         for i in range(3):
-            _make_track_dir(tmp_path / "tracks", f"track_{i+1}")
+            _make_track_dir(tmp_path / "tracks", f"track_{i + 1}")
         output = tmp_path / "ep133_perform"
         e = EP133Exporter()
         manifest = e.export_perform(tmp_path / "tracks", output)
@@ -269,6 +281,7 @@ class TestEP133Exporter:
 
 
 # ── Chompi ───────────────────────────────────────────────────────────────
+
 
 class TestChompiExporter:
     def test_properties(self):
@@ -305,7 +318,6 @@ class TestChompiExporter:
 
         filenames = [s.file for s in manifest.slots]
         slice_files = [f for f in filenames if f.startswith("slice_a")]
-        chroma_files = [f for f in filenames if f.startswith("chroma_a")]
 
         assert len(slice_files) > 0, "Should have slice files"
         # Verify naming: slice_a1.wav through slice_a14.wav
@@ -345,7 +357,7 @@ class TestChompiExporter:
 
     def test_export_perform(self, tmp_path):
         for i in range(3):
-            _make_track_dir(tmp_path / "tracks", f"track_{i+1}")
+            _make_track_dir(tmp_path / "tracks", f"track_{i + 1}")
         output = tmp_path / "chompi_perform"
         e = ChompiExporter()
         manifest = e.export_perform(tmp_path / "tracks", output)
@@ -381,10 +393,12 @@ class TestBarAlignTrim:
 
 # ── CLI ──────────────────────────────────────────────────────────────────
 
+
 class TestExportCLI:
     def test_help(self, tmp_path):
         from click.testing import CliRunner
         from stemforge.cli import cli
+
         result = CliRunner().invoke(cli, ["export", "--help"])
         assert result.exit_code == 0
         assert "ep133" in result.output
@@ -394,8 +408,16 @@ class TestExportCLI:
         td = _make_track_dir(tmp_path)
         from click.testing import CliRunner
         from stemforge.cli import cli
-        result = CliRunner().invoke(cli, [
-            "export", str(td), "--target", "ep133", "--dry-run",
-        ])
+
+        result = CliRunner().invoke(
+            cli,
+            [
+                "export",
+                str(td),
+                "--target",
+                "ep133",
+                "--dry-run",
+            ],
+        )
         assert result.exit_code == 0
         assert "DRY RUN" in result.output

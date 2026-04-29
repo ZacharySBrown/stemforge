@@ -8,7 +8,6 @@ console = Console()
 
 
 class LalalBackend(AbstractBackend):
-
     @property
     def name(self) -> str:
         return "LALAL.AI"
@@ -28,8 +27,7 @@ class LalalBackend(AbstractBackend):
         return {"X-License-Key": self._key()}
 
     def check_minutes(self) -> dict:
-        r = requests.post(f"{LALAL_BASE}/limits/minutes_left/",
-                         headers=self._h(), timeout=15)
+        r = requests.post(f"{LALAL_BASE}/limits/minutes_left/", headers=self._h(), timeout=15)
         r.raise_for_status()
         return r.json()
 
@@ -42,7 +40,8 @@ class LalalBackend(AbstractBackend):
                     "Content-Disposition": f"attachment; filename={path.name}",
                     "Content-Type": "application/octet-stream",
                 },
-                data=f, timeout=300,
+                data=f,
+                timeout=300,
             )
         r.raise_for_status()
         data = r.json()
@@ -66,7 +65,8 @@ class LalalBackend(AbstractBackend):
             r = requests.post(
                 f"{LALAL_BASE}/check/",
                 headers={**self._h(), "Content-Type": "application/json"},
-                json={"id": task_id}, timeout=15,
+                json={"id": task_id},
+                timeout=15,
             )
             r.raise_for_status()
             task = r.json().get(task_id, {})
@@ -108,7 +108,8 @@ class LalalBackend(AbstractBackend):
             requests.post(
                 f"{LALAL_BASE}/delete/",
                 headers={**self._h(), "Content-Type": "application/json"},
-                json={"id": source_id}, timeout=15,
+                json={"id": source_id},
+                timeout=15,
             )
         except Exception:
             pass

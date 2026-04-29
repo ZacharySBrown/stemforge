@@ -7,10 +7,10 @@ import yaml
 
 # ── Folder layout ─────────────────────────────────────────────────────────────
 STEMFORGE_ROOT = Path.home() / "stemforge"
-INBOX_DIR      = STEMFORGE_ROOT / "inbox"
-PROCESSED_DIR  = STEMFORGE_ROOT / "processed"
-LOGS_DIR       = STEMFORGE_ROOT / "logs"
-PIPELINES_DIR  = Path(__file__).parent.parent / "pipelines"
+INBOX_DIR = STEMFORGE_ROOT / "inbox"
+PROCESSED_DIR = STEMFORGE_ROOT / "processed"
+LOGS_DIR = STEMFORGE_ROOT / "logs"
+PIPELINES_DIR = Path(__file__).parent.parent / "pipelines"
 
 for d in [INBOX_DIR, PROCESSED_DIR, LOGS_DIR]:
     d.mkdir(parents=True, exist_ok=True)
@@ -19,16 +19,22 @@ for d in [INBOX_DIR, PROCESSED_DIR, LOGS_DIR]:
 LALAL_BASE = "https://www.lalal.ai/api/v1"
 
 LALAL_STEMS = [
-    "vocals", "drum", "bass", "piano",
-    "electricguitar", "acousticguitar",
-    "synthesizer", "strings", "wind",
+    "vocals",
+    "drum",
+    "bass",
+    "piano",
+    "electricguitar",
+    "acousticguitar",
+    "synthesizer",
+    "strings",
+    "wind",
 ]
 
 LALAL_PRESETS = {
-    "idm":   ["drum", "bass", "synthesizer"],
-    "chop":  ["drum", "bass"],
+    "idm": ["drum", "bass", "synthesizer"],
+    "chop": ["drum", "bass"],
     "4stem": ["vocals", "drum", "bass"],
-    "full":  ["vocals", "drum", "bass", "synthesizer", "electricguitar"],
+    "full": ["vocals", "drum", "bass", "synthesizer", "electricguitar"],
     "drums": ["drum"],
 }
 
@@ -38,46 +44,46 @@ LALAL_DEFAULT_PRESET = "idm"
 MUSIC_AI_BASE = "https://api.music.ai/v1"
 
 MUSIC_AI_WORKFLOWS = {
-    "suite":  "music-ai/stem-separation-suite",       # 9-stem: vocals, drums, bass, keys, strings, guitars, piano, wind, other
-    "vocals": "music-ai/stems-vocals-accompaniment",   # 4-stem: vocals, drums, bass, other
+    "suite": "music-ai/stem-separation-suite",  # 9-stem: vocals, drums, bass, keys, strings, guitars, piano, wind, other
+    "vocals": "music-ai/stems-vocals-accompaniment",  # 4-stem: vocals, drums, bass, other
 }
 
 MUSIC_AI_DEFAULT_WORKFLOW = "vocals"
 
 # ── Demucs ────────────────────────────────────────────────────────────────────
 DEMUCS_MODELS = {
-    "default": "htdemucs",      # 4 stems: drums, bass, vocals, other — fast
-    "fine":    "htdemucs_ft",   # same 4, better quality, ~4x slower
-    "6stem":   "htdemucs_6s",   # adds guitar + piano
+    "default": "htdemucs",  # 4 stems: drums, bass, vocals, other — fast
+    "fine": "htdemucs_ft",  # same 4, better quality, ~4x slower
+    "6stem": "htdemucs_6s",  # adds guitar + piano
 }
 
 # ── Ableton track colors (RGB hex) ────────────────────────────────────────────
 # These are set via the LOM's color property (0x00RRGGBB format)
 STEM_COLORS = {
-    "drums":          0xFF2400,  # red
-    "drum":           0xFF2400,
-    "bass":           0x0055FF,  # blue
-    "other":          0x00AA44,  # green
-    "vocals":         0xFF8800,  # orange
-    "guitar":         0xFFCC00,  # yellow
+    "drums": 0xFF2400,  # red
+    "drum": 0xFF2400,
+    "bass": 0x0055FF,  # blue
+    "other": 0x00AA44,  # green
+    "vocals": 0xFF8800,  # orange
+    "guitar": 0xFFCC00,  # yellow
     "electricguitar": 0xFFCC00,
     "acousticguitar": 0xFFAA00,
-    "piano":          0xAA00FF,  # purple
-    "synthesizer":    0xAA00FF,
-    "strings":        0x00CCAA,  # teal
-    "wind":           0x88BBFF,  # light blue
-    "keys":           0xAA00FF,  # purple (alias for synth/piano)
-    "guitars":        0xFFCC00,  # yellow (alias for guitar group)
-    "residual":       0x444444,  # dark grey
+    "piano": 0xAA00FF,  # purple
+    "synthesizer": 0xAA00FF,
+    "strings": 0x00CCAA,  # teal
+    "wind": 0x88BBFF,  # light blue
+    "keys": 0xAA00FF,  # purple (alias for synth/piano)
+    "guitars": 0xFFCC00,  # yellow (alias for guitar group)
+    "residual": 0x444444,  # dark grey
 }
 
 # ── Warp modes (Ableton internal index) ───────────────────────────────────────
 WARP_MODES = {
-    "beats":       0,
-    "tones":       1,
-    "texture":     2,
-    "re-pitch":    3,
-    "complex":     4,
+    "beats": 0,
+    "tones": 1,
+    "texture": 2,
+    "re-pitch": 3,
+    "complex": 4,
     "complex-pro": 5,
 }
 
@@ -96,17 +102,17 @@ class StemCurationConfig:
     chromatic: bool = False
     midi_extract: bool = False
     midi_quantize: str = "1/16"
-    bottom_mode: str = "melodic"    # melodic | scale | reconstruct
+    bottom_mode: str = "melodic"  # melodic | scale | reconstruct
     chromatic_root: str = "auto"
     rms_floor: float = 0.005
     crest_min: float = 4.0
     content_density_min: float = 0.0  # fraction of 20ms frames with energy above rms threshold
-    distance_weights: dict = field(default_factory=lambda: {
-        "rhythm": 0.5, "spectral": 0.25, "energy": 0.25
-    })
+    distance_weights: dict = field(
+        default_factory=lambda: {"rhythm": 0.5, "spectral": 0.25, "energy": 0.25}
+    )
     # section-main-alt strategy params (no-op for other strategies)
-    alts_per_section: int = 2   # ALT versions captured per section type (in addition to MAIN)
-    max_sections: int = 4       # cap on distinct section types to pull from (sorted by population)
+    alts_per_section: int = 2  # ALT versions captured per section type (in addition to MAIN)
+    max_sections: int = 4  # cap on distinct section types to pull from (sorted by population)
     # Performance-mode: rotate each curated bar so its first detected onset
     # sits at sample 0, pad tail with silence to preserve duration. For EP-133
     # key mode and similar where pressing the pad should fire the rhythm

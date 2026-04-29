@@ -11,11 +11,9 @@ we control.
 
 from __future__ import annotations
 
-import pytest
 
 from stemforge.exporters.ep133 import payloads as P
 from stemforge.exporters.ep133.commands import CHUNK_BYTES
-from stemforge.exporters.ep133.packing import unpack_in_place
 from stemforge.exporters.ep133.sysex import parse_sysex
 
 
@@ -82,9 +80,7 @@ def test_data_chunks_reproduction(garrett_kick_messages):
     for i, frame in enumerate(data_msgs):
         cmd, payload = _payload_of(frame)
         assert cmd == 5
-        assert payload[0] == 0x02 and payload[1] == 0x01, (
-            f"message {i}: not a PUT_DATA chunk"
-        )
+        assert payload[0] == 0x02 and payload[1] == 0x01, f"message {i}: not a PUT_DATA chunk"
         page = int.from_bytes(payload[2:4], "big")
         assert page == i, f"message {i}: page mismatch (got {page})"
         pcm.extend(payload[4:])
@@ -154,7 +150,5 @@ def test_full_reproduction(garrett_kick_messages):
     for i, (gen, cap) in enumerate(zip(generated, captured)):
         assert gen[0] == cap[0], f"message {i}: command mismatch {gen[0]} vs {cap[0]}"
         assert gen[1] == cap[1], (
-            f"message {i}: payload mismatch\n"
-            f"  want: {cap[1].hex()}\n"
-            f"  got:  {gen[1].hex()}"
+            f"message {i}: payload mismatch\n  want: {cap[1].hex()}\n  got:  {gen[1].hex()}"
         )

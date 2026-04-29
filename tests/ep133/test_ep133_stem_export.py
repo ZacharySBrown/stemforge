@@ -111,6 +111,7 @@ def stems_json(tmp_path: Path, synthetic_wav: Path) -> Path:
 # EP133TimeStretchConfig tests
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def test_time_stretch_config_defaults():
     ts = EP133TimeStretchConfig()
     assert ts.mode == "none"
@@ -147,6 +148,7 @@ def test_time_stretch_to_dict_none_omits_optional():
 # ──────────────────────────────────────────────────────────────────────────────
 # EP133ExportConfig.from_pipeline_dict
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def test_from_pipeline_dict_enabled():
     cfg = EP133ExportConfig.from_pipeline_dict(PIPELINE_DICT)
@@ -198,6 +200,7 @@ def test_from_pipeline_dict_other():
 # EP133ExportConfig.default()
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def test_default_stems_present():
     cfg = EP133ExportConfig.default()
     assert "drums" in cfg.stems
@@ -242,6 +245,7 @@ def test_default_other_spec_section_3():
 # EP133ExportConfig.stem_config()
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def test_stem_config_returns_configured():
     cfg = EP133ExportConfig.from_pipeline_dict(PIPELINE_DICT)
     drums = cfg.stem_config("drums")
@@ -260,6 +264,7 @@ def test_stem_config_fallback_to_default():
 # ──────────────────────────────────────────────────────────────────────────────
 # EP133StemConfig validation
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def test_stem_config_rejects_bad_play_mode():
     with pytest.raises(ValueError, match="play_mode"):
@@ -286,6 +291,7 @@ def test_stem_config_rejects_bad_pad_num():
 # ──────────────────────────────────────────────────────────────────────────────
 # generate_setup_md
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def _make_results() -> list[dict]:
     cfg_drums = EP133StemConfig(
@@ -379,6 +385,7 @@ def test_generate_setup_md_sync_mode_sync24():
 # process_stem_wav — audio processing
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def test_process_stem_wav_output_sample_rate(tmp_path: Path, synthetic_wav: Path):
     """Output WAV must be at 46875 Hz."""
     out = tmp_path / "out.wav"
@@ -436,6 +443,7 @@ def test_process_stem_wav_mono_input(tmp_path: Path):
 # ──────────────────────────────────────────────────────────────────────────────
 # export_ep133_package — integration (with synthetic data)
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def test_export_ep133_package_produces_wavs(tmp_path: Path, stems_json: Path):
     cfg = EP133ExportConfig.from_pipeline_dict(PIPELINE_DICT)

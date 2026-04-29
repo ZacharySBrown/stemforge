@@ -21,13 +21,14 @@ import soundfile as sf
 @dataclass
 class ExportSlot:
     """One sample slot in the export."""
+
     slot: int
-    group: str                  # "A"/"B"/"C"/"D" (EP-133) or "slice"/"chroma" (Chompi)
-    pad: int                    # pad number within group (1-indexed)
-    file: str                   # output filename
+    group: str  # "A"/"B"/"C"/"D" (EP-133) or "slice"/"chroma" (Chompi)
+    pad: int  # pad number within group (1-indexed)
+    file: str  # output filename
     source_track: str = ""
     source_stem: str = ""
-    source_file: str = ""       # original WAV path
+    source_file: str = ""  # original WAV path
     duration_s: float = 0.0
     size_bytes: int = 0
 
@@ -35,6 +36,7 @@ class ExportSlot:
 @dataclass
 class ExportManifest:
     """Export result manifest."""
+
     device: str
     workflow: str
     source_tracks: list[str] = field(default_factory=list)
@@ -90,10 +92,9 @@ def resample_audio(audio: np.ndarray, sr_in: int, sr_out: int) -> np.ndarray:
     if audio.ndim == 1:
         return librosa.resample(audio, orig_sr=sr_in, target_sr=sr_out)
     # Stereo: resample each channel
-    return np.stack([
-        librosa.resample(audio[i], orig_sr=sr_in, target_sr=sr_out)
-        for i in range(audio.shape[0])
-    ])
+    return np.stack(
+        [librosa.resample(audio[i], orig_sr=sr_in, target_sr=sr_out) for i in range(audio.shape[0])]
+    )
 
 
 def to_mono(audio: np.ndarray) -> np.ndarray:
@@ -151,18 +152,15 @@ class AbstractExporter(ABC):
 
     @property
     @abstractmethod
-    def device_name(self) -> str:
-        ...
+    def device_name(self) -> str: ...
 
     @property
     @abstractmethod
-    def target_sample_rate(self) -> int:
-        ...
+    def target_sample_rate(self) -> int: ...
 
     @property
     @abstractmethod
-    def target_bit_depth(self) -> int:
-        ...
+    def target_bit_depth(self) -> int: ...
 
     @property
     @abstractmethod
@@ -172,13 +170,11 @@ class AbstractExporter(ABC):
 
     @property
     @abstractmethod
-    def max_sample_duration_s(self) -> float:
-        ...
+    def max_sample_duration_s(self) -> float: ...
 
     @property
     @abstractmethod
-    def memory_limit_bytes(self) -> int:
-        ...
+    def memory_limit_bytes(self) -> int: ...
 
     @abstractmethod
     def export_compose(self, track_dir: Path, output_dir: Path) -> ExportManifest:

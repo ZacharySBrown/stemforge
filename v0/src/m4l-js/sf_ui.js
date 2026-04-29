@@ -13,7 +13,7 @@
  *   - Dispatch click events through outlet 0 as lists:
  *       preset_click | source_click | forge_click | cancel_click |
  *       done_click   | retry_click  | settings_click | commit_click |
- *       bounce_clips_click | export_song_click
+ *       bounce_clips_click | export_song_click | arrangement_load_click
  *   - Drive a pulsing animation loop ONLY while state is "forging" to avoid
  *     unnecessary redraws.
  *
@@ -117,6 +117,12 @@ let bounceBtnRect = null;
 // Export-song hit-rect — sits below BOUNCE. Always visible.
 // Triggers the M4L arrangement-view → snapshot.json reader (Track B).
 let exportSongBtnRect = null;
+
+// Arrangement-load hit-rect — sits below EXPORT. Always visible.
+// Opens a [opendialog] in the patcher (driven by `arrangement_load_click`)
+// so the user picks a prechop_manifest.json; sf_arrangement_loader.js then
+// lays out the padded chunks as audio clips on the arrangement view.
+let arrangementLoadBtnRect = null;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -850,36 +856,58 @@ function drawRightButton(state) {
     // Lets the user roundtrip A/B/C/D clip slots back out as samples (with
     // sidecars) for the EP-133 / future hardware loaders. Independent of forge
     // state so users can bounce manually-arranged clips too.
+    //
+    // Three secondary buttons stack below the primary (BOUNCE / EXPORT /
+    // LOADARR). Compressed to h=16, gap=3 so all three fit inside the 149px
+    // canvas height (primary ends at y=91; 91+4+16+3+16+3+16 = 149).
     {
+        const sbh = 16;     // secondary button height (was 22)
+        const sgap = 3;     // gap between secondaries (was 6)
         const bbw = bw;
-        const bbh = 22;
         const bbx = bx;
-        const bby = by + bh + 6;  // 6px gap below primary
-        fillRoundedRect(bbx, bby, bbw, bbh, 11, COL.amber, 0.18);
-        strokeRoundedRect(bbx, bby, bbw, bbh, 11, COL.amber, 0.85, 1);
+        const bby = by + bh + 4;  // 4px gap below primary (was 6)
+        fillRoundedRect(bbx, bby, bbw, sbh, 8, COL.amber, 0.18);
+        strokeRoundedRect(bbx, bby, bbw, sbh, 8, COL.amber, 0.85, 1);
         setFontSize(FONT_SIZE_BTN);
         const bLabel = "BOUNCE";
         const blw = textWidth(bLabel, FONT_SIZE_BTN);
-        textAt(bbx + bbw / 2 - blw / 2, bby + bbh / 2 + 4, bLabel,
+        textAt(bbx + bbw / 2 - blw / 2, bby + sbh / 2 + 4, bLabel,
                COL.amber, FONT_SIZE_BTN, 1.0);
-        bounceBtnRect = { x: bbx, y: bby, w: bbw, h: bbh };
+        bounceBtnRect = { x: bbx, y: bby, w: bbw, h: sbh };
 
         // Quaternary EXPORT button — sits below BOUNCE. Reads Live's
         // arrangement view via LOM and writes ~/Desktop/snapshot.json
         // for `stemforge export-song`. Color: cyan to distinguish from
         // amber BOUNCE (BOUNCE writes WAVs; EXPORT writes JSON metadata).
         const ebw = bw;
-        const ebh = 22;
         const ebx = bx;
-        const eby = bby + bbh + 6;  // 6px gap below BOUNCE
-        fillRoundedRect(ebx, eby, ebw, ebh, 11, COL.cyan, 0.18);
-        strokeRoundedRect(ebx, eby, ebw, ebh, 11, COL.cyan, 0.85, 1);
+        const eby = bby + sbh + sgap;  // gap below BOUNCE
+        fillRoundedRect(ebx, eby, ebw, sbh, 8, COL.cyan, 0.18);
+        strokeRoundedRect(ebx, eby, ebw, sbh, 8, COL.cyan, 0.85, 1);
         setFontSize(FONT_SIZE_BTN);
         const eLabel = "EXPORT";
         const elw = textWidth(eLabel, FONT_SIZE_BTN);
-        textAt(ebx + ebw / 2 - elw / 2, eby + ebh / 2 + 4, eLabel,
+        textAt(ebx + ebw / 2 - elw / 2, eby + sbh / 2 + 4, eLabel,
                COL.cyan, FONT_SIZE_BTN, 1.0);
-        exportSongBtnRect = { x: ebx, y: eby, w: ebw, h: ebh };
+        exportSongBtnRect = { x: ebx, y: eby, w: ebw, h: sbh };
+
+        // Quinary LOADARR button — sits below EXPORT. Opens a file picker
+        // in the patcher (via [opendialog] driven from the route's
+        // `arrangement_load_click` outlet) and on selection lays out the
+        // padded chunk WAVs from prechop_manifest.json as arrangement-view
+        // clips. Color: violet — a "load/import" complement to the cyan
+        // EXPORT (which is the inverse direction: arrangement → JSON).
+        const lbw = bw;
+        const lbx = bx;
+        const lby = eby + sbh + sgap;  // gap below EXPORT
+        fillRoundedRect(lbx, lby, lbw, sbh, 8, COL.violet, 0.18);
+        strokeRoundedRect(lbx, lby, lbw, sbh, 8, COL.violet, 0.85, 1);
+        setFontSize(FONT_SIZE_BTN);
+        const lLabel = "LOADARR";
+        const llw = textWidth(lLabel, FONT_SIZE_BTN);
+        textAt(lbx + lbw / 2 - llw / 2, lby + sbh / 2 + 4, lLabel,
+               COL.violet, FONT_SIZE_BTN, 1.0);
+        arrangementLoadBtnRect = { x: lbx, y: lby, w: lbw, h: sbh };
     }
 }
 
@@ -925,6 +953,16 @@ function onclick(x, y, button, mod1, shift, ctrl, mod2) {
             x >= exportSongBtnRect.x && x < exportSongBtnRect.x + exportSongBtnRect.w &&
             y >= exportSongBtnRect.y && y < exportSongBtnRect.y + exportSongBtnRect.h) {
             outlet(0, "export_song_click");
+            return;
+        }
+        // Quinary LOADARR button — below EXPORT. Emits arrangement_load_click
+        // with no args; the patcher route fires [opendialog] for the user to
+        // pick a prechop_manifest.json, then dispatches loadArrangementFromManifest
+        // with the resolved POSIX path into sf_lom_loader.
+        if (arrangementLoadBtnRect &&
+            x >= arrangementLoadBtnRect.x && x < arrangementLoadBtnRect.x + arrangementLoadBtnRect.w &&
+            y >= arrangementLoadBtnRect.y && y < arrangementLoadBtnRect.y + arrangementLoadBtnRect.h) {
+            outlet(0, "arrangement_load_click");
             return;
         }
         // Right column action button. Dispatch per state kind.

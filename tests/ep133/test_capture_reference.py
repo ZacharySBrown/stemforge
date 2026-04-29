@@ -49,6 +49,7 @@ def _make_minimal_project_tar(*, with_settings: bool = True) -> bytes:
 
 # --- build_meta --------------------------------------------------------------
 
+
 def test_build_meta_required_keys():
     meta = cap.build_meta()
     for key in (
@@ -82,6 +83,7 @@ def test_build_meta_constants():
 
 # --- validate_project_tar ----------------------------------------------------
 
+
 def test_validate_rejects_too_small():
     with pytest.raises(ValueError, match="suspiciously small"):
         cap.validate_project_tar(b"\x00" * 100)
@@ -110,6 +112,7 @@ def test_validate_warns_when_settings_missing(capsys):
 
 
 # --- wrap_tar_as_ppak --------------------------------------------------------
+
 
 def test_wrap_creates_valid_zip(tmp_path):
     tar_bytes = _make_minimal_project_tar()

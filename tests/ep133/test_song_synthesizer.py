@@ -119,8 +119,8 @@ def test_event_positions_snaps_to_quarter_note_grid_for_tweener():
     smaller for predictability. ⅓-bar slice → raw=3, candidates {1,2,4,
     8,16,32}. |3-2|=1 == |3-4|=1 → 2 (smaller). ⅖-bar slice (raw=2.5)
     → equidistant to 2 and 4? |2.5-2|=0.5 == |2.5-4|=1.5 → 2."""
-    assert len(_event_positions_bars(1/3, 1)) == 2
-    assert len(_event_positions_bars(2/5, 1)) == 2
+    assert len(_event_positions_bars(1 / 3, 1)) == 2
+    assert len(_event_positions_bars(2 / 5, 1)) == 2
 
 
 def test_event_positions_caps_at_max_events_per_pattern():
@@ -147,8 +147,12 @@ def test_event_positions_handles_zero_or_negative_slice():
 
 def _snap(t: float) -> Snapshot:
     return Snapshot(
-        locator_time_sec=t, locator_name="",
-        a_clip=None, b_clip=None, c_clip=None, d_clip=None,
+        locator_time_sec=t,
+        locator_name="",
+        a_clip=None,
+        b_clip=None,
+        c_clip=None,
+        d_clip=None,
     )
 
 
@@ -218,13 +222,16 @@ def test_synthesize_empty_markers_match_scene_bars(snapshots, manifest, arrangem
     alongside 4-bar real patterns cut a scene to 2 bars of audible
     playback."""
     spec = synthesize(
-        snapshots, manifest, arrangement["tempo"], tuple(arrangement["time_sig"]),
-        1, arrangement_length_sec=arrangement["arrangement_length_sec"],
+        snapshots,
+        manifest,
+        arrangement["tempo"],
+        tuple(arrangement["time_sig"]),
+        1,
+        arrangement_length_sec=arrangement["arrangement_length_sec"],
     )
     # Fixture has 4-bar scenes (locator gaps of 8s @ 120 BPM). For every
     # scene, every empty-marker reference must point at a pattern with
     # bars == scene_bars (= 4 here).
-    pat_bars = {(p.group, p.index): p.bars for p in spec.patterns}
     for scene_idx, sc in enumerate(spec.scenes):
         for group, idx in (("a", sc.a), ("b", sc.b), ("c", sc.c), ("d", sc.d)):
             if not spec.patterns:
@@ -260,31 +267,60 @@ def test_synthesize_allocates_distinct_empty_indices_per_scene_bars():
         "tracks": {
             # A active in both scenes; B silent in both scenes.
             "A": [
-                {"file_path": "/songs/test/A/loop_a1.wav",
-                 "start_time_sec": 0.0, "length_sec": 12.0, "warping": 1},
+                {
+                    "file_path": "/songs/test/A/loop_a1.wav",
+                    "start_time_sec": 0.0,
+                    "length_sec": 12.0,
+                    "warping": 1,
+                },
             ],
             "B": [],
             "C": [],
             "D": [],
         },
     }
-    snaps = resolve_scenes(arr, json.loads(json.dumps({
-        "session_tracks": {
-            "A": [{"slot": 0, "file": "/songs/test/A/loop_a1.wav",
-                    "clip_length_sec": 2.0, "mode": "trim"}],
-            "B": [], "C": [], "D": [],
-        }
-    })))
+    snaps = resolve_scenes(
+        arr,
+        json.loads(
+            json.dumps(
+                {
+                    "session_tracks": {
+                        "A": [
+                            {
+                                "slot": 0,
+                                "file": "/songs/test/A/loop_a1.wav",
+                                "clip_length_sec": 2.0,
+                                "mode": "trim",
+                            }
+                        ],
+                        "B": [],
+                        "C": [],
+                        "D": [],
+                    }
+                }
+            )
+        ),
+    )
     spec = synthesize(
         snaps,
         {
             "session_tracks": {
-                "A": [{"slot": 0, "file": "/songs/test/A/loop_a1.wav",
-                        "clip_length_sec": 2.0, "mode": "trim"}],
-                "B": [], "C": [], "D": [],
+                "A": [
+                    {
+                        "slot": 0,
+                        "file": "/songs/test/A/loop_a1.wav",
+                        "clip_length_sec": 2.0,
+                        "mode": "trim",
+                    }
+                ],
+                "B": [],
+                "C": [],
+                "D": [],
             }
         },
-        120.0, (4, 4), 1,
+        120.0,
+        (4, 4),
+        1,
         arrangement_length_sec=12.0,
     )
     # Two scenes, each with three silent groups (B, C, D).
@@ -311,7 +347,9 @@ def test_scene_lengths_smack_user_arrangement():
     locator_bars = [1, 3, 6, 10, 14, 16]
     snaps = [_snap((b - 1) * bar_dur) for b in locator_bars]
     bars = _scene_lengths_in_bars(
-        snaps, 136.0, arrangement_length_sec=28.36,
+        snaps,
+        136.0,
+        arrangement_length_sec=28.36,
     )
     assert bars == [2, 3, 4, 4, 2, 1]
 
@@ -341,9 +379,7 @@ def test_synthesize_dedups_patterns_by_group_pad_bars(snapshots, manifest):
     assert len(by_group["c"]) == 1
 
 
-def test_synthesize_pattern_indices_are_per_group_starting_at_one(
-    snapshots, manifest
-):
+def test_synthesize_pattern_indices_are_per_group_starting_at_one(snapshots, manifest):
     spec = synthesize(snapshots, manifest, 120.0, (4, 4), 1)
     real = [p for p in spec.patterns if p.events]
     by_group: dict[str, list] = {}
@@ -450,9 +486,7 @@ def test_synthesize_pads_use_bpm_stretch_mode_with_manifest_bpm(snapshots, manif
         assert pad.sound_bpm == pytest.approx(135.99)
 
 
-def test_synthesize_falls_back_to_project_bpm_when_manifest_lacks_bpm(
-    snapshots, manifest
-):
+def test_synthesize_falls_back_to_project_bpm_when_manifest_lacks_bpm(snapshots, manifest):
     """No manifest bpm → fall back to project_bpm (1.0× playback)."""
     assert "bpm" not in manifest, "fixture manifest must omit bpm for this test"
     spec = synthesize(snapshots, manifest, 120.0, (4, 4), 1)
@@ -479,14 +513,10 @@ def test_synthesize_pattern_bars_match_scene_length_from_locator_gaps(
     populated = [p for p in spec.patterns if p.index != EMPTY_PATTERN_INDEX]
     assert populated, "fixture should produce populated patterns"
     for p in populated:
-        assert p.bars == 4, (
-            f"pattern {p.group}{p.index} has bars={p.bars}, expected 4"
-        )
+        assert p.bars == 4, f"pattern {p.group}{p.index} has bars={p.bars}, expected 4"
 
 
-def test_synthesize_tiles_one_bar_slice_across_four_bar_scene(
-    snapshots, manifest, arrangement
-):
+def test_synthesize_tiles_one_bar_slice_across_four_bar_scene(snapshots, manifest, arrangement):
     """A 1-bar render played in a 4-bar scene tiles 4× across the
     pattern (positions 0, 1, 2, 3 bars). This is the durable fix for
     "scene plays for the locator gap, not just the slice length"."""
@@ -494,35 +524,35 @@ def test_synthesize_tiles_one_bar_slice_across_four_bar_scene(
     enriched["bpm"] = 120.0
     enriched["session_tracks"]["A"][0]["clip_length_sec"] = 2.0  # 1 bar @ 120 BPM
     spec = synthesize(
-        snapshots, enriched, arrangement["tempo"], tuple(arrangement["time_sig"]),
-        1, arrangement_length_sec=arrangement["arrangement_length_sec"],
+        snapshots,
+        enriched,
+        arrangement["tempo"],
+        tuple(arrangement["time_sig"]),
+        1,
+        arrangement_length_sec=arrangement["arrangement_length_sec"],
     )
-    pat = next(
-        p for p in spec.patterns
-        if p.group == "a" and p.events and p.events[0].pad == 1
-    )
+    pat = next(p for p in spec.patterns if p.group == "a" and p.events and p.events[0].pad == 1)
     assert pat.bars == 4
     assert len(pat.events) == 4
     expected = [i * TICKS_PER_BAR for i in range(4)]
     assert [e.position_ticks for e in pat.events] == expected
 
 
-def test_synthesize_two_bar_slice_in_four_bar_scene_fires_twice(
-    snapshots, manifest, arrangement
-):
+def test_synthesize_two_bar_slice_in_four_bar_scene_fires_twice(snapshots, manifest, arrangement):
     """The user's question: 'two of A7 in a 4-bar scene?' — yes, a 2-bar
     slice tiles to 2 events at positions 0 and 2 bars."""
     enriched = json.loads(json.dumps(manifest))
     enriched["bpm"] = 120.0
     enriched["session_tracks"]["A"][0]["clip_length_sec"] = 4.0  # 2 bars @ 120
     spec = synthesize(
-        snapshots, enriched, arrangement["tempo"], tuple(arrangement["time_sig"]),
-        1, arrangement_length_sec=arrangement["arrangement_length_sec"],
+        snapshots,
+        enriched,
+        arrangement["tempo"],
+        tuple(arrangement["time_sig"]),
+        1,
+        arrangement_length_sec=arrangement["arrangement_length_sec"],
     )
-    pat = next(
-        p for p in spec.patterns
-        if p.group == "a" and p.events and p.events[0].pad == 1
-    )
+    pat = next(p for p in spec.patterns if p.group == "a" and p.events and p.events[0].pad == 1)
     assert pat.bars == 4
     assert len(pat.events) == 2
     assert [e.position_ticks for e in pat.events] == [0, 2 * TICKS_PER_BAR]
@@ -562,7 +592,10 @@ def test_synthesize_rejects_more_than_99_scenes(manifest):
         Snapshot(
             locator_time_sec=float(i),
             locator_name=f"loc{i}",
-            a_clip=None, b_clip=None, c_clip=None, d_clip=None,
+            a_clip=None,
+            b_clip=None,
+            c_clip=None,
+            d_clip=None,
         )
         for i in range(MAX_SCENES + 1)
     ]
@@ -575,7 +608,10 @@ def test_synthesize_at_max_scenes_succeeds(manifest):
         Snapshot(
             locator_time_sec=float(i),
             locator_name=f"loc{i}",
-            a_clip=None, b_clip=None, c_clip=None, d_clip=None,
+            a_clip=None,
+            b_clip=None,
+            c_clip=None,
+            d_clip=None,
         )
         for i in range(MAX_SCENES)
     ]
@@ -591,8 +627,12 @@ def test_synthesize_silent_groups_reference_empty_pattern(manifest):
     """
     snaps = [
         Snapshot(
-            locator_time_sec=0.0, locator_name="silent",
-            a_clip=None, b_clip=None, c_clip=None, d_clip=None,
+            locator_time_sec=0.0,
+            locator_name="silent",
+            a_clip=None,
+            b_clip=None,
+            c_clip=None,
+            d_clip=None,
         )
     ]
     spec = synthesize(snaps, manifest, 120.0, (4, 4), 1)
@@ -600,7 +640,10 @@ def test_synthesize_silent_groups_reference_empty_pattern(manifest):
     assert (spec.scenes[0].a, spec.scenes[0].b, spec.scenes[0].c, spec.scenes[0].d) == (E, E, E, E)
     # All four groups are silent → one empty pattern emitted per group.
     assert sorted((p.group, p.index, len(p.events)) for p in spec.patterns) == [
-        ("a", E, 0), ("b", E, 0), ("c", E, 0), ("d", E, 0),
+        ("a", E, 0),
+        ("b", E, 0),
+        ("c", E, 0),
+        ("d", E, 0),
     ]
     assert spec.pads == []
     assert spec.sounds == {}
@@ -614,7 +657,9 @@ def test_synthesize_rejects_more_than_12_pads_per_group():
                 {"slot": i, "file": f"/x/{i}.wav", "clip_length_sec": 2.0}
                 for i in range(MAX_PADS_PER_GROUP + 1)
             ],
-            "B": [], "C": [], "D": [],
+            "B": [],
+            "C": [],
+            "D": [],
         }
     }
     snaps = [
@@ -623,9 +668,13 @@ def test_synthesize_rejects_more_than_12_pads_per_group():
             locator_name=f"loc{i}",
             a_clip=ArrangementClip(
                 file_path=f"/x/{i}.wav",
-                start_time_sec=0.0, length_sec=2.0, warping=1,
+                start_time_sec=0.0,
+                length_sec=2.0,
+                warping=1,
             ),
-            b_clip=None, c_clip=None, d_clip=None,
+            b_clip=None,
+            c_clip=None,
+            d_clip=None,
         )
         for i in range(MAX_PADS_PER_GROUP + 1)
     ]
@@ -669,22 +718,46 @@ def test_export_song_cli_smoke(tmp_path):
         ],
         "tracks": {
             "A": [
-                {"file_path": str(placed["A"][0]), "start_time_sec": 0.0,
-                 "length_sec": 8.0, "warping": 1},
-                {"file_path": str(placed["A"][1]), "start_time_sec": 4.0,
-                 "length_sec": 12.0, "warping": 1},
-                {"file_path": str(placed["A"][2]), "start_time_sec": 16.0,
-                 "length_sec": 8.0, "warping": 1},
+                {
+                    "file_path": str(placed["A"][0]),
+                    "start_time_sec": 0.0,
+                    "length_sec": 8.0,
+                    "warping": 1,
+                },
+                {
+                    "file_path": str(placed["A"][1]),
+                    "start_time_sec": 4.0,
+                    "length_sec": 12.0,
+                    "warping": 1,
+                },
+                {
+                    "file_path": str(placed["A"][2]),
+                    "start_time_sec": 16.0,
+                    "length_sec": 8.0,
+                    "warping": 1,
+                },
             ],
             "B": [
-                {"file_path": str(placed["B"][0]), "start_time_sec": 0.0,
-                 "length_sec": 16.0, "warping": 1},
-                {"file_path": str(placed["B"][1]), "start_time_sec": 16.0,
-                 "length_sec": 4.0, "warping": 1},
+                {
+                    "file_path": str(placed["B"][0]),
+                    "start_time_sec": 0.0,
+                    "length_sec": 16.0,
+                    "warping": 1,
+                },
+                {
+                    "file_path": str(placed["B"][1]),
+                    "start_time_sec": 16.0,
+                    "length_sec": 4.0,
+                    "warping": 1,
+                },
             ],
             "C": [
-                {"file_path": str(placed["C"][0]), "start_time_sec": 8.0,
-                 "length_sec": 8.0, "warping": 1},
+                {
+                    "file_path": str(placed["C"][0]),
+                    "start_time_sec": 8.0,
+                    "length_sec": 8.0,
+                    "warping": 1,
+                },
             ],
             "D": [],
         },
@@ -693,12 +766,12 @@ def test_export_song_cli_smoke(tmp_path):
         "track": "test_song",
         "session_tracks": {
             group: [
-                {"slot": i, "file": str(placed[group][i]),
-                 "clip_length_sec": 8.0, "mode": "trim"}
+                {"slot": i, "file": str(placed[group][i]), "clip_length_sec": 8.0, "mode": "trim"}
                 for i in range(len(placed[group]))
             ]
             for group in ["A", "B", "C"]
-        } | {"D": []},
+        }
+        | {"D": []},
     }
     arr_path = tmp_path / "snapshot.json"
     man_path = tmp_path / "stems.json"
@@ -711,10 +784,14 @@ def test_export_song_cli_smoke(tmp_path):
         cli,
         [
             "export-song",
-            "--arrangement", str(arr_path),
-            "--manifest", str(man_path),
-            "--project", "1",
-            "--out", str(out),
+            "--arrangement",
+            str(arr_path),
+            "--manifest",
+            str(man_path),
+            "--project",
+            "1",
+            "--out",
+            str(out),
         ],
     )
     assert result.exit_code == 0, result.output
@@ -728,20 +805,30 @@ def test_synthesize_same_pad_reused_across_scenes_emits_one_pattern(manifest):
     """Same (group, pad, bars) appearing in multiple scenes → one Pattern."""
     snaps = [
         Snapshot(
-            locator_time_sec=0.0, locator_name="A",
+            locator_time_sec=0.0,
+            locator_name="A",
             a_clip=ArrangementClip(
                 file_path="/songs/test/A/loop_a1.wav",
-                start_time_sec=0.0, length_sec=8.0, warping=1,
+                start_time_sec=0.0,
+                length_sec=8.0,
+                warping=1,
             ),
-            b_clip=None, c_clip=None, d_clip=None,
+            b_clip=None,
+            c_clip=None,
+            d_clip=None,
         ),
         Snapshot(
-            locator_time_sec=8.0, locator_name="B",
+            locator_time_sec=8.0,
+            locator_name="B",
             a_clip=ArrangementClip(
                 file_path="/songs/test/A/loop_a1.wav",
-                start_time_sec=0.0, length_sec=8.0, warping=1,
+                start_time_sec=0.0,
+                length_sec=8.0,
+                warping=1,
             ),
-            b_clip=None, c_clip=None, d_clip=None,
+            b_clip=None,
+            c_clip=None,
+            d_clip=None,
         ),
     ]
     spec = synthesize(snaps, manifest, 120.0, (4, 4), 1)

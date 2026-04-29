@@ -42,6 +42,7 @@ from .commands import (
 # Ported from phones24/fsSysex.ts
 # ──────────────────────────────────────────────────────────────────────
 
+
 def build_file_init(max_response_length: int, flags: int) -> bytes:
     """FILE_INIT request payload (6 bytes).
 
@@ -64,6 +65,7 @@ def build_file_info(file_id: int) -> bytes:
 # ──────────────────────────────────────────────────────────────────────
 # Reverse-engineered from Garrett's captures
 # ──────────────────────────────────────────────────────────────────────
+
 
 def build_file_put_meta(name: str, data_size: int, channels: int = 1, slot: int = 1) -> bytes:
     """Create-file + metadata payload.
@@ -125,11 +127,7 @@ def build_file_put_data(page: int, data: bytes) -> bytes:
     if len(data) > CHUNK_BYTES:
         raise ValueError(f"data length {len(data)} exceeds CHUNK_BYTES ({CHUNK_BYTES})")
 
-    return (
-        bytes([TE_SYSEX_FILE_PUT, TE_SYSEX_FILE_PUT_PHASE_DATA])
-        + struct.pack(">H", page)
-        + data
-    )
+    return bytes([TE_SYSEX_FILE_PUT, TE_SYSEX_FILE_PUT_PHASE_DATA]) + struct.pack(">H", page) + data
 
 
 def build_file_put_terminator(last_page: int) -> bytes:
@@ -163,8 +161,8 @@ _PLAYMODE_WIRE_INT: dict[str, int] = {"oneshot": 0, "key": 1, "legato": 2}
 # None = legato (on-device UI emits no release change; legato inherits prior release).
 _PLAYMODE_DEFAULT_RELEASE: dict[str, int | None] = {
     "oneshot": 255,
-    "key":     15,
-    "legato":  None,
+    "key": 15,
+    "legato": None,
 }
 # 2026-04-24: BAR mode is singular "bar" on-device. Earlier "bars" was a guess that never matched
 # capture. Device accepts string form only on write. Integer-to-string mapping verified twice:
@@ -184,24 +182,24 @@ class PadParams:
     the full sample length automatically.
     """
 
-    playmode: str = "oneshot"      # "oneshot" | "key" | "legato"
+    playmode: str = "oneshot"  # "oneshot" | "key" | "legato"
     sample_start: int = 0
     sample_end: int | None = None  # omitted when None
-    attack: int = 0                # 0..255
+    attack: int = 0  # 0..255
     # release=None → auto-pair with playmode (oneshot↔255, key↔15, legato↔255).
     # Pass an int to override; the device UI always writes playmode+release atomically,
     # so key-mode gating silently fails without the paired release value.
-    release: int | None = None     # 0..255 or None for playmode-matched default
-    pitch: float = 0.0             # semitones, -12.0..12.0
-    amplitude: int = 100           # 0..100
-    pan: int = 0                   # -16..16
+    release: int | None = None  # 0..255 or None for playmode-matched default
+    pitch: float = 0.0  # semitones, -12.0..12.0
+    amplitude: int = 100  # 0..100
+    pan: int = 0  # -16..16
     mutegroup: bool = False
-    time_mode: str = "off"         # "off" | "bar" | "bpm"
+    time_mode: str = "off"  # "off" | "bar" | "bpm"
     # NOTE: time_bpm is NOT stored in pad metadata (confirmed 2026-04-23 capture).
     # Source BPM is encoded in the WAV file at upload time (smpl chunk or TE proprietary).
     # This field is reserved for future WAV-encoding support; to_json() does not emit it.
     time_bpm: float | None = None
-    midi_channel: int = 0          # 0..15 — "midi.channel" in device JSON
+    midi_channel: int = 0  # 0..15 — "midi.channel" in device JSON
 
     def __post_init__(self) -> None:
         if self.playmode not in _VALID_PLAYMODES:
@@ -256,6 +254,7 @@ class PadParams:
 # Pad assignment (reverse-engineered from Sample Tool captures)
 # ──────────────────────────────────────────────────────────────────────
 
+
 def pad_file_id(project: int, group: str, pad_num: int) -> int:
     """Compute the device fileId for a (project, group, pad_num).
 
@@ -272,12 +271,7 @@ def pad_file_id(project: int, group: str, pad_num: int) -> int:
         raise ValueError(f"pad_num {pad_num} must be 1..12")
 
     group_index = "ABCD".index(group)
-    return (
-        PAD_BASE
-        + (project - 1) * PAD_PROJECT_STRIDE
-        + group_index * PAD_GROUP_STRIDE
-        + pad_num
-    )
+    return PAD_BASE + (project - 1) * PAD_PROJECT_STRIDE + group_index * PAD_GROUP_STRIDE + pad_num
 
 
 def build_metadata_set(file_id: int, json_bytes: bytes) -> bytes:
@@ -327,9 +321,7 @@ def build_assign_pad(
 def pad_num_from_label(label: str) -> int:
     """Translate a physical pad label ('7', '.', 'ENTER', …) to its pad_num."""
     if label not in PAD_LABEL_TO_NUM:
-        raise ValueError(
-            f"unknown pad label {label!r}; valid: {sorted(PAD_LABEL_TO_NUM)}"
-        )
+        raise ValueError(f"unknown pad label {label!r}; valid: {sorted(PAD_LABEL_TO_NUM)}")
     return PAD_LABEL_TO_NUM[label]
 
 
@@ -347,6 +339,7 @@ def pad_num_from_label(label: str) -> int:
 # Read-only fields (set at upload time): channels, samplerate, format, crc.
 # ──────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class SampleParams:
     """Partial sample-slot metadata for FILE_METADATA_SET at fileId = slot.
@@ -355,19 +348,20 @@ class SampleParams:
     This is deliberately a partial-write schema — unlike PadParams which
     writes a full snapshot, sample-slot writes merge into existing state.
     """
-    bpm: float | None = None          # sound.bpm — source BPM
-    bars: float | None = None         # sound.bars — device may clamp to 1/2/4/8/16
-    playmode: str | None = None       # sound.playmode — "oneshot"/"key"/"legato"
-    time_mode: str | None = None      # time.mode — "off"/"bar"/"bpm"
-    rootnote: int | None = None       # sound.rootnote — MIDI 0..127, default 60
-    amplitude: int | None = None      # sound.amplitude — 0..100
-    pan: int | None = None            # sound.pan — -16..16
-    pitch: float | None = None        # sound.pitch — semitones, -12..12
-    loopstart: int | None = None      # sound.loopstart — sample index, -1 = none
-    loopend: int | None = None        # sound.loopend — sample index, -1 = none
-    attack: int | None = None         # envelope.attack — 0..255
-    release: int | None = None        # envelope.release — 0..255
-    name: str | None = None           # display name (20 chars max)
+
+    bpm: float | None = None  # sound.bpm — source BPM
+    bars: float | None = None  # sound.bars — device may clamp to 1/2/4/8/16
+    playmode: str | None = None  # sound.playmode — "oneshot"/"key"/"legato"
+    time_mode: str | None = None  # time.mode — "off"/"bar"/"bpm"
+    rootnote: int | None = None  # sound.rootnote — MIDI 0..127, default 60
+    amplitude: int | None = None  # sound.amplitude — 0..100
+    pan: int | None = None  # sound.pan — -16..16
+    pitch: float | None = None  # sound.pitch — semitones, -12..12
+    loopstart: int | None = None  # sound.loopstart — sample index, -1 = none
+    loopend: int | None = None  # sound.loopend — sample index, -1 = none
+    attack: int | None = None  # envelope.attack — 0..255
+    release: int | None = None  # envelope.release — 0..255
+    name: str | None = None  # display name (20 chars max)
 
     def __post_init__(self) -> None:
         if self.playmode is not None and self.playmode not in _VALID_PLAYMODES:

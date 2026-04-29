@@ -36,6 +36,7 @@ _MAX_MUTE_GROUPS = 8
 # Config dataclasses
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class EP133TimeStretchConfig:
     """Time-stretch parameters for a single pad.
@@ -89,9 +90,7 @@ class EP133StemConfig:
     play_mode: str = "oneshot"
     loop: bool = False
     mute_group: int = 0
-    time_stretch: EP133TimeStretchConfig = field(
-        default_factory=EP133TimeStretchConfig
-    )
+    time_stretch: EP133TimeStretchConfig = field(default_factory=EP133TimeStretchConfig)
     pad_group: str = "A"
     pad_num: int = 1
 
@@ -101,9 +100,7 @@ class EP133StemConfig:
                 f"play_mode {self.play_mode!r} must be one of {sorted(_VALID_PLAY_MODES)}"
             )
         if not (0 <= self.mute_group <= _MAX_MUTE_GROUPS):
-            raise ValueError(
-                f"mute_group {self.mute_group} must be 0..{_MAX_MUTE_GROUPS}"
-            )
+            raise ValueError(f"mute_group {self.mute_group} must be 0..{_MAX_MUTE_GROUPS}")
         if self.pad_group not in "ABCD":
             raise ValueError(f"pad_group {self.pad_group!r} must be A|B|C|D")
         if not (1 <= self.pad_num <= 12):
@@ -226,6 +223,7 @@ class EP133ExportConfig:
 # Audio processing
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def process_stem_wav(
     src_path: Path,
     out_path: Path,
@@ -290,6 +288,7 @@ def process_stem_wav(
 # ──────────────────────────────────────────────────────────────────────────────
 # SETUP.md generation
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def _time_stretch_label(ts: EP133TimeStretchConfig, fallback_bpm: float | None) -> str:
     if ts.mode == "none":
@@ -374,9 +373,7 @@ def generate_setup_md(
         ts = cfg.time_stretch
         ts_label = _time_stretch_label(ts, bpm)
         mg_str = str(cfg.mute_group) if cfg.mute_group > 0 else "none"
-        lines.append(
-            f"**Pad {cfg.pad_group}{cfg.pad_num} — {r['stem']}** (`{audio['filename']}`)"
-        )
+        lines.append(f"**Pad {cfg.pad_group}{cfg.pad_num} — {r['stem']}** (`{audio['filename']}`)")
         lines.append(f"- Play Mode: `{cfg.play_mode}`")
         lines.append(f"- Loop: {'yes' if cfg.loop else 'no'}")
         lines.append(f"- Mute Group: {mg_str}")
@@ -401,9 +398,7 @@ def generate_setup_md(
         lines.append("To get true on/off toggle for drums:")
         lines.append("  Program drums_ep133.wav as a looping sequencer pattern.")
         lines.append("  Assign a free pad to start/stop that pattern.")
-        lines.append(
-            "  This replaces oneshot+loop with a pattern trigger — true on/off toggle."
-        )
+        lines.append("  This replaces oneshot+loop with a pattern trigger — true on/off toggle.")
         lines.append("  Cannot be automated by stemforge export; requires manual on-device setup.")
         lines.append("")
 
@@ -429,6 +424,7 @@ def generate_setup_md(
 # ──────────────────────────────────────────────────────────────────────────────
 # Main export function
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def _load_stems_json(stems_json_path: Path) -> dict:
     return json.loads(stems_json_path.read_text())
@@ -478,11 +474,7 @@ def export_ep133_package(
         out_dir.mkdir(parents=True, exist_ok=True)
 
     # Validate mute group count
-    active_groups = {
-        cfg.mute_group
-        for cfg in config.stems.values()
-        if cfg.mute_group > 0
-    }
+    active_groups = {cfg.mute_group for cfg in config.stems.values() if cfg.mute_group > 0}
     if len(active_groups) > _MAX_MUTE_GROUPS:
         raise ValueError(
             f"ep133_export defines {len(active_groups)} non-zero mute groups"
@@ -538,20 +530,20 @@ def export_ep133_package(
             "audio": audio_block,
         }
 
-        results.append({
-            "stem": stem_name,
-            "ep133": ep133_block,
-            # Internal: keep config reference for SETUP.md generation
-            "config": stem_cfg,
-            "audio": audio_block,
-        })
+        results.append(
+            {
+                "stem": stem_name,
+                "ep133": ep133_block,
+                # Internal: keep config reference for SETUP.md generation
+                "config": stem_cfg,
+                "audio": audio_block,
+            }
+        )
 
     if not dry_run and results:
         # Write ep133_manifest.json (spec Section 6 format)
         manifest_records = [{"stem": r["stem"], "ep133": r["ep133"]} for r in results]
-        (out_dir / "ep133_manifest.json").write_text(
-            json.dumps(manifest_records, indent=2)
-        )
+        (out_dir / "ep133_manifest.json").write_text(json.dumps(manifest_records, indent=2))
 
         # Write SETUP.md
         setup_md = generate_setup_md(

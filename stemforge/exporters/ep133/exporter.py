@@ -15,7 +15,9 @@ from pathlib import Path
 from rich.console import Console
 
 from ..base import (
-    AbstractExporter, ExportManifest, ExportSlot,
+    AbstractExporter,
+    ExportManifest,
+    ExportSlot,
     write_export_wav,
 )
 
@@ -31,17 +33,16 @@ GROUPS = ["A", "B", "C", "D"]
 
 # Default stem → group mapping
 DEFAULT_GROUP_MAP = {
-    "A": "drums",       # drum one-shots
-    "B": "bass",        # bass slices (KEYS mode)
-    "C": "vocals",      # melodic snippets (KEYS mode)
-    "D": "loops",       # short loops from any stem
+    "A": "drums",  # drum one-shots
+    "B": "bass",  # bass slices (KEYS mode)
+    "C": "vocals",  # melodic snippets (KEYS mode)
+    "D": "loops",  # short loops from any stem
 }
 
 STEM_NAMES = ["drums", "bass", "vocals", "other"]
 
 
 class EP133Exporter(AbstractExporter):
-
     def __init__(self, budget: bool = False, group_overrides: dict[str, str] | None = None):
         self._budget = budget
         self._group_map = dict(DEFAULT_GROUP_MAP)
@@ -109,76 +110,109 @@ class EP133Exporter(AbstractExporter):
         slot_num = 1
 
         # Group A: drum one-shots (beats or curated oneshots)
-        drum_files = (
-            self._collect_stem_files(track_dir, "drums", "oneshots")
-            or self._collect_stem_files(track_dir, "drums", "beats")
-        )
+        drum_files = self._collect_stem_files(
+            track_dir, "drums", "oneshots"
+        ) or self._collect_stem_files(track_dir, "drums", "beats")
         for i, wav in enumerate(drum_files[:PADS_PER_GROUP]):
             audio, sr = self._prepare_sample(wav)
-            fname = f"{slot_num:03d}_{track_name}_drums_{i+1}.wav"
+            fname = f"{slot_num:03d}_{track_name}_drums_{i + 1}.wav"
             size = write_export_wav(audio, sr, output_dir / fname, self.target_bit_depth)
-            manifest.slots.append(ExportSlot(
-                slot=slot_num, group="A", pad=i+1, file=fname,
-                source_track=track_name, source_stem="drums", source_file=str(wav),
-                duration_s=len(audio) / sr, size_bytes=size,
-            ))
+            manifest.slots.append(
+                ExportSlot(
+                    slot=slot_num,
+                    group="A",
+                    pad=i + 1,
+                    file=fname,
+                    source_track=track_name,
+                    source_stem="drums",
+                    source_file=str(wav),
+                    duration_s=len(audio) / sr,
+                    size_bytes=size,
+                )
+            )
             manifest.memory_used_bytes += size
             slot_num += 1
         console.print(f"    Group A (drums): {min(len(drum_files), PADS_PER_GROUP)} pads")
 
         # Group B: bass slices
-        bass_files = (
-            self._collect_stem_files(track_dir, "bass", "oneshots")
-            or self._collect_stem_files(track_dir, "bass", "beats")
-        )
+        bass_files = self._collect_stem_files(
+            track_dir, "bass", "oneshots"
+        ) or self._collect_stem_files(track_dir, "bass", "beats")
         for i, wav in enumerate(bass_files[:PADS_PER_GROUP]):
             audio, sr = self._prepare_sample(wav)
-            fname = f"{slot_num:03d}_{track_name}_bass_{i+1}.wav"
+            fname = f"{slot_num:03d}_{track_name}_bass_{i + 1}.wav"
             size = write_export_wav(audio, sr, output_dir / fname, self.target_bit_depth)
-            manifest.slots.append(ExportSlot(
-                slot=slot_num, group="B", pad=i+1, file=fname,
-                source_track=track_name, source_stem="bass", source_file=str(wav),
-                duration_s=len(audio) / sr, size_bytes=size,
-            ))
+            manifest.slots.append(
+                ExportSlot(
+                    slot=slot_num,
+                    group="B",
+                    pad=i + 1,
+                    file=fname,
+                    source_track=track_name,
+                    source_stem="bass",
+                    source_file=str(wav),
+                    duration_s=len(audio) / sr,
+                    size_bytes=size,
+                )
+            )
             manifest.memory_used_bytes += size
             slot_num += 1
         console.print(f"    Group B (bass):  {min(len(bass_files), PADS_PER_GROUP)} pads")
 
         # Group C: vocals/other (melodic)
         melodic_stem = self._group_map.get("C", "vocals")
-        melodic_files = (
-            self._collect_stem_files(track_dir, melodic_stem, "oneshots")
-            or self._collect_stem_files(track_dir, melodic_stem, "beats")
-        )
+        melodic_files = self._collect_stem_files(
+            track_dir, melodic_stem, "oneshots"
+        ) or self._collect_stem_files(track_dir, melodic_stem, "beats")
         for i, wav in enumerate(melodic_files[:PADS_PER_GROUP]):
             audio, sr = self._prepare_sample(wav)
-            fname = f"{slot_num:03d}_{track_name}_{melodic_stem}_{i+1}.wav"
+            fname = f"{slot_num:03d}_{track_name}_{melodic_stem}_{i + 1}.wav"
             size = write_export_wav(audio, sr, output_dir / fname, self.target_bit_depth)
-            manifest.slots.append(ExportSlot(
-                slot=slot_num, group="C", pad=i+1, file=fname,
-                source_track=track_name, source_stem=melodic_stem, source_file=str(wav),
-                duration_s=len(audio) / sr, size_bytes=size,
-            ))
+            manifest.slots.append(
+                ExportSlot(
+                    slot=slot_num,
+                    group="C",
+                    pad=i + 1,
+                    file=fname,
+                    source_track=track_name,
+                    source_stem=melodic_stem,
+                    source_file=str(wav),
+                    duration_s=len(audio) / sr,
+                    size_bytes=size,
+                )
+            )
             manifest.memory_used_bytes += size
             slot_num += 1
-        console.print(f"    Group C ({melodic_stem}): {min(len(melodic_files), PADS_PER_GROUP)} pads")
+        console.print(
+            f"    Group C ({melodic_stem}): {min(len(melodic_files), PADS_PER_GROUP)} pads"
+        )
 
         # Group D: short loops
         loops = self._collect_loops(track_dir)
         for i, (wav, stem) in enumerate(loops[:PADS_PER_GROUP]):
             audio, sr = self._prepare_sample(wav)
-            fname = f"{slot_num:03d}_{track_name}_loop_{stem}_{i+1}.wav"
+            fname = f"{slot_num:03d}_{track_name}_loop_{stem}_{i + 1}.wav"
             size = write_export_wav(audio, sr, output_dir / fname, self.target_bit_depth)
-            manifest.slots.append(ExportSlot(
-                slot=slot_num, group="D", pad=i+1, file=fname,
-                source_track=track_name, source_stem=stem, source_file=str(wav),
-                duration_s=len(audio) / sr, size_bytes=size,
-            ))
+            manifest.slots.append(
+                ExportSlot(
+                    slot=slot_num,
+                    group="D",
+                    pad=i + 1,
+                    file=fname,
+                    source_track=track_name,
+                    source_stem=stem,
+                    source_file=str(wav),
+                    duration_s=len(audio) / sr,
+                    size_bytes=size,
+                )
+            )
             manifest.memory_used_bytes += size
             slot_num += 1
         console.print(f"    Group D (loops): {min(len(loops), PADS_PER_GROUP)} pads")
 
-        console.print(f"    Memory: {manifest.memory_used_bytes / 1024:.0f} KB / {MEMORY_BYTES / 1024 / 1024:.0f} MB ({manifest.memory_pct:.1f}%)")
+        console.print(
+            f"    Memory: {manifest.memory_used_bytes / 1024:.0f} KB / {MEMORY_BYTES / 1024 / 1024:.0f} MB ({manifest.memory_pct:.1f}%)"
+        )
         manifest.write(output_dir / "export.json")
         return manifest
 
@@ -187,10 +221,9 @@ class EP133Exporter(AbstractExporter):
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Find all processed track directories
-        track_dirs = sorted([
-            d for d in tracks_dir.iterdir()
-            if d.is_dir() and (d / "drums.wav").exists()
-        ])
+        track_dirs = sorted(
+            [d for d in tracks_dir.iterdir() if d.is_dir() and (d / "drums.wav").exists()]
+        )
         track_names = [d.name for d in track_dirs]
         manifest = self._new_manifest("perform", track_names)
 
@@ -222,17 +255,29 @@ class EP133Exporter(AbstractExporter):
         ]:
             for i, (wav, track_name) in enumerate(candidates[:PADS_PER_GROUP]):
                 audio, sr = self._prepare_sample(wav)
-                fname = f"{slot_num:03d}_{track_name}_{label}_{i+1}.wav"
+                fname = f"{slot_num:03d}_{track_name}_{label}_{i + 1}.wav"
                 size = write_export_wav(audio, sr, output_dir / fname, self.target_bit_depth)
-                manifest.slots.append(ExportSlot(
-                    slot=slot_num, group=group, pad=i+1, file=fname,
-                    source_track=track_name, source_stem=label, source_file=str(wav),
-                    duration_s=len(audio) / sr, size_bytes=size,
-                ))
+                manifest.slots.append(
+                    ExportSlot(
+                        slot=slot_num,
+                        group=group,
+                        pad=i + 1,
+                        file=fname,
+                        source_track=track_name,
+                        source_stem=label,
+                        source_file=str(wav),
+                        duration_s=len(audio) / sr,
+                        size_bytes=size,
+                    )
+                )
                 manifest.memory_used_bytes += size
                 slot_num += 1
-            console.print(f"    Group {group} ({label}): {min(len(candidates), PADS_PER_GROUP)} pads")
+            console.print(
+                f"    Group {group} ({label}): {min(len(candidates), PADS_PER_GROUP)} pads"
+            )
 
-        console.print(f"    Memory: {manifest.memory_used_bytes / 1024:.0f} KB / {MEMORY_BYTES / 1024 / 1024:.0f} MB ({manifest.memory_pct:.1f}%)")
+        console.print(
+            f"    Memory: {manifest.memory_used_bytes / 1024:.0f} KB / {MEMORY_BYTES / 1024 / 1024:.0f} MB ({manifest.memory_pct:.1f}%)"
+        )
         manifest.write(output_dir / "export.json")
         return manifest

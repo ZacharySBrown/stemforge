@@ -15,10 +15,11 @@ from stemforge.exporters.ep133.project_reader import project_file_id
 
 # ── project_file_id ────────────────────────────────────────────────────
 
+
 def test_project_file_id_formula():
     assert project_file_id(1) == 3000
     assert project_file_id(2) == 4000
-    assert project_file_id(7) == 9000   # the project we read during discovery
+    assert project_file_id(7) == 9000  # the project we read during discovery
     assert project_file_id(8) == 10000
     assert project_file_id(99) == 101000
 
@@ -34,10 +35,7 @@ def test_project_file_id_range():
 
 # Exact record for pad label "9" (pad_num 3) after knobY saved BPM=100 on device.
 # Bytes +0..+31 as returned by the device's project-read stream.
-PAD_9_BPM_100 = bytes.fromhex(
-    "004000800000808020a385000080c800"
-    "e40000000f8100013c01000000000000"
-)
+PAD_9_BPM_100 = bytes.fromhex("004000800000808020a385000080c800e40000000f8100013c01000000000000")
 
 # Earlier in the session the same pad was at BPM=92; later BPM=150. The
 # override encoding was identical except for +14 and the precision flag at +15.
@@ -76,10 +74,7 @@ def test_override_high_range_bpm_150():
 # Exact record for pad label "6" (pad_num 6) after knobY saved BPM=70.
 # This pad had been toggled BAR→BPM→BAR→BPM before saving, which appears
 # to trigger the float32 encoding instead of the override encoding.
-PAD_6_BPM_70 = bytes.fromhex(
-    "00640000000002006623050000010c42"
-    "64000000808180813c00000000000000"
-)
+PAD_6_BPM_70 = bytes.fromhex("00640000000002006623050000010c4264000000808180813c00000000000000")
 
 
 def test_float32_encoding_bpm_70():
@@ -104,6 +99,7 @@ def test_default_pad_decodes_as_float32_120():
 
 # ── decode_bpm: unknown / unparseable ─────────────────────────────────
 
+
 def test_too_short_record():
     bpm, enc = PR.decode_bpm(b"\x00" * 8)  # shorter than +12+4
     assert bpm is None
@@ -119,6 +115,7 @@ def test_nonsense_bytes_returns_unknown():
 
 
 # ── find_pad_records: TAR scan ────────────────────────────────────────
+
 
 def test_find_pad_records_identifies_pNN_names():
     """Synthetic TAR with 2 pad blocks; both should be found."""

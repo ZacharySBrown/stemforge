@@ -20,6 +20,7 @@ GROUPS: tuple[str, ...] = ("A", "B", "C", "D")
 @dataclass
 class ArrangementClip:
     """One arrangement-view clip on track A/B/C/D."""
+
     file_path: str
     start_time_sec: float
     length_sec: float
@@ -42,6 +43,7 @@ class ArrangementClip:
 @dataclass
 class Snapshot:
     """Which clip is playing on each group at one locator."""
+
     locator_time_sec: float
     locator_name: str
     a_clip: ArrangementClip | None
@@ -107,10 +109,7 @@ def _select_active_clip(
     clips overlap the locator, pick the latest-started — Ableton's playback
     semantics for arrangement-view clip overlap.
     """
-    candidates = [
-        c for c in clips
-        if c.start_time_sec <= locator_time_sec < c.end_time_sec
-    ]
+    candidates = [c for c in clips if c.start_time_sec <= locator_time_sec < c.end_time_sec]
     if not candidates:
         return None
     candidates.sort(key=lambda c: c.start_time_sec, reverse=True)
@@ -139,8 +138,7 @@ def resolve_scenes(arrangement: dict, manifest: dict) -> list[Snapshot]:
         )
     tracks_raw = arrangement.get("tracks") or {}
     tracks: dict[str, list[ArrangementClip]] = {
-        g: _coerce_track(tracks_raw.get(g) or tracks_raw.get(g.lower()))
-        for g in GROUPS
+        g: _coerce_track(tracks_raw.get(g) or tracks_raw.get(g.lower())) for g in GROUPS
     }
 
     locators_sorted = sorted(

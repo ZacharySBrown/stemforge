@@ -24,7 +24,6 @@ from stemforge.exporters.ep133.ppak_writer import (
 )
 from stemforge.exporters.ep133.song_format import (
     DEVICE_DEFAULT_PAD,
-    DEVICE_DEFAULT_SETTINGS,
     PAD_RECORD_SIZE,
     SETTINGS_SIZE,
     Event,
@@ -72,9 +71,8 @@ def _silent_wav(path: Path, *, samples: int = 1024) -> Path:
     block_align = channels * bits // 8
     data_bytes = bytes(samples * channels * (bits // 8))
     riff = b"RIFF"
-    fmt = (
-        b"fmt \x10\x00\x00\x00"
-        + struct.pack("<HHIIHH", 1, channels, sr, byte_rate, block_align, bits)
+    fmt = b"fmt \x10\x00\x00\x00" + struct.pack(
+        "<HHIIHH", 1, channels, sr, byte_rate, block_align, bits
     )
     data_chunk = b"data" + struct.pack("<I", len(data_bytes)) + data_bytes
     payload = b"WAVE" + fmt + data_chunk
@@ -165,18 +163,14 @@ def test_build_ppak_minimal_returns_bytes(template_ppak: Path, silent_wav: Path,
     assert (tmp_path / "out.ppak").read_bytes() == data
 
 
-def test_build_ppak_zip_entries_have_leading_slash(
-    template_ppak: Path, silent_wav: Path
-):
+def test_build_ppak_zip_entries_have_leading_slash(template_ppak: Path, silent_wav: Path):
     data = build_ppak(_minimal_spec(silent_wav), template_ppak)
     with zipfile.ZipFile(io.BytesIO(data), "r") as zf:
         for name in zf.namelist():
             assert name.startswith("/"), f"missing leading slash on entry {name!r}"
 
 
-def test_build_ppak_inner_tar_is_uncompressed_posix(
-    template_ppak: Path, silent_wav: Path
-):
+def test_build_ppak_inner_tar_is_uncompressed_posix(template_ppak: Path, silent_wav: Path):
     data = build_ppak(_minimal_spec(silent_wav), template_ppak)
     with zipfile.ZipFile(io.BytesIO(data), "r") as zf:
         tar_bytes = zf.read("/projects/P02.tar")
@@ -197,7 +191,11 @@ def test_build_ppak_emits_only_assigned_pads(template_ppak: Path, silent_wav: Pa
     """
     data = build_ppak(_minimal_spec(silent_wav), template_ppak)
     _, members = _open_ppak(data)
-    pad_files = sorted(k for k in members if k.startswith("pads/") and k.count("/") == 2 and k.split("/")[-1].startswith("p"))
+    pad_files = sorted(
+        k
+        for k in members
+        if k.startswith("pads/") and k.count("/") == 2 and k.split("/")[-1].startswith("p")
+    )
     # The minimal spec assigns exactly one pad: a/p03.
     assert pad_files == ["pads/a/p03"]
     assert len(members["pads/a/p03"]) == PAD_RECORD_SIZE
@@ -265,9 +263,7 @@ def test_build_ppak_omits_settings_file(template_ppak: Path, silent_wav: Path):
     assert "settings" not in members
 
 
-def test_build_ppak_bundles_sounds_at_expected_path(
-    template_ppak: Path, silent_wav: Path
-):
+def test_build_ppak_bundles_sounds_at_expected_path(template_ppak: Path, silent_wav: Path):
     data = build_ppak(_minimal_spec(silent_wav), template_ppak)
     with zipfile.ZipFile(io.BytesIO(data), "r") as zf:
         names = zf.namelist()
@@ -275,9 +271,7 @@ def test_build_ppak_bundles_sounds_at_expected_path(
     assert any(n.startswith("/sounds/100 100_") and n.endswith(".wav") for n in names), names
 
 
-def test_build_ppak_project_tar_path_matches_slot(
-    template_ppak: Path, silent_wav: Path
-):
+def test_build_ppak_project_tar_path_matches_slot(template_ppak: Path, silent_wav: Path):
     spec = _minimal_spec(silent_wav, project_slot=7)
     data = build_ppak(spec, template_ppak)
     with zipfile.ZipFile(io.BytesIO(data), "r") as zf:
@@ -303,9 +297,7 @@ def test_build_ppak_rejects_missing_template(tmp_path: Path, silent_wav: Path):
         build_ppak(_minimal_spec(silent_wav), tmp_path / "nonexistent.ppak")
 
 
-def test_build_ppak_soft_skips_missing_sound(
-    template_ppak: Path, silent_wav: Path, tmp_path: Path
-):
+def test_build_ppak_soft_skips_missing_sound(template_ppak: Path, silent_wav: Path, tmp_path: Path):
     """Slots whose WAVs are missing on disk get warn-and-skipped rather
     than crashing the export. Useful for upstream pipelines (bundle
     curation, manifest staleness) that may reference slots whose audio
@@ -341,9 +333,7 @@ def test_build_ppak_soft_skips_missing_sound(
     assert not any(n.startswith("/sounds/999 ") for n in names)
 
 
-def test_build_ppak_rejects_invalid_project_slot(
-    template_ppak: Path, silent_wav: Path
-):
+def test_build_ppak_rejects_invalid_project_slot(template_ppak: Path, silent_wav: Path):
     spec = _minimal_spec(silent_wav)
     spec.project_slot = 0
     with pytest.raises(ValueError, match="project_slot"):
@@ -389,14 +379,8 @@ def test_build_ppak_round_trip_through_synthetic_template(tmp_path: Path):
         bpm=140.5,
         time_sig=(4, 4),
         patterns=[
-            Pattern(
-                group="a", index=1, bars=1,
-                events=[Event(0, 1, 60, 100, 384)]
-            ),
-            Pattern(
-                group="b", index=1, bars=4,
-                events=[Event(0, 5, 60, 90, 4 * 384)]
-            ),
+            Pattern(group="a", index=1, bars=1, events=[Event(0, 1, 60, 100, 384)]),
+            Pattern(group="b", index=1, bars=4, events=[Event(0, 5, 60, 90, 4 * 384)]),
         ],
         scenes=[
             SceneSpec(a=1, b=1, c=0, d=0),
@@ -470,16 +454,22 @@ def test_build_ppak_bpm_mode_pad_and_wav_carry_source_bpm(
         time_sig=(4, 4),
         patterns=[
             Pattern(
-                group="a", index=1, bars=2,
+                group="a",
+                index=1,
+                bars=2,
                 events=[Event(0, 1, 60, 100, 96)],
             )
         ],
         scenes=[SceneSpec(a=1, b=0, c=0, d=0)],
         pads=[
             PadSpec(
-                group="a", pad=1, sample_slot=200,
-                play_mode="oneshot", time_stretch_bars=2,
-                stretch_mode="bpm", sound_bpm=135.99,
+                group="a",
+                pad=1,
+                sample_slot=200,
+                play_mode="oneshot",
+                time_stretch_bars=2,
+                stretch_mode="bpm",
+                sound_bpm=135.99,
             )
         ],
         sounds={200: silent_wav},
@@ -495,8 +485,7 @@ def test_build_ppak_bpm_mode_pad_and_wav_carry_source_bpm(
     # confirm sound.bpm + time.mode=bpm are baked into the TNGE JSON.
     with zipfile.ZipFile(io.BytesIO(data), "r") as zf:
         wav_name = next(
-            n for n in zf.namelist()
-            if n.startswith("/sounds/200 200_") and n.endswith(".wav")
+            n for n in zf.namelist() if n.startswith("/sounds/200 200_") and n.endswith(".wav")
         )
         wav_bytes = zf.read(wav_name)
     # The TNGE JSON is plain ASCII inside the WAV — search the raw bytes.
@@ -504,16 +493,16 @@ def test_build_ppak_bpm_mode_pad_and_wav_carry_source_bpm(
     assert b'"sound.bpm":135.99' in wav_bytes
 
 
-def test_build_ppak_slices_wav_per_slot_slices(
-    template_ppak: Path, tmp_path: Path
-):
+def test_build_ppak_slices_wav_per_slot_slices(template_ppak: Path, tmp_path: Path):
     """spec.slot_slices = {slot: (start_sec, end_sec)} → only that region of
     the input WAV ends up on the device. Pad-record bytes 8..11 (post-
     conversion frame count) reflect the sliced length, not the full WAV."""
     # 2-second 44.1k mono silent WAV (88200 frames input).
     src = _silent_wav(tmp_path / "src.wav", samples=88200)
     spec = PpakSpec(
-        project_slot=4, bpm=120.0, time_sig=(4, 4),
+        project_slot=4,
+        bpm=120.0,
+        time_sig=(4, 4),
         patterns=[Pattern(group="a", index=1, bars=1, events=[Event(0, 1, 60, 100, 96)])],
         scenes=[SceneSpec(a=1, b=0, c=0, d=0)],
         pads=[PadSpec("a", 1, sample_slot=400, play_mode="oneshot", time_stretch_bars=1)],
@@ -526,14 +515,10 @@ def test_build_ppak_slices_wav_per_slot_slices(
     frames = struct.unpack_from("<I", pad_a1, 8)[0]
     # 0.5s @ 46875Hz EP-133 native = 23437 or 23438 frames depending on
     # rounding through audioop.ratecv.
-    assert 23000 <= frames <= 24000, (
-        f"sliced frame count {frames} outside expected ~23437"
-    )
+    assert 23000 <= frames <= 24000, f"sliced frame count {frames} outside expected ~23437"
 
 
-def test_build_ppak_no_slot_slices_uploads_whole_wav(
-    template_ppak: Path, silent_wav: Path
-):
+def test_build_ppak_no_slot_slices_uploads_whole_wav(template_ppak: Path, silent_wav: Path):
     """Default (no slot_slices entry) → pad-record length frame count
     matches the converted full WAV."""
     spec = _minimal_spec(silent_wav)

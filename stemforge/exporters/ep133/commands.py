@@ -111,10 +111,19 @@ PAD_GROUP_STRIDE = 100
 #   row 3 (bottom): . 0 ENTER
 # Visual position counts top-to-bottom, left-to-right starting at 1.
 PAD_LABEL_TO_NUM = {
-    "7": 1, "8": 2, "9": 3,
-    "4": 4, "5": 5, "6": 6,
-    "1": 7, "2": 8, "3": 9,
-    ".": 10, "0": 11, "ENTER": 12, "E": 12,  # "E" is an alias for ENTER
+    "7": 1,
+    "8": 2,
+    "9": 3,
+    "4": 4,
+    "5": 5,
+    "6": 6,
+    "1": 7,
+    "2": 8,
+    "3": 9,
+    ".": 10,
+    "0": 11,
+    "ENTER": 12,
+    "E": 12,  # "E" is an alias for ENTER
 }
 
 # Maximum byte payload per data chunk after 7-bit packing fits inside the

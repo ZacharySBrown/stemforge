@@ -22,15 +22,15 @@ FIX = Path(__file__).parent / "fixtures" / "pad"
 # (fixture_name, project, group, pad_num, slot, expected_file_id)
 CASES = [
     # Triangulation captures (1-4)
-    ("assign_p01_A_pad10_sym1.syx",  1, "A", 10, 1,   3210),
-    ("assign_p01_A_pad7_sym1.syx",   1, "A",  7, 1,   3207),
-    ("assign_p01_B_pad10_sym1.syx",  1, "B", 10, 1,   3310),
-    ("assign_p02_A_pad10_sym1.syx",  2, "A", 10, 1,   4210),
+    ("assign_p01_A_pad10_sym1.syx", 1, "A", 10, 1, 3210),
+    ("assign_p01_A_pad7_sym1.syx", 1, "A", 7, 1, 3207),
+    ("assign_p01_B_pad10_sym1.syx", 1, "B", 10, 1, 3310),
+    ("assign_p02_A_pad10_sym1.syx", 2, "A", 10, 1, 4210),
     # Validation captures (5-8)
-    ("assign_p03_C_pad5_sym19.syx",  3, "C",  5, 19,  5405),
-    ("assign_p07_D_pad3_sym24.syx",  7, "D",  3, 24,  9503),
-    ("assign_p05_A_pad12_sym11.syx", 5, "A", 12, 11,  7212),
-    ("assign_p02_B_pad1_sym415.syx", 2, "B",  1, 415, 4301),
+    ("assign_p03_C_pad5_sym19.syx", 3, "C", 5, 19, 5405),
+    ("assign_p07_D_pad3_sym24.syx", 7, "D", 3, 24, 9503),
+    ("assign_p05_A_pad12_sym11.syx", 5, "A", 12, 11, 7212),
+    ("assign_p02_B_pad1_sym415.syx", 2, "B", 1, 415, 4301),
 ]
 
 
@@ -50,9 +50,7 @@ def test_assign_pad_byte_identical(fixture, project, group, pad_num, slot, expec
 
     generated = P.build_assign_pad(project, group, pad_num, slot)
     assert generated == parsed.raw_data, (
-        f"{fixture}: payload mismatch\n"
-        f"  want: {parsed.raw_data.hex()}\n"
-        f"  got:  {generated.hex()}"
+        f"{fixture}: payload mismatch\n  want: {parsed.raw_data.hex()}\n  got:  {generated.hex()}"
     )
 
 
@@ -88,28 +86,35 @@ def test_build_metadata_set_null_termination():
 
 # ── PadParams tests ───────────────────────────────────────────────────
 
+
 def test_pad_params_defaults():
     """Default PadParams serializes the expected factory-state JSON."""
     import json
+
     params = P.PadParams()
     raw = params.to_json(slot=700)
     d = json.loads(raw)
     assert d["sym"] == 700
-    assert d["sound.playmode"] == "oneshot"  # string form — device rejects integer on write (2026-04-24 diag)
+    assert (
+        d["sound.playmode"] == "oneshot"
+    )  # string form — device rejects integer on write (2026-04-24 diag)
     assert d["sample.start"] == 0
-    assert "sample.end" not in d   # omitted when None
+    assert "sample.end" not in d  # omitted when None
     assert d["envelope.attack"] == 0
     assert d["envelope.release"] == 255
     assert d["sound.pitch"] == 0.0
     assert d["sound.amplitude"] == 100
     assert d["sound.pan"] == 0
     assert d["sound.mutegroup"] is False
-    assert d["time.mode"] == "off"  # string form — device rejects integer on write (2026-04-24 diag)
+    assert (
+        d["time.mode"] == "off"
+    )  # string form — device rejects integer on write (2026-04-24 diag)
 
 
 def test_pad_params_all_fields():
     """Non-default PadParams with sample_end set round-trips through JSON."""
     import json
+
     params = P.PadParams(
         playmode="key",
         sample_start=100,
@@ -144,12 +149,16 @@ def test_pad_params_playmode_release_coupling():
     silently fail at playback. Verified on-device 2026-04-24.
     """
     import json
+
     assert json.loads(P.PadParams(playmode="oneshot").to_json(slot=1))["envelope.release"] == 255
     assert json.loads(P.PadParams(playmode="key").to_json(slot=1))["envelope.release"] == 15
     assert json.loads(P.PadParams(playmode="legato").to_json(slot=1))["envelope.release"] == 255
 
     # Explicit release overrides the auto-pair
-    assert json.loads(P.PadParams(playmode="key", release=100).to_json(slot=1))["envelope.release"] == 100
+    assert (
+        json.loads(P.PadParams(playmode="key", release=100).to_json(slot=1))["envelope.release"]
+        == 100
+    )
 
 
 def test_pad_params_validation():
@@ -178,6 +187,7 @@ def test_build_assign_pad_no_params_unchanged():
     fixture, project, group, pad_num, slot, _ = CASES[0]
     frame = (FIX / fixture).read_bytes()
     from stemforge.exporters.ep133.sysex import parse_sysex
+
     parsed = parse_sysex(frame)
     assert P.build_assign_pad(project, group, pad_num, slot) == parsed.raw_data
 
@@ -185,6 +195,7 @@ def test_build_assign_pad_no_params_unchanged():
 def test_build_assign_pad_with_params_includes_all_fields():
     """build_assign_pad with PadParams embeds the full JSON."""
     import json
+
     params = P.PadParams(playmode="legato", attack=5, release=128)
     payload = P.build_assign_pad(1, "A", 10, 700, params=params)
     # Layout: 07 01 [file_id:u16 BE] [json] 00
@@ -202,9 +213,11 @@ def test_build_assign_pad_with_params_includes_all_fields():
 
 # ── midi_channel tests ────────────────────────────────────────────────
 
+
 def test_pad_params_midi_channel_default():
     """Default midi_channel is 0 and appears in to_json() output."""
     import json
+
     params = P.PadParams()
     d = json.loads(params.to_json(slot=1))
     assert "midi.channel" in d
@@ -214,6 +227,7 @@ def test_pad_params_midi_channel_default():
 def test_pad_params_midi_channel_set():
     """Non-default midi_channel is serialized correctly."""
     import json
+
     params = P.PadParams(midi_channel=5)
     d = json.loads(params.to_json(slot=1))
     assert d["midi.channel"] == 5
@@ -230,6 +244,7 @@ def test_pad_params_midi_channel_validation():
 def test_pad_params_midi_channel_boundary():
     """Boundary values 0 and 15 are accepted."""
     import json
+
     for ch in (0, 15):
         params = P.PadParams(midi_channel=ch)
         d = json.loads(params.to_json(slot=1))

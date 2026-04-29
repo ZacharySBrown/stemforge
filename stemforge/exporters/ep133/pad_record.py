@@ -59,15 +59,15 @@ import struct
 from dataclasses import dataclass, field
 from typing import Optional
 
-PAD_BLOCK_SIZE = 1024              # TAR header (512) + data area (≤512)
+PAD_BLOCK_SIZE = 1024  # TAR header (512) + data area (≤512)
 TAR_HEADER_SIZE = 512
-PAD_RECORD_SIZE = 27               # phones24: pad records are ~27 bytes
+PAD_RECORD_SIZE = 27  # phones24: pad records are ~27 bytes
 
-OVERRIDE_FLAG_BYTE_OFFSET = 13     # +13 == 0x80 means override encoding
+OVERRIDE_FLAG_BYTE_OFFSET = 13  # +13 == 0x80 means override encoding
 OVERRIDE_VALUE_BYTE_OFFSET = 14
 OVERRIDE_PRECISION_BYTE_OFFSET = 15
 
-FLOAT_BPM_OFFSET = 12              # +12..+15 as float32 LE
+FLOAT_BPM_OFFSET = 12  # +12..+15 as float32 LE
 FLOAT_BPM_LENGTH = 4
 
 
@@ -76,16 +76,16 @@ class PadRecord:
     """One pad's record extracted from a project TAR."""
 
     # Location in the enclosing project file
-    block_offset: int              # offset of the 512-byte TAR header
-    content_offset: int            # block_offset + 512
-    name: str                      # TAR filename (may be mangled)
+    block_offset: int  # offset of the 512-byte TAR header
+    content_offset: int  # block_offset + 512
+    name: str  # TAR filename (may be mangled)
 
     # Decoded fields
-    bpm: Optional[float]           # None if we couldn't decode
-    bpm_encoding: str              # "override" or "float32" or "unknown"
+    bpm: Optional[float]  # None if we couldn't decode
+    bpm_encoding: str  # "override" or "float32" or "unknown"
 
     # Raw bytes for further analysis
-    raw: bytes                     # first 32 bytes of record
+    raw: bytes  # first 32 bytes of record
     raw_header_name: bytes = field(repr=False, default=b"")
 
 
@@ -120,8 +120,8 @@ def decode_bpm(record: bytes) -> tuple[Optional[float], str]:
         b14 = record[OVERRIDE_VALUE_BYTE_OFFSET]
         b15 = record[OVERRIDE_PRECISION_BYTE_OFFSET]
         if b15 & 0x80:
-            return float(b14), "override"     # high-range: value as-is
-        return b14 / 2.0, "override"          # low-range: value ÷ 2
+            return float(b14), "override"  # high-range: value as-is
+        return b14 / 2.0, "override"  # low-range: value ÷ 2
 
     # Fallback: interpret +12..+15 as float32 LE, multiply by 2.
     # Tentative — only validated against one sample (pad 6 at BPM=70).
@@ -131,6 +131,7 @@ def decode_bpm(record: bytes) -> tuple[Optional[float], str]:
         return None, "unknown"
     # Filter obvious junk: NaN / infinities / out-of-range
     import math
+
     if not math.isfinite(f) or not (0.0 < f < 500.0):
         return None, "unknown"
     return 2.0 * f, "float32"

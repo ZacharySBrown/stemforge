@@ -1,4 +1,4 @@
-import os, time, requests
+import os, time
 from pathlib import Path
 from rich.console import Console
 from .base import AbstractBackend
@@ -8,7 +8,6 @@ console = Console()
 
 
 class MusicAiBackend(AbstractBackend):
-
     @property
     def name(self) -> str:
         return "Music.AI"
@@ -25,12 +24,13 @@ class MusicAiBackend(AbstractBackend):
 
     def _client(self):
         from musicai_sdk import MusicAiClient
+
         return MusicAiClient(api_key=self._key())
 
     def _upload(self, client, path: Path) -> str:
         console.print(f"  Uploading {path.name}...")
         url = client.upload_file(str(path))
-        console.print(f"  [green]OK[/green] Uploaded → remote URL ready")
+        console.print("  [green]OK[/green] Uploaded → remote URL ready")
         return url
 
     def _submit(self, client, input_url: str, workflow_slug: str) -> str:
@@ -53,9 +53,7 @@ class MusicAiBackend(AbstractBackend):
                 console.print()
                 return result
             elif status == "FAILED":
-                raise RuntimeError(
-                    f"Music.AI job failed: {result.get('error', 'unknown')}"
-                )
+                raise RuntimeError(f"Music.AI job failed: {result.get('error', 'unknown')}")
             dots = (dots + 1) % 4
             console.print(f"  Processing{'.' * dots}   ({status})", end="\r")
             time.sleep(8)

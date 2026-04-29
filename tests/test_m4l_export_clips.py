@@ -26,6 +26,7 @@ from stemforge.manifest_schema import (
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def source_wav(tmp_path: Path) -> Path:
     """A 10-second 44.1k mono WAV with a unit ramp (so slices are content-distinct)."""
@@ -45,7 +46,7 @@ def _make_clip(source_wav: Path, **overrides) -> dict:
         "name": "test clip",
         "file_path": str(source_wav),
         "warping": False,
-        "length_beats": 16.0,            # 4 bars at 4/4
+        "length_beats": 16.0,  # 4 bars at 4/4
         "loop_start_beats": 0.0,
         "loop_end_beats": 16.0,
         "signature_numerator": 4,
@@ -75,6 +76,7 @@ def _write_spec(tmp_path: Path, clips: list[dict], **top_overrides) -> Path:
 
 # ── Determines / display helpers ─────────────────────────────────────────────
 
+
 def test_determine_playmode_oneshot_when_short() -> None:
     assert m4l_export_clips.determine_playmode(0.25, 0.5) == "oneshot"
     assert m4l_export_clips.determine_playmode(0.49, 0.5) == "oneshot"
@@ -91,6 +93,7 @@ def test_beats_to_seconds() -> None:
 
 
 # ── End-to-end run ───────────────────────────────────────────────────────────
+
 
 def test_run_writes_wav_sidecar_and_batch(tmp_path: Path, source_wav: Path) -> None:
     spec_path = _write_spec(tmp_path, [_make_clip(source_wav)])
@@ -131,7 +134,7 @@ def test_run_one_shot_for_very_short_clip(tmp_path: Path, source_wav: Path) -> N
     """A clip < threshold bars (here 0.25 bars) gets playmode=oneshot, no time_mode."""
     short = _make_clip(
         source_wav,
-        length_beats=1.0,           # 0.25 bars at 4/4
+        length_beats=1.0,  # 0.25 bars at 4/4
         loop_start_beats=0.0,
         loop_end_beats=1.0,
         suggested_pad="0",
@@ -167,8 +170,7 @@ def test_run_assigns_pads_per_group(tmp_path: Path, source_wav: Path) -> None:
 
 def test_run_skips_missing_source_files(tmp_path: Path, source_wav: Path) -> None:
     good = _make_clip(source_wav, slot_idx=0, suggested_pad=".")
-    bad = _make_clip(source_wav, slot_idx=1, suggested_pad="0",
-                     file_path="/does/not/exist.wav")
+    bad = _make_clip(source_wav, slot_idx=1, suggested_pad="0", file_path="/does/not/exist.wav")
     spec_path = _write_spec(tmp_path, [good, bad])
     m4l_export_clips.run(spec_path, json_events=False)
 
@@ -179,9 +181,7 @@ def test_run_skips_missing_source_files(tmp_path: Path, source_wav: Path) -> Non
     assert len(batch.samples) == 1
 
 
-def test_loop_region_clamped_when_extending_past_source(
-    tmp_path: Path, source_wav: Path
-) -> None:
+def test_loop_region_clamped_when_extending_past_source(tmp_path: Path, source_wav: Path) -> None:
     """Loop region declared past source-end → clamp to source, then wrap.
 
     Source = 10s ramp [-1..+1]. project_tempo=120 → spb=0.5.
@@ -194,10 +194,10 @@ def test_loop_region_clamped_when_extending_past_source(
     wrap_clip = _make_clip(
         source_wav,
         warping=True,
-        clip_warp_bpm=None,           # use project_tempo = 120 → spb=0.5
+        clip_warp_bpm=None,  # use project_tempo = 120 → spb=0.5
         length_beats=16.0,
-        loop_start_beats=8.0,         # 4.0s in source
-        loop_end_beats=24.0,          # 12.0s declared, clamped to 10.0s
+        loop_start_beats=8.0,  # 4.0s in source
+        loop_end_beats=24.0,  # 12.0s declared, clamped to 10.0s
         signature_numerator=4,
     )
     spec_path = _write_spec(tmp_path, [wrap_clip])
@@ -215,9 +215,9 @@ def test_loop_region_clamped_when_extending_past_source(
     #         chunk2 = source[4..6]  (2s, ramp -0.2..+0.2)
     # Wrap point is at bounce-second 6.0: chunk1 ends, chunk2 begins.
     first_sample = audio[0, 0]
-    last_of_chunk1 = audio[int(6.0 * sr) - 1, 0]   # ≈ +1.0
-    first_of_chunk2 = audio[int(6.0 * sr), 0]      # ≈ -0.2 (back to ls)
-    last_sample = audio[-1, 0]                     # last sample of chunk2 ≈ +0.2
+    last_of_chunk1 = audio[int(6.0 * sr) - 1, 0]  # ≈ +1.0
+    first_of_chunk2 = audio[int(6.0 * sr), 0]  # ≈ -0.2 (back to ls)
+    last_sample = audio[-1, 0]  # last sample of chunk2 ≈ +0.2
 
     assert first_sample == pytest.approx(-0.2, abs=0.02)
     assert last_of_chunk1 == pytest.approx(+1.0, abs=0.02)
@@ -225,9 +225,7 @@ def test_loop_region_clamped_when_extending_past_source(
     assert last_sample == pytest.approx(+0.2, abs=0.02)
 
 
-def test_start_marker_rotates_within_loop_region(
-    tmp_path: Path, source_wav: Path
-) -> None:
+def test_start_marker_rotates_within_loop_region(tmp_path: Path, source_wav: Path) -> None:
     """start_marker > loop_start → bounce begins at start_marker, then wraps
     within the loop region back to loop_start (NOT to source-start).
 
@@ -240,11 +238,11 @@ def test_start_marker_rotates_within_loop_region(
     rotated_clip = _make_clip(
         source_wav,
         warping=True,
-        clip_warp_bpm=None,            # use project_tempo=120 → spb=0.5
+        clip_warp_bpm=None,  # use project_tempo=120 → spb=0.5
         length_beats=16.0,
-        loop_start_beats=8.0,          # source 4.0s
-        loop_end_beats=16.0,           # source 8.0s
-        start_marker_beats=12.0,       # source 6.0s
+        loop_start_beats=8.0,  # source 4.0s
+        loop_end_beats=16.0,  # source 8.0s
+        start_marker_beats=12.0,  # source 6.0s
         signature_numerator=4,
     )
     spec_path = _write_spec(tmp_path, [rotated_clip])
@@ -269,15 +267,13 @@ def test_start_marker_rotates_within_loop_region(
     assert audio[-1, 0] == pytest.approx(+0.2, abs=0.02)
 
 
-def test_start_marker_defaults_to_loop_start_when_absent(
-    tmp_path: Path, source_wav: Path
-) -> None:
+def test_start_marker_defaults_to_loop_start_when_absent(tmp_path: Path, source_wav: Path) -> None:
     """Older specs without start_marker_beats — bounce starts at loop_start
     as before (no rotation)."""
     clip = _make_clip(
         source_wav,
         warping=True,
-        clip_warp_bpm=None,             # project_tempo=120 → spb=0.5
+        clip_warp_bpm=None,  # project_tempo=120 → spb=0.5
         length_beats=16.0,
         loop_start_beats=8.0,
         loop_end_beats=24.0,
@@ -291,9 +287,7 @@ def test_start_marker_defaults_to_loop_start_when_absent(
     assert info.duration == pytest.approx(8.0, abs=0.01)
 
 
-def test_loop_wraps_multiple_source_iterations(
-    tmp_path: Path, source_wav: Path
-) -> None:
+def test_loop_wraps_multiple_source_iterations(tmp_path: Path, source_wav: Path) -> None:
     """Loop length > source length → wrap repeats."""
     bpm = 96.0
     # Source is 10s = 16 beats at 96 BPM. Loop is 32 beats = 2 full source loops.
@@ -315,9 +309,7 @@ def test_loop_wraps_multiple_source_iterations(
     assert info.duration == pytest.approx(20.0, abs=0.02)
 
 
-def test_bars_reflects_loop_length_not_source_length(
-    tmp_path: Path, source_wav: Path
-) -> None:
+def test_bars_reflects_loop_length_not_source_length(tmp_path: Path, source_wav: Path) -> None:
     """When loop_end - loop_start != length_beats, sidecar `bars` follows the
     loop length (the bounced WAV's actual duration in bars)."""
     clip = _make_clip(
@@ -326,7 +318,7 @@ def test_bars_reflects_loop_length_not_source_length(
         clip_warp_bpm=96.0,
         length_beats=16.0,
         loop_start_beats=8.0,
-        loop_end_beats=24.0,    # 16-beat loop = 4 bars at 4/4
+        loop_end_beats=24.0,  # 16-beat loop = 4 bars at 4/4
         signature_numerator=4,
     )
     spec_path = _write_spec(tmp_path, [clip])
@@ -341,17 +333,15 @@ def test_bars_reflects_loop_length_not_source_length(
     assert meta.playmode == "key"
 
 
-def test_warped_clip_tags_sidecar_with_clip_warp_bpm(
-    tmp_path: Path, source_wav: Path
-) -> None:
+def test_warped_clip_tags_sidecar_with_clip_warp_bpm(tmp_path: Path, source_wav: Path) -> None:
     """Sidecar's `bpm` is set from clip_warp_bpm when present (so the EP-133
     knows the source's natural BPM for stretching). The slice DURATION is
     independently set by the source-duration / length-beats relationship."""
     clip = _make_clip(
         source_wav,
         warping=True,
-        clip_warp_bpm=60.0,            # source's natural BPM (informational)
-        length_beats=8.0,              # source plays as 8 beats in the clip
+        clip_warp_bpm=60.0,  # source's natural BPM (informational)
+        length_beats=8.0,  # source plays as 8 beats in the clip
         loop_start_beats=0.0,
         loop_end_beats=8.0,
     )
@@ -402,9 +392,9 @@ def test_wipe_stale_outputs_removes_only_producer_artifacts(tmp_path: Path) -> N
     (d / "D05.wav").write_bytes(b"x")
     # User files (must survive)
     (d / "notes.md").write_text("keep me")
-    (d / "cool_kick.wav").write_bytes(b"x")        # not <group><slot>.wav
-    (d / "spec.json").write_text("{}")              # not .manifest.json
-    (d / "A1.wav").write_bytes(b"x")                # only one digit — not our pattern
+    (d / "cool_kick.wav").write_bytes(b"x")  # not <group><slot>.wav
+    (d / "spec.json").write_text("{}")  # not .manifest.json
+    (d / "A1.wav").write_bytes(b"x")  # only one digit — not our pattern
 
     removed = m4l_export_clips.wipe_stale_outputs(d)
     assert removed == 6
@@ -432,9 +422,12 @@ def test_re_bounce_replaces_stale_sidecars(tmp_path: Path, source_wav: Path) -> 
 
     # Second bounce: replace source so the new WAV has a different hash
     new_source = tmp_path / "different.wav"
-    sf.write(str(new_source),
-             np.zeros((44100, 1), dtype="float32"),  # 1 second of silence
-             44100, subtype="FLOAT")
+    sf.write(
+        str(new_source),
+        np.zeros((44100, 1), dtype="float32"),  # 1 second of silence
+        44100,
+        subtype="FLOAT",
+    )
     new_clip = _make_clip(new_source)
     spec_path2 = _write_spec(tmp_path, [new_clip])
     m4l_export_clips.run(spec_path2, json_events=False)
@@ -448,9 +441,7 @@ def test_re_bounce_replaces_stale_sidecars(tmp_path: Path, source_wav: Path) -> 
     assert sidecars_after_second[0] != sidecars_after_first[0]
 
 
-def test_wipe_emits_event_when_files_removed(
-    tmp_path: Path, source_wav: Path, capsys
-) -> None:
+def test_wipe_emits_event_when_files_removed(tmp_path: Path, source_wav: Path, capsys) -> None:
     """When wipe removes any files, an export_wiped event is emitted."""
     # Pre-populate with a stale sidecar
     export_dir = tmp_path / "export"
@@ -497,26 +488,25 @@ def test_a09_geometry_forge_padded_source_with_late_start_marker(tmp_path: Path)
     # AND verify post-roll content is excluded.
     n = int(sr * 16.0)
     data = np.zeros((n, 1), dtype=np.float32)
-    data[:int(sr * 4.0), 0] = 0.10           # pre-roll (must NOT appear in bounce)
-    data[int(sr * 4.0):int(sr * 12.0), 0] = 0.50   # loop region body
-    data[int(sr * 12.0):, 0] = 0.90          # post-roll (must NOT appear)
+    data[: int(sr * 4.0), 0] = 0.10  # pre-roll (must NOT appear in bounce)
+    data[int(sr * 4.0) : int(sr * 12.0), 0] = 0.50  # loop region body
+    data[int(sr * 12.0) :, 0] = 0.90  # post-roll (must NOT appear)
     src_path = tmp_path / "padded_source.wav"
     sf.write(str(src_path), data, sr, subtype="FLOAT")
 
     clip = _make_clip(
         src_path,
         warping=True,
-        clip_warp_bpm=None,            # use project_tempo=120 → spb=0.5
+        clip_warp_bpm=None,  # use project_tempo=120 → spb=0.5
         length_beats=16.0,
-        loop_start_beats=8.0,          # source 4.0s
-        loop_end_beats=24.0,           # source 12.0s
-        start_marker_beats=20.0,       # source 10.0s
+        loop_start_beats=8.0,  # source 4.0s
+        loop_end_beats=24.0,  # source 12.0s
+        start_marker_beats=20.0,  # source 10.0s
     )
     spec_path = _write_spec(tmp_path, [clip])
     m4l_export_clips.run(spec_path, json_events=False)
 
-    audio, _ = sf.read(str(tmp_path / "export" / "A00.wav"),
-                       always_2d=True, dtype="float32")
+    audio, _ = sf.read(str(tmp_path / "export" / "A00.wav"), always_2d=True, dtype="float32")
 
     # Bounce is exactly 8s
     assert len(audio) == int(sr * 8.0)

@@ -1,0 +1,57 @@
+# pipelines/arrangement.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Arrangement-mode pipeline.
+#
+# Stem-splits a song, then runs the bar-aware "prechop" to slice each stem
+# into N-bar chunks with padding bars on each side. The output is designed to
+# drag straight into Ableton's arrangement view: each chunk WAV has audio
+# room around the target loop region so you can resize the clip into the
+# pre-roll / post-roll without hitting silence at the edges.
+#
+# Companion M4L button: sf_arrangement_loader.js loads this manifest into
+# the arrangement view and sets per-clip loop_start / loop_end from
+# `loop_start_sec` / `loop_end_sec` in the per-chunk metadata.
+#
+# Usage:
+#   stemforge split track.wav --pipeline arrangement
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: arrangement
+description: |
+  Stem-split + bar-aligned prechop (padded), ready to drag into
+  Ableton arrangement view as looping audio clips.
+
+# ── Prechop config (consumed by stemforge/pipelines.py) ──────────────────────
+prechop:
+  bars: 4         # target bars per chunk (the "real" loop region)
+  pad_bars: 1     # padding bars on each side (drag-extend headroom)
+  pad_last: true  # silence-pad the final chunk so all chunks share length
+  beats_per_bar: 4
+
+# ── M4L per-stem template mappings (mirrors pipelines/default.yaml shape) ────
+# Used when the M4L device drags clips onto template tracks. Optional —
+# arrangement-loader.js doesn't strictly require these.
+pipelines:
+  arrangement:
+    description: "Arrangement-mode prechop, padded for drag-extend"
+    stems:
+      drums:
+        template: "SF | Drums Raw"
+        color: 0xFF2400
+        warp_mode: beats
+        loop: true
+      bass:
+        template: "SF | Bass"
+        color: 0x0055FF
+        warp_mode: beats
+        loop: true
+      other:
+        template: "SF | Texture Verb"
+        color: 0x00AA44
+        warp_mode: complex
+        loop: true
+      vocals:
+        template: "SF | Vocals"
+        color: 0xFF8800
+        warp_mode: tones
+        loop: true

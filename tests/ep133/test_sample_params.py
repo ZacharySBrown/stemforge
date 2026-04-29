@@ -4,6 +4,7 @@ Schema verified 2026-04-24 from paginated FILE_METADATA_GET on slot 100.
 Unlike PadParams (full-snapshot write), SampleParams is partial: only emits
 set fields; unlisted fields retain their current device-side value.
 """
+
 import json
 
 import pytest
@@ -12,6 +13,7 @@ from stemforge.exporters.ep133 import payloads as P
 
 
 # ── to_json: partial emission ─────────────────────────────────────────
+
 
 def test_sample_params_empty_raises_on_build():
     """An empty SampleParams can't be used for a write (nothing to send)."""
@@ -34,9 +36,18 @@ def test_sample_params_emits_only_set_fields():
 def test_sample_params_all_fields():
     """Exhaustive — every field gets the correct JSON key."""
     params = P.SampleParams(
-        bpm=120.0, bars=4.0, playmode="legato", time_mode="bar",
-        rootnote=60, amplitude=100, pan=-8, pitch=2.5,
-        loopstart=0, loopend=44100, attack=10, release=200,
+        bpm=120.0,
+        bars=4.0,
+        playmode="legato",
+        time_mode="bar",
+        rootnote=60,
+        amplitude=100,
+        pan=-8,
+        pitch=2.5,
+        loopstart=0,
+        loopend=44100,
+        attack=10,
+        release=200,
         name="test_sample",
     )
     j = json.loads(params.to_json())
@@ -56,6 +67,7 @@ def test_sample_params_all_fields():
 
 
 # ── validation ────────────────────────────────────────────────────────
+
 
 def test_sample_params_validation():
     """Out-of-range values are rejected client-side before hitting the device."""
@@ -93,6 +105,7 @@ def test_sample_params_bpm_edge_values():
 
 
 # ── build_slot_metadata_set ───────────────────────────────────────────
+
 
 def test_build_slot_metadata_set_layout():
     """Framing: 07 01 [fileId:u16 BE] [json] 00 — same wire as pad writes."""

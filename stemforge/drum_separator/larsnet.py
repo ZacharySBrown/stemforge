@@ -9,15 +9,15 @@ from .unet import UNetUtils, UNet, UNetWaveform
 
 
 class LarsNet(nn.Module):
-
-    def __init__(self,
-                 wiener_filter: bool = False,
-                 wiener_exponent: float = 1.0,
-                 config: Union[str, Path] = "config.yaml",
-                 return_stft: bool = False,
-                 device: str = 'cpu',
-                 **kwargs
-                 ):
+    def __init__(
+        self,
+        wiener_filter: bool = False,
+        wiener_exponent: float = 1.0,
+        config: Union[str, Path] = "config.yaml",
+        return_stft: bool = False,
+        device: str = "cpu",
+        **kwargs,
+    ):
         super().__init__(**kwargs)
 
         with open(config, "r") as f:
@@ -28,21 +28,21 @@ class LarsNet(nn.Module):
         self.wiener_filter = wiener_filter
         self.wiener_exponent = wiener_exponent
         self.return_stft = return_stft
-        self.stems = config['inference_models'].keys()
+        self.stems = config["inference_models"].keys()
         self.utils = UNetUtils(device=self.device)
-        self.sr = config['global']['sr']
+        self.sr = config["global"]["sr"]
 
         if wiener_filter:
-            print(f'> Applying Wiener filter with α={self.wiener_exponent}')
+            print(f"> Applying Wiener filter with α={self.wiener_exponent}")
 
-        print('Loading UNet models...')
+        print("Loading UNet models...")
         pbar = tqdm(self.stems)
         for stem in pbar:
-            checkpoint_path = Path(config['inference_models'][stem])
-            pbar.set_description(f'{stem} {checkpoint_path.stem}')
+            checkpoint_path = Path(config["inference_models"][stem])
+            pbar.set_description(f"{stem} {checkpoint_path.stem}")
 
-            F = config[stem]['F']
-            T = config[stem]['T']
+            F = config[stem]["F"]
+            T = config[stem]["T"]
 
             if self.wiener_filter or self.return_stft:
                 model = UNet(input_size=(2, F, T), device=self.device)
@@ -50,7 +50,7 @@ class LarsNet(nn.Module):
                 model = UNetWaveform(input_size=(2, F, T), device=self.device)
 
             checkpoint = torch.load(str(checkpoint_path), map_location=device)
-            model.load_state_dict(checkpoint['model_state_dict'])
+            model.load_state_dict(checkpoint["model_state_dict"])
             model.eval()
 
             self.models[stem] = model
@@ -68,7 +68,7 @@ class LarsNet(nn.Module):
             out = {}
             x = x.to(self.device)
 
-            print('Separate drums...')
+            print("Separate drums...")
             pbar = tqdm(self.models.items())
             for stem, model in pbar:
                 pbar.set_description(stem)
@@ -85,14 +85,12 @@ class LarsNet(nn.Module):
             x = self._fix_dim(x).to(self.device)
             mag, phase = self.utils.batch_stft(x)
 
-            print('Separate drums...')
+            print("Separate drums...")
             pbar = tqdm(self.models.items())
             for stem, model in pbar:
                 pbar.set_description(stem)
                 __, mask = model(mag)
-                mag_pred.append(
-                    (mask * mag) ** self.wiener_exponent
-                )
+                mag_pred.append((mask * mag) ** self.wiener_exponent)
 
             pred_sum = sum(mag_pred)
 
@@ -110,7 +108,7 @@ class LarsNet(nn.Module):
             x = self._fix_dim(x).to(self.device)
             mag, phase = self.utils.batch_stft(x)
 
-            print('Separate drum magnitude...')
+            print("Separate drum magnitude...")
             pbar = tqdm(self.models.items())
             for stem, model in pbar:
                 pbar.set_description(stem)
@@ -125,6 +123,7 @@ class LarsNet(nn.Module):
             # Load via soundfile directly — torchaudio ≥2.11 routes through
             # torchcodec regardless of backend=, which is an optional dep.
             import soundfile as sf
+
             audio_np, sr_ = sf.read(str(x), dtype="float32", always_2d=True)
             x = torch.from_numpy(audio_np.T).contiguous()  # [channels, samples]
             if sr_ != self.sr:

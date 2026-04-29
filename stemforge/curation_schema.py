@@ -25,6 +25,7 @@ v1 behaviour (loops, when caller passes `pad_bars_applied` + friends)
 
 Offsets.committed remains false until M4L commits a user trim back.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -37,6 +38,7 @@ import yaml
 
 # ── Config dataclasses ──────────────────────────────────────────────────
 
+
 @dataclass
 class TrimPadConfig:
     default_bars: float = 0.5
@@ -46,7 +48,7 @@ class TrimPadConfig:
 @dataclass
 class WarpMarkerConfig:
     enabled: bool = True
-    mode: str = "auto"         # "auto" | "manual_only"
+    mode: str = "auto"  # "auto" | "manual_only"
     auto_snap: str = "transient"  # "transient" | "downbeat" | "none"
 
 
@@ -60,6 +62,7 @@ class LoopConfig:
 class StemCurationSchemaConfig:
     """Per-stem curation-schema overrides (distinct from StemCurationConfig in
     stemforge.config which governs selection, not padding/warp)."""
+
     pad_bars: float = 0.5
     auto_snap: str = "transient"
     loop_enabled: bool = True
@@ -70,6 +73,7 @@ class StemCurationSchemaConfig:
 class CurationSchemaConfig:
     """Parsed top-level `curation:` block. Source-of-truth for Stage v2 padding,
     warp-marker detection, and loop semantics."""
+
     trim_pad: TrimPadConfig = field(default_factory=TrimPadConfig)
     warp_markers: WarpMarkerConfig = field(default_factory=WarpMarkerConfig)
     loop: LoopConfig = field(default_factory=LoopConfig)
@@ -88,6 +92,7 @@ class CurationSchemaConfig:
 
 
 # ── Loader ──────────────────────────────────────────────────────────────
+
 
 def load_curation_schema_config(path: str | Path | None) -> CurationSchemaConfig:
     """Load the top-level `curation:` block from curation.yaml.
@@ -127,9 +132,9 @@ def load_curation_schema_config(path: str | Path | None) -> CurationSchemaConfig
     stems: dict[str, StemCurationSchemaConfig] = {}
     for stem_name, stem_raw in (cur.get("stems") or {}).items():
         stem_raw = stem_raw or {}
-        stem_tp = (stem_raw.get("trim_pad") or {})
-        stem_wm = (stem_raw.get("warp_markers") or {})
-        stem_loop = (stem_raw.get("loop") or {})
+        stem_tp = stem_raw.get("trim_pad") or {}
+        stem_wm = stem_raw.get("warp_markers") or {}
+        stem_loop = stem_raw.get("loop") or {}
         stems[stem_name] = StemCurationSchemaConfig(
             pad_bars=float(stem_tp.get("bars", trim_pad.default_bars)),
             auto_snap=str(stem_wm.get("auto_snap", warp_markers.auto_snap)),
@@ -146,6 +151,7 @@ def load_curation_schema_config(path: str | Path | None) -> CurationSchemaConfig
 
 
 # ── v0 schema block builder ─────────────────────────────────────────────
+
 
 def _wav_duration_sec(wav_path: Path) -> float:
     """Read WAV duration cheaply via soundfile header. Returns 0.0 on failure."""

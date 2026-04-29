@@ -59,7 +59,7 @@ def detect_onsets(audio: np.ndarray, sr: int, threshold_ratio: float = 0.3) -> l
     flux = []
     prev_spec = np.zeros(n_fft // 2 + 1)
     for i in range(0, len(audio) - n_fft, hop):
-        frame = audio[i:i + n_fft] * np.hanning(n_fft)
+        frame = audio[i : i + n_fft] * np.hanning(n_fft)
         spec = np.abs(np.fft.rfft(frame))
         diff = np.maximum(spec - prev_spec, 0)
         flux.append(np.sum(diff))
@@ -93,7 +93,7 @@ def compute_energy_curve(audio: np.ndarray, n_segments: int = 8) -> list[float]:
     if seg_len == 0:
         return [0.0] * n_segments
     return [
-        float(np.sqrt(np.mean(audio[i * seg_len:(i + 1) * seg_len] ** 2)))
+        float(np.sqrt(np.mean(audio[i * seg_len : (i + 1) * seg_len] ** 2)))
         for i in range(n_segments)
     ]
 
@@ -110,8 +110,8 @@ def compute_content_density(audio: np.ndarray, sr: int, rms_threshold: float = 0
         return 0.0
     active = 0
     for i in range(n_frames):
-        frame = audio[i * frame_len:(i + 1) * frame_len]
-        frame_rms = float(np.sqrt(np.mean(frame ** 2)))
+        frame = audio[i * frame_len : (i + 1) * frame_len]
+        frame_rms = float(np.sqrt(np.mean(frame**2)))
         if frame_rms >= rms_threshold:
             active += 1
     return active / n_frames
@@ -136,7 +136,7 @@ def spectral_features(audio: np.ndarray, sr: int) -> dict:
 def analyze_beat(path: Path, index: int) -> BeatProfile:
     audio, sr = load_mono(path)
     duration = len(audio) / sr if sr else 0.0
-    rms = float(np.sqrt(np.mean(audio ** 2))) if len(audio) else 0.0
+    rms = float(np.sqrt(np.mean(audio**2))) if len(audio) else 0.0
     if duration < 0.05 or rms < 1e-6:
         return BeatProfile(path=path, index=index, duration=duration, rms=rms)
 
@@ -153,11 +153,15 @@ def analyze_beat(path: Path, index: int) -> BeatProfile:
     first_onset = onsets[0] if onsets else duration  # no onsets = all silence
 
     return BeatProfile(
-        path=path, index=index,
+        path=path,
+        index=index,
         duration=duration,
-        onset_times=onsets, onset_count=len(onsets),
+        onset_times=onsets,
+        onset_count=len(onsets),
         onset_density=len(onsets) / duration if duration > 0 else 0,
-        rms=rms, peak=peak, crest_factor=crest,
+        rms=rms,
+        peak=peak,
+        crest_factor=crest,
         attack_time=attack_time,
         spectral_centroid=spec["centroid"],
         spectral_bandwidth=spec["bandwidth"],
@@ -176,15 +180,22 @@ def analyze_all_beats(beats_dir: Path) -> list[BeatProfile]:
 
 # ── Distance functions (kept for back-compat with beat_curator.py shim) ──
 
+
 def rhythm_distance(a: BeatProfile, b: BeatProfile) -> float:
     if not a.rhythm_fingerprint or not b.rhythm_fingerprint:
         return 1.0
-    return sum(x != y for x, y in zip(a.rhythm_fingerprint, b.rhythm_fingerprint)) / len(a.rhythm_fingerprint)
+    return sum(x != y for x, y in zip(a.rhythm_fingerprint, b.rhythm_fingerprint)) / len(
+        a.rhythm_fingerprint
+    )
 
 
 def spectral_distance(a: BeatProfile, b: BeatProfile) -> float:
-    dc = abs(a.spectral_centroid - b.spectral_centroid) / (max(a.spectral_centroid, b.spectral_centroid) + 1e-10)
-    db = abs(a.spectral_bandwidth - b.spectral_bandwidth) / (max(a.spectral_bandwidth, b.spectral_bandwidth) + 1e-10)
+    dc = abs(a.spectral_centroid - b.spectral_centroid) / (
+        max(a.spectral_centroid, b.spectral_centroid) + 1e-10
+    )
+    db = abs(a.spectral_bandwidth - b.spectral_bandwidth) / (
+        max(a.spectral_bandwidth, b.spectral_bandwidth) + 1e-10
+    )
     df = abs(a.spectral_flatness - b.spectral_flatness)
     return (dc + db + df) / 3
 
@@ -198,15 +209,23 @@ def energy_distance(a: BeatProfile, b: BeatProfile) -> float:
     return float(np.sqrt(np.mean(((ea - eb) / mx) ** 2)))
 
 
-def composite_distance(a: BeatProfile, b: BeatProfile,
-                       w_rhythm: float = 0.5, w_spectral: float = 0.25, w_energy: float = 0.25) -> float:
-    return (w_rhythm * rhythm_distance(a, b) +
-            w_spectral * spectral_distance(a, b) +
-            w_energy * energy_distance(a, b))
+def composite_distance(
+    a: BeatProfile,
+    b: BeatProfile,
+    w_rhythm: float = 0.5,
+    w_spectral: float = 0.25,
+    w_energy: float = 0.25,
+) -> float:
+    return (
+        w_rhythm * rhythm_distance(a, b)
+        + w_spectral * spectral_distance(a, b)
+        + w_energy * energy_distance(a, b)
+    )
 
 
-def greedy_diverse_select(profiles: list[BeatProfile], n: int,
-                          dist_fn=composite_distance) -> list[BeatProfile]:
+def greedy_diverse_select(
+    profiles: list[BeatProfile], n: int, dist_fn=composite_distance
+) -> list[BeatProfile]:
     if len(profiles) <= n:
         return list(profiles)
     active = [p for p in profiles if p.rms > 0.005 and p.onset_count > 0]
@@ -222,6 +241,7 @@ def greedy_diverse_select(profiles: list[BeatProfile], n: int,
 
 
 # ── Feature-vector-based selection (primary path used by `curate`) ──
+
 
 def _feature_vector(p: BeatProfile, weights: dict[str, float] | None = None) -> np.ndarray:
     if weights is None:
@@ -265,7 +285,9 @@ def _greedy_farthest_point(features: np.ndarray, seed_idx: int, n: int) -> list[
 
 
 def _select_rhythm_taxonomy(
-    profiles: list[BeatProfile], n: int, weights: dict | None,
+    profiles: list[BeatProfile],
+    n: int,
+    weights: dict | None,
 ) -> tuple[list[BeatProfile], np.ndarray, list[int]]:
     """Cluster by rhythm fingerprint, then pick diverse variants per cluster."""
     clusters = cluster_by_rhythm(profiles, threshold=0.25)
@@ -295,13 +317,17 @@ def _select_rhythm_taxonomy(
         selected.extend(variants)
 
     selected = selected[:n]
-    feature_matrix = np.array([_feature_vector(p, weights) for p in selected]) if selected else np.zeros((0, 20))
+    feature_matrix = (
+        np.array([_feature_vector(p, weights) for p in selected]) if selected else np.zeros((0, 20))
+    )
     selected_idx = list(range(len(selected)))
     return selected, feature_matrix, selected_idx
 
 
 def _select_sectional(
-    profiles: list[BeatProfile], n: int, weights: dict | None,
+    profiles: list[BeatProfile],
+    n: int,
+    weights: dict | None,
     song_structure: "SongStructure",
 ) -> tuple[list[BeatProfile], np.ndarray, list[int]]:
     """Weight bars by structural importance, then greedy-select with bias toward boundaries."""
@@ -311,22 +337,26 @@ def _select_sectional(
     features = _znorm(np.array([_feature_vector(p, weights) for p in profiles]))
 
     # Compute importance-weighted distance: boost bars near boundaries
-    importance = np.array([
-        song_structure.importance_for_bar(p.index) for p in profiles
-    ])
+    importance = np.array([song_structure.importance_for_bar(p.index) for p in profiles])
     # Add importance as an extra feature dimension (scaled to match others)
     importance_col = (importance * 3.0).reshape(-1, 1)  # weight importance heavily
     features_boosted = np.hstack([features, importance_col])
 
     # Seed with the most important bar (nearest to a boundary)
-    seed = int(np.argmax(importance)) if np.max(importance) > 0 else int(np.argmax([p.crest_factor for p in profiles]))
+    seed = (
+        int(np.argmax(importance))
+        if np.max(importance) > 0
+        else int(np.argmax([p.crest_factor for p in profiles]))
+    )
     selected_idx = _greedy_farthest_point(features_boosted, seed, n)
     selected = [profiles[i] for i in selected_idx]
     return selected, features, selected_idx
 
 
 def _select_section_main_alt(
-    profiles: list[BeatProfile], n: int, weights: dict | None,
+    profiles: list[BeatProfile],
+    n: int,
+    weights: dict | None,
     song_structure: "SongStructure",
     alts_per_section: int = 2,
     max_sections: int = 4,
@@ -379,7 +409,7 @@ def _select_section_main_alt(
 
     # Order sections by population (largest backbone first), cap at max_sections.
     section_order = sorted(by_section.keys(), key=lambda s: -len(by_section[s]))
-    section_order = section_order[:max(1, max_sections)]
+    section_order = section_order[: max(1, max_sections)]
 
     per_section_slots = max(1, alts_per_section + 1)
     selected_idx: list[int] = []
@@ -400,9 +430,7 @@ def _select_section_main_alt(
 
         # ALTs = bars max-distant from MAIN within this section.
         if alts_per_section > 0 and len(sec_indices) > 1:
-            d_from_main = np.linalg.norm(
-                sec_features - sec_features[main_local], axis=1
-            )
+            d_from_main = np.linalg.norm(sec_features - sec_features[main_local], axis=1)
             ranked = np.argsort(-d_from_main).tolist()
             for cand_local in ranked:
                 if cand_local == main_local:
@@ -424,7 +452,9 @@ def _select_section_main_alt(
 
 
 def _select_transition(
-    profiles: list[BeatProfile], n: int, weights: dict | None,
+    profiles: list[BeatProfile],
+    n: int,
+    weights: dict | None,
     song_structure: "SongStructure",
 ) -> tuple[list[BeatProfile], np.ndarray, list[int]]:
     """Select only bars near structural boundaries."""
@@ -432,10 +462,7 @@ def _select_transition(
         return [], np.zeros((0, 20)), []
 
     # Filter to bars with importance > 0 (near boundaries)
-    transition_profiles = [
-        p for p in profiles
-        if song_structure.importance_for_bar(p.index) > 0
-    ]
+    transition_profiles = [p for p in profiles if song_structure.importance_for_bar(p.index) > 0]
 
     if not transition_profiles:
         # No transitions found — fall back to max-diversity on all bars
@@ -443,7 +470,11 @@ def _select_transition(
 
     if len(transition_profiles) <= n:
         selected = transition_profiles
-        feature_matrix = np.array([_feature_vector(p, weights) for p in selected]) if selected else np.zeros((0, 20))
+        feature_matrix = (
+            np.array([_feature_vector(p, weights) for p in selected])
+            if selected
+            else np.zeros((0, 20))
+        )
         return selected, feature_matrix, list(range(len(selected)))
 
     # Greedy-select diverse bars from the transition pool
@@ -477,13 +508,19 @@ def section_stratified_select(
     all_files = sorted(beat_dir.glob("*.wav"))
     if not all_files or not song_structure or not song_structure.segments:
         # No structure — fall back to regular curate
-        return curate(beat_dir, n_bars=n_bars, rms_floor=rms_floor,
-                      crest_min=crest_min, content_density_min=content_density_min,
-                      distance_weights=distance_weights)
+        return curate(
+            beat_dir,
+            n_bars=n_bars,
+            rms_floor=rms_floor,
+            crest_min=crest_min,
+            content_density_min=content_density_min,
+            distance_weights=distance_weights,
+        )
 
     # Map each bar file to its section by index
     # Bar files are named stem_bar_NNN.wav or stem_phrase_NNN.wav
     import re
+
     file_by_section: dict[str, list[Path]] = {}
     for f in all_files:
         m = re.search(r"_(?:bar|phrase)_(\d+)\.wav$", f.name)
@@ -496,9 +533,14 @@ def section_stratified_select(
         file_by_section.setdefault(section, []).append(f)
 
     if not file_by_section:
-        return curate(beat_dir, n_bars=n_bars, rms_floor=rms_floor,
-                      crest_min=crest_min, content_density_min=content_density_min,
-                      distance_weights=distance_weights)
+        return curate(
+            beat_dir,
+            n_bars=n_bars,
+            rms_floor=rms_floor,
+            crest_min=crest_min,
+            content_density_min=content_density_min,
+            distance_weights=distance_weights,
+        )
 
     # Allocate slots per section proportional to file count, at least 1 each
     total_files = sum(len(fs) for fs in file_by_section.values())
@@ -522,6 +564,7 @@ def section_stratified_select(
 
     # Diversity-select within each section's allocation
     import tempfile
+
     selected: list[Path] = []
     for section, slots in allocation.items():
         if slots <= 0:
@@ -538,8 +581,10 @@ def section_stratified_select(
             shutil.copy2(f, section_pool / f.name)
 
         section_selected = curate(
-            section_pool, n_bars=slots,
-            rms_floor=rms_floor, crest_min=crest_min,
+            section_pool,
+            n_bars=slots,
+            rms_floor=rms_floor,
+            crest_min=crest_min,
             content_density_min=content_density_min,
             distance_weights=distance_weights,
         )
@@ -588,7 +633,10 @@ def curate(
     """
     beat_dir = Path(beat_dir)
     valid_strategies = (
-        "max-diversity", "rhythm-taxonomy", "sectional", "transition",
+        "max-diversity",
+        "rhythm-taxonomy",
+        "sectional",
+        "transition",
         "section-main-alt",
     )
     if strategy not in valid_strategies:
@@ -607,14 +655,17 @@ def curate(
         return []
 
     filtered = [
-        p for p in profiles
+        p
+        for p in profiles
         if p.rms >= rms_floor
         and p.crest_factor >= crest_min
         and p.content_density >= content_density_min
     ]
     if not filtered:
         # Relax content_density first, then crest, then take everything
-        filtered = [p for p in profiles if p.rms >= rms_floor and p.content_density >= content_density_min]
+        filtered = [
+            p for p in profiles if p.rms >= rms_floor and p.content_density >= content_density_min
+        ]
     if not filtered:
         filtered = [p for p in profiles if p.rms >= rms_floor] or profiles
 
@@ -633,23 +684,35 @@ def curate(
         )
     elif strategy == "section-main-alt":
         selected, feature_matrix, selected_idx = _select_section_main_alt(
-            filtered, n_bars, distance_weights, song_structure,
-            alts_per_section=alts_per_section, max_sections=max_sections,
+            filtered,
+            n_bars,
+            distance_weights,
+            song_structure,
+            alts_per_section=alts_per_section,
+            max_sections=max_sections,
             phrase_bars=phrase_bars,
         )
     else:
         # max-diversity (default)
         if len(filtered) <= n_bars:
             selected = filtered
-            feature_matrix = np.array([_feature_vector(p, distance_weights) for p in filtered]) if filtered else np.zeros((0, 20))
+            feature_matrix = (
+                np.array([_feature_vector(p, distance_weights) for p in filtered])
+                if filtered
+                else np.zeros((0, 20))
+            )
             selected_idx = list(range(len(filtered)))
         else:
-            feature_matrix = _znorm(np.array([_feature_vector(p, distance_weights) for p in filtered]))
+            feature_matrix = _znorm(
+                np.array([_feature_vector(p, distance_weights) for p in filtered])
+            )
+
             # Seed: mostly crest factor, mild early-onset tiebreaker
             def _seed_score(p):
                 onset_ratio = min(p.first_onset_time / (p.duration + 1e-10), 1.0)
                 early_bonus = 1.0 - onset_ratio
                 return p.crest_factor * (0.85 + 0.15 * early_bonus)
+
             seed = int(np.argmax([_seed_score(p) for p in filtered]))
             selected_idx = _greedy_farthest_point(feature_matrix, seed, n_bars)
             selected = [filtered[i] for i in selected_idx]
@@ -668,7 +731,9 @@ def curate(
                 "file": selected[i].path.name,
                 "path": str(selected[i].path),
                 "source_index": selected[i].index,
-                "feature_vector": feature_matrix[selected_idx[i]].tolist() if len(feature_matrix) else [],
+                "feature_vector": feature_matrix[selected_idx[i]].tolist()
+                if len(feature_matrix)
+                else [],
                 "rms": round(selected[i].rms, 6),
                 "content_density": round(selected[i].content_density, 3),
                 "crest_factor": round(selected[i].crest_factor, 3),
@@ -687,6 +752,7 @@ def curate(
 
 # ── Back-compat helpers used by tools/ scripts ──
 
+
 def cluster_by_rhythm(profiles: list[BeatProfile], threshold: float = 0.2) -> dict:
     clusters: dict = {}
     for p in profiles:
@@ -704,21 +770,29 @@ def cluster_by_rhythm(profiles: list[BeatProfile], threshold: float = 0.2) -> di
     return clusters
 
 
-def select_variants_from_cluster(cluster: list[BeatProfile], max_variants: int = 3) -> list[BeatProfile]:
+def select_variants_from_cluster(
+    cluster: list[BeatProfile], max_variants: int = 3
+) -> list[BeatProfile]:
     if len(cluster) <= max_variants:
         return cluster
+
     def variant_dist(a, b):
         return spectral_distance(a, b) * 0.5 + energy_distance(a, b) * 0.5
+
     return greedy_diverse_select(cluster, max_variants, dist_fn=variant_dist)
 
 
 def format_beat_report(profiles: list[BeatProfile], label: str = "") -> str:
-    lines = [f"\n{'='*60}", f"  CURATED BEAT SET: {label}",
-             f"  {len(profiles)} beats selected", f"{'='*60}\n"]
+    lines = [
+        f"\n{'=' * 60}",
+        f"  CURATED BEAT SET: {label}",
+        f"  {len(profiles)} beats selected",
+        f"{'=' * 60}\n",
+    ]
     for i, p in enumerate(profiles):
-        fp_str = ''.join(['x' if b else '.' for b in p.rhythm_fingerprint])
+        fp_str = "".join(["x" if b else "." for b in p.rhythm_fingerprint])
         lines.append(
-            f"  #{i+1:02d}  beat_{p.index:03d}  "
+            f"  #{i + 1:02d}  beat_{p.index:03d}  "
             f"onsets={p.onset_count}  density={p.onset_density:.1f}/s  "
             f"crest={p.crest_factor:.1f}  centroid={p.spectral_centroid:.0f}Hz  "
             f"pattern=[{fp_str}]"
@@ -732,17 +806,19 @@ def export_curated_set(profiles: list[BeatProfile], output_dir: Path, label: str
     out.mkdir(parents=True, exist_ok=True)
     manifest = {"label": label, "count": len(profiles), "beats": []}
     for i, p in enumerate(profiles):
-        dest = out / f"{label}_{i+1:02d}_beat{p.index:03d}.wav"
+        dest = out / f"{label}_{i + 1:02d}_beat{p.index:03d}.wav"
         shutil.copy2(p.path, dest)
-        manifest["beats"].append({
-            "file": dest.name,
-            "source_beat": p.index,
-            "onset_count": p.onset_count,
-            "onset_density": round(p.onset_density, 2),
-            "crest_factor": round(p.crest_factor, 2),
-            "spectral_centroid_hz": round(p.spectral_centroid, 1),
-            "rhythm_pattern": ''.join(['x' if b else '.' for b in p.rhythm_fingerprint]),
-            "rms": round(p.rms, 4),
-        })
+        manifest["beats"].append(
+            {
+                "file": dest.name,
+                "source_beat": p.index,
+                "onset_count": p.onset_count,
+                "onset_density": round(p.onset_density, 2),
+                "crest_factor": round(p.crest_factor, 2),
+                "spectral_centroid_hz": round(p.spectral_centroid, 1),
+                "rhythm_pattern": "".join(["x" if b else "." for b in p.rhythm_fingerprint]),
+                "rms": round(p.rms, 4),
+            }
+        )
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2))
     return out
