@@ -996,7 +996,20 @@ def export_song(arrangement_path, manifest_path, reference_template, project_slo
     snapshots = resolve_scenes(arrangement, manifest)
     console.print(f"  Snapshots:   [cyan]{len(snapshots)}[/cyan]")
 
-    spec = synthesize(snapshots, manifest, bpm, time_sig, int(project_slot))
+    arrangement_length_sec = arrangement.get("arrangement_length_sec")
+    spec = synthesize(
+        snapshots,
+        manifest,
+        bpm,
+        time_sig,
+        int(project_slot),
+        arrangement_length_sec=(
+            float(arrangement_length_sec)
+            if arrangement_length_sec is not None
+            else None
+        ),
+    )
+
     console.print(
         f"  Patterns:    [cyan]{len(spec.patterns)}[/cyan]  "
         f"Scenes: [cyan]{len(spec.scenes)}[/cyan]  "

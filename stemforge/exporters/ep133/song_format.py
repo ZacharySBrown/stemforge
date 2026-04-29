@@ -147,6 +147,11 @@ class PpakSpec:
     pads: list[PadSpec]
     sounds: dict[int, Path]          # sample_slot → wav file path
     song_positions: list[int] | None = None  # song-mode positions (1-indexed scene refs)
+    # sample_slot → (start_sec, end_sec) in the source WAV. Forge curation
+    # renders multi-bar stems and addresses sub-regions via offsets in
+    # the manifest; we slice the WAV at upload time so the device
+    # plays only the intended bar(s) instead of the full render.
+    slot_slices: dict[int, tuple[float, float]] = field(default_factory=dict)
 
 
 # ----- Pattern builder -------------------------------------------------------

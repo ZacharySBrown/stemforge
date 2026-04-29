@@ -475,8 +475,51 @@ def test_build_ppak_bpm_mode_pad_and_wav_carry_source_bpm(
             if n.startswith("/sounds/200 200_") and n.endswith(".wav")
         )
         wav_bytes = zf.read(wav_name)
+    # The TNGE JSON is plain ASCII inside the WAV — search the raw bytes.
     assert b'"time.mode":"bpm"' in wav_bytes
     assert b'"sound.bpm":135.99' in wav_bytes
+
+
+def test_build_ppak_slices_wav_per_slot_slices(
+    template_ppak: Path, tmp_path: Path
+):
+    """spec.slot_slices = {slot: (start_sec, end_sec)} → only that region of
+    the input WAV ends up on the device. Pad-record bytes 8..11 (post-
+    conversion frame count) reflect the sliced length, not the full WAV."""
+    # 2-second 44.1k mono silent WAV (88200 frames input).
+    src = _silent_wav(tmp_path / "src.wav", samples=88200)
+    spec = PpakSpec(
+        project_slot=4, bpm=120.0, time_sig=(4, 4),
+        patterns=[Pattern(group="a", index=1, bars=1, events=[Event(0, 1, 60, 100, 96)])],
+        scenes=[SceneSpec(a=1, b=0, c=0, d=0)],
+        pads=[PadSpec("a", 1, sample_slot=400, play_mode="oneshot", time_stretch_bars=1)],
+        sounds={400: src},
+        slot_slices={400: (0.5, 1.0)},  # 0.5-second slice
+    )
+    data = build_ppak(spec, template_ppak)
+    _, members = _open_ppak(data)
+    pad_a1 = members["pads/a/p01"]
+    frames = struct.unpack_from("<I", pad_a1, 8)[0]
+    # 0.5s @ 46875Hz EP-133 native = 23437 or 23438 frames depending on
+    # rounding through audioop.ratecv.
+    assert 23000 <= frames <= 24000, (
+        f"sliced frame count {frames} outside expected ~23437"
+    )
+
+
+def test_build_ppak_no_slot_slices_uploads_whole_wav(
+    template_ppak: Path, silent_wav: Path
+):
+    """Default (no slot_slices entry) → pad-record length frame count
+    matches the converted full WAV."""
+    spec = _minimal_spec(silent_wav)
+    data = build_ppak(spec, template_ppak)
+    _, members = _open_ppak(data)
+    # The minimal _silent_wav() factory makes a 1024-frame @ 44.1k WAV
+    # → ~1088 frames @ 46875Hz after resample (well under 4096).
+    pad_a3 = members["pads/a/p03"]
+    frames = struct.unpack_from("<I", pad_a3, 8)[0]
+    assert 0 < frames < 4096
 
 
 def test_build_ppak_rejects_conflicting_sound_bpm_for_same_slot(

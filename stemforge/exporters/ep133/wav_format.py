@@ -44,6 +44,8 @@ def convert_wav_to_ep133(
     wav_bytes: bytes,
     *,
     sound_bpm: float | None = None,
+    start_sec: float = 0.0,
+    end_sec: float | None = None,
 ) -> tuple[bytes, int]:
     """Convert a WAV to EP-133 native format with metadata chunks.
 
@@ -59,13 +61,41 @@ def convert_wav_to_ep133(
     when both are set, so the WAV metadata is effectively a fallback;
     we still write it so the slot library is consistent.
 
+    ``start_sec`` / ``end_sec`` slice the WAV in input-time seconds (i.e.
+    seconds of the original file at its native sample rate, before any
+    conversion). The slice is taken before resample/mono/16-bit so that
+    rounding errors stay below one input frame. Use this to upload only
+    the bar-aligned region of a longer rendered stem (forge curation
+    typically stores 6-bar renders sliced to 1- or 2-bar regions in the
+    manifest's ``start_offset_sec`` / ``end_offset_sec`` fields).
+
     Raises ``wave.Error`` on unparseable input.
     """
     with wave.open(io.BytesIO(wav_bytes), "rb") as wf:
         rate = wf.getframerate()
         channels = wf.getnchannels()
         width = wf.getsampwidth()
-        data = wf.readframes(wf.getnframes())
+        nframes = wf.getnframes()
+        data = wf.readframes(nframes)
+
+    if start_sec < 0:
+        raise ValueError(f"start_sec must be >= 0, got {start_sec}")
+    if end_sec is not None and end_sec <= start_sec:
+        raise ValueError(
+            f"end_sec ({end_sec}) must be > start_sec ({start_sec})"
+        )
+
+    # Slice before any conversion so the frame indices line up exactly
+    # with the input WAV's sample rate.
+    if start_sec > 0 or end_sec is not None:
+        bytes_per_frame = width * channels
+        start_frame = int(round(start_sec * rate))
+        end_frame = (
+            int(round(end_sec * rate)) if end_sec is not None else nframes
+        )
+        start_frame = max(0, min(start_frame, nframes))
+        end_frame = max(start_frame, min(end_frame, nframes))
+        data = data[start_frame * bytes_per_frame : end_frame * bytes_per_frame]
 
     # 1. Sample width → 16-bit
     if width != EP133_SAMPLE_WIDTH:

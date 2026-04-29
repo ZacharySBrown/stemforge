@@ -282,10 +282,13 @@ def build_ppak(
             raise FileNotFoundError(
                 f"sample slot {slot} wav missing: {wav_path}"
             )
+        slice_range = spec.slot_slices.get(slot)
         try:
             new_bytes, frames = convert_wav_to_ep133(
                 wav_path.read_bytes(),
                 sound_bpm=sound_bpm_by_slot.get(slot),
+                start_sec=slice_range[0] if slice_range else 0.0,
+                end_sec=slice_range[1] if slice_range else None,
             )
             converted_wavs[slot] = new_bytes
             converted_frames[slot] = frames
