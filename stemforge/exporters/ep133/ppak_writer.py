@@ -258,6 +258,22 @@ def build_ppak(
     # mandatory: Sample Tool transfers hang on non-native WAVs (e.g. 24-bit
     # stereo 44.1kHz), and the device won't register samples that lack
     # the metadata chunks. Verified 2026-04-27 against factory_default.pak.
+    #
+    # Slots whose pad uses stretch_mode='bpm' get sound.bpm tagged into
+    # the WAV's TNGE JSON so the slot library matches the pad-record
+    # binary BPM (PROTOCOL.md §5/§7.2).
+    sound_bpm_by_slot: dict[int, float] = {}
+    for pd in spec.pads:
+        if pd.stretch_mode == "bpm" and pd.sound_bpm is not None:
+            existing = sound_bpm_by_slot.get(pd.sample_slot)
+            if existing is not None and existing != pd.sound_bpm:
+                raise ValueError(
+                    f"slot {pd.sample_slot} has conflicting sound_bpm "
+                    f"({existing} vs {pd.sound_bpm}) across pads — "
+                    f"sound.bpm is a slot-level property"
+                )
+            sound_bpm_by_slot[pd.sample_slot] = pd.sound_bpm
+
     converted_wavs: dict[int, bytes] = {}
     converted_frames: dict[int, int] = {}
     for slot, wav_path in sorted(spec.sounds.items()):
@@ -267,7 +283,10 @@ def build_ppak(
                 f"sample slot {slot} wav missing: {wav_path}"
             )
         try:
-            new_bytes, frames = convert_wav_to_ep133(wav_path.read_bytes())
+            new_bytes, frames = convert_wav_to_ep133(
+                wav_path.read_bytes(),
+                sound_bpm=sound_bpm_by_slot.get(slot),
+            )
             converted_wavs[slot] = new_bytes
             converted_frames[slot] = frames
         except wave.Error:
@@ -410,10 +429,11 @@ def _build_inner_tar(
                     play_mode=pd.play_mode,
                     time_stretch_bars=pd.time_stretch_bars,
                     template=tmpl,
-                    stretch_mode="none",
+                    stretch_mode=pd.stretch_mode,
                     sample_length_frames=length_frames_by_slot.get(
                         pd.sample_slot
                     ),
+                    sound_bpm=pd.sound_bpm,
                 )
                 _add_tar_bytes(tf, pad_filename(group, pad), blob)
 

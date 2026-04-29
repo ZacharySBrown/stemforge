@@ -131,6 +131,8 @@ class PadSpec:
     sample_slot: int         # uint16 LE — sample-library slot
     play_mode: str           # 'oneshot' | 'key' | 'legato'
     time_stretch_bars: int   # 1, 2, or 4 (raw value before encoding)
+    stretch_mode: str = "none"     # 'none' | 'bars' | 'bpm'
+    sound_bpm: float | None = None  # source BPM when stretch_mode='bpm'
 
 
 @dataclass
@@ -332,26 +334,34 @@ def build_pad(
     project_bpm: float | None = None,
     stretch_mode: str = "none",
     sample_length_frames: int | None = None,
+    sound_bpm: float | None = None,
 ) -> bytes:
-    """Build a 27-byte pad record.
+    """Build a 26-byte pad record.
 
     Args:
         sample_slot: uint16 LE at bytes 1..2 — sample library slot.
         play_mode:   one of 'oneshot' | 'key' | 'legato' (byte 23).
         time_stretch_bars: 1, 2, or 4 (raw bar count). Only used when
             ``stretch_mode="bars"``.
-        template:    bytes-like, must be 27 bytes when provided. ``None``
+        template:    bytes-like, must be 26 bytes when provided. ``None``
             yields a zero-filled base.
-        project_bpm: if given AND stretch_mode != "none", written as
+        project_bpm: if given AND ``stretch_mode == "bars"``, written as
             float32 LE at bytes 12..15.
         stretch_mode: "none" (default — emit as one-shot, byte 21 = 0,
-            BPM/bars zeroed), "bars" (byte 21 = 2, encode bars).
+            BPM/bars zeroed), "bars" (byte 21 = 2, encode bars), or
+            "bpm" (byte 21 = 1; bytes 12..15 carry the source BPM,
+            overriding the slot's WAV-embedded sound.bpm per
+            ZacharySBrown/ep133-ppak/PROTOCOL.md §10.2).
         sample_length_frames: WAV frame count (samples per channel).
             Written as uint32 LE at bytes 8..11. Required for the device
             to handle scene/song-mode transitions cleanly — manual pad
             triggering tolerates length=0 (device reads from WAV header)
             but transitions error with "ERR PATTERN" otherwise. Per
             ZacharySBrown/ep133-ppak/PROTOCOL.md §7.
+        sound_bpm: source BPM for stretch math when
+            ``stretch_mode == "bpm"``. Written as float32 LE at bytes
+            12..15. Device computes ``playback_speed = project_bpm /
+            sound_bpm``.
     """
     if template is None:
         data = bytearray(DEVICE_DEFAULT_PAD)
@@ -368,15 +378,25 @@ def build_pad(
         raise ValueError(
             f"play_mode must be one of {sorted(PLAY_MODE_ENCODING)}, got {play_mode!r}"
         )
-    if stretch_mode not in {"none", "bars"}:
+    if stretch_mode not in {"none", "bars", "bpm"}:
         raise ValueError(
-            f"stretch_mode must be 'none' or 'bars', got {stretch_mode!r}"
+            f"stretch_mode must be 'none', 'bars', or 'bpm', got {stretch_mode!r}"
         )
     if stretch_mode == "bars" and time_stretch_bars not in TIME_STRETCH_BARS_ENCODING:
         raise ValueError(
             f"time_stretch_bars must be one of "
             f"{sorted(TIME_STRETCH_BARS_ENCODING)}, got {time_stretch_bars}"
         )
+    if stretch_mode == "bpm":
+        if sound_bpm is None:
+            raise ValueError("stretch_mode='bpm' requires sound_bpm")
+        if not (1.0 <= sound_bpm <= 200.0):
+            # Device rejects sound.bpm outside 1..200 (PROTOCOL.md §5);
+            # the binary record's float32 at bytes 12..15 follows the same
+            # range to keep slot/pad metadata in sync.
+            raise ValueError(
+                f"sound_bpm {sound_bpm} must be 1.0..200.0 (device rejects higher)"
+            )
 
     # Bytes 1..2 — instrument number / sample slot
     struct.pack_into("<H", data, 1, sample_slot)
@@ -395,9 +415,15 @@ def build_pad(
             struct.pack_into("<f", data, 12, float(project_bpm))
         data[21] = 2  # BARS mode
         data[25] = TIME_STRETCH_BARS_ENCODING[time_stretch_bars]
+    elif stretch_mode == "bpm":
+        # Bytes 12..15 — source BPM (float32 LE). Overrides the slot's
+        # WAV-embedded sound.bpm when both are present (PROTOCOL.md §10.2).
+        struct.pack_into("<f", data, 12, float(sound_bpm))
+        data[21] = 1  # BPM mode
+        data[25] = 0
     else:
         # One-shot: leave bytes 12-15 alone (template / DEVICE_DEFAULT_PAD
-        # carries BPM=0, matching factory defaults). Clear BARS-mode bytes.
+        # carries BPM=0, matching factory defaults). Clear stretch-mode bytes.
         data[21] = 0
         data[25] = 0
 

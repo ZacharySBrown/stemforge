@@ -169,6 +169,29 @@ def synthesize(
     per_group_counts: dict[str, int] = {g.lower(): 0 for g in GROUPS}
     pad_records: dict[tuple[str, int], PadSpec] = {}
 
+    # Source BPM for time.mode=bpm playback. Forge curation renders all
+    # stems at the source song's tempo (manifest top-level `bpm`); the
+    # device computes playback_speed = project_bpm / sound_bpm to stretch
+    # them to the arrangement tempo (`spec.bpm`, from the snapshot). When
+    # the manifest is missing a top-level bpm we fall back to
+    # ``project_bpm`` (1.0× playback — matches the bars-mode default).
+    source_bpm: float | None = None
+    raw = manifest.get("bpm")
+    if raw is not None:
+        try:
+            source_bpm = float(raw)
+        except (TypeError, ValueError):
+            source_bpm = None
+    if source_bpm is None:
+        source_bpm = float(project_bpm)
+    # Clamp to the device's accepted sound.bpm range (PROTOCOL.md §5).
+    if not (1.0 <= source_bpm <= 200.0):
+        source_bpm = max(1.0, min(200.0, source_bpm))
+    # Round to 2 decimals so the pad-record float32 and the slot WAV's
+    # JSON sound.bpm don't drift apart (round(135.999, 2) = 136.0 in JSON
+    # but the unrounded float32 would land at 135.9992).
+    source_bpm = round(source_bpm, 2)
+
     def _ensure_pattern(group_lower: str, pad: int, bars: int) -> int:
         key = (group_lower, pad, bars)
         if key in pattern_indices:
@@ -206,6 +229,8 @@ def synthesize(
                     sample_slot=global_sample_slot(group, int(entry["slot"])),
                     play_mode="oneshot",
                     time_stretch_bars=bars,
+                    stretch_mode="bpm",
+                    sound_bpm=source_bpm,
                 )
 
         scenes.append(

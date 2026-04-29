@@ -398,6 +398,58 @@ def test_build_pad_rejects_invalid_template_size():
         )
 
 
+def test_build_pad_bpm_mode_sets_byte_21_and_writes_source_bpm():
+    """stretch_mode='bpm' → byte 21 = 1 (BPM), bytes 12..15 = float32 source BPM."""
+    blob = build_pad(
+        sample_slot=42,
+        play_mode="oneshot",
+        time_stretch_bars=1,
+        stretch_mode="bpm",
+        sound_bpm=135.99,
+    )
+    parsed = parse_pad(blob)
+    assert parsed["sample_slot"] == 42
+    assert parsed["play_mode"] == "oneshot"
+    assert parsed["stretch_mode"] == 1  # BPM mode
+    # Source BPM is the float written to bytes 12..15 (overrides slot
+    # WAV's sound.bpm per PROTOCOL.md §10.2).
+    assert parsed["stretch_bpm"] == pytest.approx(135.99)
+    # bars byte cleared in BPM mode.
+    assert blob[25] == 0
+
+
+def test_build_pad_bpm_mode_requires_sound_bpm():
+    with pytest.raises(ValueError, match="stretch_mode='bpm' requires sound_bpm"):
+        build_pad(
+            sample_slot=1,
+            play_mode="oneshot",
+            time_stretch_bars=1,
+            stretch_mode="bpm",
+        )
+
+
+def test_build_pad_bpm_mode_rejects_out_of_range_bpm():
+    for bad in (0.5, 250.0, -10.0):
+        with pytest.raises(ValueError, match="sound_bpm"):
+            build_pad(
+                sample_slot=1,
+                play_mode="oneshot",
+                time_stretch_bars=1,
+                stretch_mode="bpm",
+                sound_bpm=bad,
+            )
+
+
+def test_build_pad_rejects_unknown_stretch_mode():
+    with pytest.raises(ValueError, match="stretch_mode"):
+        build_pad(
+            sample_slot=1,
+            play_mode="oneshot",
+            time_stretch_bars=1,
+            stretch_mode="bogus",
+        )
+
+
 @pytest.mark.parametrize(
     "kwargs,expected",
     [

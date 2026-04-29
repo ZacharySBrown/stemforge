@@ -430,3 +430,74 @@ def test_build_ppak_round_trip_through_synthetic_template(tmp_path: Path):
     assert any(n.startswith("/sounds/101 101_") and n.endswith(".wav") for n in names), names
     assert any(n.startswith("/sounds/102 102_") and n.endswith(".wav") for n in names), names
     assert "/projects/P03.tar" in names
+
+
+def test_build_ppak_bpm_mode_pad_and_wav_carry_source_bpm(
+    template_ppak: Path, silent_wav: Path, tmp_path: Path
+):
+    """stretch_mode='bpm' lands as byte 21=1 in the pad record AND as
+    sound.bpm in the bundled WAV's TNGE JSON. The two must agree —
+    PROTOCOL.md §10.2 makes the pad-record value the source of truth on
+    the device, but the slot's WAV-embedded value should still match so
+    the sample library is consistent."""
+    spec = PpakSpec(
+        project_slot=4,
+        bpm=90.67,
+        time_sig=(4, 4),
+        patterns=[
+            Pattern(
+                group="a", index=1, bars=2,
+                events=[Event(0, 1, 60, 100, 96)],
+            )
+        ],
+        scenes=[SceneSpec(a=1, b=0, c=0, d=0)],
+        pads=[
+            PadSpec(
+                group="a", pad=1, sample_slot=200,
+                play_mode="oneshot", time_stretch_bars=2,
+                stretch_mode="bpm", sound_bpm=135.99,
+            )
+        ],
+        sounds={200: silent_wav},
+    )
+    data = build_ppak(spec, template_ppak)
+    _, members = _open_ppak(data)
+
+    pad_a1 = members["pads/a/p01"]
+    assert pad_a1[21] == 1  # BPM mode flag
+    assert struct.unpack_from("<f", pad_a1, 12)[0] == pytest.approx(135.99)
+
+    # Fish the WAV out of the ZIP (sounds/ entry, not the inner TAR) and
+    # confirm sound.bpm + time.mode=bpm are baked into the TNGE JSON.
+    with zipfile.ZipFile(io.BytesIO(data), "r") as zf:
+        wav_name = next(
+            n for n in zf.namelist()
+            if n.startswith("/sounds/200 200_") and n.endswith(".wav")
+        )
+        wav_bytes = zf.read(wav_name)
+    assert b'"time.mode":"bpm"' in wav_bytes
+    assert b'"sound.bpm":135.99' in wav_bytes
+
+
+def test_build_ppak_rejects_conflicting_sound_bpm_for_same_slot(
+    template_ppak: Path, silent_wav: Path
+):
+    """Two pads → same slot → different sound_bpm is a programming error
+    (sound.bpm is a slot-level property in the device's metadata schema)."""
+    spec = PpakSpec(
+        project_slot=4,
+        bpm=120.0,
+        time_sig=(4, 4),
+        patterns=[
+            Pattern(group="a", index=1, bars=2, events=[Event(0, 1, 60, 100, 96)]),
+            Pattern(group="b", index=1, bars=2, events=[Event(0, 1, 60, 100, 96)]),
+        ],
+        scenes=[SceneSpec(a=1, b=1, c=0, d=0)],
+        pads=[
+            PadSpec("a", 1, 300, "oneshot", 2, stretch_mode="bpm", sound_bpm=120.0),
+            PadSpec("b", 1, 300, "oneshot", 2, stretch_mode="bpm", sound_bpm=140.0),
+        ],
+        sounds={300: silent_wav},
+    )
+    with pytest.raises(ValueError, match="conflicting sound_bpm"):
+        build_ppak(spec, template_ppak)

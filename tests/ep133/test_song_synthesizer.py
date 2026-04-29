@@ -189,6 +189,31 @@ def test_synthesize_carries_through_project_metadata(snapshots, manifest):
     assert spec.project_slot == 7
 
 
+def test_synthesize_pads_use_bpm_stretch_mode_with_manifest_bpm(snapshots, manifest):
+    """Forge curation renders stems at the source song's BPM (manifest's
+    top-level `bpm`). Synthesizer should tag every pad with stretch_mode='bpm'
+    and that source BPM so the device can stretch playback to project tempo
+    via `playback_speed = project_bpm / sound_bpm`."""
+    enriched = dict(manifest)
+    enriched["bpm"] = 135.99
+    spec = synthesize(snapshots, enriched, 90.67, (4, 4), 1)
+    assert spec.pads, "fixture should produce at least one pad"
+    for pad in spec.pads:
+        assert pad.stretch_mode == "bpm"
+        assert pad.sound_bpm == pytest.approx(135.99)
+
+
+def test_synthesize_falls_back_to_project_bpm_when_manifest_lacks_bpm(
+    snapshots, manifest
+):
+    """No manifest bpm → fall back to project_bpm (1.0× playback)."""
+    assert "bpm" not in manifest, "fixture manifest must omit bpm for this test"
+    spec = synthesize(snapshots, manifest, 120.0, (4, 4), 1)
+    for pad in spec.pads:
+        assert pad.stretch_mode == "bpm"
+        assert pad.sound_bpm == pytest.approx(120.0)
+
+
 def test_synthesize_rejects_invalid_project_slot(snapshots, manifest):
     with pytest.raises(ValueError, match="project_slot"):
         synthesize(snapshots, manifest, 120.0, (4, 4), 0)
