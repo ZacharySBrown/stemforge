@@ -75,9 +75,7 @@ def test_run_post_split_steps_emits_prechop_manifest(tmp_path):
 
     out = tmp_path / "out"
     out.mkdir()
-    status = run_post_split_steps(
-        cfg, {"drums": drums, "bass": bass}, out, bpm=BPM
-    )
+    status = run_post_split_steps(cfg, {"drums": drums, "bass": bass}, out, bpm=BPM)
     assert "prechop" in status
     manifest_path = Path(status["prechop"]["manifest"])
     assert manifest_path.exists()

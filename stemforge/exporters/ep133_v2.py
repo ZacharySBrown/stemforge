@@ -89,6 +89,7 @@ DEFAULT_EP133_CONFIG: dict[str, Any] = {
 @dataclass
 class _PadRow:
     """One row of the SETUP.md pad table."""
+
     group: str
     pad: int
     filename: str
@@ -236,10 +237,12 @@ def _slice_and_format(
     # Resample channels independently via librosa. librosa expects float.
     audio_ch = audio_ch.astype(np.float32, copy=False)
     if sr != EP133_SAMPLE_RATE:
-        resampled = np.stack([
-            librosa.resample(audio_ch[c], orig_sr=sr, target_sr=EP133_SAMPLE_RATE)
-            for c in range(audio_ch.shape[0])
-        ])
+        resampled = np.stack(
+            [
+                librosa.resample(audio_ch[c], orig_sr=sr, target_sr=EP133_SAMPLE_RATE)
+                for c in range(audio_ch.shape[0])
+            ]
+        )
     else:
         resampled = audio_ch
 
@@ -401,9 +404,7 @@ def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
     """Write JSON to ``path`` atomically (tmp in same dir → rename)."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(
-        prefix=path.name + ".", suffix=".tmp", dir=str(path.parent)
-    )
+    fd, tmp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))
     try:
         with os.fdopen(fd, "w") as fh:
             json.dump(data, fh, indent=2)
@@ -471,9 +472,7 @@ def export_from_manifest(
         stem_cfg = _stem_config(cfg, stem_name)
         pad_assignment = cfg["pad_map"].get(stem_name)
         if pad_assignment is None:
-            report.warnings.append(
-                f"no pad_map entry for stem '{stem_name}' — skipping"
-            )
+            report.warnings.append(f"no pad_map entry for stem '{stem_name}' — skipping")
             continue
 
         loops = _iter_loops(stem_entry)
@@ -483,7 +482,7 @@ def export_from_manifest(
             except KeyError:
                 report.loops_skipped += 1
                 report.warnings.append(
-                    f"{stem_name} position={loop.get('position','?')}: missing 'file' key"
+                    f"{stem_name} position={loop.get('position', '?')}: missing 'file' key"
                 )
                 continue
 
@@ -522,17 +521,19 @@ def export_from_manifest(
 
             # SETUP.md row
             ts_desc = _describe_time_stretch(ep133_block["time_stretch"], project_bpm)
-            report.pad_rows.append(_PadRow(
-                group=str(pad_assignment["group"]),
-                pad=int(pad_assignment["pad"]),
-                filename=filename,
-                play_mode=ep133_block["play_mode"],
-                loop=ep133_block["loop"],
-                mute_group=ep133_block["mute_group"],
-                time_stretch=ts_desc,
-                stem=stem_name,
-                position=position,
-            ))
+            report.pad_rows.append(
+                _PadRow(
+                    group=str(pad_assignment["group"]),
+                    pad=int(pad_assignment["pad"]),
+                    filename=filename,
+                    play_mode=ep133_block["play_mode"],
+                    loop=ep133_block["loop"],
+                    mute_group=ep133_block["mute_group"],
+                    time_stretch=ts_desc,
+                    stem=stem_name,
+                    position=position,
+                )
+            )
 
     # Write mutated manifest back atomically.
     _atomic_write_json(manifest_path, manifest)
@@ -550,9 +551,7 @@ def export_from_manifest(
         "loops_skipped": report.loops_skipped,
         "warnings": report.warnings,
     }
-    (song_out / "_ep133_export_report.json").write_text(
-        json.dumps(report_dict, indent=2)
-    )
+    (song_out / "_ep133_export_report.json").write_text(json.dumps(report_dict, indent=2))
 
     return song_out
 

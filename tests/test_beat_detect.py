@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import importlib
 import sys
-from pathlib import Path
 from unittest import mock
 
 import numpy as np
-import pytest
 import soundfile as sf
 
 from stemforge.beat_detect import (
@@ -130,8 +127,8 @@ class TestDetectBeatsAndDownbeats:
         sf.write(str(audio_path), y, sr)
 
         # Mock beat-this to return known values
-        mock_beats = np.arange(0, 8.0, 0.5)      # 120 BPM
-        mock_downbeats = np.arange(0, 8.0, 2.0)   # every 4 beats
+        mock_beats = np.arange(0, 8.0, 0.5)  # 120 BPM
+        mock_downbeats = np.arange(0, 8.0, 2.0)  # every 4 beats
 
         mock_model_instance = mock.MagicMock()
         mock_model_instance.return_value = (mock_beats, mock_downbeats)
@@ -141,7 +138,9 @@ class TestDetectBeatsAndDownbeats:
         mock_inference = mock.MagicMock()
         mock_inference.File2Beats = mock_file2beats
 
-        with mock.patch.dict(sys.modules, {"beat_this": mock.MagicMock(), "beat_this.inference": mock_inference}):
+        with mock.patch.dict(
+            sys.modules, {"beat_this": mock.MagicMock(), "beat_this.inference": mock_inference}
+        ):
             result_bpm, beats, downbeats = detect_beats_and_downbeats(audio_path)
 
         assert abs(result_bpm - 120.0) < 0.01
@@ -170,7 +169,9 @@ class TestDetectBeatsAndDownbeats:
         mock_inference = mock.MagicMock()
         mock_inference.File2Beats.side_effect = RuntimeError("model load failed")
 
-        with mock.patch.dict(sys.modules, {"beat_this": mock.MagicMock(), "beat_this.inference": mock_inference}):
+        with mock.patch.dict(
+            sys.modules, {"beat_this": mock.MagicMock(), "beat_this.inference": mock_inference}
+        ):
             result_bpm, beats, downbeats = detect_beats_and_downbeats(audio_path)
 
         # Should have fallen back to librosa

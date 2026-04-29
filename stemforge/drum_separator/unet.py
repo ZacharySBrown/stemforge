@@ -9,15 +9,16 @@ from torch import Tensor
 class UNetUtils:
     """Utility class for the UNet models"""
 
-    def __init__(self,
-                 F: int = None,
-                 T: int = None,
-                 n_fft: int = 4096,
-                 win_length: int = None,
-                 hop_length: int = None,
-                 center: bool = True,
-                 device='cpu',
-                 ):
+    def __init__(
+        self,
+        F: int = None,
+        T: int = None,
+        n_fft: int = 4096,
+        win_length: int = None,
+        hop_length: int = None,
+        center: bool = True,
+        device="cpu",
+    ):
         """
         :param F: Number of frequency bins of the Magnitude STFT that are kept before feeding it to the UNet.
         :param T: Number of time frames of each Magnitude STFT sample that must be fed to the UNet.
@@ -54,7 +55,7 @@ class UNetUtils:
         return x[..., :n_frames]
 
     def trim_freq_dim(self, x):
-        return x[..., :self.F, :]
+        return x[..., : self.F, :]
 
     def pad_freq_dim(self, x):
         padding = (self.n_fft // 2 + 1) - x.size(-2)
@@ -66,24 +67,26 @@ class UNetUtils:
         return F.pad(x, (0, pad_len))
 
     def _stft(self, x):
-        return torch.stft(input=x,
-                          n_fft=self.n_fft,
-                          window=self.hann_window,
-                          win_length=self.win_length,
-                          hop_length=self.hop_length,
-                          center=self.center,
-                          return_complex=True
-                          )
+        return torch.stft(
+            input=x,
+            n_fft=self.n_fft,
+            window=self.hann_window,
+            win_length=self.win_length,
+            hop_length=self.hop_length,
+            center=self.center,
+            return_complex=True,
+        )
 
     def _istft(self, x, trim_length=None):
-        return torch.istft(input=x,
-                           n_fft=self.n_fft,
-                           window=self.hann_window,
-                           win_length=self.win_length,
-                           hop_length=self.hop_length,
-                           center=self.center,
-                           length=trim_length
-                           )
+        return torch.istft(
+            input=x,
+            n_fft=self.n_fft,
+            window=self.hann_window,
+            win_length=self.win_length,
+            hop_length=self.hop_length,
+            center=self.center,
+            length=trim_length,
+        )
 
     def batch_stft(self, x, pad: bool = True, return_complex: bool = False):
         x_shape = x.size()
@@ -106,10 +109,19 @@ class UNetUtils:
 
 
 class UNetEncoderBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size=(5, 5), stride=(2, 2), padding=(2, 2),
-                 relu_slope=0.2):
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        kernel_size=(5, 5),
+        stride=(2, 2),
+        padding=(2, 2),
+        relu_slope=0.2,
+    ):
         super().__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)
+        self.conv = nn.Conv2d(
+            in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding
+        )
         self.bn = nn.BatchNorm2d(num_features=out_channels)
         self.relu_slope = relu_slope
         self.activ = nn.LeakyReLU(self.relu_slope)
@@ -117,7 +129,7 @@ class UNetEncoderBlock(nn.Module):
 
     def init_weights(self, m):
         if isinstance(m, nn.Conv2d):
-            nn.init.kaiming_uniform_(m.weight, nonlinearity='leaky_relu', a=self.relu_slope)
+            nn.init.kaiming_uniform_(m.weight, nonlinearity="leaky_relu", a=self.relu_slope)
             nn.init.zeros_(m.bias)
 
     def forward(self, x):
@@ -127,11 +139,25 @@ class UNetEncoderBlock(nn.Module):
 
 
 class UNetDecoderBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size=(5, 5), stride=(2, 2), padding=(2, 2),
-                 output_padding=(1, 1), dropout=0.0):
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        kernel_size=(5, 5),
+        stride=(2, 2),
+        padding=(2, 2),
+        output_padding=(1, 1),
+        dropout=0.0,
+    ):
         super().__init__()
-        self.conv_trans = nn.ConvTranspose2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride,
-                                             padding=padding, output_padding=output_padding)
+        self.conv_trans = nn.ConvTranspose2d(
+            in_channels,
+            out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            output_padding=output_padding,
+        )
         self.bn = nn.BatchNorm2d(num_features=out_channels)
         self.dropout = nn.Dropout(dropout)
         self.activ = nn.ReLU()
@@ -139,7 +165,7 @@ class UNetDecoderBlock(nn.Module):
 
     def init_weights(self, m):
         if isinstance(m, nn.Conv2d):
-            nn.init.kaiming_uniform_(m.weight, nonlinearity='relu')
+            nn.init.kaiming_uniform_(m.weight, nonlinearity="relu")
             nn.init.zeros_(m.bias)
 
     def forward(self, x):
@@ -150,8 +176,12 @@ class UNetDecoderBlock(nn.Module):
 
 
 class UNet(nn.Module):
-
-    def __init__(self, input_size: Tuple[int, ...] = (2, 2048, 512), power: float = 1.0, device: Optional[str] = None):
+    def __init__(
+        self,
+        input_size: Tuple[int, ...] = (2, 2048, 512),
+        power: float = 1.0,
+        device: Optional[str] = None,
+    ):
         super().__init__()
 
         self.input_size = input_size
@@ -183,8 +213,10 @@ class UNet(nn.Module):
 
         # Mask layer
         self.mask_layer = nn.Sequential(
-            nn.Conv2d(audio_channels, audio_channels, kernel_size=(4, 4), dilation=(2, 2), padding=3),
-            nn.Sigmoid()
+            nn.Conv2d(
+                audio_channels, audio_channels, kernel_size=(4, 4), dilation=(2, 2), padding=3
+            ),
+            nn.Sigmoid(),
         )
 
         self.init_mask_layer()
@@ -222,7 +254,7 @@ class UNet(nn.Module):
         mask = self.mask_layer(u)
 
         # Apply power
-        mask = mask ** self.power
+        mask = mask**self.power
 
         return mask
 

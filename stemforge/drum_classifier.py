@@ -19,9 +19,15 @@ DRUM_TYPES = ["kick", "snare", "clap", "hat_closed", "hat_open", "rim", "perc"]
 # Standard drum pad positions (kick bottom-left, snare above, hats right of snare)
 DRUM_PAD_ORDER = [
     # Bottom row (R5 in quadrant): kick left, perc right
-    "kick", "kick", "perc", "perc",
+    "kick",
+    "kick",
+    "perc",
+    "perc",
     # Top row (R6 in quadrant): snare left, hats right
-    "snare", "hat_closed", "hat_open", "perc",
+    "snare",
+    "hat_closed",
+    "hat_open",
+    "perc",
 ]
 
 

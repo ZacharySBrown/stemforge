@@ -15,7 +15,7 @@ Algorithm:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import librosa
@@ -27,21 +27,21 @@ from .config import SongConfig
 
 @dataclass
 class SongSegment:
-    label: str              # "A", "B", "C", etc.
-    start_bar: int          # 1-indexed
-    end_bar: int            # inclusive
-    start_time: float       # seconds
+    label: str  # "A", "B", "C", etc.
+    start_bar: int  # 1-indexed
+    end_bar: int  # inclusive
+    start_time: float  # seconds
     end_time: float
-    novelty_score: float    # how different this boundary is from neighbors (0-1)
-    is_transition: bool     # True if near a structural boundary
+    novelty_score: float  # how different this boundary is from neighbors (0-1)
+    is_transition: bool  # True if near a structural boundary
 
 
 @dataclass
 class SongStructure:
     segments: list[SongSegment]
-    form: str                           # e.g. "AABA", "ABAB"
-    boundaries_bars: list[int]          # bar numbers where structure changes
-    bar_importance: dict[int, float]    # per-bar structural importance score (0-1)
+    form: str  # e.g. "AABA", "ABAB"
+    boundaries_bars: list[int]  # bar numbers where structure changes
+    bar_importance: dict[int, float]  # per-bar structural importance score (0-1)
     total_bars: int
 
     def importance_for_bar(self, bar_idx: int) -> float:
@@ -71,7 +71,7 @@ def _compute_novelty(recurrence: np.ndarray, kernel_size: int = 64) -> np.ndarra
 
     novelty = np.zeros(n)
     for i in range(half, n - half):
-        patch = recurrence[i - half:i + half, i - half:i + half]
+        patch = recurrence[i - half : i + half, i - half : i + half]
         if patch.shape == kernel.shape:
             novelty[i] = np.sum(patch * kernel)
 
@@ -215,7 +215,10 @@ def detect_song_structure(
 
     # Build recurrence matrix
     rec = librosa.segment.recurrence_matrix(
-        chroma, mode="affinity", sym=True, width=3,
+        chroma,
+        mode="affinity",
+        sym=True,
+        width=3,
     )
 
     # Compute novelty curve
@@ -228,7 +231,9 @@ def detect_song_structure(
     # Min distance between boundaries (in frames)
     min_bar_frames = config.min_segment_bars * bar_beat_count
     if bpm and bpm > 0:
-        min_dist_frames = int(config.min_segment_bars * (60 / bpm) * bar_beat_count * sr / hop_length)
+        min_dist_frames = int(
+            config.min_segment_bars * (60 / bpm) * bar_beat_count * sr / hop_length
+        )
     else:
         min_dist_frames = min_bar_frames * 4  # fallback
 
@@ -252,7 +257,7 @@ def detect_song_structure(
     # Rank by prominence, keep top max_segments-1 boundaries
     prominences = properties.get("prominences", novelty[peaks])
     ranked = np.argsort(prominences)[::-1]
-    top_peaks = sorted(peaks[ranked[:config.max_segments - 1]])
+    top_peaks = sorted(peaks[ranked[: config.max_segments - 1]])
 
     # Snap each peak to the nearest bar boundary
     boundaries_bars = []
@@ -267,8 +272,10 @@ def detect_song_structure(
 
     # Label segments
     labels = _label_segments(
-        [librosa.time_to_frames(bar_times[b - 1], sr=sr, hop_length=hop_length)
-         for b in boundaries_bars],
+        [
+            librosa.time_to_frames(bar_times[b - 1], sr=sr, hop_length=hop_length)
+            for b in boundaries_bars
+        ],
         chroma.shape[1],
         chroma,
         hop_length,
@@ -298,15 +305,17 @@ def detect_song_structure(
         else:
             nov_score = 0.0
 
-        segments.append(SongSegment(
-            label=labels[i],
-            start_bar=start_bar,
-            end_bar=end_bar,
-            start_time=start_time,
-            end_time=end_time,
-            novelty_score=nov_score,
-            is_transition=False,
-        ))
+        segments.append(
+            SongSegment(
+                label=labels[i],
+                start_bar=start_bar,
+                end_bar=end_bar,
+                start_time=start_time,
+                end_time=end_time,
+                novelty_score=nov_score,
+                is_transition=False,
+            )
+        )
 
     # Compute per-bar structural importance
     # Bars near boundaries get high importance; bars in the middle get low

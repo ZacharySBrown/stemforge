@@ -1,6 +1,7 @@
 """
 stems.json schema — written by CLI, read by M4L device.
 """
+
 import json, time
 from pathlib import Path
 from dataclasses import dataclass, asdict
@@ -8,10 +9,10 @@ from dataclasses import dataclass, asdict
 
 @dataclass
 class StemInfo:
-    name: str           # e.g. "drums"
-    wav_path: str       # absolute path to full stem WAV
-    beats_dir: str      # absolute path to beat slices folder
-    beat_count: int     # number of beat slice files written
+    name: str  # e.g. "drums"
+    wav_path: str  # absolute path to full stem WAV
+    beats_dir: str  # absolute path to beat slices folder
+    beat_count: int  # number of beat slice files written
 
 
 @dataclass
@@ -23,7 +24,7 @@ class StemManifest:
     beat_count: int
     stems: list[StemInfo]
     output_dir: str
-    pipeline: str       # pipeline name used (from pipelines/default.yaml)
+    pipeline: str  # pipeline name used (from pipelines/default.yaml)
     processed_at: str
 
 
@@ -41,12 +42,14 @@ def write_manifest(
     stems = []
     for stem_name, stem_path in stem_paths.items():
         beats_dir = output_dir / f"{stem_name}_beats"
-        stems.append(StemInfo(
-            name=stem_name,
-            wav_path=str(stem_path.resolve()),
-            beats_dir=str(beats_dir.resolve()),
-            beat_count=slice_counts.get(stem_name, 0),
-        ))
+        stems.append(
+            StemInfo(
+                name=stem_name,
+                wav_path=str(stem_path.resolve()),
+                beats_dir=str(beats_dir.resolve()),
+                beat_count=slice_counts.get(stem_name, 0),
+            )
+        )
 
     manifest = StemManifest(
         track_name=track_name,

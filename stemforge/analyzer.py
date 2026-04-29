@@ -8,15 +8,17 @@ Uses three layers:
 
 Models are lazy-loaded on first use and cached for subsequent calls.
 """
+
 import numpy as np
 import librosa
 from pathlib import Path
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
 class AudioProfile:
     """Summary of audio characteristics."""
+
     # Librosa features
     bpm: float
     energy: float
@@ -31,9 +33,9 @@ class AudioProfile:
     # ML model results
     genre: str
     genre_confidence: float
-    genre_scores: dict             # all genre scores from CLAP
-    instruments_detected: list     # top instruments from AST
-    instrument_scores: dict        # all instrument scores
+    genre_scores: dict  # all genre scores from CLAP
+    instruments_detected: list  # top instruments from AST
+    instrument_scores: dict  # all instrument scores
 
     # Recommendations
     recommended_backend: str
@@ -69,10 +71,10 @@ GENRE_LABEL_MAP = {
     "acoustic folk": "acoustic",
     "pop": "pop",
     "orchestral classical": "orchestral",
-    "r&b soul": "hip_hop",      # similar stem needs
-    "metal": "rock",             # similar stem needs
-    "ambient": "electronic",     # synth-heavy
-    "latin": "jazz",             # similar instrumentation (brass, percussion)
+    "r&b soul": "hip_hop",  # similar stem needs
+    "metal": "rock",  # similar stem needs
+    "ambient": "electronic",  # synth-heavy
+    "latin": "jazz",  # similar instrumentation (brass, percussion)
     "country": "acoustic",
     "reggae": "pop",
 }
@@ -81,25 +83,53 @@ GENRE_LABEL_MAP = {
 
 INSTRUMENT_LABELS = {
     # Strings
-    "Guitar", "Electric guitar", "Acoustic guitar", "Bass guitar",
+    "Guitar",
+    "Electric guitar",
+    "Acoustic guitar",
+    "Bass guitar",
     "Steel guitar, slide guitar",
     # Keys
-    "Piano", "Electric piano", "Organ", "Keyboard (musical)",
+    "Piano",
+    "Electric piano",
+    "Organ",
+    "Keyboard (musical)",
     "Synthesizer, electronic instrument",
     # Drums & percussion
-    "Drum", "Drum kit", "Snare drum", "Bass drum", "Hi-hat",
-    "Cymbal", "Tambourine", "Percussion",
+    "Drum",
+    "Drum kit",
+    "Snare drum",
+    "Bass drum",
+    "Hi-hat",
+    "Cymbal",
+    "Tambourine",
+    "Percussion",
     # Brass & wind
-    "Trumpet", "Saxophone", "Flute", "Clarinet", "Trombone",
-    "French horn", "Harmonica", "Brass instrument",
+    "Trumpet",
+    "Saxophone",
+    "Flute",
+    "Clarinet",
+    "Trombone",
+    "French horn",
+    "Harmonica",
+    "Brass instrument",
     # Strings (orchestral)
-    "Violin, fiddle", "Cello", "Harp", "String section",
+    "Violin, fiddle",
+    "Cello",
+    "Harp",
+    "String section",
     # Vocals
-    "Singing", "Male singing, male speech", "Female singing, female speech",
+    "Singing",
+    "Male singing, male speech",
+    "Female singing, female speech",
     "Choir",
     # Other
-    "Banjo", "Mandolin", "Ukulele", "Accordion", "Bagpipes",
-    "Turntablism", "Scratching (performance technique)",
+    "Banjo",
+    "Mandolin",
+    "Ukulele",
+    "Accordion",
+    "Bagpipes",
+    "Turntablism",
+    "Scratching (performance technique)",
 }
 
 # ── Stem recommendations per genre ─────────────────────────────────────────────
@@ -126,7 +156,16 @@ GENRE_STEM_MAP = {
     "jazz": {
         "demucs_model": "htdemucs_6s",
         "musicai_workflow": "music-ai/stem-separation-suite",
-        "musicai_stems": ["vocals", "drums", "bass", "piano", "guitars", "strings", "wind", "other"],
+        "musicai_stems": [
+            "vocals",
+            "drums",
+            "bass",
+            "piano",
+            "guitars",
+            "strings",
+            "wind",
+            "other",
+        ],
         "reason": "Jazz — complex instrumentation. 6-stem Demucs for guitar+piano, or Music AI for full separation including wind/strings.",
     },
     "acoustic": {
@@ -194,6 +233,7 @@ def _get_ast():
 
 
 # ── Main analysis ──────────────────────────────────────────────────────────────
+
 
 def analyze(audio_path: Path, duration_limit: float = 30.0) -> AudioProfile:
     """
@@ -278,6 +318,7 @@ def analyze(audio_path: Path, duration_limit: float = 30.0) -> AudioProfile:
 
 # ── Librosa feature extraction ─────────────────────────────────────────────────
 
+
 def _extract_librosa_features(y, sr) -> dict:
     """Extract spectral features using librosa."""
     tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
@@ -294,14 +335,14 @@ def _extract_librosa_features(y, sr) -> dict:
     S = np.abs(librosa.stft(y))
     freqs = librosa.fft_frequencies(sr=sr)
 
-    total_energy = np.sum(S ** 2) + 1e-10
+    total_energy = np.sum(S**2) + 1e-10
     bass_ratio = float(np.sum(S[freqs < 250] ** 2) / total_energy)
     mid_ratio = float(np.sum(S[(freqs >= 250) & (freqs < 4000)] ** 2) / total_energy)
     high_ratio = float(np.sum(S[freqs >= 4000] ** 2) / total_energy)
 
     H, P = librosa.decompose.hpss(S)
-    harmonic_e = np.sum(H ** 2)
-    percussive_e = np.sum(P ** 2)
+    harmonic_e = np.sum(H**2)
+    percussive_e = np.sum(P**2)
     percussive_ratio = float(percussive_e / (harmonic_e + percussive_e + 1e-10))
 
     centroid = librosa.feature.spectral_centroid(S=S, sr=sr)[0]
@@ -330,6 +371,7 @@ def _extract_librosa_features(y, sr) -> dict:
 
 # ── CLAP genre classification ─────────────────────────────────────────────────
 
+
 def _classify_genre_clap(y_48k: np.ndarray) -> tuple[str, float, dict]:
     """
     Use CLAP zero-shot classification for genre detection.
@@ -355,6 +397,7 @@ def _classify_genre_clap(y_48k: np.ndarray) -> tuple[str, float, dict]:
 
 # ── AST instrument detection ──────────────────────────────────────────────────
 
+
 def _detect_instruments_ast(y_16k: np.ndarray) -> tuple[list[str], dict]:
     """
     Use AST AudioSet model for instrument detection.
@@ -369,8 +412,7 @@ def _detect_instruments_ast(y_16k: np.ndarray) -> tuple[list[str], dict]:
     # Filter for instrument-related labels
     all_scores = {r["label"]: round(r["score"], 3) for r in results}
     instrument_results = [
-        r for r in results
-        if r["label"] in INSTRUMENT_LABELS and r["score"] > 0.05
+        r for r in results if r["label"] in INSTRUMENT_LABELS and r["score"] > 0.05
     ]
 
     top_instruments = [r["label"] for r in instrument_results[:10]]
@@ -379,6 +421,7 @@ def _detect_instruments_ast(y_16k: np.ndarray) -> tuple[list[str], dict]:
 
 
 # ── Genre refinement using instruments ─────────────────────────────────────────
+
 
 def _refine_genre_with_instruments(
     genre: str,

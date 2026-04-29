@@ -3,7 +3,6 @@ from pathlib import Path
 
 
 class AbstractBackend(ABC):
-
     @abstractmethod
     def separate(self, audio_path: Path, output_dir: Path, **kwargs) -> dict[str, Path]:
         """
@@ -15,5 +14,4 @@ class AbstractBackend(ABC):
 
     @property
     @abstractmethod
-    def name(self) -> str:
-        ...
+    def name(self) -> str: ...

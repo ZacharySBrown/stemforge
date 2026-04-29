@@ -23,6 +23,7 @@ from .config import StemCurationConfig
 
 # ── LarsNet drum sub-stem separation ─────────────────────────────────────
 
+
 def extract_drum_oneshots_via_larsnet(
     drums_path: Path,
     output_dir: Path,
@@ -65,10 +66,10 @@ def extract_drum_oneshots_via_larsnet(
 
     # Tighter windows for clean sub-stems (no bleed = can be more precise)
     substem_params = {
-        "kick":    {"max_window_ms": 250, "min_gap_ms": 80},
-        "snare":   {"max_window_ms": 200, "min_gap_ms": 60},
-        "hihat":   {"max_window_ms": 150, "min_gap_ms": 40},
-        "toms":    {"max_window_ms": 300, "min_gap_ms": 100},
+        "kick": {"max_window_ms": 250, "min_gap_ms": 80},
+        "snare": {"max_window_ms": 200, "min_gap_ms": 60},
+        "hihat": {"max_window_ms": 150, "min_gap_ms": 40},
+        "toms": {"max_window_ms": 300, "min_gap_ms": 100},
         "cymbals": {"max_window_ms": 400, "min_gap_ms": 100},
     }
 
@@ -81,7 +82,7 @@ def extract_drum_oneshots_via_larsnet(
 
         # Load sub-stem
         y, sr = librosa.load(str(wav_path), sr=None, mono=True)
-        rms_total = float(np.sqrt(np.mean(y ** 2)))
+        rms_total = float(np.sqrt(np.mean(y**2)))
 
         # Skip if sub-stem is too quiet (not present in this track)
         if rms_total < 0.003:
@@ -92,8 +93,11 @@ def extract_drum_oneshots_via_larsnet(
         hop_length = 512
         wait = max(1, int(params["min_gap_ms"] * sr / (1000 * hop_length)))
         onsets = librosa.onset.onset_detect(
-            onset_envelope=onset_env, sr=sr,
-            hop_length=hop_length, wait=wait, backtrack=True,
+            onset_envelope=onset_env,
+            sr=sr,
+            hop_length=hop_length,
+            wait=wait,
+            backtrack=True,
         )
         onset_times = librosa.frames_to_time(onsets, sr=sr, hop_length=hop_length)
 
@@ -127,7 +131,7 @@ def extract_drum_oneshots_via_larsnet(
                 chunk = chunk * (0.891 / peak)
 
             chunk_mono = chunk.mean(axis=0)
-            rms = float(np.sqrt(np.mean(chunk_mono ** 2)))
+            rms = float(np.sqrt(np.mean(chunk_mono**2)))
 
             if rms < config.rms_floor:
                 continue
@@ -172,9 +176,9 @@ def extract_drum_oneshots_via_larsnet(
 
 STEM_PARAMS = {
     "drums": {
-        "min_onset_gap_ms": 50,     # fast hi-hats
-        "max_window_ms": 500,       # tight one-shots
-        "use_hpss": True,           # isolate percussive component
+        "min_onset_gap_ms": 50,  # fast hi-hats
+        "max_window_ms": 500,  # tight one-shots
+        "use_hpss": True,  # isolate percussive component
         "band_weights": [0.4, 0.2, 0.4],  # low, mid, high — emphasize kick+hat bands
     },
     "bass": {
@@ -184,8 +188,8 @@ STEM_PARAMS = {
         "band_weights": [0.6, 0.3, 0.1],  # emphasize low end
     },
     "vocals": {
-        "min_onset_gap_ms": 150,    # avoid splitting syllables
-        "max_window_ms": 2000,      # capture full words
+        "min_onset_gap_ms": 150,  # avoid splitting syllables
+        "max_window_ms": 2000,  # capture full words
         "use_hpss": False,
         "band_weights": [0.1, 0.7, 0.2],  # emphasize mid (voice range)
     },
@@ -212,15 +216,15 @@ MIN_DURATION_MS = 20
 class OneshotProfile:
     path: Path
     index: int
-    onset_time: float           # position in source stem (seconds)
-    duration: float             # seconds
-    spectral_centroid: float    # Hz
-    spectral_bandwidth: float   # Hz
+    onset_time: float  # position in source stem (seconds)
+    duration: float  # seconds
+    spectral_centroid: float  # Hz
+    spectral_bandwidth: float  # Hz
     spectral_flatness: float
     crest_factor: float
-    attack_time: float          # seconds from start to peak
+    attack_time: float  # seconds from start to peak
     rms: float
-    classification: str = ""    # filled by drum_classifier
+    classification: str = ""  # filled by drum_classifier
     feature_vector: list[float] = field(default_factory=list)
 
 
@@ -264,16 +268,19 @@ def _spectral_features(audio_mono: np.ndarray, sr: int) -> dict:
 
 def _oneshot_feature_vector(profile: OneshotProfile) -> np.ndarray:
     """8D feature vector for one-shot diversity selection."""
-    return np.array([
-        profile.spectral_centroid,
-        profile.spectral_bandwidth,
-        profile.spectral_flatness,
-        profile.crest_factor,
-        profile.attack_time,
-        profile.rms,
-        profile.duration,
-        1.0 if profile.classification == "kick" else 0.0,  # crude type signal
-    ], dtype=float)
+    return np.array(
+        [
+            profile.spectral_centroid,
+            profile.spectral_bandwidth,
+            profile.spectral_flatness,
+            profile.crest_factor,
+            profile.attack_time,
+            profile.rms,
+            profile.duration,
+            1.0 if profile.classification == "kick" else 0.0,  # crude type signal
+        ],
+        dtype=float,
+    )
 
 
 def detect_onsets_multiband(
@@ -290,12 +297,14 @@ def detect_onsets_multiband(
 
     # Compute multi-band onset strength
     onset_env = librosa.onset.onset_strength_multi(
-        y=audio_mono, sr=sr, hop_length=hop_length,
+        y=audio_mono,
+        sr=sr,
+        hop_length=hop_length,
         channels=[0, 1, 2],  # 3 mel bands (low, mid, high)
     )
 
     # Weighted combination of bands
-    weights = np.array(band_weights[:len(onset_env)])
+    weights = np.array(band_weights[: len(onset_env)])
     weights = weights / (weights.sum() + 1e-10)
     combined_env = np.sum(onset_env * weights[:, np.newaxis], axis=0)
 
@@ -303,8 +312,10 @@ def detect_onsets_multiband(
     wait = max(1, int(min_gap_ms * sr / (1000 * hop_length)))
     onsets = librosa.onset.onset_detect(
         onset_envelope=combined_env,
-        sr=sr, hop_length=hop_length,
-        wait=wait, backtrack=True,
+        sr=sr,
+        hop_length=hop_length,
+        wait=wait,
+        backtrack=True,
     )
 
     return librosa.frames_to_time(onsets, sr=sr, hop_length=hop_length)
@@ -327,7 +338,9 @@ def extract_kicks_from_bass(
 
     # Use drum params but with bass-specific onset detection
     profiles = extract_oneshots(
-        bass_path, output_dir, "bass_kicks",
+        bass_path,
+        output_dir,
+        "bass_kicks",
         config=StemCurationConfig(
             rms_floor=config.rms_floor,
             crest_min=max(1.5, config.crest_min * 0.5),  # lower crest for bass-embedded kicks
@@ -356,6 +369,7 @@ def extract_oneshots(
     params = STEM_PARAMS.get(stem_name, DEFAULT_PARAMS)
     if config is None:
         from .config import StemCurationConfig
+
         config = StemCurationConfig()
 
     # Load audio
@@ -371,7 +385,8 @@ def extract_oneshots(
 
     # Detect onsets
     onset_times = detect_onsets_multiband(
-        detect_signal, sr,
+        detect_signal,
+        sr,
         band_weights=params["band_weights"],
         min_gap_ms=params["min_onset_gap_ms"],
     )
@@ -416,7 +431,7 @@ def extract_oneshots(
 
         # Compute features on mono
         chunk_mono = chunk.mean(axis=0) if chunk.ndim > 1 else chunk
-        rms = float(np.sqrt(np.mean(chunk_mono ** 2)))
+        rms = float(np.sqrt(np.mean(chunk_mono**2)))
 
         if rms < config.rms_floor:
             continue

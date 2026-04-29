@@ -1,0 +1,45 @@
+# Pre-commit hooks — installed locally with `pre-commit install`.
+#
+# What this enforces on every commit:
+#   - ruff check (linting)         on stemforge/ + tests/
+#   - ruff format (auto-format)    on stemforge/ + tests/
+#   - whitespace + EOL hygiene
+#   - YAML / JSON / TOML well-formedness
+#
+# Deferred (run locally but not blocking commits):
+#   - mypy: too much legacy debt (~280 errors). Run `mypy stemforge` ad-hoc
+#     until the debt is paid down. See memory `project_stemforge_mypy_debt`.
+#   - pytest: full suite is too slow for every commit. Run `pytest` locally
+#     before pushing or rely on CI. The `Unit tests` CI job is the gate.
+#
+# Setup:
+#   pip install pre-commit
+#   pre-commit install                # arms the git hook
+#   pre-commit run --all-files        # one-time run across the whole repo
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^(stemforge|tests)/
+      - id: ruff-format
+        files: ^(stemforge|tests)/
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        # Skip captured device backups + reference templates — bytes are sacred.
+        exclude: '\.(ppak|pak|sysex|wav|amxd)$|^docs/ep133-song-triage/'
+      - id: end-of-file-fixer
+        exclude: '\.(ppak|pak|sysex|wav|amxd)$|^docs/ep133-song-triage/'
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+        # Skip M4L-generated patcher JSON — Max emits non-strict JSON.
+        exclude: '^v0/build/.*\.maxpat$|\.amxd$'
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=10240]    # 10 MB; reference .ppak captures are ~6-7 MB

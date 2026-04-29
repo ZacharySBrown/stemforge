@@ -130,8 +130,7 @@ def read_project_file(
             raise RuntimeError(f"03 00 open timed out for fileId {fid}")
         if b"invali" in hdr.lower():
             raise RuntimeError(
-                f"device rejected open for project {project_num} (fileId {fid}): "
-                f"{hdr[:40]!r}"
+                f"device rejected open for project {project_num} (fileId {fid}): {hdr[:40]!r}"
             )
 
         # Stream pages
@@ -145,9 +144,7 @@ def read_project_file(
                 # short page = EOF
                 break
         else:
-            raise RuntimeError(
-                f"read_project_file exceeded max_pages={max_pages} without EOF"
-            )
+            raise RuntimeError(f"read_project_file exceeded max_pages={max_pages} without EOF")
 
     # Strip 3-byte page header from each page, concatenate
     content = b"".join(p[PAGE_HEADER_BYTES:] for p in pages)
@@ -167,7 +164,7 @@ def read_project_file_via_client(
     inside a single client session. The client's transport is used to
     send FILE_INIT / 03 00 / 03 01 directly.
     """
-    fid = project_file_id(project_num)
+    project_file_id(project_num)  # validate inputs; sketch below uses mido directly
 
     client._send(TE_SYSEX_FILE, build_file_init(4 * 1024 * 1024, flags=0))
     # Note: EP133Client._send/_await_response are designed for request/response

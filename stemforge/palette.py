@@ -23,9 +23,7 @@ def _load_palette() -> list[dict[str, Any]]:
     with _PALETTE_FILE.open() as f:
         palette = json.load(f)
     if len(palette) != 26:
-        raise ValueError(
-            f"ableton_colors.json must have exactly 26 entries, got {len(palette)}"
-        )
+        raise ValueError(f"ableton_colors.json must have exactly 26 entries, got {len(palette)}")
     return palette
 
 
@@ -84,9 +82,7 @@ def resolve_color(value: str | int | dict[str, Any]) -> dict[str, Any]:
         entry = _by_name().get(value)
         if entry is None:
             valid = ", ".join(sorted(_by_name().keys()))
-            raise ValueError(
-                f"unknown palette color '{value}' — valid names: {valid}"
-            )
+            raise ValueError(f"unknown palette color '{value}' — valid names: {valid}")
         return dict(entry)
 
     raise TypeError(f"unsupported color type: {type(value).__name__}")
@@ -142,7 +138,4 @@ def palette_preview(preset: dict[str, Any], limit: int = 6) -> list[str]:
 
 
 def target_count(preset: dict[str, Any]) -> int:
-    return sum(
-        len(stem.get("targets") or [])
-        for stem in (preset.get("stems") or {}).values()
-    )
+    return sum(len(stem.get("targets") or []) for stem in (preset.get("stems") or {}).values())

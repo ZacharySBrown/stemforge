@@ -1,7 +1,6 @@
 """Tests for experimental beat alignment correction."""
 
 import numpy as np
-import pytest
 
 from stemforge.beat_align import (
     find_best_downbeat_offset,
@@ -110,6 +109,7 @@ class TestFindBestDownbeatOffset:
 
         audio_path = tmp_path / "clicks.wav"
         import soundfile as sf
+
         sf.write(str(audio_path), y, sr)
 
         beat_times = np.array([i * beat_interval for i in range(n_beats)])
@@ -137,6 +137,7 @@ class TestDiagnoseDrift:
 
         audio_path = tmp_path / "stable.wav"
         import soundfile as sf
+
         sf.write(str(audio_path), y, sr)
 
         result = diagnose_drift(audio_path, n_segments=4)

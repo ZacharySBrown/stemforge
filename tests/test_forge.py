@@ -26,7 +26,7 @@ def _write_click_track(path: Path, n_beats: int = 32, beat_dur: float = 0.25):
         freq = 220.0 + 40.0 * (bar_idx % 6)
         amp = 0.3 + 0.1 * ((bar_idx * 3) % 5)
         env = np.exp(-np.linspace(0, 6, len(t)))
-        y[start:start + len(t)] += (amp * np.sin(2 * np.pi * freq * t) * env).astype(np.float32)
+        y[start : start + len(t)] += (amp * np.sin(2 * np.pi * freq * t) * env).astype(np.float32)
     # Stereo
     stereo = np.stack([y, y], axis=1)
     sf.write(str(path), stereo, SR, subtype="PCM_24")
@@ -48,8 +48,7 @@ def test_slice_at_bars_from_analysis(tmp_path):
         "sample_rate": SR,
     }
 
-    bars = slice_at_bars_from_analysis(stem, analysis, tmp_path, "drums",
-                                       silence_threshold=0.0)
+    bars = slice_at_bars_from_analysis(stem, analysis, tmp_path, "drums", silence_threshold=0.0)
     assert len(bars) >= 6, f"expected ~8 bars, got {len(bars)}"
     for b in bars:
         assert b.exists()
@@ -60,8 +59,7 @@ def test_slice_at_bars_librosa_fallback(tmp_path):
     stem = tmp_path / "drums.wav"
     _write_click_track(stem, n_beats=32, beat_dur=0.25)
 
-    bars = slice_at_bars(stem, tmp_path, "drums",
-                        time_sig_numerator=4, silence_threshold=0.0)
+    bars = slice_at_bars(stem, tmp_path, "drums", time_sig_numerator=4, silence_threshold=0.0)
     assert len(bars) >= 2
     assert all(p.exists() for p in bars)
 
@@ -80,10 +78,9 @@ def test_curate_selects_n_bars(tmp_path):
         noise = rng.standard_normal(n) * 0.02
         y = (0.6 * np.sin(2 * np.pi * freq * t) * env + noise).astype(np.float32)
         stereo = np.stack([y, y], axis=1)
-        sf.write(str(bar_dir / f"drums_bar_{i+1:03d}.wav"), stereo, SR, subtype="PCM_24")
+        sf.write(str(bar_dir / f"drums_bar_{i + 1:03d}.wav"), stereo, SR, subtype="PCM_24")
 
-    selected = curate(bar_dir, n_bars=5, strategy="max-diversity",
-                     rms_floor=0.001, crest_min=1.0)
+    selected = curate(bar_dir, n_bars=5, strategy="max-diversity", rms_floor=0.001, crest_min=1.0)
     assert 1 <= len(selected) <= 5
     for s in selected:
         assert s.exists()
@@ -102,20 +99,22 @@ def test_curate_strategy_fallback_warns(tmp_path):
     t = np.arange(n) / SR
     for i in range(4):
         y = (0.5 * np.sin(2 * np.pi * (200 + i * 50) * t)).astype(np.float32)
-        sf.write(str(bar_dir / f"drums_bar_{i+1:03d}.wav"),
-                np.stack([y, y], axis=1), SR, subtype="PCM_24")
+        sf.write(
+            str(bar_dir / f"drums_bar_{i + 1:03d}.wav"),
+            np.stack([y, y], axis=1),
+            SR,
+            subtype="PCM_24",
+        )
 
     # rhythm-taxonomy is now implemented — clusters by rhythm, picks variants
     # With simple test data (sine waves, no onsets), all bars cluster together
     # and variant selection picks from that single cluster
-    selected = curate(bar_dir, n_bars=2, strategy="rhythm-taxonomy",
-                     rms_floor=0.0, crest_min=0.0)
+    selected = curate(bar_dir, n_bars=2, strategy="rhythm-taxonomy", rms_floor=0.0, crest_min=0.0)
     # May return 0 if all bars have onset_count=0 (filtered by cluster_by_rhythm)
     # That's correct behavior — pure sine bars have no transients
     assert len(selected) >= 0
 
     # sectional/transition without song_structure still warns and falls back
     with pytest.warns(UserWarning):
-        selected2 = curate(bar_dir, n_bars=2, strategy="sectional",
-                          rms_floor=0.0, crest_min=0.0)
+        selected2 = curate(bar_dir, n_bars=2, strategy="sectional", rms_floor=0.0, crest_min=0.0)
     assert len(selected2) >= 1

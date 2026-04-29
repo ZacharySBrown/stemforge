@@ -53,9 +53,7 @@ def find_best_downbeat_offset(
     # Band-separated onset detection: isolate low frequencies (kick region).
     # channels define mel band boundaries. Channel 0 = lowest band (kick/sub).
     # Using 5 channels: [0-32, 32-64, 64-96, 96-128] mel bins.
-    onset_multi = librosa.onset.onset_strength_multi(
-        y=y, sr=sr, channels=[0, 32, 64, 96, 128]
-    )
+    onset_multi = librosa.onset.onset_strength_multi(y=y, sr=sr, channels=[0, 32, 64, 96, 128])
     # Use the lowest band (kick drum region, ~20-200 Hz)
     kick_onset = onset_multi[0]
     onset_times = librosa.frames_to_time(np.arange(len(kick_onset)), sr=sr)

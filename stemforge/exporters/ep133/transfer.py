@@ -38,7 +38,12 @@ def generate_upload_payloads(
     messages.append((TE_SYSEX_FILE, P.build_file_init(DEFAULT_FILE_INIT_MAX_LEN, flags=1)))
 
     # (3) Create file + metadata; slot byte controls target library position
-    messages.append((TE_SYSEX_FILE, P.build_file_put_meta(name, data_size=len(pcm), channels=channels, slot=slot)))
+    messages.append(
+        (
+            TE_SYSEX_FILE,
+            P.build_file_put_meta(name, data_size=len(pcm), channels=channels, slot=slot),
+        )
+    )
 
     # (4..N) Data chunks
     chunks = P.chunk_pcm(pcm)

@@ -44,14 +44,12 @@ from pathlib import Path
 
 from .song_format import (
     DEVICE_DEFAULT_PAD,
-    DEVICE_DEFAULT_SETTINGS,
     PAD_RECORD_SIZE,
     SETTINGS_SIZE,
     PpakSpec,
     build_pad,
     build_pattern,
     build_scenes,
-    build_settings,
     pad_filename,
     pattern_filename,
 )
@@ -80,6 +78,7 @@ _META_NAMES = ("/meta.json", "meta.json")
 
 
 # ----- Reference-template loader --------------------------------------------
+
 
 class _ReferenceTemplate:
     """Cached unpack of a reference ``.ppak`` file.
@@ -124,9 +123,7 @@ class _ReferenceTemplate:
                     tar_bytes = zf.read(name)
 
         if meta is None:
-            raise ValueError(
-                f"reference .ppak missing meta.json: {ppak_path} (entries={names})"
-            )
+            raise ValueError(f"reference .ppak missing meta.json: {ppak_path} (entries={names})")
         if tar_bytes is None:
             raise ValueError(
                 f"reference .ppak missing /projects/PXX.tar: {ppak_path} (entries={names})"
@@ -164,26 +161,23 @@ class _ReferenceTemplate:
                             pad_templates[(parts[1], pad_num)] = blob
 
         if settings is None:
-            raise ValueError(
-                f"reference .ppak inner TAR is missing 'settings': {ppak_path}"
-            )
+            raise ValueError(f"reference .ppak inner TAR is missing 'settings': {ppak_path}")
         if len(settings) != SETTINGS_SIZE:
             raise ValueError(
-                f"reference .ppak settings is {len(settings)} bytes, "
-                f"expected {SETTINGS_SIZE}"
+                f"reference .ppak settings is {len(settings)} bytes, expected {SETTINGS_SIZE}"
             )
         # Validate any pad templates we did find
         for key, blob in pad_templates.items():
             if len(blob) != PAD_RECORD_SIZE:
                 raise ValueError(
-                    f"reference .ppak pad {key!r} is {len(blob)} bytes, "
-                    f"expected {PAD_RECORD_SIZE}"
+                    f"reference .ppak pad {key!r} is {len(blob)} bytes, expected {PAD_RECORD_SIZE}"
                 )
 
         return cls(meta=meta, settings=settings, pad_templates=pad_templates)
 
 
 # ----- Synthesizer for tests + standalone builds ----------------------------
+
 
 def build_synthetic_template_ppak(out_path: Path, *, project_slot: int = 1) -> Path:
     """Write a minimal device-default reference ``.ppak`` to ``out_path``.
@@ -229,6 +223,7 @@ def build_synthetic_template_ppak(out_path: Path, *, project_slot: int = 1) -> P
 
 
 # ----- Public entry point ----------------------------------------------------
+
 
 def build_ppak(
     spec: PpakSpec,
@@ -340,9 +335,7 @@ def build_ppak(
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         _zip_write_with_leading_slash(zf, "meta.json", json.dumps(meta, indent=2).encode("utf-8"))
-        _zip_write_with_leading_slash(
-            zf, f"projects/P{spec.project_slot:02d}.tar", tar_data
-        )
+        _zip_write_with_leading_slash(zf, f"projects/P{spec.project_slot:02d}.tar", tar_data)
         # Bundle samples. The device requires entries in the form
         # ``/sounds/{slot} {slot}_{name}.wav`` (note the literal space
         # between slot and display name) — verified from a real device
@@ -368,6 +361,7 @@ def build_ppak(
 
 
 # ----- Internal helpers ------------------------------------------------------
+
 
 def _validate_spec(spec: PpakSpec) -> None:
     if not (1 <= spec.project_slot <= 9):
@@ -401,9 +395,7 @@ def _validate_spec(spec: PpakSpec) -> None:
             if idx == 0:
                 continue
             if (group, idx) not in seen_patterns:
-                raise ValueError(
-                    f"scene {i + 1} references undefined pattern {group}{idx:02d}"
-                )
+                raise ValueError(f"scene {i + 1} references undefined pattern {group}{idx:02d}")
 
 
 def _build_inner_tar(
@@ -449,18 +441,14 @@ def _build_inner_tar(
                     continue
                 if pd.sample_slot in missing_slots:
                     continue
-                tmpl = template.pad_templates.get(
-                    (group, pad), DEVICE_DEFAULT_PAD
-                )
+                tmpl = template.pad_templates.get((group, pad), DEVICE_DEFAULT_PAD)
                 blob = build_pad(
                     sample_slot=pd.sample_slot,
                     play_mode=pd.play_mode,
                     time_stretch_bars=pd.time_stretch_bars,
                     template=tmpl,
                     stretch_mode=pd.stretch_mode,
-                    sample_length_frames=length_frames_by_slot.get(
-                        pd.sample_slot
-                    ),
+                    sample_length_frames=length_frames_by_slot.get(pd.sample_slot),
                     sound_bpm=pd.sound_bpm,
                 )
                 _add_tar_bytes(tf, pad_filename(group, pad), blob)
@@ -481,9 +469,7 @@ def _build_inner_tar(
             _add_tar_bytes(tf, "patterns/d05", b"\x00\x02\x00\x00")
 
         # Scenes
-        scenes_blob = build_scenes(
-            spec.scenes, spec.time_sig, spec.song_positions
-        )
+        scenes_blob = build_scenes(spec.scenes, spec.time_sig, spec.song_positions)
         _add_tar_bytes(tf, "scenes", scenes_blob)
 
         # Settings file deliberately omitted from the TAR per
@@ -524,5 +510,3 @@ def _zip_write_with_leading_slash(zf: zipfile.ZipFile, name: str, data: bytes) -
 def _utc_iso8601() -> str:
     """ISO-8601 UTC string with millisecond precision (matches TE format)."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-
-

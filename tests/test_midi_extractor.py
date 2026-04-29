@@ -1,7 +1,6 @@
 """Tests for MIDI extraction (pitch detection, note segmentation, key detection)."""
 
 import numpy as np
-import pytest
 import soundfile as sf
 
 from stemforge.midi_extractor import (
@@ -17,7 +16,6 @@ from stemforge.midi_extractor import (
     midi_to_hz,
     midi_to_name,
     DetectedNote,
-    MIDIClip,
 )
 from stemforge.segmenter import SongStructure, SongSegment
 
@@ -53,9 +51,9 @@ def _write_two_note_stem(path, sr=SR, duration=4.0, freq1=110.0, freq2=146.83):
 
 class TestUtilities:
     def test_hz_to_midi(self):
-        assert hz_to_midi(440.0) == 69   # A4
+        assert hz_to_midi(440.0) == 69  # A4
         assert hz_to_midi(261.63) == 60  # C4
-        assert hz_to_midi(110.0) == 45   # A2
+        assert hz_to_midi(110.0) == 45  # A2
 
     def test_midi_to_hz(self):
         assert abs(midi_to_hz(69) - 440.0) < 0.1
@@ -106,8 +104,9 @@ class TestNoteSegmentation:
 
         assert len(notes) >= 1
         # Should detect A2 (MIDI 45)
-        assert any(44 <= n.midi_note <= 46 for n in notes), \
+        assert any(44 <= n.midi_note <= 46 for n in notes), (
             f"Expected A2 (45), got {[n.midi_note for n in notes]}"
+        )
 
     def test_segments_two_notes(self, tmp_path):
         stem = tmp_path / "two_notes.wav"
@@ -129,8 +128,9 @@ class TestNoteSegmentation:
             # Grid at 120 BPM, 1/16 = 0.125s
             for n in notes:
                 remainder = n.start_time % 0.125
-                assert remainder < 0.001 or abs(remainder - 0.125) < 0.001, \
+                assert remainder < 0.001 or abs(remainder - 0.125) < 0.001, (
                     f"Note at {n.start_time} not quantized to 1/16 grid"
+                )
 
     def test_min_duration_filter(self, tmp_path):
         stem = tmp_path / "short.wav"
@@ -148,10 +148,22 @@ class TestRootSampleExtraction:
         _write_pitched_stem(stem, freq=110.0)
 
         notes = [
-            DetectedNote(midi_note=45, start_time=0.5, end_time=1.5,
-                        duration=1.0, velocity=100, confidence=0.9),
-            DetectedNote(midi_note=45, start_time=2.0, end_time=2.5,
-                        duration=0.5, velocity=80, confidence=0.7),
+            DetectedNote(
+                midi_note=45,
+                start_time=0.5,
+                end_time=1.5,
+                duration=1.0,
+                velocity=100,
+                confidence=0.9,
+            ),
+            DetectedNote(
+                midi_note=45,
+                start_time=2.0,
+                end_time=2.5,
+                duration=0.5,
+                velocity=80,
+                confidence=0.7,
+            ),
         ]
 
         out = tmp_path / "root.wav"
@@ -178,7 +190,7 @@ class TestKeyDetection:
         n = int(4.0 * SR)
         t = np.arange(n) / SR
         audio = (
-            0.3 * np.sin(2 * np.pi * 261.63 * t)   # C4
+            0.3 * np.sin(2 * np.pi * 261.63 * t)  # C4
             + 0.3 * np.sin(2 * np.pi * 329.63 * t)  # E4
             + 0.3 * np.sin(2 * np.pi * 392.00 * t)  # G4
         ).astype(np.float32)
@@ -237,8 +249,10 @@ class TestSectionSplitting:
                 SongSegment("A", 1, 2, 0.0, 2.5, 0.5, False),
                 SongSegment("B", 3, 4, 2.5, 5.0, 0.5, False),
             ],
-            form="AB", boundaries_bars=[3],
-            bar_importance={}, total_bars=4,
+            form="AB",
+            boundaries_bars=[3],
+            bar_importance={},
+            total_bars=4,
         )
         clips = split_notes_by_sections(notes, structure)
         assert len(clips) == 2
@@ -251,7 +265,10 @@ class TestSectionSplitting:
         notes = [DetectedNote(45, 5.0, 6.0, 1.0, 100, 0.9)]
         structure = SongStructure(
             segments=[SongSegment("B", 3, 4, 4.0, 8.0, 0.5, False)],
-            form="B", boundaries_bars=[], bar_importance={}, total_bars=4,
+            form="B",
+            boundaries_bars=[],
+            bar_importance={},
+            total_bars=4,
         )
         clips = split_notes_by_sections(notes, structure)
         assert len(clips) == 1
@@ -269,7 +286,20 @@ class TestFullExtraction:
 
         assert result.root_sample_path is not None
         assert result.root_sample_path.exists()
-        assert result.detected_key in ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+        assert result.detected_key in [
+            "C",
+            "C#",
+            "D",
+            "D#",
+            "E",
+            "F",
+            "F#",
+            "G",
+            "G#",
+            "A",
+            "A#",
+            "B",
+        ]
         assert len(result.chromatic_pads) == 12
         assert len(result.scale_pads) == 8
         assert len(result.clips) >= 1
@@ -290,12 +320,13 @@ class TestFullExtraction:
                 SongSegment("A", 1, 2, 0.0, 2.0, 0.5, False),
                 SongSegment("B", 3, 4, 2.0, 4.0, 0.5, False),
             ],
-            form="AB", boundaries_bars=[3],
-            bar_importance={}, total_bars=4,
+            form="AB",
+            boundaries_bars=[3],
+            bar_importance={},
+            total_bars=4,
         )
 
-        result = extract_midi(stem, output, stem_name="bass", bpm=120.0,
-                            song_structure=structure)
+        result = extract_midi(stem, output, stem_name="bass", bpm=120.0, song_structure=structure)
 
         assert len(result.clips) == 2
         assert result.clips[0].section_label == "A"

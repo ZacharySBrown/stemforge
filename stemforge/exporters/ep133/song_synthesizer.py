@@ -62,10 +62,10 @@ def global_sample_slot(group: str, manifest_slot: int) -> int:
         raise ValueError(f"group must be one of a/b/c/d, got {group!r}")
     if not (0 <= manifest_slot < SAMPLE_SLOT_PER_GROUP):
         raise ValueError(
-            f"manifest_slot must be 0..{SAMPLE_SLOT_PER_GROUP - 1}, "
-            f"got {manifest_slot}"
+            f"manifest_slot must be 0..{SAMPLE_SLOT_PER_GROUP - 1}, got {manifest_slot}"
         )
     return SAMPLE_SLOT_BASE + _GROUP_SLOT_OFFSET[g] + manifest_slot
+
 
 # Pattern timing
 TICKS_PER_BAR = 384
@@ -160,9 +160,7 @@ def _entry_for_path(manifest: dict, group: str, file_path: str) -> dict:
         path = entry.get("file_path") or entry.get("file")
         if path == file_path:
             return entry
-    raise KeyError(
-        f"no session_tracks entry for {file_path!r} on group {group!r}"
-    )
+    raise KeyError(f"no session_tracks entry for {file_path!r} on group {group!r}")
 
 
 def _wav_path_for_pad(manifest: dict, group: str, pad: int) -> Path:
@@ -175,13 +173,9 @@ def _wav_path_for_pad(manifest: dict, group: str, pad: int) -> Path:
             continue
         path = entry.get("file_path") or entry.get("file")
         if path is None:
-            raise KeyError(
-                f"session_tracks[{group}] slot={target_slot} has no file path"
-            )
+            raise KeyError(f"session_tracks[{group}] slot={target_slot} has no file path")
         return Path(path)
-    raise KeyError(
-        f"no session_tracks[{group}] entry for pad {pad} (slot {target_slot})"
-    )
+    raise KeyError(f"no session_tracks[{group}] entry for pad {pad} (slot {target_slot})")
 
 
 def _scene_lengths_in_bars(
@@ -333,9 +327,7 @@ def synthesize(
     # pattern is sized to the scene length and the slice fan-out tiles
     # across it. Without this, scenes truncated to the longest slice
     # (e.g. 2 bars), and the chain advanced too quickly.
-    scene_bars_list = _scene_lengths_in_bars(
-        snapshots, project_bpm, arrangement_length_sec
-    )
+    scene_bars_list = _scene_lengths_in_bars(snapshots, project_bpm, arrangement_length_sec)
 
     # Per-(group, scene_bars) empty-pattern indices. Each silent group in
     # a scene needs an empty marker whose bars match the scene's length —
@@ -376,9 +368,7 @@ def synthesize(
             # times we tile the trigger across the pattern, not how long
             # the pattern is.
             slice_dur_sec = float(entry.get("clip_length_sec", clip.length_sec))
-            slice_bars_by_pad[(group.lower(), pad)] = (
-                slice_dur_sec * source_bpm / 240.0
-            )
+            slice_bars_by_pad[(group.lower(), pad)] = slice_dur_sec * source_bpm / 240.0
             bars = scene_bars
             idx = _ensure_pattern(group.lower(), pad, bars)
             per_scene[group.lower()] = idx
@@ -440,9 +430,7 @@ def synthesize(
             )
             for pos in positions
         ]
-        patterns.append(
-            Pattern(group=group_lower, index=idx, bars=bars, events=events)
-        )
+        patterns.append(Pattern(group=group_lower, index=idx, bars=bars, events=events))
 
     # Emit one empty pattern per (group, scene_bars) actually referenced.
     # Each empty marker is sized to the scene's bars so the device's
@@ -450,9 +438,7 @@ def synthesize(
     # length (verified on hardware 2026-04-28: a 2-bar empty alongside
     # 4-bar real patterns cut every group to 2 bars of playback).
     for (group_lower, scene_bars), idx in sorted(empty_indices.items()):
-        patterns.append(
-            Pattern(group=group_lower, index=idx, bars=scene_bars, events=[])
-        )
+        patterns.append(Pattern(group=group_lower, index=idx, bars=scene_bars, events=[]))
 
     # Validate per-group pad count.
     per_group_pads: dict[str, set[int]] = {g.lower(): set() for g in GROUPS}

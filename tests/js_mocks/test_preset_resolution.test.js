@@ -75,9 +75,20 @@ const SYNTH_PRESET = {
 function prepFilesystemFromDisk() {
     // Seed the mock FS with the real Max package layout so sf_preset_loader's
     // _getHomePath/_resolvePresetDir probes succeed.
-    const users = fs.readdirSync('/Users', { withFileTypes: true })
-        .filter(e => e.isDirectory())
-        .map(e => e.name);
+    //
+    // Cross-platform: the loader's path probes assume macOS-style /Users/<u>
+    // home dirs. On Linux CI there is no /Users — we synthesise a single
+    // user-name directory so the loader's lookups still succeed.
+    const home = os.homedir();          // e.g. /Users/zak (mac) or /home/runner (linux)
+    const homeName = path.basename(home);
+    let users;
+    if (fs.existsSync('/Users')) {
+        users = fs.readdirSync('/Users', { withFileTypes: true })
+            .filter(e => e.isDirectory())
+            .map(e => e.name);
+    } else {
+        users = [homeName];
+    }
 
     // Seed /Users/ directory listing. We also need each user dir itself to be
     // a seeded directory so the loader's Folder.filetype check reports "fold"
@@ -85,9 +96,6 @@ function prepFilesystemFromDisk() {
     // state.fs). Empty-seed each; only our home gets the real layout.
     maxApi.seedDir('/Users', users);
     for (const u of users) maxApi.seedDir('/Users/' + u, []);
-
-    const home = os.homedir();          // e.g. /Users/zak
-    const homeName = path.basename(home);
     // Seed nothing else for all the other user dirs; only ours needs entries.
     maxApi.seedDir('/Users/' + homeName, ['Documents']);
     maxApi.seedDir('/Users/' + homeName + '/Documents', ['Max 9']);

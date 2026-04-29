@@ -12,20 +12,18 @@ Layout modes:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
 
-import numpy as np
 
-from .config import CurationConfig, StemCurationConfig, STEM_COLORS
+from .config import CurationConfig, STEM_COLORS
 
 
 # ── Quadrant assignments ────────────────────────────────────────────────
 
 QUADRANT_MAP = {
-    "drums":  "top_left",
-    "bass":   "top_right",
+    "drums": "top_left",
+    "bass": "top_right",
     "vocals": "bottom_left",
-    "other":  "bottom_right",
+    "other": "bottom_right",
 }
 
 # MIDI note base per quadrant (Drum Rack standard: C1=36 for visible 4×4)
@@ -41,32 +39,33 @@ QUADRANT_MIDI_BASE = 36  # all quadrants use 36-51, differentiated by MIDI chann
 # (MIDI note 36=bottom-left, 39=bottom-right, 40=second-row-left, etc.)
 
 LOOP_PAD_INDICES = [12, 13, 14, 15, 8, 9, 10, 11]  # top 2 rows
-ONESHOT_PAD_INDICES = [4, 5, 6, 7, 0, 1, 2, 3]      # bottom 2 rows
+ONESHOT_PAD_INDICES = [4, 5, 6, 7, 0, 1, 2, 3]  # bottom 2 rows
 
 # Drum-specific pad assignment (kick bottom-left, snare above, hats right of snare)
 DRUM_PAD_MAP = {
     # Bottom row: kick left, perc right
-    "kick":       [0, 1],
-    "perc":       [2, 3],
+    "kick": [0, 1],
+    "perc": [2, 3],
     # Top row of one-shots: snare left, hats right
-    "snare":      [4],
-    "clap":       [4],     # clap shares snare slot if no snare
+    "snare": [4],
+    "clap": [4],  # clap shares snare slot if no snare
     "hat_closed": [5],
-    "hat_open":   [6],
-    "rim":        [7],
+    "hat_open": [6],
+    "rim": [7],
 }
 
 
 @dataclass
 class PadAssignment:
     """One pad in the grid."""
-    pad_index: int              # 0-15 within the quadrant
-    midi_note: int              # MIDI note for Drum Rack (36-51)
-    pad_type: str               # "loop" | "oneshot" | "chromatic" | "midi_clip" | "empty"
-    file: str | None = None     # path to WAV file
-    label: str = ""             # display label (e.g., "kick", "loop 3", "C2")
-    loop: bool = False          # Simpler loop mode
-    classification: str = ""    # drum hit type (kick, snare, hat, etc.)
+
+    pad_index: int  # 0-15 within the quadrant
+    midi_note: int  # MIDI note for Drum Rack (36-51)
+    pad_type: str  # "loop" | "oneshot" | "chromatic" | "midi_clip" | "empty"
+    file: str | None = None  # path to WAV file
+    label: str = ""  # display label (e.g., "kick", "loop 3", "C2")
+    loop: bool = False  # Simpler loop mode
+    classification: str = ""  # drum hit type (kick, snare, hat, etc.)
     spectral_centroid: float = 0.0
     led_color: tuple[int, int, int] = (64, 64, 64)  # RGB
 
@@ -74,23 +73,26 @@ class PadAssignment:
 @dataclass
 class QuadrantLayout:
     """Layout for one stem's 4×4 quadrant."""
+
     stem_name: str
-    quadrant: str               # top_left, top_right, bottom_left, bottom_right
-    midi_channel: int           # 1-4
+    quadrant: str  # top_left, top_right, bottom_left, bottom_right
+    midi_channel: int  # 1-4
     pads: list[PadAssignment] = field(default_factory=list)
-    track_template: str = ""    # template track name in tracks.yaml
+    track_template: str = ""  # template track name in tracks.yaml
 
 
 @dataclass
 class FullGridLayout:
     """Complete 8×8 Launchpad layout."""
-    layout_mode: str            # "stems" | "dj"
+
+    layout_mode: str  # "stems" | "dj"
     quadrants: dict[str, QuadrantLayout] = field(default_factory=dict)
     bpm: float = 120.0
     track_name: str = ""
 
 
 # ── Color computation ────────────────────────────────────────────────────
+
 
 def _stem_base_color(stem_name: str) -> tuple[int, int, int]:
     """Get base RGB color for a stem."""
@@ -124,6 +126,7 @@ def spectral_to_led_color(
 
 
 # ── Stems Layout ─────────────────────────────────────────────────────────
+
 
 def build_stems_layout(
     curated_manifest: dict,
@@ -192,10 +195,14 @@ def build_stems_layout(
             loops = []
             oneshots = []
 
-        for li, loop in enumerate(loops[:len(LOOP_PAD_INDICES)]):
+        for li, loop in enumerate(loops[: len(LOOP_PAD_INDICES)]):
             pad_idx = LOOP_PAD_INDICES[li]
             file_path = loop.get("file", "")
-            centroid = loop.get("spectral", {}).get("centroid_hz", 0) if isinstance(loop.get("spectral"), dict) else 0
+            centroid = (
+                loop.get("spectral", {}).get("centroid_hz", 0)
+                if isinstance(loop.get("spectral"), dict)
+                else 0
+            )
 
             pads[pad_idx] = PadAssignment(
                 pad_index=pad_idx,
@@ -214,10 +221,14 @@ def build_stems_layout(
             _assign_drum_oneshots(pads, oneshots, stem_name)
         else:
             # Generic: fill bottom 2 rows in order
-            for oi, os in enumerate(oneshots[:len(ONESHOT_PAD_INDICES)]):
+            for oi, os in enumerate(oneshots[: len(ONESHOT_PAD_INDICES)]):
                 pad_idx = ONESHOT_PAD_INDICES[oi]
                 file_path = os.get("file", "")
-                centroid = os.get("spectral", {}).get("centroid_hz", 0) if isinstance(os.get("spectral"), dict) else 0
+                centroid = (
+                    os.get("spectral", {}).get("centroid_hz", 0)
+                    if isinstance(os.get("spectral"), dict)
+                    else 0
+                )
                 classification = os.get("classification", "")
 
                 pads[pad_idx] = PadAssignment(
@@ -260,7 +271,11 @@ def _assign_drum_oneshots(
                 continue
             hit = hits[i]
             file_path = hit.get("file", "")
-            centroid = hit.get("spectral", {}).get("centroid_hz", 0) if isinstance(hit.get("spectral"), dict) else 0
+            centroid = (
+                hit.get("spectral", {}).get("centroid_hz", 0)
+                if isinstance(hit.get("spectral"), dict)
+                else 0
+            )
 
             pads[pad_idx] = PadAssignment(
                 pad_index=pad_idx,
@@ -277,7 +292,8 @@ def _assign_drum_oneshots(
 
     # Fill remaining empty one-shot pads with unassigned hits
     remaining_hits = [
-        os for os in oneshots
+        os
+        for os in oneshots
         if os.get("file", "") not in {pads[i].file for i in assigned_pads if pads[i].file}
     ]
     empty_os_pads = [i for i in ONESHOT_PAD_INDICES if i not in assigned_pads]
@@ -299,6 +315,7 @@ def _assign_drum_oneshots(
 
 # ── Layout serialization ─────────────────────────────────────────────────
 
+
 def layout_to_manifest(grid: FullGridLayout) -> dict:
     """Convert a FullGridLayout to a manifest-compatible dict for the loader."""
     result = {
@@ -317,16 +334,18 @@ def layout_to_manifest(grid: FullGridLayout) -> dict:
             "pads": [],
         }
         for pad in quadrant.pads:
-            q["pads"].append({
-                "pad_index": pad.pad_index,
-                "midi_note": pad.midi_note,
-                "type": pad.pad_type,
-                "file": pad.file,
-                "label": pad.label,
-                "loop": pad.loop,
-                "classification": pad.classification,
-                "led_color": list(pad.led_color),
-            })
+            q["pads"].append(
+                {
+                    "pad_index": pad.pad_index,
+                    "midi_note": pad.midi_note,
+                    "type": pad.pad_type,
+                    "file": pad.file,
+                    "label": pad.label,
+                    "loop": pad.loop,
+                    "classification": pad.classification,
+                    "led_color": list(pad.led_color),
+                }
+            )
         result["quadrants"][stem_name] = q
 
     return result

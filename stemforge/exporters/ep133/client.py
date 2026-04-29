@@ -9,9 +9,8 @@ from typing import Callable
 
 from .audio import wav_to_ep133_pcm
 from .commands import IDENTITY_SYSEX, STATUS_OK, TE_SYSEX_FILE
-from . import payloads as P
 from .payloads import PadParams, build_assign_pad
-from .sysex import RequestIdAllocator, build_sysex
+from .sysex import RequestIdAllocator, TESysexResponse, build_sysex
 from .transfer import generate_upload_payloads
 from .transport import EP133Transport
 
@@ -20,8 +19,6 @@ ProgressFn = Callable[[int, int], None]
 
 class EP133UploadError(RuntimeError):
     pass
-
-
 
 
 class EP133Client:

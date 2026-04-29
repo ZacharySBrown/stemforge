@@ -17,7 +17,6 @@ Protocol:
 
 from __future__ import annotations
 
-import struct
 import time
 from pathlib import Path
 
@@ -50,12 +49,12 @@ def _encode_7bit(data: bytes) -> bytes:
     """
     result = bytearray()
     for i in range(0, len(data), 7):
-        group = data[i:i+7]
+        group = data[i : i + 7]
         msb_byte = 0
         encoded = bytearray()
         for j, b in enumerate(group):
             if b & 0x80:
-                msb_byte |= (1 << j)
+                msb_byte |= 1 << j
             encoded.append(b & 0x7F)
         result.append(msb_byte)
         result.extend(encoded)
@@ -83,9 +82,6 @@ def _build_init_messages() -> list[bytes]:
 
 def _build_file_meta(slot: int, filename: str, wav_size: int, channels: int = 1) -> bytes:
     """Build the file metadata message."""
-    # Encode slot number (3 digits, 0-padded)
-    slot_bytes = f"{slot:03d}".encode("ascii")
-
     # Truncate filename to fit
     name = filename[:20].encode("ascii")
 
@@ -115,7 +111,7 @@ def _build_data_chunks(wav_data: bytes) -> list[bytes]:
     offset = 0
 
     while offset < len(wav_data):
-        chunk = wav_data[offset:offset + CHUNK_SIZE]
+        chunk = wav_data[offset : offset + CHUNK_SIZE]
         encoded = _encode_7bit(chunk)
 
         # Build chunk header
@@ -173,18 +169,13 @@ def _prepare_wav_for_ep133(wav_path: Path) -> bytes:
 
     # Build WAV with TE metadata header
     buf = io.BytesIO()
-    sf.write(buf, audio_16, EP133_SAMPLE_RATE, format='WAV', subtype='PCM_16')
+    sf.write(buf, audio_16, EP133_SAMPLE_RATE, format="WAV", subtype="PCM_16")
     wav_bytes = buf.getvalue()
 
-    # Inject TE metadata (LIST/INFO/TNGE chunk) into the WAV
-    te_metadata = _build_te_metadata()
-
-    # Insert before the data chunk
-    # WAV structure: RIFF header (12) + fmt chunk + [smpl chunk] + LIST chunk + data chunk
-    # For simplicity, append the LIST chunk at the proper WAV position
-    # The EP-133 expects: RIFF...WAVEfmt...smpl...LIST(TNGE metadata)...data...
-
-    return wav_bytes  # TODO: inject TE metadata properly
+    # TODO: inject TE metadata (LIST/INFO/TNGE chunk) — _build_te_metadata()
+    # was here but isn't wired into the WAV yet. Insert before the data chunk:
+    # RIFF...WAVEfmt...smpl...LIST(TNGE metadata)...data...
+    return wav_bytes
 
 
 def _build_te_metadata(
@@ -215,6 +206,7 @@ def find_ep133() -> str | None:
     """Find the EP-133 MIDI output port."""
     try:
         import mido
+
         for name in mido.get_output_names():
             if "EP-133" in name or "EP133" in name:
                 return name
@@ -265,7 +257,9 @@ def upload_sample(
     messages.append(_build_finalize())
 
     if dry_run:
-        print(f"  DRY RUN: {wav_path.name} → slot {slot:03d} ({len(messages)} SysEx messages, {len(wav_data)} bytes)")
+        print(
+            f"  DRY RUN: {wav_path.name} → slot {slot:03d} ({len(messages)} SysEx messages, {len(wav_data)} bytes)"
+        )
         return True
 
     # Find device
@@ -308,7 +302,9 @@ def upload_export(
         print(f"No WAV files in {export_dir}")
         return 0
 
-    print(f"Uploading {len(wav_files)} samples to EP-133 (slots {start_slot}-{start_slot + len(wav_files) - 1})")
+    print(
+        f"Uploading {len(wav_files)} samples to EP-133 (slots {start_slot}-{start_slot + len(wav_files) - 1})"
+    )
 
     uploaded = 0
     for i, wav in enumerate(wav_files):

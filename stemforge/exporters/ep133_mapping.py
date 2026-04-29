@@ -21,17 +21,17 @@ MAX_PAD = 12
 
 @dataclass
 class EP133PadAssignment:
-    project: int     # 1-9
-    group: str       # 'A' | 'B' | 'C' | 'D'
-    pad: int         # 1-12
-    slot: int        # 1-999 (library slot)
+    project: int  # 1-9
+    group: str  # 'A' | 'B' | 'C' | 'D'
+    pad: int  # 1-12
+    slot: int  # 1-999 (library slot)
 
 
 @dataclass
 class EP133Mapping:
     """Maps export WAVs to library slots and project/group/pad assignments."""
 
-    slot_assignments: dict[str, int] = field(default_factory=dict)   # filename -> slot
+    slot_assignments: dict[str, int] = field(default_factory=dict)  # filename -> slot
     pad_assignments: list[EP133PadAssignment] = field(default_factory=list)
 
     def validate(self) -> list[str]:
@@ -44,9 +44,7 @@ class EP133Mapping:
             if not (1 <= slot <= MAX_SLOT):
                 errors.append(f"Slot {slot} for '{filename}' out of range (1-{MAX_SLOT})")
             if slot in seen_slots:
-                errors.append(
-                    f"Duplicate slot {slot}: '{filename}' and '{seen_slots[slot]}'"
-                )
+                errors.append(f"Duplicate slot {slot}: '{filename}' and '{seen_slots[slot]}'")
             seen_slots[slot] = filename
 
         # Pad assignment validation
@@ -62,15 +60,12 @@ class EP133Mapping:
                 errors.append(f"Pad {pa.pad} out of range (1-{MAX_PAD})")
             if pa.slot not in assigned_slots:
                 errors.append(
-                    f"Pad {pa.group}{pa.pad} references slot {pa.slot} "
-                    f"which has no slot_assignment"
+                    f"Pad {pa.group}{pa.pad} references slot {pa.slot} which has no slot_assignment"
                 )
 
             key = (pa.project, pa.group, pa.pad)
             if key in seen_pads:
-                errors.append(
-                    f"Duplicate pad assignment: project {pa.project} {pa.group}{pa.pad}"
-                )
+                errors.append(f"Duplicate pad assignment: project {pa.project} {pa.group}{pa.pad}")
             seen_pads.add(key)
 
         return errors
@@ -84,12 +79,14 @@ class EP133Mapping:
 
         pad_assignments = []
         for pa in data.get("pad_assignments", []):
-            pad_assignments.append(EP133PadAssignment(
-                project=pa.get("project", 1),
-                group=pa["group"],
-                pad=pa["pad"],
-                slot=pa["slot"],
-            ))
+            pad_assignments.append(
+                EP133PadAssignment(
+                    project=pa.get("project", 1),
+                    group=pa["group"],
+                    pad=pa["pad"],
+                    slot=pa["slot"],
+                )
+            )
 
         return cls(
             slot_assignments=slot_assignments,
@@ -135,12 +132,14 @@ class EP133Mapping:
                 filename = entry["file"]
                 slot = start_slot + entry["slot"] - 1
                 slot_assignments[filename] = slot
-                pad_assignments.append(EP133PadAssignment(
-                    project=project,
-                    group=entry["group"],
-                    pad=entry["pad"],
-                    slot=slot,
-                ))
+                pad_assignments.append(
+                    EP133PadAssignment(
+                        project=project,
+                        group=entry["group"],
+                        pad=entry["pad"],
+                        slot=slot,
+                    )
+                )
             return cls(slot_assignments=slot_assignments, pad_assignments=pad_assignments)
 
         # Fallback: sequential assignment from WAV files
@@ -166,11 +165,13 @@ class EP133Mapping:
             slot = start_slot + len(slot_assignments)
             group_counts[group] += 1
             slot_assignments[wav.name] = slot
-            pad_assignments.append(EP133PadAssignment(
-                project=project,
-                group=group,
-                pad=group_counts[group],
-                slot=slot,
-            ))
+            pad_assignments.append(
+                EP133PadAssignment(
+                    project=project,
+                    group=group,
+                    pad=group_counts[group],
+                    slot=slot,
+                )
+            )
 
         return cls(slot_assignments=slot_assignments, pad_assignments=pad_assignments)

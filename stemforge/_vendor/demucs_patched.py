@@ -24,6 +24,7 @@
 """
 This code contains the spectrogram and Hybrid version of Demucs.
 """
+
 import math
 
 from openunmix.filtering import wiener
@@ -230,17 +231,10 @@ class HTDemucs(nn.Module):
                 chout_z = max(chout, chout_z)
                 chout = chout_z
 
-            enc = HEncLayer(
-                chin_z, chout_z, dconv=dconv_mode & 1, context=context_enc, **kw
-            )
+            enc = HEncLayer(chin_z, chout_z, dconv=dconv_mode & 1, context=context_enc, **kw)
             if freq:
                 tenc = HEncLayer(
-                    chin,
-                    chout,
-                    dconv=dconv_mode & 1,
-                    context=context_enc,
-                    empty=last_freq,
-                    **kwt
+                    chin, chout, dconv=dconv_mode & 1, context=context_enc, empty=last_freq, **kwt
                 )
                 self.tencoder.append(tenc)
 
@@ -253,12 +247,7 @@ class HTDemucs(nn.Module):
                 if self.cac:
                     chin_z *= 2
             dec = HDecLayer(
-                chout_z,
-                chin_z,
-                dconv=dconv_mode & 2,
-                last=index == 0,
-                context=context,
-                **kw_dec
+                chout_z, chin_z, dconv=dconv_mode & 2, last=index == 0, context=context, **kw_dec
             )
             if multi:
                 dec = MultiWrap(dec, multi_freqs)
@@ -270,7 +259,7 @@ class HTDemucs(nn.Module):
                     empty=last_freq,
                     last=index == 0,
                     context=context,
-                    **kwt
+                    **kwt,
                 )
                 self.tdecoder.insert(0, tdec)
             self.decoder.insert(0, dec)
@@ -285,9 +274,7 @@ class HTDemucs(nn.Module):
                 else:
                     freqs //= stride
             if index == 0 and freq_emb:
-                self.freq_emb = ScaledEmbedding(
-                    freqs, chin_z, smooth=emb_smooth, scale=emb_scale
-                )
+                self.freq_emb = ScaledEmbedding(freqs, chin_z, smooth=emb_smooth, scale=emb_scale)
                 self.freq_emb_scale = freq_emb
 
         if rescale:
@@ -296,15 +283,9 @@ class HTDemucs(nn.Module):
         transformer_channels = channels * growth ** (depth - 1)
         if bottom_channels:
             self.channel_upsampler = nn.Conv1d(transformer_channels, bottom_channels, 1)
-            self.channel_downsampler = nn.Conv1d(
-                bottom_channels, transformer_channels, 1
-            )
-            self.channel_upsampler_t = nn.Conv1d(
-                transformer_channels, bottom_channels, 1
-            )
-            self.channel_downsampler_t = nn.Conv1d(
-                bottom_channels, transformer_channels, 1
-            )
+            self.channel_downsampler = nn.Conv1d(bottom_channels, transformer_channels, 1)
+            self.channel_upsampler_t = nn.Conv1d(transformer_channels, bottom_channels, 1)
+            self.channel_downsampler_t = nn.Conv1d(bottom_channels, transformer_channels, 1)
 
             transformer_channels = bottom_channels
 
@@ -364,7 +345,7 @@ class HTDemucs(nn.Module):
 
         z = spectro(x, nfft, hl)[..., :-1, :]
         assert z.shape[-1] == le + 4, (z.shape, x.shape, le)
-        z = z[..., 2: 2 + le]
+        z = z[..., 2 : 2 + le]
         return z
 
     def _ispec(self, z, length=None, scale=0):
@@ -374,7 +355,7 @@ class HTDemucs(nn.Module):
         pad = hl // 2 * 3
         le = hl * int(math.ceil(length / hl)) + 2 * pad
         x = ispectro(z, hl, length=le)
-        x = x[..., pad: pad + length]
+        x = x[..., pad : pad + length]
         return x
 
     def _magnitude(self, z):
@@ -448,8 +429,8 @@ class HTDemucs(nn.Module):
         training_length = int(self.segment * self.samplerate)
         if training_length < length:
             raise ValueError(
-                    f"Given length {length} is longer than "
-                    f"training length {training_length}")
+                f"Given length {length} is longer than training length {training_length}"
+            )
         return training_length
 
     def forward(self, mix):
@@ -671,8 +652,9 @@ class HTDemucs(nn.Module):
             ``(B, S, 2*C, Fq, T_frames)`` real, CAC-encoded freq branch
             output.  Caller runs CAC → complex → iSTFT externally.
         """
-        assert self.cac, ("forward_from_spec_cac assumes cac=True "
-                          "(the shipped HTDemucs configuration).")
+        assert self.cac, (
+            "forward_from_spec_cac assumes cac=True (the shipped HTDemucs configuration)."
+        )
         xt, x = self._learned_forward(mix, mag)
         # ``x`` is already shape ``(B, S, 2*C, Fq, T)`` — the CAC-encoded
         # freq branch output before ``_mask`` turns it complex.

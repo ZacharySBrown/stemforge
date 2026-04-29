@@ -64,7 +64,7 @@ def slice_at_beats(
         if end <= start:
             continue
         chunk = y[:, start:end]
-        if float(np.sqrt(np.mean(chunk ** 2))) < silence_threshold:
+        if float(np.sqrt(np.mean(chunk**2))) < silence_threshold:
             continue
         fname = slices_dir / f"{stem_name}_beat_{i + 1:03d}.wav"
         sf.write(str(fname), chunk.T, sr, subtype="PCM_24")
@@ -102,7 +102,7 @@ def _write_bar_slices(
         if end <= start:
             continue
         chunk = y[:, start:end]
-        if float(np.sqrt(np.mean(chunk ** 2))) < silence_threshold:
+        if float(np.sqrt(np.mean(chunk**2))) < silence_threshold:
             continue
         fname = slices_dir / f"{stem_name}_bar_{i + 1:03d}.wav"
         sf.write(str(fname), chunk.T, sr, subtype="PCM_24")
@@ -149,8 +149,13 @@ def slice_at_bars_from_analysis(
     bar_samples = all_samples[::numerator]
 
     return _write_bar_slices(
-        y, sr, bar_samples, output_dir, stem_name,
-        silence_threshold=silence_threshold, normalize=normalize,
+        y,
+        sr,
+        bar_samples,
+        output_dir,
+        stem_name,
+        silence_threshold=silence_threshold,
+        normalize=normalize,
     )
 
 
@@ -181,11 +186,16 @@ def slice_at_bars(
         if beat_times is None:
             _, beat_times = detect_bpm_and_beats(stem_path)
         beat_samples = librosa.time_to_samples(beat_times, sr=sr).astype(int)
-        bar_samples = beat_samples[::int(time_sig_numerator)]
+        bar_samples = beat_samples[:: int(time_sig_numerator)]
 
     return _write_bar_slices(
-        y, sr, bar_samples, output_dir, stem_name,
-        silence_threshold=silence_threshold, normalize=normalize,
+        y,
+        sr,
+        bar_samples,
+        output_dir,
+        stem_name,
+        silence_threshold=silence_threshold,
+        normalize=normalize,
     )
 
 

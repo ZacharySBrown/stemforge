@@ -16,28 +16,31 @@ Three bottom-half modes for quadrant layout:
 from __future__ import annotations
 
 import json
-import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import librosa
 import numpy as np
 import soundfile as sf
 
+if TYPE_CHECKING:
+    from .segmenter import SongStructure
+
 
 # ── Pitch ranges per stem type ───────────────────────────────────────────
 
 PITCH_RANGES = {
-    "bass":   {"fmin": 30, "fmax": 500},
+    "bass": {"fmin": 30, "fmax": 500},
     "vocals": {"fmin": 80, "fmax": 1000},
-    "other":  {"fmin": 50, "fmax": 2000},
+    "other": {"fmin": 50, "fmax": 2000},
 }
 
 # Scale templates (semitone intervals from root)
 SCALE_TEMPLATES = {
-    "major":     [0, 2, 4, 5, 7, 9, 11, 12],
-    "minor":     [0, 2, 3, 5, 7, 8, 10, 12],
-    "dorian":    [0, 2, 3, 5, 7, 9, 10, 12],
+    "major": [0, 2, 4, 5, 7, 9, 11, 12],
+    "minor": [0, 2, 3, 5, 7, 8, 10, 12],
+    "dorian": [0, 2, 3, 5, 7, 9, 10, 12],
     "mixolydian": [0, 2, 4, 5, 7, 9, 10, 12],
     "pentatonic_major": [0, 2, 4, 7, 9, 12, 14, 16],
     "pentatonic_minor": [0, 3, 5, 7, 10, 12, 15, 17],
@@ -49,17 +52,19 @@ NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 @dataclass
 class DetectedNote:
     """A single detected note event."""
+
     midi_note: int
-    start_time: float       # seconds
+    start_time: float  # seconds
     end_time: float
-    duration: float         # seconds
-    velocity: int           # 0-127
-    confidence: float       # voiced probability
+    duration: float  # seconds
+    velocity: int  # 0-127
+    confidence: float  # voiced probability
 
 
 @dataclass
 class MIDIClip:
     """A sequence of notes for one song section."""
+
     section_label: str
     notes: list[DetectedNote] = field(default_factory=list)
     duration_beats: float = 0.0
@@ -86,14 +91,15 @@ class MIDIClip:
 @dataclass
 class MIDIExtractionResult:
     """Full MIDI extraction output for one stem."""
+
     root_sample_path: Path | None = None
-    root_note: int = 60                 # MIDI note of the root sample
-    detected_key: str = "C"             # e.g., "C", "G#"
-    detected_mode: str = "major"        # "major" or "minor"
+    root_note: int = 60  # MIDI note of the root sample
+    detected_key: str = "C"  # e.g., "C", "G#"
+    detected_mode: str = "major"  # "major" or "minor"
     note_range: tuple[int, int] = (36, 72)  # (low, high) MIDI notes detected
     clips: list[MIDIClip] = field(default_factory=list)
-    chromatic_pads: list[dict] = field(default_factory=list)    # for melodic mode
-    scale_pads: list[dict] = field(default_factory=list)        # for scale mode
+    chromatic_pads: list[dict] = field(default_factory=list)  # for melodic mode
+    scale_pads: list[dict] = field(default_factory=list)  # for scale mode
 
     def to_dict(self) -> dict:
         return {
@@ -116,6 +122,7 @@ class MIDIExtractionResult:
 
 # ── Utility functions ────────────────────────────────────────────────────
 
+
 def midi_to_name(midi_note: int) -> str:
     """Convert MIDI note number to name (e.g., 60 → 'C4')."""
     octave = (midi_note // 12) - 1
@@ -137,6 +144,7 @@ def midi_to_hz(midi_note: int) -> float:
 
 # ── Core pitch detection ─────────────────────────────────────────────────
 
+
 def detect_pitches(
     audio_path: Path,
     stem_name: str = "bass",
@@ -155,7 +163,8 @@ def detect_pitches(
 
     pitch_range = PITCH_RANGES.get(stem_name, PITCH_RANGES["other"])
     f0, voiced_flag, voiced_prob = librosa.pyin(
-        y, sr=sr,
+        y,
+        sr=sr,
         fmin=pitch_range["fmin"],
         fmax=pitch_range["fmax"],
     )
@@ -225,14 +234,16 @@ def segment_notes(
         mean_conf = float(np.mean(confidences))
         velocity = max(1, min(127, int(mean_conf * 127)))
 
-        notes.append(DetectedNote(
-            midi_note=current_midi,
-            start_time=start_time,
-            end_time=end_time,
-            duration=duration,
-            velocity=velocity,
-            confidence=mean_conf,
-        ))
+        notes.append(
+            DetectedNote(
+                midi_note=current_midi,
+                start_time=start_time,
+                end_time=end_time,
+                duration=duration,
+                velocity=velocity,
+                confidence=mean_conf,
+            )
+        )
 
     # Optional quantization
     if quantize and bpm > 0:
@@ -241,14 +252,16 @@ def segment_notes(
         grid_seconds = (60.0 / bpm) * grid_beats
         for note in notes:
             note.start_time = round(note.start_time / grid_seconds) * grid_seconds
-            note.end_time = max(note.start_time + 0.01,
-                               round(note.end_time / grid_seconds) * grid_seconds)
+            note.end_time = max(
+                note.start_time + 0.01, round(note.end_time / grid_seconds) * grid_seconds
+            )
             note.duration = note.end_time - note.start_time
 
     return notes
 
 
 # ── Root sample extraction ───────────────────────────────────────────────
+
 
 def extract_root_sample(
     audio_path: Path,
@@ -298,6 +311,7 @@ def extract_root_sample(
 
 # ── Key detection ────────────────────────────────────────────────────────
 
+
 def detect_key(audio_path: Path, sr: int = 22050) -> tuple[str, str]:
     """
     Detect song key using chroma features.
@@ -309,8 +323,12 @@ def detect_key(audio_path: Path, sr: int = 22050) -> tuple[str, str]:
     chroma_mean = chroma.mean(axis=1)
 
     # Correlate with major and minor profiles (Krumhansl-Kessler)
-    major_profile = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
-    minor_profile = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
+    major_profile = np.array(
+        [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88]
+    )
+    minor_profile = np.array(
+        [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
+    )
 
     best_key = 0
     best_mode = "major"
@@ -335,17 +353,20 @@ def detect_key(audio_path: Path, sr: int = 22050) -> tuple[str, str]:
 
 # ── Pad mapping generators ──────────────────────────────────────────────
 
+
 def build_chromatic_pads(root_note: int, n_pads: int = 12) -> list[dict]:
     """Build chromatic pad mapping: 12 semitones starting from root."""
     pads = []
     for i in range(n_pads):
         midi = root_note + i
-        pads.append({
-            "pad_offset": i,
-            "midi_note": midi,
-            "note_name": midi_to_name(midi),
-            "freq_hz": round(midi_to_hz(midi), 2),
-        })
+        pads.append(
+            {
+                "pad_offset": i,
+                "midi_note": midi,
+                "note_name": midi_to_name(midi),
+                "freq_hz": round(midi_to_hz(midi), 2),
+            }
+        )
     return pads
 
 
@@ -372,17 +393,20 @@ def build_scale_pads(
     for i in range(min(n_pads, len(template))):
         midi = base + template[i]
         degree = i + 1
-        pads.append({
-            "pad_offset": i,
-            "midi_note": midi,
-            "note_name": midi_to_name(midi),
-            "freq_hz": round(midi_to_hz(midi), 2),
-            "scale_degree": degree,
-        })
+        pads.append(
+            {
+                "pad_offset": i,
+                "midi_note": midi,
+                "note_name": midi_to_name(midi),
+                "freq_hz": round(midi_to_hz(midi), 2),
+                "scale_degree": degree,
+            }
+        )
     return pads
 
 
 # ── Section-aware MIDI clip generation ───────────────────────────────────
+
 
 def split_notes_by_sections(
     notes: list[DetectedNote],
@@ -397,31 +421,35 @@ def split_notes_by_sections(
     clips = []
     for seg in song_structure.segments:
         section_notes = [
-            n for n in notes
-            if n.start_time >= seg.start_time and n.start_time < seg.end_time
+            n for n in notes if n.start_time >= seg.start_time and n.start_time < seg.end_time
         ]
         if section_notes:
             # Offset note times to be relative to section start
             adjusted = []
             for n in section_notes:
-                adjusted.append(DetectedNote(
-                    midi_note=n.midi_note,
-                    start_time=n.start_time - seg.start_time,
-                    end_time=n.end_time - seg.start_time,
-                    duration=n.duration,
-                    velocity=n.velocity,
-                    confidence=n.confidence,
-                ))
-            clips.append(MIDIClip(
-                section_label=seg.label,
-                notes=adjusted,
-                duration_beats=(seg.end_time - seg.start_time),
-            ))
+                adjusted.append(
+                    DetectedNote(
+                        midi_note=n.midi_note,
+                        start_time=n.start_time - seg.start_time,
+                        end_time=n.end_time - seg.start_time,
+                        duration=n.duration,
+                        velocity=n.velocity,
+                        confidence=n.confidence,
+                    )
+                )
+            clips.append(
+                MIDIClip(
+                    section_label=seg.label,
+                    notes=adjusted,
+                    duration_beats=(seg.end_time - seg.start_time),
+                )
+            )
 
     return clips
 
 
 # ── Main extraction function ─────────────────────────────────────────────
+
 
 def extract_midi(
     stem_path: Path,
@@ -455,8 +483,12 @@ def extract_midi(
 
     # Step 2: Segment into notes
     notes = segment_notes(
-        f0, voiced, voiced_prob, sr,
-        quantize=quantize, bpm=bpm,
+        f0,
+        voiced,
+        voiced_prob,
+        sr,
+        quantize=quantize,
+        bpm=bpm,
     )
 
     if not notes:
@@ -471,7 +503,7 @@ def extract_midi(
         # Parse note name like "C2" → MIDI number
         for i, name in enumerate(NOTE_NAMES):
             if chromatic_root.startswith(name):
-                octave = int(chromatic_root[len(name):]) if len(chromatic_root) > len(name) else 2
+                octave = int(chromatic_root[len(name) :]) if len(chromatic_root) > len(name) else 2
                 root_midi = (octave + 1) * 12 + i
                 break
 

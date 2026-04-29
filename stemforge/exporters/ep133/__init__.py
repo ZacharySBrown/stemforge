@@ -28,5 +28,6 @@ def __getattr__(name):
     # doesn't pull in mido + the hardware-facing layers.
     if name == "EP133Client":
         from .client import EP133Client
+
         return EP133Client
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

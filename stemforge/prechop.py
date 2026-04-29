@@ -34,14 +34,14 @@ Top-level summary (across all stems):
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
 
 import numpy as np
 import soundfile as sf
 
-from .manifest_schema import SampleMeta, write_sidecar
+from .manifest_schema import SampleMeta, Stem, write_sidecar
 
 
 # ── Math helpers ─────────────────────────────────────────────────────────────
@@ -80,16 +80,16 @@ def chunk_count_for(total_frames: int, fpb: int, bars: int, pad_last: bool = Tru
 class ChunkMeta:
     """One row in `prechop_manifest.json` per chunk file."""
 
-    file: str             # path relative to manifest dir
-    stem: str             # "drums", "bass", ...
-    chunk_index: int      # 1-based
-    bars: int             # target bars (the loop region length)
-    pad_bars: int         # configured padding (per side)
-    pad_pre_bars: float   # ACTUAL bars of pre-roll padding (clamped at start)
+    file: str  # path relative to manifest dir
+    stem: str  # "drums", "bass", ...
+    chunk_index: int  # 1-based
+    bars: int  # target bars (the loop region length)
+    pad_bars: int  # configured padding (per side)
+    pad_pre_bars: float  # ACTUAL bars of pre-roll padding (clamped at start)
     pad_post_bars: float  # ACTUAL bars of post-roll padding (clamped at end)
     loop_start_sec: float
     loop_end_sec: float
-    total_sec: float      # total duration of the padded WAV
+    total_sec: float  # total duration of the padded WAV
 
     def asdict(self) -> dict:
         return asdict(self)
@@ -189,13 +189,18 @@ def prechop_stem(
         metas.append(cm)
 
         if write_sidecars:
+            stem_literal: Stem | None = (
+                stem_name  # type: ignore[assignment]
+                if stem_name in {"drums", "bass", "vocals", "other", "full"}
+                else None
+            )
             meta = SampleMeta(
                 name=f"{stem_name} {i + 1:03d}",
                 bpm=float(bpm),
                 time_mode="bpm",
                 bars=float(bars),
                 playmode="key",
-                stem=stem_name if stem_name in {"drums", "bass", "vocals", "other"} else None,
+                stem=stem_literal,
                 role="loop",
             )
             write_sidecar(fname, meta)

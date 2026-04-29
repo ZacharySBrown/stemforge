@@ -102,10 +102,10 @@ def test_write_batch_and_lookup_by_hash(tmp_path: Path) -> None:
         track="demo",
         bpm=128.0,
         samples=[
-            SampleMeta(file="a.wav", audio_hash=compute_audio_hash(a),
-                       stem="drums", playmode="oneshot"),
-            SampleMeta(file="b.wav", audio_hash=compute_audio_hash(b),
-                       stem="bass", playmode="key"),
+            SampleMeta(
+                file="a.wav", audio_hash=compute_audio_hash(a), stem="drums", playmode="oneshot"
+            ),
+            SampleMeta(file="b.wav", audio_hash=compute_audio_hash(b), stem="bass", playmode="key"),
         ],
     )
     out = write_batch(tmp_path, batch)
@@ -150,9 +150,7 @@ def test_resolve_meta_chain_prefers_sidecar(tmp_path: Path) -> None:
 def test_resolve_meta_falls_through_to_batch(tmp_path: Path) -> None:
     wav = tmp_path / "loop.wav"
     wav.write_bytes(b"x")
-    write_batch(tmp_path, BatchManifest(
-        samples=[SampleMeta(file="loop.wav", bpm=99.0)]
-    ))
+    write_batch(tmp_path, BatchManifest(samples=[SampleMeta(file="loop.wav", bpm=99.0)]))
     resolved = resolve_meta(wav)
     assert resolved is not None
     assert resolved.bpm == 99.0
@@ -178,9 +176,7 @@ def test_explicit_manifest_override_handles_both_shapes(tmp_path: Path) -> None:
 
     # Batch shape
     batch_p = tmp_path / "batch.json"
-    batch_p.write_text(json.dumps({
-        "samples": [{"file": "loop.wav", "bpm": 88.0}]
-    }))
+    batch_p.write_text(json.dumps({"samples": [{"file": "loop.wav", "bpm": 88.0}]}))
     r2 = resolve_meta(wav, manifest_override=batch_p)
     assert r2 is not None
     assert r2.bpm == 88.0

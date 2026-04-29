@@ -91,6 +91,7 @@ except ImportError:
 # proof that the bytes we emit match the bytes we'd read.
 # ---------------------------------------------------------------------------
 
+
 def _zip_entries(ppak_bytes: bytes) -> dict[str, bytes]:
     """Return a mapping of zip-entry-name → bytes. Entry names preserved as-is."""
     with zipfile.ZipFile(io.BytesIO(ppak_bytes)) as zf:
@@ -185,6 +186,7 @@ def _read_settings_bpm(buf: bytes) -> float:
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(scope="module")
 def materialized_fixtures(tmp_path_factory) -> tuple[dict, dict]:
     """Rewrite Track-C sample fixtures to point at on-disk stub WAVs.
@@ -249,7 +251,9 @@ def built_ppak_bytes(arrangement, manifest) -> bytes:
 def project_tar_bytes(built_ppak_bytes) -> bytes:
     """Extract /projects/PXX.tar from the built ppak."""
     entries = _zip_entries(built_ppak_bytes)
-    tar_entries = [name for name in entries if name.startswith("/projects/") and name.endswith(".tar")]
+    tar_entries = [
+        name for name in entries if name.startswith("/projects/") and name.endswith(".tar")
+    ]
     assert tar_entries, f"no /projects/PXX.tar in zip; entries={list(entries)}"
     assert len(tar_entries) == 1, f"expected exactly one project tar, got {tar_entries}"
     return entries[tar_entries[0]]
@@ -263,6 +267,7 @@ def tar_files(project_tar_bytes) -> dict[str, bytes]:
 # ---------------------------------------------------------------------------
 # Tests — container layer
 # ---------------------------------------------------------------------------
+
 
 def test_ppak_is_valid_zip(built_ppak_bytes):
     """Built file decodes as a ZIP container."""
@@ -279,7 +284,9 @@ def test_ppak_entries_have_leading_slash(built_ppak_bytes):
 
 def test_ppak_contains_project_tar(built_ppak_bytes):
     entries = _zip_entries(built_ppak_bytes)
-    project_paths = [name for name in entries if name.startswith("/projects/P") and name.endswith(".tar")]
+    project_paths = [
+        name for name in entries if name.startswith("/projects/P") and name.endswith(".tar")
+    ]
     assert project_paths, f"no /projects/PXX.tar in entries: {list(entries)}"
 
 
@@ -303,14 +310,13 @@ def test_ppak_meta_json_well_formed(built_ppak_bytes):
     assert meta["info"] == "teenage engineering - pak file"
     assert meta["pak_version"] == 1
     assert meta["device_name"] == "EP-133"
-    assert meta["device_sku"] == meta["base_sku"], (
-        "device_sku must equal base_sku in user paks"
-    )
+    assert meta["device_sku"] == meta["base_sku"], "device_sku must equal base_sku in user paks"
 
 
 # ---------------------------------------------------------------------------
 # Tests — TAR layer
 # ---------------------------------------------------------------------------
+
 
 def test_tar_has_pad_files_for_assigned_pads_only(tar_files):
     """Only assigned pads emit pad files; each is 26 bytes (factory
@@ -318,12 +324,14 @@ def test_tar_has_pad_files_for_assigned_pads_only(tar_files):
     factory P06 (empty project) emits zero pad files; demo projects emit
     only the populated groups.
     """
-    pad_files = {k: v for k, v in tar_files.items() if k.startswith("pads/") and k.count("/") == 2 and k.split("/")[-1].startswith("p")}
+    pad_files = {
+        k: v
+        for k, v in tar_files.items()
+        if k.startswith("pads/") and k.count("/") == 2 and k.split("/")[-1].startswith("p")
+    }
     assert len(pad_files) > 0, "expected at least one pad file in TAR"
     for name, blob in pad_files.items():
-        assert len(blob) == 26, (
-            f"{name} is {len(blob)} bytes, expected 26"
-        )
+        assert len(blob) == 26, f"{name} is {len(blob)} bytes, expected 26"
 
 
 def test_tar_omits_settings_file(tar_files):
@@ -360,7 +368,7 @@ def test_tar_has_pattern_files(tar_files, arrangement):
     for name in tar_files:
         if not name.startswith("patterns/"):
             continue
-        basename = name[len("patterns/"):]
+        basename = name[len("patterns/") :]
         if basename and basename[0].isalpha():
             pattern_groups_present.add(basename[0].lower())
     missing = expected_groups - pattern_groups_present
@@ -384,10 +392,7 @@ def test_scenes_count_matches_locator_count(tar_files, arrangement):
     The scenes file is fixed-size 712 bytes: 7-byte header + 99 scene
     slots + 111-byte trailer; unused slots are zero-filled."""
     scenes = _parse_scenes(tar_files["scenes"])
-    populated = [
-        s for s in scenes
-        if s["a"] != 0 or s["b"] != 0 or s["c"] != 0 or s["d"] != 0
-    ]
+    populated = [s for s in scenes if s["a"] != 0 or s["b"] != 0 or s["c"] != 0 or s["d"] != 0]
     expected = len(arrangement["locators"])
     assert len(populated) == expected, (
         f"got {len(populated)} populated scenes, expected {expected} "
@@ -415,7 +420,11 @@ def test_pad_records_reference_sample_slots(tar_files):
     pads are now omitted from the TAR (factory P06 layout), every pad
     file we emit corresponds to a populated pad with a real slot.
     """
-    pad_files = {k: v for k, v in tar_files.items() if k.startswith("pads/") and k.count("/") == 2 and k.split("/")[-1].startswith("p")}
+    pad_files = {
+        k: v
+        for k, v in tar_files.items()
+        if k.startswith("pads/") and k.count("/") == 2 and k.split("/")[-1].startswith("p")
+    }
     assert len(pad_files) > 0, "expected at least one pad file in TAR"
     for name, buf in pad_files.items():
         slot = struct.unpack_from("<H", buf, 1)[0]

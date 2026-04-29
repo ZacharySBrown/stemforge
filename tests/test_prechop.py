@@ -9,7 +9,6 @@ import numpy as np
 import soundfile as sf
 
 from stemforge.prechop import (
-    ChunkMeta,
     chunk_count_for,
     frames_per_bar,
     prechop,
@@ -61,9 +60,14 @@ def test_padded_chunk_total_frames_uniform(tmp_path):
     _write_silent_stem(stem, n_frames)
 
     metas = prechop_stem(
-        stem, tmp_path, "drums",
-        bpm=BPM, bars=bars, pad_bars=pad_bars,
-        pad_last=True, write_sidecars=False,
+        stem,
+        tmp_path,
+        "drums",
+        bpm=BPM,
+        bars=bars,
+        pad_bars=pad_bars,
+        pad_last=True,
+        write_sidecars=False,
     )
 
     assert len(metas) == 2
@@ -88,9 +92,14 @@ def test_loop_region_round_trips_to_target_audio(tmp_path):
     _write_marker_stem(stem, n_frames)
 
     metas = prechop_stem(
-        stem, tmp_path, "drums",
-        bpm=BPM, bars=bars, pad_bars=pad_bars,
-        pad_last=True, write_sidecars=False,
+        stem,
+        tmp_path,
+        "drums",
+        bpm=BPM,
+        bars=bars,
+        pad_bars=pad_bars,
+        pad_last=True,
+        write_sidecars=False,
     )
     # 6 / 2 = 3 chunks; chunk 2 is the only one with full pre+post padding.
     assert len(metas) == 3
@@ -124,9 +133,14 @@ def test_first_chunk_clamps_pre_padding(tmp_path):
     _write_silent_stem(stem, n_frames)
 
     metas = prechop_stem(
-        stem, tmp_path, "drums",
-        bpm=BPM, bars=bars, pad_bars=pad_bars,
-        pad_last=True, write_sidecars=False,
+        stem,
+        tmp_path,
+        "drums",
+        bpm=BPM,
+        bars=bars,
+        pad_bars=pad_bars,
+        pad_last=True,
+        write_sidecars=False,
     )
     first = metas[0]
     assert first.chunk_index == 1
@@ -146,9 +160,14 @@ def test_last_chunk_silence_padded_to_uniform_length(tmp_path):
     _write_silent_stem(stem, n_frames)
 
     metas = prechop_stem(
-        stem, tmp_path, "drums",
-        bpm=BPM, bars=bars, pad_bars=pad_bars,
-        pad_last=True, write_sidecars=False,
+        stem,
+        tmp_path,
+        "drums",
+        bpm=BPM,
+        bars=bars,
+        pad_bars=pad_bars,
+        pad_last=True,
+        write_sidecars=False,
     )
     assert len(metas) == 2
     expected_total = (bars + 2 * pad_bars) * FPB
@@ -172,14 +191,24 @@ def test_pad_last_false_truncates_final_chunk(tmp_path):
     _write_silent_stem(stem, n_frames)
 
     metas_pad = prechop_stem(
-        stem, tmp_path / "with_pad", "drums",
-        bpm=BPM, bars=bars, pad_bars=pad_bars,
-        pad_last=True, write_sidecars=False,
+        stem,
+        tmp_path / "with_pad",
+        "drums",
+        bpm=BPM,
+        bars=bars,
+        pad_bars=pad_bars,
+        pad_last=True,
+        write_sidecars=False,
     )
     metas_nopad = prechop_stem(
-        stem, tmp_path / "no_pad", "drums",
-        bpm=BPM, bars=bars, pad_bars=pad_bars,
-        pad_last=False, write_sidecars=False,
+        stem,
+        tmp_path / "no_pad",
+        "drums",
+        bpm=BPM,
+        bars=bars,
+        pad_bars=pad_bars,
+        pad_last=False,
+        write_sidecars=False,
     )
     # pad_last=True keeps the half-bar scrap; pad_last=False drops it.
     assert len(metas_pad) == 2
@@ -200,7 +229,10 @@ def test_top_level_manifest_has_pad_bars_and_chunk_metadata(tmp_path):
     manifest_path = prechop(
         {"drums": stem_drums, "bass": stem_bass},
         out,
-        bpm=BPM, bars=bars, pad_bars=pad_bars, pad_last=True,
+        bpm=BPM,
+        bars=bars,
+        pad_bars=pad_bars,
+        pad_last=True,
         write_sidecars=False,
     )
     assert manifest_path.exists()
@@ -233,8 +265,13 @@ def test_pad_bars_zero_yields_unpadded_chunks(tmp_path):
     _write_silent_stem(stem, n_frames)
 
     metas = prechop_stem(
-        stem, tmp_path, "drums",
-        bpm=BPM, bars=bars, pad_bars=0, pad_last=True,
+        stem,
+        tmp_path,
+        "drums",
+        bpm=BPM,
+        bars=bars,
+        pad_bars=0,
+        pad_last=True,
         write_sidecars=False,
     )
     expected = bars * FPB
@@ -258,7 +295,10 @@ def test_skip_residual_by_default(tmp_path):
     manifest_path = prechop(
         {"drums": stem, "residual": residual},
         out,
-        bpm=BPM, bars=2, pad_bars=1, pad_last=True,
+        bpm=BPM,
+        bars=2,
+        pad_bars=1,
+        pad_last=True,
         write_sidecars=False,
     )
     data = json.loads(manifest_path.read_text())

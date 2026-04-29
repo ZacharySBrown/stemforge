@@ -84,12 +84,22 @@ def test_overlap_at_inner_time_picks_latest_started(manifest):
         "locators": [{"time_sec": 5.0, "name": "Overlap"}],
         "tracks": {
             "A": [
-                {"file_path": "/songs/test/A/loop_a1.wav",
-                 "start_time_sec": 0.0, "length_sec": 8.0, "warping": 1},
-                {"file_path": "/songs/test/A/loop_a2.wav",
-                 "start_time_sec": 4.0, "length_sec": 12.0, "warping": 1},
+                {
+                    "file_path": "/songs/test/A/loop_a1.wav",
+                    "start_time_sec": 0.0,
+                    "length_sec": 8.0,
+                    "warping": 1,
+                },
+                {
+                    "file_path": "/songs/test/A/loop_a2.wav",
+                    "start_time_sec": 4.0,
+                    "length_sec": 12.0,
+                    "warping": 1,
+                },
             ],
-            "B": [], "C": [], "D": [],
+            "B": [],
+            "C": [],
+            "D": [],
         },
     }
     snaps = resolve_scenes(arrangement, manifest)
@@ -113,9 +123,17 @@ def test_locator_at_clip_end_excludes_clip(manifest):
         "arrangement_length_sec": 16.0,
         "locators": [{"time_sec": 8.0, "name": "End"}],
         "tracks": {
-            "A": [{"file_path": "/songs/test/A/loop_a1.wav",
-                   "start_time_sec": 0.0, "length_sec": 8.0, "warping": 1}],
-            "B": [], "C": [], "D": [],
+            "A": [
+                {
+                    "file_path": "/songs/test/A/loop_a1.wav",
+                    "start_time_sec": 0.0,
+                    "length_sec": 8.0,
+                    "warping": 1,
+                }
+            ],
+            "B": [],
+            "C": [],
+            "D": [],
         },
     }
     snaps = resolve_scenes(arrangement, manifest)
@@ -130,9 +148,17 @@ def test_locator_at_clip_start_includes_clip(manifest):
         "arrangement_length_sec": 16.0,
         "locators": [{"time_sec": 0.0, "name": "Start"}],
         "tracks": {
-            "A": [{"file_path": "/songs/test/A/loop_a1.wav",
-                   "start_time_sec": 0.0, "length_sec": 8.0, "warping": 1}],
-            "B": [], "C": [], "D": [],
+            "A": [
+                {
+                    "file_path": "/songs/test/A/loop_a1.wav",
+                    "start_time_sec": 0.0,
+                    "length_sec": 8.0,
+                    "warping": 1,
+                }
+            ],
+            "B": [],
+            "C": [],
+            "D": [],
         },
     }
     snaps = resolve_scenes(arrangement, manifest)
@@ -147,9 +173,17 @@ def test_missing_file_in_session_tracks_raises_clear_error(manifest):
         "arrangement_length_sec": 8.0,
         "locators": [{"time_sec": 0.0, "name": "Bad"}],
         "tracks": {
-            "A": [{"file_path": "/songs/test/A/MISSING.wav",
-                   "start_time_sec": 0.0, "length_sec": 4.0, "warping": 1}],
-            "B": [], "C": [], "D": [],
+            "A": [
+                {
+                    "file_path": "/songs/test/A/MISSING.wav",
+                    "start_time_sec": 0.0,
+                    "length_sec": 4.0,
+                    "warping": 1,
+                }
+            ],
+            "B": [],
+            "C": [],
+            "D": [],
         },
     }
     with pytest.raises(ManifestLookupError) as exc_info:
@@ -187,8 +221,7 @@ def test_lookup_pad_rejects_missing_file(manifest):
 
 def test_arrangement_clip_from_dict_round_trip():
     clip = ArrangementClip.from_dict(
-        {"file_path": "/x.wav", "start_time_sec": 1.5,
-         "length_sec": 4.0, "warping": 1}
+        {"file_path": "/x.wav", "start_time_sec": 1.5, "length_sec": 4.0, "warping": 1}
     )
     assert clip.end_time_sec == pytest.approx(5.5)
 
