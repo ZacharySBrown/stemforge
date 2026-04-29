@@ -1939,6 +1939,54 @@ function exportArrangementSnapshot() {
     }
 }
 
+// ── Arrangement-view loader (prechop_manifest.json → audio clips) ───────────
+// Companion to exportArrangementSnapshot above. Reads a prechop manifest
+// produced by `stemforge split --pipeline arrangement` and lays out the
+// padded chunk WAVs as audio clips on stem-named arrangement-view tracks,
+// each with its loop region set to the target N-bar window so playback
+// hits real audio while the surrounding pad bars sit available for
+// drag-extend. Delegates to sf_arrangement_loader.js.
+//
+// Message contract from the patcher:
+//     loadArrangementFromManifest <manifest_path>
+//
+// On success: outlet 0 status, outlet 1 bang. On failure: outlet 0 status only.
+function loadArrangementFromManifest() {
+    var args = arrayfromargs(messagename, arguments).slice(1);
+    var manifestPath = args.length ? args.join(" ") : "";
+    if (!manifestPath) {
+        status("loadArrangementFromManifest: missing manifest path");
+        return;
+    }
+    var ok = false;
+    try {
+        // include() pulls sf_arrangement_loader.js into this [js]'s scope so
+        // we can call runArrangementLoad() directly. Same pattern as the
+        // arrangement-snapshot reader; the loader function is intentionally
+        // named differently so include() doesn't clobber this wrapper.
+        include("sf_arrangement_loader.js");
+        var fn = (typeof runArrangementLoad === "function")
+            ? runArrangementLoad : null;
+        if (!fn) {
+            status("loadArrangementFromManifest: loader loaded but "
+                + "runArrangementLoad not in scope");
+            return;
+        }
+        ok = !!fn(manifestPath);
+    } catch (e) {
+        status("loadArrangementFromManifest: include/dispatch failed: " + e);
+        return;
+    }
+    if (ok) {
+        status("Arrangement loaded from " + manifestPath);
+        outlet(0, "set", "Arrangement loaded");
+        outlet(1, "bang");
+    } else {
+        status("loadArrangementFromManifest: load failed for " + manifestPath);
+        outlet(0, "set", "Arrangement load failed");
+    }
+}
+
 // ── Entry points from Max ─────────────────────────────────────────────────────
 // These aren't stored on `globalThis`; Max's classic [js] object scans for
 // top-level functions automatically.

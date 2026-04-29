@@ -1,0 +1,477 @@
+// sf_arrangement_loader.js
+// ─────────────────────────────────────────────────────────────────────────────
+// Arrangement-view loader for `prechop_manifest.json` output.
+//
+// Companion to:
+//   - stemforge/prechop.py     (writes the padded chunk WAVs + manifest)
+//   - pipelines/arrangement.yaml (configures bars / pad_bars / pad_last)
+//
+// What it does:
+//   Reads a `prechop_manifest.json`, then for each stem's pre-chopped chunks
+//   creates an arrangement-view audio clip on a stem-named track, positioning
+//   them end-to-end on the timeline. Each clip's loop region is set from the
+//   manifest's `loop_start_sec` / `loop_end_sec` so playback hits only the
+//   target N-bar window by default — but the padding (which is real audio
+//   from the surrounding bars of the song) sits available on either side
+//   for the user to drag-extend into.
+//
+// Public entry point (called from stemforge_loader.v0.js's
+// `loadArrangementFromManifest` wrapper via classic [js] include(); name kept
+// distinct from the wrapper so include() doesn't clobber the wrapper after
+// reload):
+//
+//     runArrangementLoad(manifestPath: string) -> bool
+//
+// Manifest shape (subset relevant to us — see prechop.py for full):
+//
+//     {
+//       "bpm": 120.0,
+//       "bars": 4,
+//       "pad_bars": 1,
+//       "pad_last": true,
+//       "beats_per_bar": 4,
+//       "stems": {
+//         "drums": {
+//           "dir": "drums_prechop",
+//           "chunk_count": 4,
+//           "chunks": [
+//             {
+//               "file": "drums_prechop/drums_chunk_001.wav",
+//               "stem": "drums",
+//               "chunk_index": 1,
+//               "bars": 4,
+//               "pad_bars": 1,
+//               "pad_pre_bars": 0.0,
+//               "pad_post_bars": 1.0,
+//               "loop_start_sec": 0.0,
+//               "loop_end_sec": 8.0,
+//               "total_sec": 10.0
+//             }, ...
+//           ]
+//         },
+//         "bass": { ... },
+//         "other": { ... },
+//         "vocals": { ... }
+//       }
+//     }
+//
+// Per-clip mapping:
+//   - Timeline position (beats): chunk_index_zero_based * bars * beats_per_bar
+//                                = i * bars * 4   (4/4 assumed)
+//   - Clip source: chunk's WAV path (resolved relative to the manifest file).
+//   - Clip span (start_marker / end_marker): the loop region inside the WAV,
+//     converted from seconds → beats via the manifest BPM. So in the
+//     arrangement-view timeline, the clip occupies exactly `bars` bars of
+//     wall time and plays the target audio. The padding sits inside the
+//     clip's source but outside its span — drag the right edge to extend.
+//   - looping = true; loop_start / loop_end mirror the start/end markers
+//     (both expressed in beats relative to the clip's start_time).
+//
+// LOM conventions adopted from sf_arrangement_reader.js:
+//   - Top-level functions are auto-exposed to Max's classic [js].
+//   - LOM scalars come back as 1-element arrays; unwrap with the helpers.
+//   - File paths going INTO LiveAPI need an absolute filesystem path (NOT
+//     "Macintosh HD:" prefixed — that prefix is for the Max File API).
+//   - 4/4 time signature is assumed by the manifest schema; a future
+//     arrangement.yaml field could parameterize this.
+//
+// Riskiest assumption (CALL OUT FOR USER REVIEW):
+//   Live 11+ exposes `Track.create_audio_clip(filepath, start_time_in_beats)`.
+//   This call has been observed to be Live-version-sensitive and the LOM
+//   docs note it is a deferred call. We use it via LiveAPI.call(...). If it
+//   doesn't return the new clip's id we walk arrangement_clips by start time
+//   to find it. If your Live version returns the id directly that's used.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/* global LiveAPI, File, Folder, post, outlet, max */
+
+// ── Logging (mirrors arrangement_reader pattern so failures land in the same
+// log file the user already tails) ─────────────────────────────────────────
+
+function _alFileLog(msg) {
+    try {
+        var homePath;
+        try {
+            if (typeof max !== "undefined" && max && typeof max.getsystemvariable === "function") {
+                homePath = String(max.getsystemvariable("HOME") || "");
+            }
+        } catch (_) {}
+        if (!homePath) {
+            try {
+                if (typeof File !== "undefined" && typeof File.getenv === "function") {
+                    homePath = String(File.getenv("HOME") || "");
+                }
+            } catch (_) {}
+        }
+        if (!homePath) homePath = "/Users/zak";
+        var dir = homePath + "/stemforge/logs";
+        var path = dir + "/sf_debug.log";
+        var maxPath = "Macintosh HD:" + path;
+        try { new Folder("Macintosh HD:" + dir).close(); }
+        catch (_) {
+            try {
+                var ff = new File("Macintosh HD:" + dir + "/.keep", "write", "TEXT", "TEXT");
+                if (ff.isopen) { ff.writestring(""); ff.close(); }
+            } catch (_) {}
+        }
+        var ts;
+        try { ts = (new Date()).toISOString(); }
+        catch (_) { ts = String(new Date().getTime()); }
+        var line = "[" + ts + "] [sf_arrangement_loader] " + String(msg) + "\n";
+        var f = new File(maxPath, "write", "TEXT", "TEXT");
+        if (!f.isopen) return;
+        try { f.position = f.eof; } catch (_) {}
+        f.writestring(line);
+        try { f.eof = f.position; } catch (_) {}
+        f.close();
+    } catch (_) {}
+}
+
+function _alStatus(msg) {
+    try { post("[sf_arrangement_loader] " + String(msg) + "\n"); } catch (_) {}
+    _alFileLog(msg);
+}
+
+// ── Path / LOM helpers (intentional duplicates of reader helpers — keeps
+// this module loadable without sourcing the 1900-line loader) ─────────────
+
+function _alHomeDir() {
+    var h = "";
+    try {
+        if (typeof max !== "undefined" && max && typeof max.getsystemvariable === "function") {
+            h = String(max.getsystemvariable("HOME") || "");
+        }
+    } catch (_) {}
+    if (!h) {
+        try {
+            if (typeof File !== "undefined" && typeof File.getenv === "function") {
+                h = String(File.getenv("HOME") || "");
+            }
+        } catch (_) {}
+    }
+    if (!h) h = "/Users/zak";
+    if (h.charAt(h.length - 1) === "/") h = h.substring(0, h.length - 1);
+    return h;
+}
+
+function _alExpandTilde(p) {
+    var s = String(p || "");
+    if (s === "~") return _alHomeDir();
+    if (s.length >= 2 && s.charAt(0) === "~" && s.charAt(1) === "/") {
+        return _alHomeDir() + s.substring(1);
+    }
+    return s;
+}
+
+function _alToMaxPath(p) {
+    var s = _alExpandTilde(p);
+    if (s.length > 0 && s.charAt(0) === "/") return "Macintosh HD:" + s;
+    return s;
+}
+
+function _alDirname(absPath) {
+    // Returns the parent directory of an absolute POSIX path. No trailing slash.
+    var s = String(absPath);
+    var i = s.lastIndexOf("/");
+    if (i <= 0) return "/";
+    return s.substring(0, i);
+}
+
+function _alJoin(dir, rel) {
+    // Resolve `rel` against `dir`. Absolute `rel` wins.
+    var r = String(rel);
+    if (r.length > 0 && r.charAt(0) === "/") return r;
+    var d = String(dir);
+    if (d.length > 0 && d.charAt(d.length - 1) === "/") {
+        d = d.substring(0, d.length - 1);
+    }
+    return d + "/" + r;
+}
+
+function _alGetLomNumber(api, prop) {
+    try {
+        var v = api.get(prop);
+        if (v && typeof v === "object") return Number(v[0]);
+        return Number(v);
+    } catch (_) {
+        return NaN;
+    }
+}
+
+// ── File I/O ────────────────────────────────────────────────────────────────
+
+function _alReadFile(absPath) {
+    // Reads a UTF-8 text file. Returns the string or null on failure.
+    try {
+        var maxPath = _alToMaxPath(absPath);
+        var f = new File(maxPath, "read", "TEXT");
+        if (!f.isopen) {
+            _alStatus("read: could not open " + absPath);
+            return null;
+        }
+        try { f.position = 0; } catch (_) {}
+        var size = 0;
+        try { size = f.eof; } catch (_) { size = 0; }
+        if (!size || size <= 0) { f.close(); return ""; }
+        var s = f.readstring(size);
+        f.close();
+        return s == null ? "" : String(s);
+    } catch (e) {
+        _alStatus("read error: " + e);
+        return null;
+    }
+}
+
+// ── Track lookup / creation ─────────────────────────────────────────────────
+// We expose two strategies and use the first that finds a track:
+//   1. Match by exact name (e.g. "drums", "bass") — case-insensitive.
+//   2. Match by name CONTAINS the stem name — handles "SF | Drums Raw" etc.
+//
+// If neither finds anything, we create a new audio track at the end of the
+// track list and rename it to the stem name. The audible setup is left to
+// the user (no devices, no template chain).
+
+function _alTrackCount() {
+    return new LiveAPI("live_set").getcount("tracks");
+}
+
+function _alTrackName(i) {
+    var raw = new LiveAPI("live_set tracks " + i).get("name");
+    return (raw && typeof raw === "object") ? String(raw[0]) : String(raw);
+}
+
+function _alIsAudioTrack(i) {
+    var api = new LiveAPI("live_set tracks " + i);
+    var v = api.get("has_audio_input");
+    if (v && typeof v === "object") return Number(v[0]) === 1;
+    return Number(v) === 1;
+}
+
+function _alFindTrackForStem(stemName) {
+    var n = _alTrackCount();
+    var lc = String(stemName).toLowerCase();
+    var firstContains = -1;
+    for (var i = 0; i < n; i++) {
+        if (!_alIsAudioTrack(i)) continue;
+        var name = _alTrackName(i).toLowerCase();
+        if (name === lc) return i;
+        if (firstContains < 0 && name.indexOf(lc) >= 0) firstContains = i;
+    }
+    return firstContains;
+}
+
+function _alCreateAudioTrack(stemName) {
+    // create_audio_track(-1) inserts at the end. Returns the new index by
+    // rescanning track count — Live's call return value isn't always reliable.
+    var liveSet = new LiveAPI("live_set");
+    var before = _alTrackCount();
+    try {
+        liveSet.call("create_audio_track", -1);
+    } catch (e) {
+        _alStatus("create_audio_track failed: " + e);
+        return -1;
+    }
+    var after = _alTrackCount();
+    if (after <= before) {
+        _alStatus("create_audio_track: track count did not increase");
+        return -1;
+    }
+    var newIdx = after - 1;
+    try {
+        new LiveAPI("live_set tracks " + newIdx).set("name", stemName);
+    } catch (_) {}
+    return newIdx;
+}
+
+function _alResolveTrack(stemName) {
+    var idx = _alFindTrackForStem(stemName);
+    if (idx >= 0) {
+        _alStatus("stem " + stemName + " → track " + idx + " (" + _alTrackName(idx) + ")");
+        return idx;
+    }
+    idx = _alCreateAudioTrack(stemName);
+    if (idx >= 0) {
+        _alStatus("stem " + stemName + " → created track " + idx);
+    }
+    return idx;
+}
+
+// ── Clip creation on arrangement view ───────────────────────────────────────
+
+function _alFindClipAtBeat(trackIdx, beat) {
+    // Walks arrangement_clips looking for a clip whose start_time matches.
+    // Used when create_audio_clip's return value is unreliable.
+    var trackApi = new LiveAPI("live_set tracks " + trackIdx);
+    var n = 0;
+    try { n = trackApi.getcount("arrangement_clips") | 0; }
+    catch (_) { return -1; }
+    for (var i = 0; i < n; i++) {
+        var clip = new LiveAPI(
+            "live_set tracks " + trackIdx + " arrangement_clips " + i
+        );
+        if (!clip || clip.id === "0") continue;
+        var st = _alGetLomNumber(clip, "start_time");
+        if (isFinite(st) && Math.abs(st - beat) < 1e-3) return i;
+    }
+    return -1;
+}
+
+function _alCreateAndConfigureClip(trackIdx, absWavPath, startBeat, lengthBeats,
+                                   loopStartBeats, loopEndBeats) {
+    // Creates an audio clip on `trackIdx`'s arrangement view at `startBeat`,
+    // sources it from `absWavPath`, sets the playback span (start_marker /
+    // end_marker) and loop region to [loopStartBeats, loopEndBeats] (in beats
+    // RELATIVE to the clip's start_time).
+    //
+    // Returns the clip's arrangement_clips index (>= 0) on success, -1 on fail.
+    var trackPath = "live_set tracks " + trackIdx;
+    var trackApi = new LiveAPI(trackPath);
+
+    // Live 11 audio-track create_audio_clip signature: (path, position_beats).
+    // The call is deferred — the new clip is queryable via arrangement_clips.
+    try {
+        trackApi.call("create_audio_clip", absWavPath, startBeat);
+    } catch (e) {
+        _alStatus("create_audio_clip failed: " + e + " path=" + absWavPath);
+        return -1;
+    }
+
+    var idx = _alFindClipAtBeat(trackIdx, startBeat);
+    if (idx < 0) {
+        _alStatus("created clip not found at beat " + startBeat
+            + " (track " + trackIdx + ")");
+        return -1;
+    }
+
+    var clipPath = trackPath + " arrangement_clips " + idx;
+    var clip = new LiveAPI(clipPath);
+
+    // Loop / markers: all in beats relative to the clip's audio-source start.
+    // Order matters in some Live versions — set looping=1 LAST.
+    try { clip.set("start_marker", loopStartBeats); } catch (e) {
+        _alStatus("set start_marker fail: " + e);
+    }
+    try { clip.set("end_marker", loopEndBeats); } catch (e) {
+        _alStatus("set end_marker fail: " + e);
+    }
+    try { clip.set("loop_start", loopStartBeats); } catch (e) {
+        _alStatus("set loop_start fail: " + e);
+    }
+    try { clip.set("loop_end", loopEndBeats); } catch (e) {
+        _alStatus("set loop_end fail: " + e);
+    }
+    try { clip.set("looping", 1); } catch (e) {
+        _alStatus("set looping fail: " + e);
+    }
+
+    // Note: we deliberately do NOT set `length` — the playback span is
+    // governed by start_marker/end_marker. If the user drag-extends the
+    // arrangement-view clip, Live re-computes length from the markers + loop.
+
+    return idx;
+}
+
+// ── Manifest → arrangement view ─────────────────────────────────────────────
+
+function _alSecToBeats(sec, bpm) {
+    // beats = seconds * bpm / 60. Defensive: clamp negatives to 0.
+    var b = Number(sec) * Number(bpm) / 60.0;
+    if (!isFinite(b) || b < 0) return 0;
+    return b;
+}
+
+function _alLoadStem(stemName, stemBlock, manifestDir, bpm, beatsPerBar) {
+    // Returns {ok: bool, clips_created: int}.
+    var trackIdx = _alResolveTrack(stemName);
+    if (trackIdx < 0) {
+        _alStatus("could not resolve track for stem " + stemName);
+        return { ok: false, clips_created: 0 };
+    }
+
+    var chunks = (stemBlock && stemBlock.chunks) ? stemBlock.chunks : [];
+    var created = 0;
+
+    for (var i = 0; i < chunks.length; i++) {
+        var ch = chunks[i];
+        if (!ch || !ch.file) continue;
+
+        var absWav = _alJoin(manifestDir, ch.file);
+        var bars = (ch.bars != null) ? Number(ch.bars) : 4;
+        var startBeat = i * bars * beatsPerBar;
+        var loopStartBeats = _alSecToBeats(ch.loop_start_sec, bpm);
+        var loopEndBeats = _alSecToBeats(ch.loop_end_sec, bpm);
+        var lengthBeats = bars * beatsPerBar;
+
+        // Sanity: loop_end must be > loop_start. If the manifest is malformed
+        // fall back to [0, lengthBeats] so the clip still plays.
+        if (loopEndBeats <= loopStartBeats) {
+            _alStatus("malformed loop region for " + stemName + " chunk "
+                + (i + 1) + "; falling back to full clip");
+            loopStartBeats = 0;
+            loopEndBeats = lengthBeats;
+        }
+
+        var clipIdx = _alCreateAndConfigureClip(
+            trackIdx, absWav, startBeat, lengthBeats,
+            loopStartBeats, loopEndBeats
+        );
+        if (clipIdx >= 0) created++;
+    }
+
+    return { ok: created > 0, clips_created: created };
+}
+
+function runArrangementLoad(manifestPath) {
+    // Public entry point. Reads `manifestPath`, then walks each stem block
+    // creating arrangement-view audio clips with proper loop regions.
+    //
+    // Returns true on success (every stem loaded at least one clip), false
+    // otherwise. Either way, status is logged to ~/stemforge/logs/sf_debug.log
+    // and to the Max console.
+    if (!manifestPath || String(manifestPath).length === 0) {
+        _alStatus("runArrangementLoad: missing manifestPath");
+        return false;
+    }
+    var path = _alExpandTilde(String(manifestPath));
+
+    var raw = _alReadFile(path);
+    if (raw == null) return false;
+    var manifest;
+    try { manifest = JSON.parse(raw); }
+    catch (e) {
+        _alStatus("manifest parse error: " + e);
+        return false;
+    }
+
+    var bpm = Number(manifest.bpm) || 120.0;
+    var beatsPerBar = Number(manifest.beats_per_bar) || 4;
+    var stems = manifest.stems || {};
+    var manifestDir = _alDirname(path);
+
+    var totalCreated = 0;
+    var anyOk = false;
+    for (var stemName in stems) {
+        if (!Object.prototype.hasOwnProperty.call(stems, stemName)) continue;
+        var res = _alLoadStem(stemName, stems[stemName], manifestDir, bpm, beatsPerBar);
+        if (res.ok) anyOk = true;
+        totalCreated += res.clips_created;
+    }
+
+    _alStatus("loaded " + totalCreated + " clips from " + path
+        + " (bpm=" + bpm + ", beats_per_bar=" + beatsPerBar + ")");
+    return anyOk;
+}
+
+// ── CommonJS shim — mirrors the reader's test export so the Node-vm sandbox
+// in tests/js_mocks/ can drive these functions directly. Max's classic [js]
+// ignores `module` so this is a no-op at runtime in the device. ───────────
+
+if (typeof module !== "undefined" && module.exports) {
+    module.exports.__test__ = {
+        runArrangementLoad: runArrangementLoad,
+        _alJoin: _alJoin,
+        _alDirname: _alDirname,
+        _alSecToBeats: _alSecToBeats,
+        _alExpandTilde: _alExpandTilde
+    };
+}
