@@ -35,6 +35,10 @@ PIPELINES_DIR = REPO_ROOT / "pipelines"
 
 @dataclass
 class PrechopConfig:
+    # TODO(time-sig): support 6/8, 3/4 — manifest already records beats_per_bar
+    # but the loader assumes 4/4 (Live's clock is quarter-note based; non-4/4
+    # signatures would also need a `denominator` field added here + threaded
+    # into prechop_manifest.json so the M4L loader can adjust clip lengths).
     bars: int = 4
     pad_bars: int = 1
     pad_last: bool = True

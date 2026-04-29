@@ -926,31 +926,53 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     lines.append(_line(OBJ_ROUTE_UI_EVENTS, 9, OBJ_EXPORT_SONG_MSG, 0))
     lines.append(_line(OBJ_EXPORT_SONG_MSG, 0, OBJ_SF_LOM_LOADER, 0))
 
-    # Outlet 10 — arrangement_load_click → [message loadArrangementFromManifest
-    # ~/stemforge/processed/<track>/prechop_manifest.json] → sf_lom_loader. The
-    # loader wrapper includes sf_arrangement_loader.js and dispatches to
-    # runArrangementLoad(). Default path is a placeholder — the user edits the
-    # message box (or replaces it with a [pak/textedit] feeding the path) to
-    # point at the actual manifest produced by `stemforge split --pipeline
-    # arrangement`. ~ is expanded inside the JS so the .amxd stays portable.
+    # Outlet 10 — arrangement_load_click → [opendialog] → regex strip HFS →
+    # prepend `loadArrangementFromManifest` → sf_lom_loader. Mirrors the
+    # browseManifest chain (lines ~697-736) — Max's [opendialog] is the only
+    # native picker available; the v8ui's onclick can't open a dialog itself,
+    # so it emits `arrangement_load_click` (no args) and the patcher drives
+    # the picker. The loader wrapper includes sf_arrangement_loader.js and
+    # dispatches to runArrangementLoad() with the POSIX path.
+    OBJ_LOAD_ARR_DIALOG = "obj-load-arr-dialog"
+    OBJ_LOAD_ARR_REGEX  = "obj-load-arr-regex"
+    OBJ_LOAD_ARR_PREPEND = "obj-load-arr-prepend"
     boxes.append(
         _box(
-            OBJ_LOAD_ARR_MSG,
-            "message",
-            (410.0 + 8 * 110, js_row_y - 10, 280.0, 22.0),
-            numinlets=2,
-            numoutlets=1,
-            outlettype=[""],
-            extras={
-                "text": (
-                    "loadArrangementFromManifest "
-                    "~/stemforge/processed/track/prechop_manifest.json"
-                )
-            },
+            OBJ_LOAD_ARR_DIALOG,
+            "newobj",
+            (410.0 + 8 * 110, js_row_y - 10, 150.0, 22.0),
+            numinlets=1,
+            numoutlets=2,
+            outlettype=["", "bang"],
+            extras={"text": "opendialog"},
         )
     )
-    lines.append(_line(OBJ_ROUTE_UI_EVENTS, 10, OBJ_LOAD_ARR_MSG, 0))
-    lines.append(_line(OBJ_LOAD_ARR_MSG, 0, OBJ_SF_LOM_LOADER, 0))
+    lines.append(_line(OBJ_ROUTE_UI_EVENTS, 10, OBJ_LOAD_ARR_DIALOG, 0))
+    boxes.append(
+        _box(
+            OBJ_LOAD_ARR_REGEX,
+            "newobj",
+            (410.0 + 8 * 110, js_row_y + 16, 230.0, 22.0),
+            numinlets=1,
+            numoutlets=5,
+            outlettype=["", "", "", "", ""],
+            extras={"text": "regexp (.+):(/.*) @substitute %2"},
+        )
+    )
+    lines.append(_line(OBJ_LOAD_ARR_DIALOG, 0, OBJ_LOAD_ARR_REGEX, 0))
+    boxes.append(
+        _box(
+            OBJ_LOAD_ARR_PREPEND,
+            "newobj",
+            (410.0 + 8 * 110, js_row_y + 42, 220.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "prepend loadArrangementFromManifest"},
+        )
+    )
+    lines.append(_line(OBJ_LOAD_ARR_REGEX, 0, OBJ_LOAD_ARR_PREPEND, 0))
+    lines.append(_line(OBJ_LOAD_ARR_PREPEND, 0, OBJ_SF_LOM_LOADER, 0))
 
     # sf_clip_export outlet 0 = status (currently logged inside the JS only;
     # could be wired to status text later). Outlet 1 = [shell] spawn commands

@@ -49,6 +49,10 @@ from .manifest_schema import SampleMeta, write_sidecar
 
 def frames_per_bar(bpm: float, sr: int, beats_per_bar: int = 4) -> int:
     """Frames in one bar at given tempo. 4 beats/bar by default."""
+    # TODO(time-sig): support 6/8, 3/4 — manifest already records beats_per_bar
+    # but the loader assumes 4/4 (Live treats "beat" as quarter-note; for 6/8
+    # we'd need to map eighth-note beats to Live's quarter-note clock or pass
+    # a separate `denominator` field through the manifest schema).
     seconds_per_beat = 60.0 / float(bpm)
     return int(round(seconds_per_beat * beats_per_bar * sr))
 
