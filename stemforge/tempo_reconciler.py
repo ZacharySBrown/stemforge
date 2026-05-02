@@ -169,33 +169,33 @@ def _bpm_from_downbeats(downbeats: np.ndarray, beats_per_bar: int = 4) -> float 
     return 60.0 * beats_per_bar / period if period else None
 
 
-def _first_downbeat_from_phase(
-    downbeats: np.ndarray, bar_period: float
+def _first_stable_downbeat(
+    downbeats: np.ndarray, bar_period: float, *, tolerance: float = 0.05
 ) -> float | None:
-    """Recover bar 1's true offset from later downbeats' phase.
+    """Mode-walk: find the first downbeat that's part of a stable run on the
+    bar grid (its IBI to the next is within `tolerance` of `bar_period`).
 
-    Each downbeat's `time mod bar_period` is its "phase" within a bar — for
-    downbeats that fall on real bar 1's of the song, the phase is constant
-    (= the offset of bar 1 from t=0). Phantom early downbeats land on
-    arbitrary phases and pull the mean, but the MEDIAN is robust if most
-    downbeats are real.
+    Why mode-walk and not phase-mod: cumulative drift from a slightly wrong
+    `bar_period` (e.g. 0.38% off on Definition) makes phase-mod unreliable
+    for late downbeats. Mode-walk only uses CONSECUTIVE downbeats so drift
+    doesn't compound. Tradeoff: the returned downbeat is on the correct
+    grid but may be N bars after the song's true bar 1 — only the user
+    can tell which bar is musically bar 1 (auto-detection ceiling). Bar
+    grid is what matters for chunking; the user's `--first-downbeat`
+    override picks the actual bar 1 if they want to start at the song's
+    intro vs at bar 5 etc.
 
-    To dodge intro noise, drop the first quarter of the downbeats array.
+    Returns the first stable downbeat in seconds, or None if no stable
+    pair found (extremely irregular detector output).
     """
-    if len(downbeats) < 4 or bar_period <= 0:
+    if len(downbeats) < 2 or bar_period <= 0:
         return None
-    # Skip first quarter — that's where phantom early downbeats live.
-    skip = max(1, len(downbeats) // 4)
-    sample = downbeats[skip:]
-    phases = sample % bar_period
-    # Phases can wrap near 0 or near bar_period — re-anchor by adding
-    # bar_period/2, taking median, subtracting back, and wrapping once.
-    # (median is robust on a single-mode unimodal distribution but breaks
-    # at the wrap edge if half the phases are near 0 and half near bar_period.)
-    shifted = (phases + bar_period / 2) % bar_period
-    median_shifted = float(np.median(shifted))
-    median_phase = (median_shifted - bar_period / 2) % bar_period
-    return float(median_phase)
+    ibis = np.diff(downbeats)
+    threshold = tolerance * bar_period
+    for i, ibi in enumerate(ibis):
+        if abs(ibi - bar_period) <= threshold:
+            return float(downbeats[i])
+    return None
 
 
 def _detect_beat_this(
@@ -234,6 +234,18 @@ def _detect_beat_this(
             if bpm_from_bars is not None
             else 60.0 / float(np.median(np.diff(beats)))
         )
+        # Trim phantom early downbeats: keep only from the first one whose
+        # IBI to its successor matches the bar period within 5%. This makes
+        # downbeats[0] safe to interpret as "a real bar boundary", though
+        # not necessarily the song's musical bar 1 — only the user can pick
+        # which bar is musically first (auto-detection ceiling, see
+        # `_first_stable_downbeat` docstring).
+        bar_period = 60.0 * 4 / bpm  # assumes 4 beats/bar
+        stable_first = _first_stable_downbeat(downbeats, bar_period)
+        if stable_first is not None and len(downbeats) > 0:
+            idx = int(np.argmin(np.abs(downbeats - stable_first)))
+            if idx > 0:
+                downbeats = downbeats[idx:]
         source: TempoSource = (
             "beat-this:mix" if audio_label == "mix"
             else "beat-this:drums" if audio_label == "drums"
@@ -274,6 +286,77 @@ def _detect_librosa(
         detector="librosa",
         audio_label=audio_label,
     )
+
+
+def refine_first_downbeat(
+    audio_path: Path,
+    bpm: float,
+    candidate_first_downbeat: float,
+    *,
+    beats_per_bar: int = 4,
+    search_beats: float = 2.0,
+    step_ms: float = 5.0,
+) -> float:
+    """Sub-beat refinement of `candidate_first_downbeat` using kick onset
+    energy. Cross-correlates the kick-band onset envelope against an
+    idealized comb at `bpm`, returning the offset (within ±`search_beats`
+    of the candidate) where the comb best aligns with kick energy.
+
+    Resolves errors smaller than `find_best_downbeat_offset` can catch
+    (which only picks among 4 whole-beat phases). For example: Ooh La La's
+    auto-detected 0.02s vs truth 0.10s — 0.08s off, less than 1/8 of a
+    beat, undetectable by whole-beat methods.
+
+    Caveat: assumes the kick fires *on* the downbeat. Tracks where bar 1
+    is implied (a rest, a vocal pickup, a synth pad with no kick) will
+    have this method lock onto the wrong position. Opt-in.
+    """
+    import librosa
+
+    y, sr = librosa.load(str(audio_path), sr=None, mono=True)
+    # Kick-band only — channel 0 of multi-band onset detection (~20-200 Hz)
+    onset_multi = librosa.onset.onset_strength_multi(
+        y=y, sr=sr, channels=[0, 32, 64, 96, 128]
+    )
+    kick_onset = onset_multi[0]
+    hop = 512  # librosa default
+    onset_times = librosa.frames_to_time(
+        np.arange(len(kick_onset)), sr=sr, hop_length=hop
+    )
+
+    beat_period = 60.0 / bpm
+    bar_period = beats_per_bar * beat_period
+    search_range = search_beats * beat_period
+    duration = len(y) / sr
+
+    # Try offsets from candidate - search_range to candidate + search_range,
+    # in step_ms steps. For each, sum onset energy at all bar starts.
+    n_bars = int((duration - candidate_first_downbeat - search_range) // bar_period)
+    if n_bars < 4:
+        return candidate_first_downbeat
+
+    best_offset = 0.0
+    best_score = -np.inf
+    step = step_ms / 1000.0
+    n_steps = int((2 * search_range) / step)
+
+    for k in range(n_steps + 1):
+        offset = -search_range + k * step
+        first = candidate_first_downbeat + offset
+        if first < 0:
+            continue
+        # Sum energy at first, first + bar_period, first + 2*bar_period, ...
+        score = 0.0
+        for i in range(n_bars):
+            t = first + i * bar_period
+            idx = min(int(np.searchsorted(onset_times, t)), len(kick_onset) - 1)
+            score += float(kick_onset[idx])
+        if score > best_score:
+            best_score = score
+            best_offset = offset
+
+    refined = candidate_first_downbeat + best_offset
+    return max(0.0, refined)
 
 
 def _isolate_kick(drums_path: Path, output_dir: Path, device: str) -> Path | None:

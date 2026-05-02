@@ -135,6 +135,13 @@ def cli():
     default=None,
     help="Manual first-downbeat-time override (seconds). Where bar 1 starts in the source audio.",
 )
+@click.option(
+    "--refine-downbeat",
+    is_flag=True,
+    default=False,
+    help="Sub-beat refinement of auto-detected first_downbeat via kick-onset cross-correlation. "
+    "Opt-in: assumes kick is ON the downbeat (fails for tracks where bar 1 is implied).",
+)
 def split(
     audio_file,
     model,
@@ -145,6 +152,7 @@ def split(
     silence_threshold,
     bpm_override,
     first_downbeat_override,
+    refine_downbeat,
 ):
     """
     Split an audio file into stems and slice at beat boundaries.
@@ -241,6 +249,20 @@ def split(
     else:
         beat_times = auto_beats
         downbeat_times = auto_downbeats
+
+    # Sub-beat refinement (opt-in). Only useful when the user did NOT pass an
+    # explicit --first-downbeat — if they did, they trust their value over
+    # any algorithmic refinement.
+    if refine_downbeat and first_downbeat_override is None:
+        from .tempo_reconciler import refine_first_downbeat
+
+        refined = refine_first_downbeat(audio_file, bpm, first_downbeat_sec)
+        delta = refined - first_downbeat_sec
+        console.print(
+            f"  [cyan]--refine-downbeat[/cyan] shifted first_downbeat: "
+            f"{first_downbeat_sec:.4f}s → {refined:.4f}s (Δ {delta:+.4f}s)"
+        )
+        first_downbeat_sec = refined
 
     # Fallback: if reconciler returned no usable beats (very short clip,
     # detector silently failed), revive the legacy librosa path so the CLI
@@ -390,6 +412,216 @@ def split(
         console.print(line)
     console.print("\n[dim]The M4L device in Ableton will detect stems.json automatically.[/dim]")
     console.print("[dim]Or: Ableton browser → Places → stemforge/processed → drag files.[/dim]")
+
+    # If auto-detection wasn't high-confidence, surface the re-anchor escape
+    # hatch — it's the difference between a 30s re-forge and a sub-second fix.
+    if not overrides_active and reconciled.confidence != "high":
+        console.print()
+        console.print("[yellow]Detection confidence was not high.[/yellow] If chunks look")
+        console.print("misaligned in arrangement view:")
+        console.print(
+            f"  1. [cyan]uv run python tools/probe_loop.py {audio_file} "
+            f"--bpm BPM --first-downbeat DN --start-bar 28[/cyan]"
+        )
+        console.print("     iterate BPM + DN until the loop seam is clean and kick is on bar 1")
+        console.print(
+            f"  2. [cyan]stemforge re-anchor {track_out} --bpm BPM --first-downbeat DN[/cyan]"
+        )
+        console.print("     rewrites prechop in-place; no Demucs re-run needed (~1s).")
+
+
+@cli.command("re-anchor")
+@click.argument("track_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.option("--bpm", type=float, required=True, help="Manual BPM override.")
+@click.option(
+    "--first-downbeat",
+    "first_downbeat",
+    type=float,
+    required=True,
+    help="Where bar 1 starts in the source audio (seconds).",
+)
+@click.option(
+    "--keep-old",
+    is_flag=True,
+    default=False,
+    help="Keep the previous prechop output as `<stem>_prechop.bak/` instead of overwriting.",
+)
+def re_anchor(track_dir, bpm, first_downbeat, keep_old):
+    """
+    Re-cut the prechop chunks of an already-forged track at user-supplied
+    BPM + first_downbeat. Skips Demucs re-run (~30 s saved) — only re-runs
+    the chunk extraction step. Use after `probe_loop.py` confirms values.
+
+    \b
+    Iteration loop when auto-detection fails:
+      1. stemforge split track.wav --pipeline arrangement
+      2. drag a chunk into Ableton — kicks off bar grid?
+      3. uv run python tools/probe_loop.py track.wav \\
+              --bpm 85.11 --first-downbeat 0.1 --start-bar 28
+         (iterate BPM + DN until loop is seamless and kick on bar 1)
+      4. stemforge re-anchor PROCESSED/track --bpm 85.11 --first-downbeat 0.1
+         → done in ~1 s, no Demucs.
+
+    \b
+    What gets rewritten:
+      - <stem>_prechop/ (recut at new BPM/downbeat)
+      - prechop_manifest.json
+      - stems.json (tempo provenance updated with re-anchor history)
+
+    \b
+    What stays put:
+      - drums.wav / bass.wav / vocals.wav / other.wav (Demucs output unchanged)
+      - <stem>_beats/ (per-beat slices unchanged)
+      - input_audio fingerprint (sha256 + sample_rate + duration_samples)
+    """
+    import json
+    from .manifest import TempoProvenance, _input_audio_for, write_manifest
+    from .pipelines import load_pipeline, run_post_split_steps
+
+    if bpm <= 0:
+        console.print(f"[red]--bpm must be > 0, got {bpm}[/red]")
+        sys.exit(1)
+    if first_downbeat < 0:
+        console.print(f"[red]--first-downbeat must be >= 0, got {first_downbeat}[/red]")
+        sys.exit(1)
+
+    stems_json = track_dir / "stems.json"
+    if not stems_json.exists():
+        console.print(f"[red]No stems.json at {stems_json}[/red]")
+        sys.exit(1)
+
+    sj = json.loads(stems_json.read_text())
+    track_name = sj["track_name"]
+    pipeline_name = sj.get("pipeline", "default")
+    backend = sj.get("backend", "demucs")
+
+    # Reconstruct stem_paths from stems.json
+    stem_paths = {}
+    for s in sj["stems"]:
+        wav = Path(s["wav_path"])
+        if not wav.exists():
+            console.print(f"[red]Missing stem WAV: {wav}[/red]")
+            sys.exit(1)
+        stem_paths[s["name"]] = wav
+
+    console.print(Rule(f"[bold cyan]StemForge re-anchor[/bold cyan] — {track_name}"))
+    console.print(f"  Track dir:      {track_dir}")
+    console.print(f"  Old BPM:        [yellow]{sj['bpm']}[/yellow]")
+    console.print(f"  New BPM:        [green]{bpm}[/green]")
+    if sj.get("tempo"):
+        old_dn = sj["tempo"].get("first_downbeat_sec")
+        console.print(
+            f"  Old first_downbeat: [yellow]{old_dn}s[/yellow]"
+            if old_dn is not None else "  Old first_downbeat: [dim]none recorded[/dim]"
+        )
+    console.print(f"  New first_downbeat: [green]{first_downbeat}s[/green]")
+
+    # Backup or wipe old prechop dirs
+    import shutil as _sh
+
+    for stem_name in stem_paths:
+        old_dir = track_dir / f"{stem_name}_prechop"
+        if not old_dir.exists():
+            continue
+        if keep_old:
+            bak = track_dir / f"{stem_name}_prechop.bak"
+            if bak.exists():
+                _sh.rmtree(bak)
+            old_dir.rename(bak)
+            console.print(f"  [dim]backed up {old_dir.name} → {bak.name}[/dim]")
+        else:
+            _sh.rmtree(old_dir)
+
+    old_manifest = track_dir / "prechop_manifest.json"
+    if old_manifest.exists() and keep_old:
+        old_manifest.rename(track_dir / "prechop_manifest.bak.json")
+
+    # Synthesize beat times from override values for the slice_at_beats path
+    # we don't actually rerun (we'd need duration here only for stems.json).
+    # The reconciler is also skipped — re-anchor trusts the user's values
+    # by definition.
+
+    # Re-run prechop with overrides
+    pipeline_cfg = load_pipeline(pipeline_name)
+    if pipeline_cfg is None or pipeline_cfg.prechop is None:
+        console.print(
+            f"[yellow]Pipeline {pipeline_name!r} has no prechop block — nothing to re-anchor.[/yellow]"
+        )
+        sys.exit(0)
+
+    console.print()
+    console.print(
+        f"[bold]Re-cutting prechop[/bold]  bars={pipeline_cfg.prechop.bars} "
+        f"pad_bars={pipeline_cfg.prechop.pad_bars} "
+        f"first_downbeat={first_downbeat}s"
+    )
+    status = run_post_split_steps(
+        pipeline_cfg,
+        stem_paths,
+        track_dir,
+        bpm=bpm,
+        first_downbeat_sec=first_downbeat,
+    )
+    pc = status.get("prechop", {})
+    if pc:
+        console.print(f"  Written: {pc['manifest']}")
+
+    # Update stems.json's tempo provenance to reflect the re-anchor
+    prior_source = sj.get("tempo", {}).get("source", "unknown")
+    prior_bpm = sj.get("bpm")
+    prior_dn = sj.get("tempo", {}).get("first_downbeat_sec")
+    reanchor_warning = (
+        f"re-anchored from bpm={prior_bpm} first_downbeat={prior_dn}s "
+        f"(prior source: {prior_source})"
+    )
+    if sj.get("tempo", {}).get("warning"):
+        reanchor_warning = f"{reanchor_warning} | prior: {sj['tempo']['warning']}"
+
+    tempo_provenance = TempoProvenance(
+        source="user-override",
+        confidence="high",
+        first_downbeat_sec=float(first_downbeat),
+        n_downbeats=int((sj.get("tempo") or {}).get("n_downbeats", 0)),
+        warning=reanchor_warning,
+        all_estimates=(sj.get("tempo") or {}).get("all_estimates", []),
+    )
+
+    # Re-write stems.json (preserve audio fingerprint, slice counts unchanged)
+    slice_counts = {s["name"]: s["beat_count"] for s in sj["stems"]}
+    source_file = Path(sj["source_file"])
+    input_audio = None
+    if sj.get("input_audio"):
+        from .manifest import InputAudio
+
+        ia = sj["input_audio"]
+        input_audio = InputAudio(
+            sample_rate=ia["sample_rate"],
+            duration_samples=ia["duration_samples"],
+            sha256=ia["sha256"],
+        )
+    elif source_file.exists():
+        input_audio = _input_audio_for(source_file)
+
+    write_manifest(
+        output_dir=track_dir,
+        track_name=track_name,
+        source_file=source_file,
+        backend=backend,
+        bpm=bpm,
+        beat_count=sj.get("beat_count", 0),
+        stem_paths=stem_paths,
+        slice_counts=slice_counts,
+        pipeline=pipeline_name,
+        tempo=tempo_provenance,
+        input_audio=input_audio,
+    )
+
+    console.print()
+    console.print(Rule("[bold green]Re-anchored[/bold green]"))
+    console.print(f"  BPM: [cyan]{bpm}[/cyan]  first_downbeat: [cyan]{first_downbeat}s[/cyan]")
+    console.print("  stems.json + prechop_manifest.json updated.")
+    if keep_old:
+        console.print("  [dim]Old chunks preserved at <stem>_prechop.bak/.[/dim]")
 
 
 @cli.command("list")
