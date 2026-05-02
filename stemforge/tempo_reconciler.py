@@ -134,6 +134,70 @@ def _is_suspicious_ratio(a: float, b: float) -> tuple[bool, float | None]:
     return False, None
 
 
+def _bar_period_from_downbeats(downbeats: np.ndarray) -> float | None:
+    """Median bar period (seconds per bar) from downbeat IBIs.
+
+    Skips the first downbeat (often a phantom intro hit), filters out IBIs
+    that differ from the rough median by more than 20% (rejecting clumped
+    early-song mis-detections), then takes the median of the survivors.
+    """
+    if len(downbeats) < 4:
+        return None
+    ibis = np.diff(downbeats[1:])  # skip first
+    if len(ibis) == 0:
+        return None
+    rough_median = float(np.median(ibis))
+    clean = ibis[np.abs(ibis - rough_median) < 0.2 * rough_median]
+    if len(clean) == 0:
+        return None
+    period = float(np.median(clean))
+    return period if period > 0 else None
+
+
+def _bpm_from_downbeats(downbeats: np.ndarray, beats_per_bar: int = 4) -> float | None:
+    """Derive BPM from downbeat spacing — more accurate than beat-IBI median.
+
+    Empirically (caught 2026-05-02 on Ooh La La + Definition): beat-this's
+    median(diff(beats)) runs ~0.5–1.2% high vs the truth, because the beat
+    array has small jitter that biases the median toward the lower IBI
+    values. The downbeat array (where the model commits to bar boundaries)
+    is much more stable.
+
+    Returns None if there aren't enough stable downbeats to compute.
+    """
+    period = _bar_period_from_downbeats(downbeats)
+    return 60.0 * beats_per_bar / period if period else None
+
+
+def _first_downbeat_from_phase(
+    downbeats: np.ndarray, bar_period: float
+) -> float | None:
+    """Recover bar 1's true offset from later downbeats' phase.
+
+    Each downbeat's `time mod bar_period` is its "phase" within a bar — for
+    downbeats that fall on real bar 1's of the song, the phase is constant
+    (= the offset of bar 1 from t=0). Phantom early downbeats land on
+    arbitrary phases and pull the mean, but the MEDIAN is robust if most
+    downbeats are real.
+
+    To dodge intro noise, drop the first quarter of the downbeats array.
+    """
+    if len(downbeats) < 4 or bar_period <= 0:
+        return None
+    # Skip first quarter — that's where phantom early downbeats live.
+    skip = max(1, len(downbeats) // 4)
+    sample = downbeats[skip:]
+    phases = sample % bar_period
+    # Phases can wrap near 0 or near bar_period — re-anchor by adding
+    # bar_period/2, taking median, subtracting back, and wrapping once.
+    # (median is robust on a single-mode unimodal distribution but breaks
+    # at the wrap edge if half the phases are near 0 and half near bar_period.)
+    shifted = (phases + bar_period / 2) % bar_period
+    median_shifted = float(np.median(shifted))
+    median_phase = (median_shifted - bar_period / 2) % bar_period
+    return float(median_phase)
+
+
 def _detect_beat_this(
     audio_path: Path,
     audio_label: Literal["mix", "drums", "kick"],
@@ -141,7 +205,11 @@ def _detect_beat_this(
     device: str = "auto",
     dbn: bool = False,
 ) -> TempoEstimate | None:
-    """Run beat-this. Returns None if not installed or it errored."""
+    """Run beat-this. Returns None if not installed or it errored.
+
+    Reports BPM from bar-period (downbeat-IBI / beats_per_bar) when there
+    are enough stable downbeats; otherwise falls back to beat-IBI median.
+    """
     try:
         from beat_this.inference import File2Beats
 
@@ -157,7 +225,15 @@ def _detect_beat_this(
         downbeats = np.asarray(downbeats, dtype=float)
         if len(beats) < 2:
             return None
-        bpm = 60.0 / float(np.median(np.diff(beats)))
+        # Prefer bar-period BPM when we have enough stable downbeats. Falls
+        # back to beat-IBI median for tracks where downbeats are sparse or
+        # too noisy to filter (e.g. drum-and-bass with one downbeat per phrase).
+        bpm_from_bars = _bpm_from_downbeats(downbeats)
+        bpm = (
+            bpm_from_bars
+            if bpm_from_bars is not None
+            else 60.0 / float(np.median(np.diff(beats)))
+        )
         source: TempoSource = (
             "beat-this:mix" if audio_label == "mix"
             else "beat-this:drums" if audio_label == "drums"

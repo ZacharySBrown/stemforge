@@ -121,7 +121,31 @@ def cli():
     type=float,
     help="RMS threshold below which beat slices are discarded. Default: 0.001",
 )
-def split(audio_file, model, pipeline, output, no_slice, no_normalize, silence_threshold):
+@click.option(
+    "--bpm",
+    "bpm_override",
+    type=float,
+    default=None,
+    help="Manual BPM override. Bypasses auto-detection. Pair with --first-downbeat for full manual control.",
+)
+@click.option(
+    "--first-downbeat",
+    "first_downbeat_override",
+    type=float,
+    default=None,
+    help="Manual first-downbeat-time override (seconds). Where bar 1 starts in the source audio.",
+)
+def split(
+    audio_file,
+    model,
+    pipeline,
+    output,
+    no_slice,
+    no_normalize,
+    silence_threshold,
+    bpm_override,
+    first_downbeat_override,
+):
     """
     Split an audio file into stems and slice at beat boundaries.
 
@@ -132,6 +156,7 @@ def split(audio_file, model, pipeline, output, no_slice, no_normalize, silence_t
       stemforge split track.wav --pipeline glitch        # use 'glitch' pipeline config
       stemforge split track.wav --no-slice               # full stems, no beat files
       stemforge split track.mp3                          # auto-converts to WAV
+      stemforge split track.wav --bpm 85.11 --first-downbeat 0.1   # known-good manual values
     """
     # ── Auto-convert to WAV if needed ────────────────────────────────────────
     audio_file, _ = ensure_wav(audio_file, console)
@@ -178,18 +203,44 @@ def split(audio_file, model, pipeline, output, no_slice, no_normalize, silence_t
 
     from .tempo_reconciler import reconcile_tempo
 
+    # Always run reconciler — even when overrides are present — so the manifest
+    # records what auto-detection said vs what the user override was. That
+    # comparison is the labeled-example data we need to keep improving the
+    # detector. Skipping it would save ~10s but cost the future-fix signal.
     reconciled = reconcile_tempo(
         mix_path=audio_file,
         drums_path=drums_stem,
         kick_tiebreaker=True,
         kick_workdir=track_out / "tempo_substems",
     )
-    bpm = reconciled.bpm
-    beat_times = reconciled.beat_times
-    downbeat_times = reconciled.downbeat_times
-    first_downbeat_sec = (
-        float(downbeat_times[0]) if len(downbeat_times) > 0 else 0.0
+    auto_bpm = reconciled.bpm
+    auto_beats = reconciled.beat_times
+    auto_downbeats = reconciled.downbeat_times
+    auto_first_downbeat = (
+        float(auto_downbeats[0]) if len(auto_downbeats) > 0 else 0.0
     )
+
+    # Apply manual overrides. When BPM is overridden we resynthesize the
+    # beat grid at the user's tempo, anchored on whichever first_downbeat
+    # is in effect — overridden if given, else auto-detected.
+    overrides_active = (bpm_override is not None) or (first_downbeat_override is not None)
+    bpm = bpm_override if bpm_override is not None else auto_bpm
+    first_downbeat_sec = (
+        first_downbeat_override
+        if first_downbeat_override is not None
+        else auto_first_downbeat
+    )
+
+    if bpm_override is not None:
+        # Synthesize beats at the override tempo, anchored on first_downbeat_sec.
+        import soundfile as _sf
+
+        duration = float(_sf.info(str(audio_file)).duration)
+        beat_times = np.arange(first_downbeat_sec, duration, 60.0 / bpm)
+        downbeat_times = beat_times[::4]
+    else:
+        beat_times = auto_beats
+        downbeat_times = auto_downbeats
 
     # Fallback: if reconciler returned no usable beats (very short clip,
     # detector silently failed), revive the legacy librosa path so the CLI
@@ -197,20 +248,33 @@ def split(audio_file, model, pipeline, output, no_slice, no_normalize, silence_t
     if len(beat_times) == 0:
         bpm, beat_times = detect_bpm_and_beats(bpm_source)
 
-    src_color = "green" if reconciled.confidence == "high" else (
+    src_color = "green" if (overrides_active or reconciled.confidence == "high") else (
         "yellow" if reconciled.confidence == "medium" else "red"
     )
     console.print(
         f"  BPM: [bold cyan]{bpm:.2f}[/bold cyan]  "
-        f"half-time: {bpm / 2:.2f}  |  {len(beat_times)} beats, "
-        f"{len(downbeat_times)} downbeats"
+        f"first_downbeat: {first_downbeat_sec:.3f}s  |  "
+        f"{len(beat_times)} beats, {len(downbeat_times)} downbeats"
     )
-    console.print(
-        f"  Source: [{src_color}]{reconciled.source}[/{src_color}] "
-        f"(confidence: {reconciled.confidence})"
-    )
-    if reconciled.warning:
-        console.print(f"  [yellow]warn:[/yellow] {reconciled.warning}")
+    if overrides_active:
+        diff_bpm = (bpm - auto_bpm) if bpm_override is not None else 0.0
+        diff_dn = (
+            (first_downbeat_sec - auto_first_downbeat)
+            if first_downbeat_override is not None
+            else 0.0
+        )
+        console.print(
+            f"  Source: [green]user-override[/green]  "
+            f"(detector said BPM={auto_bpm:.2f} Δ{diff_bpm:+.2f}, "
+            f"first_downbeat={auto_first_downbeat:.3f}s Δ{diff_dn:+.3f}s)"
+        )
+    else:
+        console.print(
+            f"  Source: [{src_color}]{reconciled.source}[/{src_color}] "
+            f"(confidence: {reconciled.confidence})"
+        )
+        if reconciled.warning:
+            console.print(f"  [yellow]warn:[/yellow] {reconciled.warning}")
 
     slice_counts = {}
     if not no_slice:
@@ -233,16 +297,41 @@ def split(audio_file, model, pipeline, output, no_slice, no_normalize, silence_t
     console.print("[bold]3/3  Writing stems.json manifest[/bold]")
     from .manifest import TempoProvenance
 
-    tempo_provenance = TempoProvenance(
-        source=reconciled.source,
-        confidence=reconciled.confidence,
-        first_downbeat_sec=(
-            float(downbeat_times[0]) if len(downbeat_times) > 0 else None
-        ),
-        n_downbeats=int(len(downbeat_times)),
-        warning=reconciled.warning,
-        all_estimates=[e.to_dict() for e in reconciled.all_estimates],
-    )
+    if overrides_active:
+        # Build a warning that captures the detector vs override delta — that
+        # comparison is the labeled-example data we want to preserve.
+        override_warning_parts = []
+        if bpm_override is not None:
+            override_warning_parts.append(
+                f"bpm override {bpm_override:.3f} (detector said {auto_bpm:.3f})"
+            )
+        if first_downbeat_override is not None:
+            override_warning_parts.append(
+                f"first_downbeat override {first_downbeat_override:.3f}s "
+                f"(detector said {auto_first_downbeat:.3f}s)"
+            )
+        override_warning = " ; ".join(override_warning_parts)
+        if reconciled.warning:
+            override_warning = f"{override_warning} | detector_warning: {reconciled.warning}"
+        tempo_provenance = TempoProvenance(
+            source="user-override",
+            confidence="high",
+            first_downbeat_sec=float(first_downbeat_sec),
+            n_downbeats=int(len(downbeat_times)),
+            warning=override_warning,
+            all_estimates=[e.to_dict() for e in reconciled.all_estimates],
+        )
+    else:
+        tempo_provenance = TempoProvenance(
+            source=reconciled.source,
+            confidence=reconciled.confidence,
+            first_downbeat_sec=(
+                float(downbeat_times[0]) if len(downbeat_times) > 0 else None
+            ),
+            n_downbeats=int(len(downbeat_times)),
+            warning=reconciled.warning,
+            all_estimates=[e.to_dict() for e in reconciled.all_estimates],
+        )
     manifest_path = write_manifest(
         output_dir=track_out,
         track_name=track_name,
