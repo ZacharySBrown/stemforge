@@ -204,18 +204,31 @@ function _alReadFile(absPath) {
     // Reads a UTF-8 text file. Returns the string or null on failure.
     try {
         var maxPath = _alToMaxPath(absPath);
-        var f = new File(maxPath, "read", "TEXT");
+        // Two-arg form: the third "type" arg filters by Mac OS 4-char file
+        // type code, which Python-written .json files lack — passing "TEXT"
+        // makes the open silently fail (f.isopen === false). Match the
+        // sf_manifest_loader.js read pattern.
+        var f = new File(maxPath, "read");
         if (!f.isopen) {
             _alStatus("read: could not open " + absPath);
             return null;
         }
         try { f.position = 0; } catch (_) {}
-        var size = 0;
-        try { size = f.eof; } catch (_) { size = 0; }
-        if (!size || size <= 0) { f.close(); return ""; }
-        var s = f.readstring(size);
+        // Max File.readstring caps at signed-short max (32767 chars) per call
+        // and returns truncated data on N > 32767 — the JSON parse then fails.
+        // Loop with explicit position-advance guard so we fail fast if the
+        // API lies. Mirrors sf_manifest_loader._readFileContents.
+        var MAX_CHUNK = 32767;
+        var raw = "";
+        var prev = -1;
+        while (f.position < f.eof && f.position !== prev) {
+            prev = f.position;
+            var chunk = f.readstring(MAX_CHUNK) || "";
+            if (!chunk.length) break;
+            raw += chunk;
+        }
         f.close();
-        return s == null ? "" : String(s);
+        return raw;
     } catch (e) {
         _alStatus("read error: " + e);
         return null;
@@ -317,11 +330,11 @@ function _alFindClipAtBeat(trackIdx, beat) {
 }
 
 function _alCreateAndConfigureClip(trackIdx, absWavPath, startBeat, lengthBeats,
-                                   loopStartBeats, loopEndBeats) {
+                                   loopStartSec, loopEndSec, bpm) {
     // Creates an audio clip on `trackIdx`'s arrangement view at `startBeat`,
     // sources it from `absWavPath`, sets the playback span (start_marker /
-    // end_marker) and loop region to [loopStartBeats, loopEndBeats] (in beats
-    // RELATIVE to the clip's start_time).
+    // end_marker) and loop region to [loopStartSec, loopEndSec] (in SECONDS,
+    // since we disable warping below — see comment).
     //
     // Returns the clip's arrangement_clips index (>= 0) on success, -1 on fail.
     var trackPath = "live_set tracks " + trackIdx;
@@ -346,27 +359,40 @@ function _alCreateAndConfigureClip(trackIdx, absWavPath, startBeat, lengthBeats,
     var clipPath = trackPath + " arrangement_clips " + idx;
     var clip = new LiveAPI(clipPath);
 
-    // Loop / markers: all in beats relative to the clip's audio-source start.
+    // Force warping OFF so start_marker/end_marker/loop_start/loop_end are
+    // interpreted in SECONDS — the chunks are pre-rendered at manifest bpm
+    // and the project tempo is already aligned (set in runArrangementLoad),
+    // so unwarped playback at the native rate stays in sync with the
+    // arrangement timeline. Avoids fighting Live's auto-warp tempo guess.
+    // Note: warp_bpm is read-only; the warped path requires explicit warp
+    // markers (see stemforge_loader.v0.js's add_warp_marker pattern), which
+    // we don't need for chunks that already match project tempo.
+    try { clip.set("warping", 0); } catch (_) {}
+
+    // Loop / markers: all in SECONDS (since warping is off above).
     // Order matters in some Live versions — set looping=1 LAST.
-    try { clip.set("start_marker", loopStartBeats); } catch (e) {
+    try { clip.set("start_marker", loopStartSec); } catch (e) {
         _alStatus("set start_marker fail: " + e);
     }
-    try { clip.set("end_marker", loopEndBeats); } catch (e) {
+    try { clip.set("end_marker", loopEndSec); } catch (e) {
         _alStatus("set end_marker fail: " + e);
     }
-    try { clip.set("loop_start", loopStartBeats); } catch (e) {
+    try { clip.set("loop_start", loopStartSec); } catch (e) {
         _alStatus("set loop_start fail: " + e);
     }
-    try { clip.set("loop_end", loopEndBeats); } catch (e) {
+    try { clip.set("loop_end", loopEndSec); } catch (e) {
         _alStatus("set loop_end fail: " + e);
     }
     try { clip.set("looping", 1); } catch (e) {
         _alStatus("set looping fail: " + e);
     }
 
-    // Note: we deliberately do NOT set `length` — the playback span is
-    // governed by start_marker/end_marker. If the user drag-extends the
-    // arrangement-view clip, Live re-computes length from the markers + loop.
+    // Trim arrangement-view extent to the loop region so the post-pad bars
+    // don't show as visible audio after the music body. Without this, Live
+    // sets length from the full audio file length (including padding).
+    // `end_time` is not directly writable (Invalid syntax); use `length`,
+    // which is in beats and writable on arrangement audio clips.
+    try { clip.set("length", lengthBeats); } catch (_) {}
 
     return idx;
 }
@@ -398,22 +424,24 @@ function _alLoadStem(stemName, stemBlock, manifestDir, bpm, beatsPerBar) {
         var absWav = _alJoin(manifestDir, ch.file);
         var bars = (ch.bars != null) ? Number(ch.bars) : 4;
         var startBeat = i * bars * beatsPerBar;
-        var loopStartBeats = _alSecToBeats(ch.loop_start_sec, bpm);
-        var loopEndBeats = _alSecToBeats(ch.loop_end_sec, bpm);
+        // Markers stay in SECONDS — the configurer disables warping, which
+        // is the unit Live uses for unwarped clip markers/loop boundaries.
+        var loopStartSec = Number(ch.loop_start_sec) || 0;
+        var loopEndSec = Number(ch.loop_end_sec) || 0;
         var lengthBeats = bars * beatsPerBar;
 
         // Sanity: loop_end must be > loop_start. If the manifest is malformed
-        // fall back to [0, lengthBeats] so the clip still plays.
-        if (loopEndBeats <= loopStartBeats) {
+        // fall back to [0, total_sec] so the clip still plays.
+        if (loopEndSec <= loopStartSec) {
             _alStatus("malformed loop region for " + stemName + " chunk "
                 + (i + 1) + "; falling back to full clip");
-            loopStartBeats = 0;
-            loopEndBeats = lengthBeats;
+            loopStartSec = 0;
+            loopEndSec = Number(ch.total_sec) || (60 * lengthBeats / bpm);
         }
 
         var clipIdx = _alCreateAndConfigureClip(
             trackIdx, absWav, startBeat, lengthBeats,
-            loopStartBeats, loopEndBeats
+            loopStartSec, loopEndSec, bpm
         );
         if (clipIdx >= 0) created++;
     }
@@ -447,6 +475,15 @@ function runArrangementLoad(manifestPath) {
     var beatsPerBar = Number(manifest.beats_per_bar) || 4;
     var stems = manifest.stems || {};
     var manifestDir = _alDirname(path);
+
+    // Match Live's project tempo to the manifest tempo. The chunks are
+    // pre-rendered at manifest bpm and clips are warped to it; if the
+    // project tempo differs, audio is time-stretched and bar boundaries
+    // drift. Setting tempo before clip creation keeps everything aligned.
+    if (bpm > 0 && isFinite(bpm)) {
+        try { new LiveAPI("live_set").set("tempo", bpm); } catch (_) {}
+        _alStatus("project tempo → " + bpm + " BPM");
+    }
 
     var totalCreated = 0;
     var anyOk = false;
