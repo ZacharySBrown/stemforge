@@ -110,6 +110,51 @@ Captured 2026-04-25. Source: user brainstorm. Implementation note for **all** it
 
 ---
 
+## Bug: stems.json bakes absolute paths
+
+**Captured 2026-05-02** during the tempo-reconciler beat-match test. After
+forging Definition + Ooh La La to `/tmp/sf_*_out/...` and copying both
+processed dirs to `~/stemforge/processed/UPDATE/`, `stems.json` still
+referenced `/private/tmp/...` for `output_dir`, `stems[*].wav_path`, and
+`stems[*].beats_dir`. Consumers (M4L `sf_state.js`, arrangement loader,
+exporters) follow those absolute paths and load the wrong files (or fail
+silently if the original `/tmp` is cleaned up).
+
+**Why it matters.** The user moves processed dirs around frequently —
+copying to USB sticks, syncing to other machines, archiving old runs. Any
+absolute path in a manifest is a portability landmine.
+
+**Scope.**
+- [stemforge/manifest.py](../stemforge/manifest.py) `write_manifest`
+  currently calls `.resolve()` on every path before writing. Switch to
+  paths relative to the manifest's own directory (the prechop manifest
+  already does this — copy that pattern).
+- Decide what to do with `source_file`: it's a back-reference to the
+  *input* mix, which lives outside the processed dir, so it's legitimately
+  absolute. Either keep it absolute and document the meaning, or store as
+  `null` after copy and rely on `input_audio.sha256` + filename for
+  identity.
+- One-time migration: a small `stemforge migrate-manifests` command that
+  walks `~/stemforge/processed/` and rewrites baked-absolute paths to
+  relative ones. Cheap to write; saves the user's existing forge history.
+
+**Manifest-spec hookup.**
+- The per-sample sidecar/batch contract in [specs/manifest-spec.md](../specs/manifest-spec.md)
+  already uses `file: str` as a bare filename or relative path — it's only
+  `stems.json` (the pipeline-level manifest) that has this bug.
+
+**Workaround until fixed.** A path-rewrite snippet patches stems.json
+after-the-fact (see the rewriter used in the 2026-05-02 UPDATE/ copy):
+
+```python
+# Rewrite absolute paths in a copied stems.json to point at the new dir.
+sj['output_dir']            = str(new_root / track)
+sj['stems'][*].wav_path     = str(new_root / track / f'{stem}.wav')
+sj['stems'][*].beats_dir    = str(new_root / track / f'{stem}_beats')
+```
+
+---
+
 ## Cross-Cutting: Manifest-Spec Conformance
 
 For all four items, when implemented:
