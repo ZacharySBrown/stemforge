@@ -23,19 +23,17 @@ The installer will:
 ### Install Variants
 
 StemForge ships with a lightweight core and opt-in extras for heavy ML deps.
-Pick the install that matches how you want to separate stems.
 
 | Command                                         | Includes                              | Use when |
 |-------------------------------------------------|---------------------------------------|----------|
-| `pip install stemforge`                         | Core only (cloud backends, slicer, manifest) | You only use LALAL.AI or Music.AI (no torch, fast install). |
-| `pip install 'stemforge[native]'`               | Core + torch + demucs                 | You want local Demucs stem separation. |
+| `pip install 'stemforge[native]'`               | Core + torch + demucs                 | Standard install — local Demucs stem separation. |
 | `pip install 'stemforge[analyzer]'`             | Core + transformers + CLAP            | You want `stemforge analyze` (genre/instrument detection). |
 | `pip install 'stemforge[native,analyzer]'`      | Core + native + analyzer              | Local Demucs and analyzer. |
 | `pip install 'stemforge[native,analyzer,dev]'`  | Everything + test/lint/build tooling  | Developing on StemForge. |
 
-Running `stemforge split --backend demucs` without the `native` extra will print
-a friendly error pointing you at the right install command. Same for
-`stemforge analyze` without the `analyzer` extra.
+Running `stemforge split` without the `native` extra will print a friendly
+error pointing you at the right install command. Same for `stemforge analyze`
+without the `analyzer` extra.
 
 ## TLDR Usage
 
@@ -45,9 +43,9 @@ cd stemforge && source .venv/bin/activate
 # Drop a file in the inbox, then:
 stemforge split ~/stemforge/inbox/track.wav
 
-# Force a specific backend:
-stemforge split track.wav --backend demucs
-stemforge split track.wav --backend lalal
+# Pick a specific Demucs model:
+stemforge split track.wav --model 6stem        # 6-stem htdemucs_6s
+stemforge split track.wav --model fine         # better quality, 4x slower
 
 # Use a pipeline preset:
 stemforge split track.wav --pipeline idm_crushed
@@ -57,9 +55,6 @@ stemforge split track.wav --pipeline ambient
 # Full stems only (no beat slicing):
 stemforge split track.wav --no-slice
 
-# Check LALAL.AI balance:
-stemforge balance
-
 # See all options:
 stemforge list
 ```
@@ -67,7 +62,7 @@ stemforge list
 ## What Happens
 
 1. **You run** `stemforge split track.wav`
-2. **Stems** are separated via Demucs (local, free) or LALAL.AI (API, paid)
+2. **Stems** are separated via Demucs (local, free)
 3. **BPM** is auto-detected from the drum stem
 4. **Beat slices** are cut at every beat boundary → individual WAVs
 5. **`stems.json`** manifest is written with all paths + metadata
@@ -101,14 +96,6 @@ See [setup.md](setup.md) for template track recipes. You build 7 tracks once:
 - SF | Beat Chop Simpler
 
 The M4L device duplicates these per stem and loads audio automatically.
-
-## LALAL.AI (Optional)
-
-For cloud-based splitting with more stem types (9 stems vs Demucs' 4-6):
-```bash
-export LALAL_LICENSE_KEY=your_key_here
-stemforge split track.wav --backend lalal --stems idm
-```
 
 ## Known Limitations
 

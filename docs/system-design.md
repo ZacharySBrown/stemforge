@@ -58,7 +58,7 @@ StemForge is a dual-mode audio production system that separates songs into stems
 |--------|---------|-------------|
 | `cli.py` | Click CLI entry point | All core modules |
 | `config.py` | Config loading, constants, curation YAML | PyYAML |
-| `backends/` | Stem separation (Demucs, LALAL, MusicAI, Modal) | Per-backend |
+| `backends/` | Stem separation (Demucs) | Per-backend |
 | `slicer.py` | BPM detection, beat/bar slicing, phrase grouping | librosa |
 | `curator.py` | Diversity-based selection (GFP in 20D feature space) | numpy |
 | `segmenter.py` | Song structure detection (chroma recurrence + MFCC) | librosa, scipy |
@@ -75,7 +75,7 @@ StemForge is a dual-mode audio production system that separates songs into stems
 ```
 Audio file
   │
-  ├─→ Backend.separate()          Demucs / LALAL / MusicAI / Modal
+  ├─→ Backend.separate()          Demucs (local)
   │     → drums.wav, bass.wav, vocals.wav, other.wav
   │     → stems.json manifest
   │
@@ -131,8 +131,6 @@ class AbstractBackend(ABC):
 | **Demucs** | Local CPU/GPU | ~7.8s (M2 MPS) | `torch`, `demucs` |
 | **stemforge-native** | Local CoreML | ~4.5s (Neural Engine) | ONNX model + CoreML EP |
 | **Modal** | Cloud GPU (A10G) | ~0.45s | `modal` SDK, deployed app |
-| **LALAL.AI** | Cloud API | ~5-10s | API key |
-| **Music.AI** | Cloud API | ~5-15s | API key |
 
 ### 3.3 Model Pipeline (stemforge-native)
 

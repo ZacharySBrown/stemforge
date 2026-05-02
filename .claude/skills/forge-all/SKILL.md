@@ -17,7 +17,7 @@ Composed skill that runs `/forge-launch` and `/forge-run` back-to-back. Use when
 
 1. **Launch Ableton with the StemForge template** — follow `/forge-launch` behavior. If Ableton is already running, just open the template (or skip if user said "no template"). Don't block on it — Live takes a few seconds to fully boot but forge can start in parallel.
 
-2. **Run forge on the audio file** — follow `/forge-run` behavior. Plan-then-confirm (combined with the launch plan), backend/strategy/n_bars defaults the same.
+2. **Run forge on the audio file** — follow `/forge-run` behavior. Plan-then-confirm (combined with the launch plan), model/strategy/n_bars defaults the same.
 
 3. **Report what's next** — the in-Live "pick patch & source" and "COMMIT" steps still have to be done by the user inside the device UI today (see "Manual steps" below).
 
@@ -29,7 +29,7 @@ Show **one** plan covering both phases:
   Plan (forge-all):
     1. Launch Ableton with v0/build/StemForge.als   (skip if already running)
     2. Forge ~/Music/setting_sun.wav
-        backend:  demucs (model=default)
+        model:    default (Demucs htdemucs)
         strategy: max-diversity
         n_bars:   14
         output:   <repo>/processed/setting_sun/
@@ -49,7 +49,7 @@ Ableton boot is slow (5–10s). Forge with Demucs takes 30s–several minutes. *
 
 # Forge in the foreground (so the user sees streaming progress)
 uv run --directory /Users/zak/zacharysbrown/stemforge stemforge forge "$AUDIO" \
-  --backend "$BACKEND" --strategy "$STRATEGY" --n-bars "$N_BARS" \
+  --strategy "$STRATEGY" --n-bars "$N_BARS" \
   | jq -rc '...'  # see /forge-run for the streaming snippet
 ```
 
@@ -72,7 +72,7 @@ Inherits everything from `/forge-launch` and `/forge-run`. Common combinations:
 | User says | Action |
 |-----------|--------|
 | "open StemForge and forge X" | template + audio |
-| "launch and forge X with lalal" | template + `--backend lalal` |
+| "launch and forge X with the 6stem model" | template + `--model 6stem` |
 | "no template, just forge X" | bare Live launch + forge |
 | "forge X, don't open Live" | skip launch, just `/forge-run` |
 
@@ -100,7 +100,7 @@ fi
 
 # Forge (foreground, streaming)
 uv run --directory /Users/zak/zacharysbrown/stemforge stemforge forge "$AUDIO" \
-  --backend demucs --strategy rhythm-taxonomy --n-bars 16 \
+  --strategy rhythm-taxonomy --n-bars 16 \
   | jq -rc 'if .event == "progress" then "  [\(.phase)] \(.pct)%"
             elif .event == "complete" then "\n  ✓ Done. manifest: \(.manifest)"
             elif .event == "error"    then "\n  ✗ ERROR (\(.phase)): \(.message)"

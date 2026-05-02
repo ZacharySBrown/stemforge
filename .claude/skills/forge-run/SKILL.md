@@ -1,6 +1,6 @@
 ---
 name: forge-run
-description: Run the StemForge `forge` pipeline (split → slice → curate) on an audio file and report the manifest path. Use when the user asks to forge/process/run a track (e.g. "forge ~/Music/loop.wav", "run forge with rhythm-taxonomy on this", "split this with lalal and curate 8 bars"). Wraps `uv run stemforge forge`, streams NDJSON progress events, plan-then-confirm.
+description: Run the StemForge `forge` pipeline (split → slice → curate) on an audio file and report the manifest path. Use when the user asks to forge/process/run a track (e.g. "forge ~/Music/loop.wav", "run forge with rhythm-taxonomy on this", "forge this with 8 bars"). Wraps `uv run stemforge forge`, streams NDJSON progress events, plan-then-confirm.
 allowed-tools: Bash(uv run stemforge forge:*), Bash(uv run --directory*:*), Bash(stemforge forge:*), Bash(ls:*), Bash(cat:*), Bash(jq:*), Read
 ---
 
@@ -9,7 +9,7 @@ allowed-tools: Bash(uv run stemforge forge:*), Bash(uv run --directory*:*), Bash
 Wraps `stemforge forge` with sensible defaults so the user can say:
 
 - *"forge ~/Music/setting_sun.wav"*
-- *"run forge with lalal and 16 bars"*
+- *"run forge with 16 bars"*
 - *"forge this with rhythm-taxonomy strategy"*
 - *"forge it with the curation v2 config"*
 
@@ -31,7 +31,7 @@ uv run --directory /Users/zak/zacharysbrown/stemforge stemforge forge <audio> [o
 
 ## Defaults you supply
 
-- `--backend demucs` (local, no API credits)
+- Demucs backend (local, no API credits) — the only backend
 - `--strategy max-diversity`
 - `--n-bars 14`
 - `--time-sig 4/4` (only used if no Ableton analysis JSON is supplied)
@@ -45,8 +45,6 @@ If the user mentions any of these explicitly, override.
 
 | User says | Pass to CLI |
 |-----------|-------------|
-| "with lalal" / "use lalal" | `--backend lalal` |
-| "with musicai" | `--backend musicai` |
 | "use the htdemucs_ft model" | `--model htdemucs_ft` |
 | "rhythm taxonomy" / "by rhythm" | `--strategy rhythm-taxonomy` |
 | "sectional" / "by section" | `--strategy sectional` |
@@ -58,14 +56,14 @@ If the user mentions any of these explicitly, override.
 
 ## Plan-then-confirm
 
-Forge is **expensive** — Demucs runs locally and takes 30s–several minutes per stem; LALAL/MusicAI burn API credits. **Always show the plan first** and ask *"run forge?"* unless the user already said something definitive like *"go ahead and forge it"* / *"do it"* / *"--just do it"*.
+Forge is **expensive** — Demucs runs locally and takes 30s–several minutes per stem. **Always show the plan first** and ask *"run forge?"* unless the user already said something definitive like *"go ahead and forge it"* / *"do it"* / *"--just do it"*.
 
 Plan to show:
 
 ```
   Plan:
     audio:    ~/Music/setting_sun.wav
-    backend:  demucs (model=default)
+    model:    default (Demucs htdemucs)
     strategy: max-diversity
     n_bars:   14
     output:   <repo>/processed/setting_sun/
@@ -113,7 +111,7 @@ When forge finishes, surface the **manifest path** in your reply — the user al
 ## Failure modes to watch for
 
 - **Audio not found** — surface the path and the directory listing.
-- **Backend not configured** — `lalal` / `musicai` need API keys; if forge errors with credentials, surface the error and suggest `--backend demucs` as the local fallback.
+- **Demucs not installed** — if the user installed without the `native` extra, forge will print a friendly install hint. Surface that and stop.
 - **No drums stem** — curation defaults to drums; if the audio has no clear drum content, forge falls back to whatever stem comes first. Mention this in the report if relevant.
 - **Empty curation** — if `selected: 0`, the source likely has too few bars for the requested `--n-bars`. Suggest a smaller `n_bars` or a different strategy.
 - **`--curation` config not found** — error happens late (after splitting). If the user references a curation YAML, validate the path exists *before* the plan-then-confirm.
@@ -127,7 +125,7 @@ You show the plan:
 ```
   Plan:
     audio:    ~/Music/setting_sun.wav
-    backend:  demucs (model=default)
+    model:    default (Demucs htdemucs)
     strategy: rhythm-taxonomy
     n_bars:   16
     time_sig: 4/4
@@ -139,7 +137,6 @@ User says *"go"*. You run:
 ```bash
 uv run --directory /Users/zak/zacharysbrown/stemforge stemforge forge \
   ~/Music/setting_sun.wav \
-  --backend demucs \
   --strategy rhythm-taxonomy \
   --n-bars 16 \
   | jq -rc '...'  # see streaming snippet above

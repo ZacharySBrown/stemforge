@@ -15,41 +15,6 @@ PIPELINES_DIR = Path(__file__).parent.parent / "pipelines"
 for d in [INBOX_DIR, PROCESSED_DIR, LOGS_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
-# ── LALAL.AI ──────────────────────────────────────────────────────────────────
-LALAL_BASE = "https://www.lalal.ai/api/v1"
-
-LALAL_STEMS = [
-    "vocals",
-    "drum",
-    "bass",
-    "piano",
-    "electricguitar",
-    "acousticguitar",
-    "synthesizer",
-    "strings",
-    "wind",
-]
-
-LALAL_PRESETS = {
-    "idm": ["drum", "bass", "synthesizer"],
-    "chop": ["drum", "bass"],
-    "4stem": ["vocals", "drum", "bass"],
-    "full": ["vocals", "drum", "bass", "synthesizer", "electricguitar"],
-    "drums": ["drum"],
-}
-
-LALAL_DEFAULT_PRESET = "idm"
-
-# ── Music.AI ──────────────────────────────────────────────────────────────────
-MUSIC_AI_BASE = "https://api.music.ai/v1"
-
-MUSIC_AI_WORKFLOWS = {
-    "suite": "music-ai/stem-separation-suite",  # 9-stem: vocals, drums, bass, keys, strings, guitars, piano, wind, other
-    "vocals": "music-ai/stems-vocals-accompaniment",  # 4-stem: vocals, drums, bass, other
-}
-
-MUSIC_AI_DEFAULT_WORKFLOW = "vocals"
-
 # ── Demucs ────────────────────────────────────────────────────────────────────
 DEMUCS_MODELS = {
     "default": "htdemucs",  # 4 stems: drums, bass, vocals, other — fast
