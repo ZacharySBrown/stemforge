@@ -173,17 +173,44 @@ def split(audio_file, model, pipeline, output, no_slice, no_normalize, silence_t
     console.print("[bold]2/3  BPM detection + beat slicing[/bold]")
 
     # Prefer drums/drum stem for BPM accuracy
-    bpm_source = (
-        stem_paths.get("drums")
-        or stem_paths.get("drum")
-        or stem_paths.get("bass")
-        or next(iter(stem_paths.values()))
+    drums_stem = stem_paths.get("drums") or stem_paths.get("drum")
+    bpm_source = drums_stem or stem_paths.get("bass") or next(iter(stem_paths.values()))
+
+    from .tempo_reconciler import reconcile_tempo
+
+    reconciled = reconcile_tempo(
+        mix_path=audio_file,
+        drums_path=drums_stem,
+        kick_tiebreaker=True,
+        kick_workdir=track_out / "tempo_substems",
     )
-    bpm, beat_times = detect_bpm_and_beats(bpm_source)
+    bpm = reconciled.bpm
+    beat_times = reconciled.beat_times
+    downbeat_times = reconciled.downbeat_times
+    first_downbeat_sec = (
+        float(downbeat_times[0]) if len(downbeat_times) > 0 else 0.0
+    )
+
+    # Fallback: if reconciler returned no usable beats (very short clip,
+    # detector silently failed), revive the legacy librosa path so the CLI
+    # never returns an empty result.
+    if len(beat_times) == 0:
+        bpm, beat_times = detect_bpm_and_beats(bpm_source)
+
+    src_color = "green" if reconciled.confidence == "high" else (
+        "yellow" if reconciled.confidence == "medium" else "red"
+    )
     console.print(
-        f"  BPM: [bold cyan]{bpm:.1f}[/bold cyan]  "
-        f"half-time: {bpm / 2:.1f}  |  {len(beat_times)} beats"
+        f"  BPM: [bold cyan]{bpm:.2f}[/bold cyan]  "
+        f"half-time: {bpm / 2:.2f}  |  {len(beat_times)} beats, "
+        f"{len(downbeat_times)} downbeats"
     )
+    console.print(
+        f"  Source: [{src_color}]{reconciled.source}[/{src_color}] "
+        f"(confidence: {reconciled.confidence})"
+    )
+    if reconciled.warning:
+        console.print(f"  [yellow]warn:[/yellow] {reconciled.warning}")
 
     slice_counts = {}
     if not no_slice:
@@ -204,6 +231,18 @@ def split(audio_file, model, pipeline, output, no_slice, no_normalize, silence_t
     # ── 3. Write manifest ─────────────────────────────────────────────────────
     console.print()
     console.print("[bold]3/3  Writing stems.json manifest[/bold]")
+    from .manifest import TempoProvenance
+
+    tempo_provenance = TempoProvenance(
+        source=reconciled.source,
+        confidence=reconciled.confidence,
+        first_downbeat_sec=(
+            float(downbeat_times[0]) if len(downbeat_times) > 0 else None
+        ),
+        n_downbeats=int(len(downbeat_times)),
+        warning=reconciled.warning,
+        all_estimates=[e.to_dict() for e in reconciled.all_estimates],
+    )
     manifest_path = write_manifest(
         output_dir=track_out,
         track_name=track_name,
@@ -214,6 +253,7 @@ def split(audio_file, model, pipeline, output, no_slice, no_normalize, silence_t
         stem_paths=stem_paths,
         slice_counts=slice_counts,
         pipeline=pipeline,
+        tempo=tempo_provenance,
     )
     console.print(f"  Written: {manifest_path}")
 
@@ -231,7 +271,8 @@ def split(audio_file, model, pipeline, output, no_slice, no_normalize, silence_t
         console.print(
             f"[bold]Prechop[/bold]  bars={pipeline_cfg.prechop.bars} "
             f"pad_bars={pipeline_cfg.prechop.pad_bars} "
-            f"pad_last={pipeline_cfg.prechop.pad_last}"
+            f"pad_last={pipeline_cfg.prechop.pad_last} "
+            f"first_downbeat={first_downbeat_sec:.3f}s"
         )
         try:
             status_post = run_post_split_steps(
@@ -239,6 +280,7 @@ def split(audio_file, model, pipeline, output, no_slice, no_normalize, silence_t
                 stem_paths,
                 track_out,
                 bpm=bpm,
+                first_downbeat_sec=first_downbeat_sec,
             )
             pc = status_post.get("prechop", {})
             if pc:
@@ -691,11 +733,23 @@ def forge(audio_file, analysis, model, strategy, n_bars, time_sig, output, curat
     # When no analysis, reuse a single beat detection on drums for all stems.
     shared_beat_times = None
     detected_bpm: float | None = None
+    reconciled_for_forge = None
     if analysis_data is None:
-        bpm_source = (
-            stem_paths.get("drums") or stem_paths.get("drum") or next(iter(stem_paths.values()))
+        drums_stem_f = stem_paths.get("drums") or stem_paths.get("drum")
+        from .tempo_reconciler import reconcile_tempo as _reconcile
+
+        reconciled_for_forge = _reconcile(
+            mix_path=audio_file,
+            drums_path=drums_stem_f,
+            kick_tiebreaker=True,
+            kick_workdir=track_out / "tempo_substems",
         )
-        detected_bpm, shared_beat_times = detect_bpm_and_beats(bpm_source)
+        detected_bpm = reconciled_for_forge.bpm
+        shared_beat_times = reconciled_for_forge.beat_times
+        if shared_beat_times is None or len(shared_beat_times) == 0:
+            # Reconciler had no usable beats — fall back to librosa.
+            bpm_source = drums_stem_f or next(iter(stem_paths.values()))
+            detected_bpm, shared_beat_times = detect_bpm_and_beats(bpm_source)
     else:
         # Ableton analysis JSON carries the project tempo at the top level.
         ab_bpm = analysis_data.get("bpm") or analysis_data.get("tempo")

@@ -90,6 +90,9 @@ class ChunkMeta:
     loop_start_sec: float
     loop_end_sec: float
     total_sec: float  # total duration of the padded WAV
+    chunk_duration_samples: int = 0  # integer frame count — catches silent resamples
+    sample_rate: int = 0  # WAV sample rate
+    source_offset_sec: float = 0.0  # where in the source stem this chunk's bar 1 sits
 
     def asdict(self) -> dict:
         return asdict(self)
@@ -109,14 +112,24 @@ def prechop_stem(
     pad_last: bool = True,
     beats_per_bar: int = 4,
     write_sidecars: bool = True,
+    first_downbeat_sec: float = 0.0,
 ) -> list[ChunkMeta]:
-    """Chop one stem into padded N-bar chunks. See module docstring."""
+    """Chop one stem into padded N-bar chunks. See module docstring.
+
+    `first_downbeat_sec`: where bar 1 starts in the source stem. Pre-downbeat
+    audio (the intro / count-in / measure-fragment that precedes the first
+    musical bar) is dropped from the chunk grid so chunks align on real
+    musical bar boundaries. Default 0.0 preserves the legacy "start at frame
+    zero" behavior for callers that don't have downbeat information.
+    """
     if bars <= 0:
         raise ValueError(f"bars must be > 0, got {bars}")
     if pad_bars < 0:
         raise ValueError(f"pad_bars must be >= 0, got {pad_bars}")
     if bpm <= 0:
         raise ValueError(f"bpm must be > 0, got {bpm}")
+    if first_downbeat_sec < 0:
+        raise ValueError(f"first_downbeat_sec must be >= 0, got {first_downbeat_sec}")
 
     y, sr = sf.read(str(stem_path), always_2d=True)  # (frames, channels)
     total = y.shape[0]
@@ -126,7 +139,14 @@ def prechop_stem(
     pad_frames = fpb * pad_bars
     target_total_frames = chunk_frames + 2 * pad_frames
 
-    n_chunks = chunk_count_for(total, fpb, bars, pad_last=pad_last)
+    # Anchor the chunk grid on the first detected downbeat. Audio before that
+    # is preserved on disk (used for pre-roll padding of chunk 1) but the
+    # chunk-start positions advance from `downbeat_offset` onward.
+    downbeat_offset = int(round(first_downbeat_sec * sr))
+
+    # Available audio AFTER the downbeat — that's what the chunk count covers.
+    audio_after_downbeat = max(0, total - downbeat_offset)
+    n_chunks = chunk_count_for(audio_after_downbeat, fpb, bars, pad_last=pad_last)
     if n_chunks == 0:
         return []
 
@@ -136,7 +156,7 @@ def prechop_stem(
     metas: list[ChunkMeta] = []
 
     for i in range(n_chunks):
-        target_start = i * chunk_frames
+        target_start = downbeat_offset + i * chunk_frames
         target_end = target_start + chunk_frames
 
         # Read window (clamped to file).
@@ -185,6 +205,9 @@ def prechop_stem(
             loop_start_sec=loop_start_sec,
             loop_end_sec=loop_end_sec,
             total_sec=total_sec,
+            chunk_duration_samples=int(chunk.shape[0]),
+            sample_rate=int(sr),
+            source_offset_sec=float(target_start) / float(sr),
         )
         metas.append(cm)
 
@@ -222,6 +245,7 @@ def prechop(
     beats_per_bar: int = 4,
     write_sidecars: bool = True,
     skip_stems: Iterable[str] = ("residual",),
+    first_downbeat_sec: float = 0.0,
 ) -> Path:
     """Run prechop_stem across a stems dict. Writes a top-level manifest.
 
@@ -234,6 +258,7 @@ def prechop(
         "pad_bars": int(pad_bars),
         "pad_last": bool(pad_last),
         "beats_per_bar": int(beats_per_bar),
+        "first_downbeat_sec": float(first_downbeat_sec),
         "stems": {},
     }
 
@@ -250,6 +275,7 @@ def prechop(
             pad_last=pad_last,
             beats_per_bar=beats_per_bar,
             write_sidecars=write_sidecars,
+            first_downbeat_sec=first_downbeat_sec,
         )
         summary["stems"][stem_name] = {
             "dir": f"{stem_name}_prechop",

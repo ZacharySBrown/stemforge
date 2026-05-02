@@ -93,8 +93,12 @@ def run_post_split_steps(
     output_dir: Path,
     *,
     bpm: float,
+    first_downbeat_sec: float = 0.0,
 ) -> dict[str, Any]:
     """Apply any Python-side post-split steps from the pipeline.
+
+    `first_downbeat_sec` forwarded to prechop so chunks anchor on the
+    first detected musical bar instead of the audio file's frame zero.
 
     Returns a small status dict keyed by step name. Today: just `prechop`.
     """
@@ -111,11 +115,13 @@ def run_post_split_steps(
             pad_bars=pipeline.prechop.pad_bars,
             pad_last=pipeline.prechop.pad_last,
             beats_per_bar=pipeline.prechop.beats_per_bar,
+            first_downbeat_sec=first_downbeat_sec,
         )
         status["prechop"] = {
             "manifest": str(manifest_path),
             "bars": pipeline.prechop.bars,
             "pad_bars": pipeline.prechop.pad_bars,
+            "first_downbeat_sec": float(first_downbeat_sec),
         }
 
     return status
