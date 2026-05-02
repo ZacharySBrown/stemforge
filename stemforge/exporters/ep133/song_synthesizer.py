@@ -367,7 +367,22 @@ def synthesize(
             # underlying slice (in render-tempo bars) controls how many
             # times we tile the trigger across the pattern, not how long
             # the pattern is.
-            slice_dur_sec = float(entry.get("clip_length_sec", clip.length_sec))
+            #
+            # Source-of-truth precedence for slice duration:
+            #   1. loop_end_sec - loop_start_sec (prechop "trim region" —
+            #      what the device actually plays back; canonical when the
+            #      arrangement-mode pipeline padded the chunk WAV with bars
+            #      around the playable window).
+            #   2. clip_length_sec from the manifest entry (forge curation).
+            #   3. clip.length_sec from the snapshot (Live arrangement clip,
+            #      may be drag-extended into pad bars and overstate playable
+            #      length, breaking tiling).
+            loop_start = entry.get("loop_start_sec")
+            loop_end = entry.get("loop_end_sec")
+            if loop_start is not None and loop_end is not None:
+                slice_dur_sec = float(loop_end) - float(loop_start)
+            else:
+                slice_dur_sec = float(entry.get("clip_length_sec", clip.length_sec))
             slice_bars_by_pad[(group.lower(), pad)] = slice_dur_sec * source_bpm / 240.0
             bars = scene_bars
             idx = _ensure_pattern(group.lower(), pad, bars)
@@ -383,19 +398,23 @@ def synthesize(
                     stretch_mode="bpm",
                     sound_bpm=source_bpm,
                 )
-            # Stash the slice offsets for the writer. Manifest entries
-            # carry start_offset_sec / end_offset_sec for sub-region
-            # uploads, but some are inconsistent — `end - start` doesn't
-            # always match `clip_length_sec`. Trust clip_length_sec
-            # (what the synthesizer used to size the pattern) and derive
-            # end from start + clip_length_sec so audio duration tracks
-            # bar count. Fall back to explicit end_offset_sec only when
-            # clip_length_sec is absent.
+            # Stash the slice offsets for the writer. Source-of-truth
+            # precedence mirrors slice_dur_sec above:
+            #   1. loop_start_sec / loop_end_sec — trim region from the
+            #      arrangement pipeline; uploading only the playable window
+            #      keeps the device's natural sample length aligned with
+            #      what we tiled against (no pad bars audible on retrigger).
+            #   2. start_offset_sec + clip_length_sec — forge curation
+            #      sub-region.
+            #   3. start_offset_sec + end_offset_sec — fallback when
+            #      clip_length_sec is absent.
             slot = global_sample_slot(group, int(entry["slot"]))
             start = entry.get("start_offset_sec")
             end = entry.get("end_offset_sec")
             length = entry.get("clip_length_sec")
-            if start is not None and length is not None:
+            if loop_start is not None and loop_end is not None:
+                slot_slices[slot] = (float(loop_start), float(loop_end))
+            elif start is not None and length is not None:
                 slot_slices[slot] = (float(start), float(start) + float(length))
             elif start is not None and end is not None:
                 slot_slices[slot] = (float(start), float(end))

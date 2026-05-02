@@ -558,6 +558,79 @@ def test_synthesize_two_bar_slice_in_four_bar_scene_fires_twice(snapshots, manif
     assert [e.position_ticks for e in pat.events] == [0, 2 * TICKS_PER_BAR]
 
 
+def test_synthesize_prefers_loop_region_over_clip_length_for_tiling(
+    snapshots, manifest, arrangement
+):
+    """Regression: Believer .ppak scenes 2-5 had blank back-half because
+    the synthesizer used clip_length_sec (8 bars from a drag-extended
+    arrangement clip) instead of the prechop trim region (4 bars). With
+    loop_start_sec/loop_end_sec recorded in the manifest entry, slice_bars
+    must come from the trim and tile correctly across the longer pattern.
+    """
+    enriched = json.loads(json.dumps(manifest))
+    enriched["bpm"] = 120.0
+    # clip_length_sec lies (8 bars) — clip got drag-extended into pad bars.
+    # loop_*_sec is the canonical 4-bar trim region.
+    enriched["session_tracks"]["A"][0]["clip_length_sec"] = 16.0  # 8 bars @ 120
+    enriched["session_tracks"]["A"][0]["loop_start_sec"] = 2.0
+    enriched["session_tracks"]["A"][0]["loop_end_sec"] = 10.0  # 4 bars @ 120
+    spec = synthesize(
+        snapshots,
+        enriched,
+        arrangement["tempo"],
+        tuple(arrangement["time_sig"]),
+        1,
+        arrangement_length_sec=arrangement["arrangement_length_sec"],
+    )
+    pat = next(p for p in spec.patterns if p.group == "a" and p.events and p.events[0].pad == 1)
+    assert pat.bars == 4
+    # 4-bar trim in 4-bar pattern → 1 event (trim fits exactly).
+    assert len(pat.events) == 1
+    assert pat.events[0].position_ticks == 0
+
+
+def test_synthesize_loop_region_tiles_across_longer_pattern(manifest):
+    """Direct repro of the Believer scene 2 case: 4-bar trim region in an
+    8-bar scene must produce 2 events at positions 0 and 4 bars."""
+    enriched = json.loads(json.dumps(manifest))
+    enriched["bpm"] = 120.0
+    enriched["session_tracks"]["A"][0]["clip_length_sec"] = 16.0  # drag-extended
+    enriched["session_tracks"]["A"][0]["loop_start_sec"] = 2.0
+    enriched["session_tracks"]["A"][0]["loop_end_sec"] = 10.0  # 4 bars trim
+    # Build an 8-bar scene from two locators 8 bars apart.
+    snaps = [
+        Snapshot(
+            locator_time_sec=0.0,
+            locator_name="loc1",
+            a_clip=ArrangementClip(
+                file_path="/songs/test/A/loop_a1.wav",
+                start_time_sec=0.0,
+                length_sec=16.0,
+            ),
+            b_clip=None, c_clip=None, d_clip=None,
+        ),
+    ]
+    spec = synthesize(snaps, enriched, 120.0, (4, 4), 1, arrangement_length_sec=16.0)
+    pat = next(p for p in spec.patterns if p.group == "a" and p.events and p.events[0].pad == 1)
+    assert pat.bars == 8
+    assert len(pat.events) == 2
+    assert [e.position_ticks for e in pat.events] == [0, 4 * TICKS_PER_BAR]
+
+
+def test_synthesize_loop_region_populates_slot_slices(snapshots, manifest):
+    """When loop_start_sec/loop_end_sec are present, slot_slices uses them
+    as the sub-region upload window — so the device receives only the
+    playable trim, not pad bars."""
+    enriched = json.loads(json.dumps(manifest))
+    enriched["session_tracks"]["A"][0]["loop_start_sec"] = 1.5
+    enriched["session_tracks"]["A"][0]["loop_end_sec"] = 9.12
+    # Both alternative offsets are present — loop_* must take precedence.
+    enriched["session_tracks"]["A"][0]["start_offset_sec"] = 0.0
+    enriched["session_tracks"]["A"][0]["clip_length_sec"] = 11.42
+    spec = synthesize(snapshots, enriched, 120.0, (4, 4), 1)
+    assert spec.slot_slices[700] == pytest.approx((1.5, 9.12))
+
+
 def test_synthesize_threads_slot_slices_from_manifest(snapshots, manifest):
     """Manifest entries with start_offset_sec + clip_length_sec must show
     up in PpakSpec.slot_slices keyed by global sample slot, so the writer
