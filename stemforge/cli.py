@@ -1592,3 +1592,78 @@ def export_song(arrangement_path, manifest_path, reference_template, project_slo
 
 if __name__ == "__main__":
     cli()
+
+
+@cli.command("export-koala")
+@click.argument(
+    "project_dir",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+)
+@click.option(
+    "--loops-per-stem",
+    type=int,
+    default=4,
+    show_default=True,
+    help="Loops per stem in bank 1 (4 stems × N must be ≤ 16).",
+)
+@click.option(
+    "--oneshots-per-part",
+    type=int,
+    default=None,
+    help="Cap oneshots per drum part. Default: pack to fill bank 2 evenly.",
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=Path("koala_exports"),
+    show_default=True,
+    help="Where to write the .zip.",
+)
+@click.option(
+    "--keep-unzipped",
+    is_flag=True,
+    help="Leave the staging folder next to the zip (debugging).",
+)
+def export_koala_cmd(
+    project_dir: Path,
+    loops_per_stem: int,
+    oneshots_per_part: int | None,
+    output_dir: Path,
+    keep_unzipped: bool,
+) -> None:
+    """
+    Export a curated stemforge project as a Koala Sampler bank set (.zip).
+
+    \b
+    PROJECT_DIR can be either:
+      - the project root (e.g. processed/bel/) — we'll find curated/ inside it
+      - the curated dir directly (e.g. processed/bel/curated/)
+
+    \b
+    Example:
+        stemforge export-koala processed/bel
+        # → koala_exports/bel_koala.zip
+    """
+    from .exporters.koala import KoalaExportConfig, export_koala
+
+    if (project_dir / "curated").exists():
+        curated_dir = project_dir / "curated"
+    elif project_dir.name == "curated":
+        curated_dir = project_dir
+    else:
+        raise click.ClickException(
+            f"{project_dir} is not a stemforge project (no curated/ subdir) "
+            f"nor a curated/ dir itself."
+        )
+
+    config = KoalaExportConfig(
+        loops_per_stem=loops_per_stem,
+        oneshots_per_part=oneshots_per_part,
+        output_dir=output_dir,
+        keep_unzipped=keep_unzipped,
+    )
+
+    click.echo(f"Building Koala export from {curated_dir}...")
+    zip_path = export_koala(curated_dir, config)
+    click.echo(f"✓ {zip_path} ({zip_path.stat().st_size / 1024 / 1024:.1f} MB)")
+    click.echo("AirDrop to phone → share to 'Send to Koala Sampler' Shortcut.")
