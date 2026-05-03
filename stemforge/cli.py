@@ -325,6 +325,27 @@ def split(
         if reconciled.warning:
             console.print(f"  [yellow]warn:[/yellow] {reconciled.warning}")
 
+        # Loud, actionable hint when the underlying issue is "venv missing
+        # the optional `beat` extra" — the reconciler silently degrades to
+        # librosa-only, which has no idea how to handle half-time hip-hop
+        # and never returns a first_downbeat. Hit hard 2026-05-03 after a
+        # uv-sync drift; the symptom (Definition's BPM coming back doubled
+        # at 120 instead of 90) was indistinguishable from a real DSP bug.
+        if (reconciled.warning or "").startswith("beat-this unavailable"):
+            console.print(Rule("[bold red]beat-this is not installed[/bold red]"))
+            console.print(
+                "  The neural downbeat detector is the half-time-hip-hop fix; "
+                "without it, BPM\n"
+                "  on tracks like Definition / DnB / trap will come back doubled, "
+                "and no\n"
+                "  first_downbeat will be detected on any track. Install with:\n\n"
+                "    [cyan]uv sync --extra beat --extra native[/cyan]\n\n"
+                "  Then re-run this split — the dirs you've already produced "
+                "have low-confidence\n"
+                "  metadata and should be re-stemmed for accurate detection."
+            )
+            console.print(Rule())
+
     slice_counts = {}
     if not no_slice:
         for stem_name, stem_path in stem_paths.items():
