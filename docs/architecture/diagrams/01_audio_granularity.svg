@@ -1,0 +1,251 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" text-rendering="optimizeLegibility">
+  <defs>
+    <style>
+      .bg     { fill: #fafaf7; }
+      .ink    { fill: #1a1a1a; }
+      .muted  { fill: #666666; }
+      .panel  { fill: #f0efe9; stroke: #e8e8e3; stroke-width: 1; }
+      .accent-fill { fill: #dbeaff; stroke: #3a85ff; stroke-width: 1.5; }
+      .ok-fill     { fill: #dcf2e4; stroke: #3aaa6e; stroke-width: 1.5; }
+      .warn-fill   { fill: #ffe5dc; stroke: #e85d3a; stroke-width: 1.5; }
+      .row-alt     { fill: #f6f5ef; }
+
+      .h-title { font: 600 28px Inter, system-ui, sans-serif; fill: #1a1a1a; }
+      .h-cap   { font: 400 14px Inter, system-ui, sans-serif; fill: #666666; }
+      .col-h   { font: 600 13px Inter, system-ui, sans-serif; fill: #1a1a1a; }
+      .row-name{ font: 600 14px Inter, system-ui, sans-serif; fill: #1a1a1a; }
+      .row-sub { font: 400 11px Inter, system-ui, sans-serif; fill: #666666; }
+      .lbl     { font: 400 13px Inter, system-ui, sans-serif; fill: #1a1a1a; }
+      .lbl-sm  { font: 400 12px Inter, system-ui, sans-serif; fill: #1a1a1a; }
+      .mut     { font: 400 11px Inter, system-ui, sans-serif; fill: #666666; }
+      .mono    { font: 400 12px "IBM Plex Mono", "JetBrains Mono", Menlo, monospace; fill: #1a1a1a; }
+      .mono-sm { font: 400 11px "IBM Plex Mono", "JetBrains Mono", Menlo, monospace; fill: #666666; }
+      .ann     { font: italic 12px Inter, system-ui, sans-serif; fill: #3a85ff; }
+      .ann-warn{ font: italic 12px Inter, system-ui, sans-serif; fill: #e85d3a; }
+
+      .grid-line { stroke: #e8e8e3; stroke-width: 1; }
+      .grid-line-strong { stroke: #c9c9c0; stroke-width: 1.2; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1400" height="900"/>
+
+  <!-- title -->
+  <text class="h-title" x="40" y="50">stemforge — audio granularity matrix</text>
+  <text class="h-cap"   x="40" y="74">every unit the pipeline operates on, coarsest → finest. one row per granularity. read across for input · output · module · config.</text>
+
+  <!-- axis arrow on the left: coarsest → finest -->
+  <g>
+    <line x1="32" y1="140" x2="32" y2="850" stroke="#666" stroke-width="1.2"/>
+    <polygon points="28,840 36,840 32,852" fill="#666"/>
+    <text class="mut" x="42" y="148" transform="rotate(-90, 42, 148)" style="text-anchor:end">coarsest</text>
+  </g>
+  <text class="mut" x="20" y="135">coarsest</text>
+  <text class="mut" x="36" y="868">finest</text>
+
+  <!-- column headers -->
+  <g>
+    <line class="grid-line-strong" x1="60" y1="170" x2="1370" y2="170"/>
+    <text class="col-h" x="80"   y="160">granularity</text>
+    <text class="col-h" x="380"  y="160">input</text>
+    <text class="col-h" x="600"  y="160">output</text>
+    <text class="col-h" x="850"  y="160">module · function</text>
+    <text class="col-h" x="1110" y="160">config · cli flag</text>
+  </g>
+
+  <!-- column dividers -->
+  <line class="grid-line" x1="370" y1="170" x2="370" y2="850"/>
+  <line class="grid-line" x1="590" y1="170" x2="590" y2="850"/>
+  <line class="grid-line" x1="840" y1="170" x2="840" y2="850"/>
+  <line class="grid-line" x1="1100" y1="170" x2="1100" y2="850"/>
+
+  <!-- ROW 1: full mix -->
+  <g>
+    <rect class="accent-fill" x="60" y="180" width="300" height="78" rx="8"/>
+    <text class="row-name" x="80" y="208">full mix</text>
+    <text class="row-sub"  x="80" y="226">whole song, single file</text>
+    <text class="mono-sm"  x="80" y="244">~3–6 min · stereo · 44.1/48 khz</text>
+
+    <text class="lbl"   x="380" y="208">audio file on disk</text>
+    <text class="mono-sm" x="380" y="226">.wav / .mp3 / .m4a</text>
+    <text class="mut"   x="380" y="244">non-wav → ffmpeg → wav</text>
+
+    <text class="lbl"   x="600" y="208">in-memory pcm + sha256</text>
+    <text class="mut"   x="600" y="226">also recorded as input_audio</text>
+    <text class="mono-sm" x="600" y="244">{sample_rate, duration_samples, sha256}</text>
+
+    <text class="mono"  x="850" y="208">cli.split / cli.forge</text>
+    <text class="mono-sm" x="850" y="226">cli.ensure_wav</text>
+    <text class="mut"   x="850" y="244">manifest._input_audio_for</text>
+
+    <text class="mono"  x="1110" y="208">stemforge split &lt;file&gt;</text>
+    <text class="mono-sm" x="1110" y="226">--pipeline &lt;name&gt;</text>
+    <text class="mono-sm" x="1110" y="244">--output / -o</text>
+  </g>
+  <line class="grid-line" x1="60" y1="265" x2="1370" y2="265"/>
+
+  <!-- ROW 2: stems -->
+  <g>
+    <rect class="row-alt" x="60" y="270" width="1310" height="78"/>
+    <rect class="panel" x="60" y="270" width="300" height="78" rx="8"/>
+    <text class="row-name" x="80" y="298">stems</text>
+    <text class="row-sub"  x="80" y="316">drums · bass · vocals · other</text>
+    <text class="mono-sm"  x="80" y="334">+ guitar · piano (htdemucs_6s)</text>
+
+    <text class="lbl"   x="380" y="298">full mix wav</text>
+    <text class="mut"   x="380" y="316">demucs torch model</text>
+
+    <text class="lbl"   x="600" y="298">{stem}.wav (one per source)</text>
+    <text class="mono-sm" x="600" y="316">drums.wav, bass.wav, vocals.wav,</text>
+    <text class="mono-sm" x="600" y="334">other.wav  (residual dropped)</text>
+
+    <text class="mono"  x="850" y="298">backends.demucs.DemucsBackend</text>
+    <text class="mono-sm" x="850" y="316">.separate(audio, out)</text>
+    <text class="mut"   x="850" y="334">extends AbstractBackend</text>
+
+    <text class="mono"  x="1110" y="298">--model {default,fine,6stem}</text>
+    <text class="mono-sm" x="1110" y="316">DEMUCS_MODELS in config.py</text>
+  </g>
+  <line class="grid-line" x1="60" y1="355" x2="1370" y2="355"/>
+
+  <!-- ROW 3: drum sub-stems -->
+  <g>
+    <rect class="warn-fill" x="60" y="360" width="300" height="78" rx="8"/>
+    <text class="row-name" x="80" y="388">drum sub-stems</text>
+    <text class="row-sub"  x="80" y="406">kick · snare · toms · hihat · cymbals</text>
+    <text class="mut"      x="80" y="424">opt-in · larsnet</text>
+
+    <text class="lbl"   x="380" y="388">drums.wav (from demucs)</text>
+    <text class="mut"   x="380" y="406">larsnet model</text>
+
+    <text class="lbl"   x="600" y="388">5 isolated sub-stem wavs</text>
+    <text class="mono-sm" x="600" y="406">drum_substems/{kick,snare,…}.wav</text>
+    <text class="mut"   x="600" y="424">also used by tempo kick-tiebreaker</text>
+
+    <text class="mono"  x="850" y="388">drum_separator.separate_drums</text>
+    <text class="mono-sm" x="850" y="406">oneshot.extract_drum_oneshots_via_larsnet</text>
+    <text class="mut"   x="850" y="424">tempo_reconciler._isolate_kick</text>
+
+    <text class="mono"  x="1110" y="388">curation.yaml: oneshot_mode</text>
+    <text class="mono-sm" x="1110" y="406">: classify   (per-stem)</text>
+    <text class="mono-sm" x="1110" y="424">device: auto/cpu/mps/cuda</text>
+  </g>
+  <line class="grid-line" x1="60" y1="445" x2="1370" y2="445"/>
+
+  <!-- ROW 4: bar-aligned slices -->
+  <g>
+    <rect class="row-alt" x="60" y="450" width="1310" height="68"/>
+    <rect class="panel" x="60" y="450" width="300" height="68" rx="8"/>
+    <text class="row-name" x="80" y="478">bar-aligned slices</text>
+    <text class="row-sub"  x="80" y="496">one wav per bar of a stem</text>
+    <text class="mut"      x="80" y="510">used by curation</text>
+
+    <text class="lbl"   x="380" y="478">stem wav + downbeats</text>
+    <text class="mut"   x="380" y="496">(or ableton warp markers)</text>
+
+    <text class="lbl"   x="600" y="478">{stem}_bars/{stem}_bar_NNN.wav</text>
+    <text class="mut"   x="600" y="496">silence-thresh + peak-norm</text>
+
+    <text class="mono"  x="850" y="478">slicer.slice_at_bars</text>
+    <text class="mono-sm" x="850" y="496">slicer.slice_at_bars_from_analysis</text>
+
+    <text class="mono"  x="1110" y="478">--time-sig 4/4</text>
+    <text class="mono-sm" x="1110" y="496">--silence-threshold</text>
+  </g>
+  <line class="grid-line" x1="60" y1="525" x2="1370" y2="525"/>
+
+  <!-- ROW 5: beat-aligned slices -->
+  <g>
+    <rect class="panel" x="60" y="530" width="300" height="68" rx="8"/>
+    <text class="row-name" x="80" y="558">beat-aligned slices</text>
+    <text class="row-sub"  x="80" y="576">one wav per beat of a stem</text>
+    <text class="mut"      x="80" y="590">simpler / polybuffer~ pads</text>
+
+    <text class="lbl"   x="380" y="558">stem wav + beat_times</text>
+    <text class="mut"   x="380" y="576">from tempo reconciler</text>
+
+    <text class="lbl"   x="600" y="558">{stem}_beats/{stem}_beat_NNN.wav</text>
+    <text class="mut"   x="600" y="576">peak-normalized · pcm_24</text>
+
+    <text class="mono"  x="850" y="558">slicer.slice_at_beats</text>
+    <text class="mono-sm" x="850" y="576">beats_per_slice configurable</text>
+
+    <text class="mono"  x="1110" y="558">--silence-threshold 1e-3</text>
+    <text class="mono-sm" x="1110" y="576">--no-normalize</text>
+  </g>
+  <line class="grid-line" x1="60" y1="605" x2="1370" y2="605"/>
+
+  <!-- ROW 6: padded n-bar chunks -->
+  <g>
+    <rect class="row-alt" x="60" y="610" width="1310" height="78"/>
+    <rect class="accent-fill" x="60" y="610" width="300" height="78" rx="8"/>
+    <text class="row-name" x="80" y="638">padded n-bar chunks</text>
+    <text class="row-sub"  x="80" y="656">arrangement-view loops</text>
+    <text class="mono-sm"  x="80" y="674">bars=4  pad_pre=0  pad_post=1</text>
+
+    <text class="lbl"   x="380" y="638">stem wav + first_downbeat</text>
+    <text class="mut"   x="380" y="656">+ pre_bars (intro auto-fill)</text>
+    <text class="mut"   x="380" y="674">+ pad_pre / pad_post (extend)</text>
+
+    <text class="lbl"   x="600" y="638">{stem}_prechop/{stem}_chunk_NNN.wav</text>
+    <text class="mono-sm" x="600" y="656">+ prechop_manifest.json</text>
+    <text class="mut"     x="600" y="674">loop_start_sec, loop_end_sec, source_offset_sec</text>
+
+    <text class="mono"  x="850" y="638">prechop.prechop_stem</text>
+    <text class="mono-sm" x="850" y="656">prechop.write_prechop_manifest</text>
+    <text class="mut"   x="850" y="674">pipelines.run_post_split_steps</text>
+
+    <text class="mono"  x="1110" y="638">arrangement.yaml: prechop:</text>
+    <text class="mono-sm" x="1110" y="656">--pre-bars · --pad-pre-bars</text>
+    <text class="mono-sm" x="1110" y="674">--pad-post-bars</text>
+  </g>
+  <line class="grid-line" x1="60" y1="695" x2="1370" y2="695"/>
+
+  <!-- ROW 7: curated bar selection -->
+  <g>
+    <rect class="ok-fill" x="60" y="700" width="300" height="68" rx="8"/>
+    <text class="row-name" x="80" y="728">curated bar selection</text>
+    <text class="row-sub"  x="80" y="746">diversity-picked subset of bars</text>
+    <text class="mut"      x="80" y="760">session-mode loader · drum racks</text>
+
+    <text class="lbl"   x="380" y="728">{stem}_bars/ + BeatProfile</text>
+    <text class="mut"   x="380" y="746">+ optional song_structure</text>
+
+    <text class="lbl"   x="600" y="728">N selected bar paths</text>
+    <text class="mut"   x="600" y="746">+ curated/manifest.json (v2)</text>
+
+    <text class="mono"  x="850" y="728">curator.curate</text>
+    <text class="mono-sm" x="850" y="746">_select_section_main_alt etc.</text>
+
+    <text class="mono"  x="1110" y="728">--strategy {max-diversity,</text>
+    <text class="mono-sm" x="1110" y="746">  rhythm-taxonomy, sectional}</text>
+  </g>
+  <line class="grid-line" x1="60" y1="775" x2="1370" y2="775"/>
+
+  <!-- ROW 8: one-shots -->
+  <g>
+    <rect class="row-alt" x="60" y="780" width="1310" height="68"/>
+    <rect class="warn-fill" x="60" y="780" width="300" height="68" rx="8"/>
+    <text class="row-name" x="80" y="808">one-shots (transient)</text>
+    <text class="row-sub"  x="80" y="826">individual hits (drum, vocal, fx)</text>
+    <text class="mut"      x="80" y="840">drum-rack export</text>
+
+    <text class="lbl"   x="380" y="808">stem (or sub-stem) wav</text>
+    <text class="mut"   x="380" y="826">multi-band onset detect</text>
+
+    <text class="lbl"   x="600" y="808">windowed transient wavs</text>
+    <text class="mut"   x="600" y="826">+ classification + features</text>
+    <text class="mono-sm" x="600" y="840">OneshotProfile (centroid, attack, …)</text>
+
+    <text class="mono"  x="850" y="808">oneshot.extract_oneshots</text>
+    <text class="mono-sm" x="850" y="826">oneshot.detect_onsets_multiband</text>
+    <text class="mut"   x="850" y="840">oneshot.select_diverse_oneshots</text>
+
+    <text class="mono"  x="1110" y="808">curation.yaml: oneshot_count</text>
+    <text class="mono-sm" x="1110" y="826">  oneshot_mode, mute_group</text>
+    <text class="mono-sm" x="1110" y="840">  rms_floor, crest_min</text>
+  </g>
+
+  <!-- footer caption -->
+  <text class="mut" x="40" y="888">all granularities share one bpm + first-downbeat from the tempo reconciler · re-anchor rewrites only the bar/beat/prechop rows · oneshots and stems are tempo-independent</text>
+</svg>

@@ -26,10 +26,7 @@ class DemucsBackend(AbstractBackend):
         except ImportError as e:
             raise RuntimeError(
                 "Demucs backend requires the 'native' extras (torch + demucs).\n"
-                "  Install with:  pip install 'stemforge[native]'\n"
-                "Alternatively, use a cloud backend:\n"
-                "  stemforge split <file> --backend lalal\n"
-                "  stemforge split <file> --backend musicai"
+                "  Install with:  pip install 'stemforge[native]'"
             ) from e
 
         model_key = kwargs.get("model", "default")

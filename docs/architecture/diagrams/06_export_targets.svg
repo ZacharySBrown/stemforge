@@ -1,0 +1,253 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 800" text-rendering="optimizeLegibility">
+  <defs>
+    <style>
+      .bg     { fill: #fafaf7; }
+      .ink    { fill: #1a1a1a; }
+      .muted  { fill: #666666; }
+      .panel  { fill: #f0efe9; stroke: #e8e8e3; stroke-width: 1; }
+      .panel-edge { fill: #f0efe9; stroke: #1a1a1a; stroke-width: 1.5; }
+      .accent-fill { fill: #dbeaff; stroke: #3a85ff; stroke-width: 1.5; }
+      .ok-fill     { fill: #dcf2e4; stroke: #3aaa6e; stroke-width: 1.5; }
+      .warn-fill   { fill: #ffe5dc; stroke: #e85d3a; stroke-width: 1.5; }
+      .core-fill   { fill: #f0efe9; stroke: #1a1a1a; stroke-width: 1.5; }
+
+      .h-title { font: 600 28px Inter, system-ui, sans-serif; fill: #1a1a1a; }
+      .h-cap   { font: 400 14px Inter, system-ui, sans-serif; fill: #666666; }
+      .h-sec   { font: 600 16px Inter, system-ui, sans-serif; fill: #1a1a1a; }
+      .h-sub   { font: 600 13px Inter, system-ui, sans-serif; fill: #1a1a1a; }
+      .lbl     { font: 600 13px Inter, system-ui, sans-serif; fill: #1a1a1a; }
+      .lbl-sm  { font: 400 12px Inter, system-ui, sans-serif; fill: #1a1a1a; }
+      .mut     { font: 400 11px Inter, system-ui, sans-serif; fill: #666666; }
+      .mono    { font: 400 12px "IBM Plex Mono", "JetBrains Mono", Menlo, monospace; fill: #1a1a1a; }
+      .mono-sm { font: 400 11px "IBM Plex Mono", "JetBrains Mono", Menlo, monospace; fill: #666666; }
+      .ann     { font: italic 12px Inter, system-ui, sans-serif; fill: #3a85ff; }
+      .ann-warn{ font: italic 12px Inter, system-ui, sans-serif; fill: #e85d3a; }
+      .ann-ok  { font: italic 12px Inter, system-ui, sans-serif; fill: #3aaa6e; }
+      .chip-ok { font: 600 10px Inter, system-ui, sans-serif; fill: #3aaa6e; }
+      .chip-a  { font: 600 10px Inter, system-ui, sans-serif; fill: #3a85ff; }
+      .chip-mut{ font: 600 10px Inter, system-ui, sans-serif; fill: #666666; }
+      .chip-w  { font: 600 10px Inter, system-ui, sans-serif; fill: #e85d3a; }
+
+      .arrow   { fill: none; stroke: #1a1a1a; stroke-width: 1.5; }
+      .arrow-a { fill: none; stroke: #3a85ff; stroke-width: 1.5; }
+      .arrow-w { fill: none; stroke: #e85d3a; stroke-width: 1.5; stroke-dasharray: 4 3; }
+      .arrow-soft { fill: none; stroke: #999; stroke-width: 1; stroke-dasharray: 3 3; }
+    </style>
+
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#1a1a1a"/>
+    </marker>
+    <marker id="ah-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3a85ff"/>
+    </marker>
+    <marker id="ah-w" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#e85d3a"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1400" height="800"/>
+
+  <!-- title -->
+  <text class="h-title" x="40" y="50">stemforge — export fan-out</text>
+  <text class="h-cap"   x="40" y="74">manifests → device targets · sampleMeta is the one contract every exporter speaks</text>
+
+  <!-- legend -->
+  <g>
+    <rect class="ok-fill"   x="900"  y="34" width="14" height="14" rx="3"/>
+    <text class="mut"       x="920"  y="46">shipped + tested</text>
+    <rect class="accent-fill" x="1050" y="34" width="14" height="14" rx="3"/>
+    <text class="mut"       x="1070" y="46">shipped, golden-fixture pending</text>
+    <rect class="panel"     x="900"  y="56" width="14" height="14" rx="3"/>
+    <text class="mut"       x="920"  y="68">scaffold / not-yet-implemented</text>
+    <rect class="warn-fill" x="1050" y="56" width="14" height="14" rx="3"/>
+    <text class="mut"       x="1070" y="68">blocking item</text>
+  </g>
+
+  <!-- ── center: producer-side manifests ── -->
+  <g>
+    <rect class="accent-fill" x="40" y="130" width="320" height="270" rx="12"/>
+    <text class="h-sec" x="60" y="158">producer-side manifests</text>
+    <text class="mut"   x="60" y="176">written by core pipeline (stemforge/)</text>
+
+    <rect class="bg" x="60" y="190" width="280" height="46" rx="6" stroke="#3a85ff" stroke-width="1"/>
+    <text class="mono"  x="74" y="210">prechop_manifest.json</text>
+    <text class="mut"   x="74" y="226">+ loop_start_sec, loop_end_sec, source_offset_sec</text>
+
+    <rect class="bg" x="60" y="244" width="280" height="46" rx="6" stroke="#3a85ff" stroke-width="1"/>
+    <text class="mono"  x="74" y="264">curated/manifest.json</text>
+    <text class="mut"   x="74" y="280">curation-stage v2 schema · production mode</text>
+
+    <rect class="bg" x="60" y="298" width="280" height="46" rx="6" stroke="#3a85ff" stroke-width="1"/>
+    <text class="mono"  x="74" y="318">arrangement snapshot.json</text>
+    <text class="mut"   x="74" y="334">m4l reader output · tempo, locators, clips</text>
+
+    <rect class="bg" x="60" y="352" width="280" height="38" rx="6" stroke="#3a85ff" stroke-width="1"/>
+    <text class="mono"  x="74" y="372">.manifest_&lt;hash&gt;.json  +  .manifest.json</text>
+    <text class="mut"   x="74" y="386">per-wav sidecars · directory batch</text>
+  </g>
+
+  <!-- ── direct file output (drag-and-drop / m4l pickup) ── -->
+  <g>
+    <rect class="panel-edge" x="430" y="130" width="320" height="120" rx="12"/>
+    <text class="h-sec" x="450" y="158">direct file output</text>
+    <text class="mut"   x="450" y="176">wav chunks + sidecars on disk</text>
+    <text class="lbl-sm" x="450" y="200">→ ableton drag-and-drop</text>
+    <text class="lbl-sm" x="450" y="218">→ m4l session loader (stemforge_loader.v0.js)</text>
+    <text class="lbl-sm" x="450" y="236">→ m4l arrangement loader (sf_arrangement_loader.js)</text>
+  </g>
+
+  <!-- ── shipped: ep-133 family ── -->
+  <g>
+    <rect class="ok-fill" x="800" y="130" width="560" height="200" rx="12"/>
+    <text class="h-sec" x="820" y="158">ep-133 k.o. ii  <tspan class="mut">(usb-midi sysex · ppak)</tspan></text>
+
+    <!-- sub: stem-pad upload -->
+    <g>
+      <rect class="bg" x="820" y="174" width="170" height="140" rx="8" stroke="#3aaa6e" stroke-width="1"/>
+      <text class="h-sub" x="834" y="196">session-load</text>
+      <text class="mono-sm" x="834" y="216">exporters/ep133_v2.py</text>
+      <text class="mono-sm" x="834" y="232">exporters/ep133_</text>
+      <text class="mono-sm" x="834" y="246">  stem_export.py</text>
+      <text class="mut"     x="834" y="264">per-stem pad upload</text>
+      <text class="mut"     x="834" y="278">46875 hz · 16-bit stereo</text>
+      <text class="chip-ok" x="834" y="300">shipped + tested</text>
+    </g>
+
+    <!-- sub: bounce-export (b) -->
+    <g>
+      <rect class="bg" x="1000" y="174" width="170" height="140" rx="8" stroke="#3a85ff" stroke-width="1"/>
+      <text class="h-sub" x="1014" y="196">session-bounce</text>
+      <text class="mono-sm" x="1014" y="216">m4l_export_clips →</text>
+      <text class="mono-sm" x="1014" y="232">  ep133_v2 batch</text>
+      <text class="mut"     x="1014" y="252">a01..d12 wavs</text>
+      <text class="mut"     x="1014" y="266">batchManifest entries</text>
+      <text class="mut"     x="1014" y="280">round-trip ppak</text>
+      <text class="chip-a"  x="1014" y="300">golden-fixture pending</text>
+    </g>
+
+    <!-- sub: song-mode (c) -->
+    <g>
+      <rect class="bg" x="1180" y="174" width="170" height="140" rx="8" stroke="#3aaa6e" stroke-width="1"/>
+      <text class="h-sub" x="1194" y="196">song-mode .ppak</text>
+      <text class="mono-sm" x="1194" y="216">exporters/ep133/</text>
+      <text class="mono-sm" x="1194" y="232">  song_synthesizer.py</text>
+      <text class="mono-sm" x="1194" y="246">  ppak_writer.py</text>
+      <text class="mut"     x="1194" y="266">scenes from locators</text>
+      <text class="mut"     x="1194" y="280">multi-pattern playback</text>
+      <text class="chip-a"  x="1194" y="300">tests partial</text>
+    </g>
+  </g>
+
+  <!-- ep-133 cli callout -->
+  <g>
+    <rect class="bg" x="800" y="338" width="560" height="34" rx="6" stroke="#3aaa6e" stroke-width="1"/>
+    <text class="mono"  x="816" y="358">stemforge export-song --arrangement … --manifest …  →  song.ppak</text>
+  </g>
+
+  <!-- ── shipped: chompi ── -->
+  <g>
+    <rect class="panel-edge" x="430" y="270" width="320" height="120" rx="12"/>
+    <text class="h-sec" x="450" y="298">chompi (tempo firmware)</text>
+    <text class="mono-sm" x="450" y="316">exporters/chompi.py · subclasses AbstractExporter</text>
+    <text class="mut"   x="450" y="334">48 khz stereo · 14 slice + 14 chroma slots</text>
+    <text class="mut"   x="450" y="350">flat sd-card root, no folders, ≤10 s per slot</text>
+    <text class="chip-ok" x="450" y="376">shipped, smaller scope</text>
+  </g>
+
+  <!-- ── scaffolded device targets ── -->
+  <g>
+    <rect class="panel" x="800" y="395" width="560" height="170" rx="12"/>
+    <text class="h-sec" x="820" y="423">scaffolded device targets  <tspan class="mut">(test-plan phase 5)</tspan></text>
+
+    <g>
+      <rect class="bg" x="820" y="438" width="260" height="115" rx="8" stroke="#999" stroke-width="1" stroke-dasharray="4 3"/>
+      <text class="h-sub" x="834" y="460">roland spd-sx pro</text>
+      <text class="mono-sm" x="834" y="478">format: .wfm kit + flat wavs</text>
+      <text class="mut"     x="834" y="496">44.1 khz · 24-bit · stereo</text>
+      <text class="mut"     x="834" y="512">listed in test-plan §5 / §6</text>
+      <text class="mut"     x="834" y="528">no working code · no fixtures</text>
+      <text class="chip-mut" x="834" y="548">scaffold only · research needed for (c)</text>
+    </g>
+
+    <g>
+      <rect class="bg" x="1090" y="438" width="260" height="115" rx="8" stroke="#999" stroke-width="1" stroke-dasharray="4 3"/>
+      <text class="h-sub" x="1104" y="460">ios koala sampler</text>
+      <text class="mono-sm" x="1104" y="478">format: flat folder + koala.json</text>
+      <text class="mut"     x="1104" y="496">44.1 khz · 16-bit</text>
+      <text class="mut"     x="1104" y="512">no native arrangement format</text>
+      <text class="mut"     x="1104" y="528">no working code · no fixtures</text>
+      <text class="chip-mut" x="1104" y="548">scaffold only · likely flatten-to-banks</text>
+    </g>
+  </g>
+
+  <!-- ── DeviceProfile blocker ── -->
+  <g>
+    <rect class="warn-fill" x="430" y="410" width="320" height="155" rx="12"/>
+    <text class="h-sec" x="450" y="438">deviceProfile abstraction</text>
+    <text class="ann-warn" x="450" y="458">planned · not yet implemented</text>
+    <text class="lbl-sm" x="450" y="480">today: each exporter is bespoke</text>
+    <text class="mono-sm" x="450" y="498">  ep133_v2.py · 568 loc · ad-hoc</text>
+    <text class="mono-sm" x="450" y="514">  ep133_stem_export.py · 565 loc · ad-hoc</text>
+    <text class="mono-sm" x="450" y="530">  chompi.py · subclasses AbstractExporter</text>
+    <text class="ann-warn" x="450" y="552">blocks: adding spd-sx / koala cleanly</text>
+  </g>
+
+  <!-- ── shared contract: SampleMeta / BatchManifest ── -->
+  <g>
+    <rect class="ok-fill" x="40" y="595" width="1320" height="135" rx="12"/>
+    <text class="h-sec" x="60" y="622">shared contract — sampleMeta / batchManifest  <tspan class="mono-sm">(manifest_schema.py · specs/manifest-spec.md)</tspan></text>
+    <text class="mut"   x="60" y="640">one schema, mirrored byte-for-byte by ep133-ppak; every exporter must conform</text>
+
+    <text class="mono-sm" x="60"  y="666">SampleMeta:</text>
+    <text class="mono-sm" x="60"  y="682">  file · audio_hash · name · bpm · time_mode · bars</text>
+    <text class="mono-sm" x="60"  y="698">  playmode · source_track · stem · role</text>
+    <text class="mono-sm" x="60"  y="714">  suggested_group · suggested_pad</text>
+
+    <text class="mono-sm" x="430" y="666">BatchManifest:</text>
+    <text class="mono-sm" x="430" y="682">  version · track · bpm · samples[]</text>
+    <text class="mono-sm" x="430" y="698">file layout: .manifest_&lt;sha256[:16]&gt;.json (sidecar)</text>
+    <text class="mono-sm" x="430" y="714">              .manifest.json (directory batch)</text>
+
+    <text class="h-sub"  x="800" y="666">resolution order  <tspan class="mut">(loader-side, top wins)</tspan></text>
+    <text class="mono-sm" x="800" y="682">  1. cli flags                        →  always wins</text>
+    <text class="mono-sm" x="800" y="698">  2. sidecar  .manifest_&lt;hash&gt;.json   →  hash-keyed</text>
+    <text class="mono-sm" x="800" y="714">  3. batch    .manifest.json          →  directory-level</text>
+    <text class="mono-sm" x="1130" y="682">  4. built-in defaults</text>
+    <text class="mono-sm" x="1130" y="698">       --project 1, --group A,</text>
+    <text class="mono-sm" x="1130" y="714">       slot from cursor, etc.</text>
+  </g>
+
+  <!-- arrows: manifests → direct file output -->
+  <path class="arrow" d="M 360 200 C 395 200, 395 188, 430 188" marker-end="url(#ah)"/>
+
+  <!-- arrows: manifests → ep-133 -->
+  <path class="arrow-a" d="M 360 220 C 580 220, 580 230, 800 230" marker-end="url(#ah-a)"/>
+  <text class="ann" x="500" y="218">sysex over usb-midi</text>
+
+  <!-- arrows: manifests → chompi -->
+  <path class="arrow" d="M 360 320 C 395 320, 395 320, 430 320" marker-end="url(#ah)"/>
+
+  <!-- arrows: manifests → DeviceProfile (planned interconnect) -->
+  <path class="arrow-w" d="M 360 360 C 400 380, 400 460, 430 470" marker-end="url(#ah-w)"/>
+  <text class="ann-warn" x="362" y="395">refactor target</text>
+
+  <!-- arrows: DeviceProfile → scaffolded targets -->
+  <path class="arrow-w" d="M 750 478 C 780 478, 780 478, 820 478" marker-end="url(#ah-w)"/>
+  <path class="arrow-w" d="M 750 478 C 780 478, 1060 478, 1090 478" marker-end="url(#ah-w)"/>
+
+  <!-- contract feeders: every export box → contract zone -->
+  <path class="arrow-soft" d="M 200 400 L 200 595"/>
+  <path class="arrow-soft" d="M 590 390 L 590 595"/>
+  <path class="arrow-soft" d="M 1080 330 L 1080 595"/>
+  <path class="arrow-soft" d="M 1220 565 L 1220 595"/>
+
+  <!-- adding-a-new-device callout -->
+  <g>
+    <rect class="bg" x="40" y="746" width="1320" height="40" rx="6" stroke="#999" stroke-width="1"/>
+    <text class="mono-sm" x="60" y="770">adding a new device  =  one DeviceProfile dataclass (~30 loc)  +  four golden fixtures (one per export flavor a/b/c/d)</text>
+    <text class="mut"     x="940" y="770">→ test-plan phase 5 closes the matrix</text>
+  </g>
+
+  <!-- KO II nod -->
+  <text font-size="20" x="1352" y="788">🥊</text>
+</svg>

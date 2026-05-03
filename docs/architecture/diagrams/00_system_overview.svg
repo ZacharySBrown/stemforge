@@ -1,0 +1,248 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 720" text-rendering="optimizeLegibility">
+  <defs>
+    <style>
+      .bg     { fill: #fafaf7; }
+      .ink    { fill: #1a1a1a; }
+      .muted  { fill: #666666; }
+      .panel  { fill: #f0efe9; stroke: #e8e8e3; stroke-width: 1; }
+      .accent-fill { fill: #dbeaff; stroke: #3a85ff; stroke-width: 1.5; }
+      .ok-fill     { fill: #dcf2e4; stroke: #3aaa6e; stroke-width: 1.5; }
+      .warn-fill   { fill: #ffe5dc; stroke: #e85d3a; stroke-width: 1.5; }
+      .core-fill   { fill: #f0efe9; stroke: #1a1a1a; stroke-width: 1.5; }
+
+      .h-title { font: 600 28px Inter, system-ui, sans-serif; fill: #1a1a1a; }
+      .h-cap   { font: 400 14px Inter, system-ui, sans-serif; fill: #666666; }
+      .h-sec   { font: 600 15px Inter, system-ui, sans-serif; fill: #1a1a1a; }
+      .lbl     { font: 600 13px Inter, system-ui, sans-serif; fill: #1a1a1a; }
+      .lbl-sm  { font: 400 12px Inter, system-ui, sans-serif; fill: #1a1a1a; }
+      .mut     { font: 400 11px Inter, system-ui, sans-serif; fill: #666666; }
+      .mono    { font: 400 12px "IBM Plex Mono", "JetBrains Mono", Menlo, monospace; fill: #1a1a1a; }
+      .mono-sm { font: 400 11px "IBM Plex Mono", "JetBrains Mono", Menlo, monospace; fill: #666666; }
+      .ann     { font: italic 12px Inter, system-ui, sans-serif; fill: #3a85ff; }
+      .ann-warn{ font: italic 12px Inter, system-ui, sans-serif; fill: #e85d3a; }
+      .ann-ok  { font: italic 12px Inter, system-ui, sans-serif; fill: #3aaa6e; }
+
+      .arrow   { fill: none; stroke: #1a1a1a; stroke-width: 1.5; }
+      .arrow-a { fill: none; stroke: #3a85ff; stroke-width: 1.5; }
+      .arrow-soft { fill: none; stroke: #999; stroke-width: 1; stroke-dasharray: 3 3; }
+    </style>
+
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#1a1a1a"/>
+    </marker>
+    <marker id="ah-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3a85ff"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1400" height="720"/>
+
+  <!-- title -->
+  <text class="h-title" x="40" y="50">stemforge — system overview</text>
+  <text class="h-cap"   x="40" y="74">audio file → stem-split → multi-source tempo → granular slicing → manifests → m4l + hardware exports</text>
+
+  <!-- ── stage 1: input ── -->
+  <g>
+    <rect class="accent-fill" x="40" y="120" width="180" height="100" rx="12"/>
+    <text class="h-sec" x="60" y="150">input audio</text>
+    <text class="mono"  x="60" y="172">.wav / .mp3 / .m4a</text>
+    <text class="mut"   x="60" y="190">non-wav auto-converted</text>
+    <text class="mut"   x="60" y="206">via ffmpeg (ensure_wav)</text>
+  </g>
+
+  <!-- arrow input → demucs -->
+  <path class="arrow" d="M 220 170 C 245 170, 245 170, 270 170" marker-end="url(#ah)"/>
+
+  <!-- ── stage 2: demucs ── -->
+  <g>
+    <rect class="core-fill" x="270" y="120" width="200" height="100" rx="12"/>
+    <text class="h-sec" x="290" y="150">demucs backend</text>
+    <text class="mono"  x="290" y="172">backends/demucs.py</text>
+    <text class="mut"   x="290" y="190">htdemucs · htdemucs_ft</text>
+    <text class="mut"   x="290" y="206">htdemucs_6s</text>
+  </g>
+
+  <!-- arrow demucs → stems -->
+  <path class="arrow" d="M 470 170 C 500 170, 500 170, 530 170" marker-end="url(#ah)"/>
+
+  <!-- ── stage 3: stems output ── -->
+  <g>
+    <rect class="panel" x="530" y="100" width="200" height="140" rx="12"/>
+    <text class="h-sec" x="548" y="126">stems</text>
+    <text class="lbl"   x="548" y="148">drums.wav</text>
+    <text class="lbl"   x="548" y="166">bass.wav</text>
+    <text class="lbl"   x="548" y="184">vocals.wav</text>
+    <text class="lbl"   x="548" y="202">other.wav</text>
+    <text class="mut"   x="548" y="222">+ guitar/piano (6stem)</text>
+  </g>
+
+  <!-- ── tempo reconciler — sits alongside, fed by mix + drums ── -->
+  <g>
+    <rect class="ok-fill" x="270" y="260" width="460" height="120" rx="12"/>
+    <text class="h-sec" x="290" y="286">tempo reconciler  <tspan class="mono-sm">(tempo_reconciler.py)</tspan></text>
+    <text class="lbl-sm" x="290" y="308">beat-this on mix  +  beat-this on drums</text>
+    <text class="lbl-sm" x="290" y="326">+ larsnet kick tiebreaker (on suspicious ratio)</text>
+    <text class="lbl-sm" x="290" y="344">→ bpm, beat_times, downbeat_times, confidence, all_estimates</text>
+    <text class="ann"  x="290" y="366">overrides: --bpm, --first-downbeat, --refine-downbeat</text>
+  </g>
+
+  <!-- arrow mix → reconciler -->
+  <path class="arrow-soft" d="M 130 220 C 130 245, 130 245, 130 260 L 290 260" />
+  <!-- arrow drums → reconciler -->
+  <path class="arrow-soft" d="M 580 240 C 580 250, 500 255, 480 260" />
+
+  <!-- arrow stems → branches -->
+  <path class="arrow" d="M 730 170 C 770 170, 770 410, 800 410" marker-end="url(#ah)"/>
+  <text class="mut" x="745" y="195">per-stem</text>
+
+  <!-- ── stage 4: parallel granularity branches ── -->
+  <g>
+    <text class="h-sec" x="800" y="125">granularity branches</text>
+    <text class="mut"   x="800" y="143">(see 01_audio_granularity.svg)</text>
+  </g>
+
+  <!-- branch 1: bar slicer -->
+  <g>
+    <rect class="panel" x="800" y="160" width="270" height="58" rx="6"/>
+    <text class="lbl"  x="816" y="184">bar-aligned slices</text>
+    <text class="mono-sm" x="816" y="206">slicer.slice_at_bars · _bars/</text>
+  </g>
+
+  <!-- branch 2: beat slicer -->
+  <g>
+    <rect class="panel" x="800" y="232" width="270" height="58" rx="6"/>
+    <text class="lbl"  x="816" y="256">beat-aligned slices</text>
+    <text class="mono-sm" x="816" y="278">slicer.slice_at_beats · _beats/</text>
+  </g>
+
+  <!-- branch 3: prechop chunks -->
+  <g>
+    <rect class="panel" x="800" y="304" width="270" height="58" rx="6"/>
+    <text class="lbl"  x="816" y="328">padded n-bar chunks</text>
+    <text class="mono-sm" x="816" y="350">prechop.prechop_stem · _prechop/</text>
+  </g>
+
+  <!-- branch 4: oneshot extractor -->
+  <g>
+    <rect class="panel" x="800" y="376" width="270" height="58" rx="6"/>
+    <text class="lbl"  x="816" y="400">drum one-shots (larsnet)</text>
+    <text class="mono-sm" x="816" y="422">oneshot.extract_drum_oneshots</text>
+  </g>
+
+  <!-- branch 5: curator -->
+  <g>
+    <rect class="panel" x="800" y="448" width="270" height="58" rx="6"/>
+    <text class="lbl"  x="816" y="472">curated bar selection</text>
+    <text class="mono-sm" x="816" y="494">curator.curate · max-diversity</text>
+  </g>
+
+  <!-- pipeline arrow from stems out → all branches -->
+  <path class="arrow" d="M 760 170 L 800 188" marker-end="url(#ah)"/>
+  <path class="arrow" d="M 760 170 L 800 260" marker-end="url(#ah)"/>
+  <path class="arrow" d="M 760 170 L 800 332" marker-end="url(#ah)"/>
+  <path class="arrow" d="M 760 170 L 800 404" marker-end="url(#ah)"/>
+  <path class="arrow" d="M 760 170 L 800 476" marker-end="url(#ah)"/>
+
+  <!-- bar/downbeat info from reconciler feeds slicer + prechop -->
+  <path class="arrow-a" d="M 730 320 C 760 320, 760 333, 800 333" marker-end="url(#ah-a)"/>
+  <path class="arrow-a" d="M 730 320 C 760 320, 760 261, 800 261" marker-end="url(#ah-a)"/>
+  <path class="arrow-a" d="M 730 320 C 760 320, 760 188, 800 188" marker-end="url(#ah-a)"/>
+  <text class="ann" x="735" y="392">bpm + first_downbeat</text>
+
+  <!-- ── stage 5: manifests ── -->
+  <g>
+    <rect class="accent-fill" x="1100" y="160" width="260" height="180" rx="12"/>
+    <text class="h-sec" x="1118" y="186">manifests</text>
+    <text class="mono"  x="1118" y="210">stems.json</text>
+    <text class="mut"   x="1118" y="226">+ tempo_provenance, input_audio</text>
+    <text class="mono"  x="1118" y="248">prechop_manifest.json</text>
+    <text class="mut"   x="1118" y="264">+ loop_start_sec, loop_end_sec</text>
+    <text class="mono"  x="1118" y="286">.manifest_&lt;hash&gt;.json</text>
+    <text class="mut"   x="1118" y="302">per-sample sidecars</text>
+    <text class="mono"  x="1118" y="320">curated/manifest.json</text>
+    <text class="mut"   x="1118" y="336">production-mode (v2)</text>
+  </g>
+
+  <!-- arrows branches → manifests -->
+  <path class="arrow" d="M 1070 188 C 1085 188, 1085 200, 1100 200" marker-end="url(#ah)"/>
+  <path class="arrow" d="M 1070 260 C 1085 260, 1085 250, 1100 250" marker-end="url(#ah)"/>
+  <path class="arrow" d="M 1070 332 C 1085 332, 1085 280, 1100 280" marker-end="url(#ah)"/>
+  <path class="arrow" d="M 1070 404 C 1085 404, 1085 305, 1100 305" marker-end="url(#ah)"/>
+  <path class="arrow" d="M 1070 476 C 1085 476, 1085 325, 1100 325" marker-end="url(#ah)"/>
+
+  <!-- ── stage 6: re-anchor escape hatch ── -->
+  <g>
+    <rect class="warn-fill" x="40" y="430" width="260" height="100" rx="12"/>
+    <text class="h-sec" x="60" y="456">re-anchor (escape hatch)</text>
+    <text class="mono-sm" x="60" y="476">stemforge re-anchor TRACK_DIR</text>
+    <text class="mono-sm" x="60" y="494">  --bpm B --first-downbeat D</text>
+    <text class="mut"     x="60" y="514">~1s rewrite of prechop, no demucs</text>
+  </g>
+
+  <!-- arrow re-anchor → prechop only -->
+  <path class="arrow-a" d="M 300 480 C 600 480, 700 360, 800 333" marker-end="url(#ah-a)"/>
+  <text class="ann" x="455" y="475">probe_loop.py → re-anchor → prechop only</text>
+
+  <!-- ── stage 7: consumers ── -->
+  <g>
+    <text class="h-sec" x="40" y="580">consumers</text>
+  </g>
+
+  <!-- m4l session loader -->
+  <g>
+    <rect class="panel" x="40" y="600" width="240" height="90" rx="6"/>
+    <text class="lbl"   x="56" y="624">m4l session loader</text>
+    <text class="mono-sm" x="56" y="644">stemforge_loader.v0.js</text>
+    <text class="mut"   x="56" y="664">stems → template tracks</text>
+    <text class="mut"   x="56" y="680">beats → polybuffer~ simpler</text>
+  </g>
+
+  <!-- m4l arrangement loader -->
+  <g>
+    <rect class="panel" x="300" y="600" width="240" height="90" rx="6"/>
+    <text class="lbl"   x="316" y="624">m4l arrangement loader</text>
+    <text class="mono-sm" x="316" y="644">sf_arrangement_loader.js</text>
+    <text class="mut"   x="316" y="664">prechop chunks → arrangement</text>
+    <text class="mut"   x="316" y="680">loop_start/end from manifest</text>
+  </g>
+
+  <!-- ep-133 -->
+  <g>
+    <rect class="ok-fill" x="560" y="600" width="220" height="90" rx="6"/>
+    <text class="lbl"   x="576" y="624">ep-133 ko ii</text>
+    <text class="mono-sm" x="576" y="644">exporters/ep133.py</text>
+    <text class="mut"   x="576" y="664">46875 hz · 4 grp × 12 pads</text>
+    <text class="ann-ok" x="576" y="680">shipped (sysex over usb-midi)</text>
+  </g>
+
+  <!-- chompi -->
+  <g>
+    <rect class="panel" x="800" y="600" width="200" height="90" rx="6"/>
+    <text class="lbl"   x="816" y="624">chompi (tempo)</text>
+    <text class="mono-sm" x="816" y="644">exporters/chompi.py</text>
+    <text class="mut"   x="816" y="664">48 khz stereo · slice/chroma</text>
+    <text class="mut"   x="816" y="680">14 + 14 slots · flat sd root</text>
+  </g>
+
+  <!-- spd-sx + koala scaffold -->
+  <g>
+    <rect class="panel" x="1020" y="600" width="340" height="90" rx="6"/>
+    <text class="lbl"   x="1036" y="624">spd-sx pro · koala  <tspan class="mut">(scaffolded)</tspan></text>
+    <text class="mono-sm" x="1036" y="644">exporters/base.py shape</text>
+    <text class="mut"   x="1036" y="664">extends abstractexporter</text>
+    <text class="mut"   x="1036" y="680">awaiting target-specific writers</text>
+  </g>
+
+  <!-- arrows manifests → consumers -->
+  <path class="arrow" d="M 1230 340 C 1230 400, 160 400, 160 600" marker-end="url(#ah)"/>
+  <path class="arrow" d="M 1230 340 C 1230 410, 420 410, 420 600" marker-end="url(#ah)"/>
+  <path class="arrow" d="M 1230 340 C 1230 540, 670 540, 670 600" marker-end="url(#ah)"/>
+  <path class="arrow" d="M 1230 340 C 1230 545, 900 545, 900 600" marker-end="url(#ah)"/>
+  <path class="arrow" d="M 1230 340 L 1190 600" marker-end="url(#ah)"/>
+
+  <!-- caption strip -->
+  <text class="mut" x="40" y="708">core (stemforge/) is m4l-free · m4l reads stems.json + prechop_manifest.json · exporters extend abstractexporter</text>
+
+  <!-- KO II nod, lower right -->
+  <text font-size="20" x="1352" y="708">🥊</text>
+</svg>

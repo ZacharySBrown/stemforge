@@ -9,7 +9,7 @@ description = "Stem splitting + beat slicing pipeline for Ableton Live IDM produ
 requires-python = ">=3.11"
 dependencies = [
     # Core: lightweight only. No torch, no transformers.
-    # Cloud backends (LALAL.AI, Music.AI) + librosa DSP + CLI + manifest.
+    # librosa DSP + CLI + manifest.
     "requests>=2.31.0",
     "librosa>=0.10.2",
     "soundfile>=0.12.1",
@@ -18,7 +18,6 @@ dependencies = [
     "rich>=13.7.0",
     "pyyaml>=6.0.1",
     "pydantic>=2.0",
-    "musicai-sdk>=0.1.0",
 ]
 
 [project.optional-dependencies]

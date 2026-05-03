@@ -1,0 +1,279 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" text-rendering="optimizeLegibility">
+  <defs>
+    <style>
+      .bg     { fill: #fafaf7; }
+      .ink    { fill: #1a1a1a; }
+      .muted  { fill: #666666; }
+      .panel  { fill: #f0efe9; stroke: #e8e8e3; stroke-width: 1; }
+      .panel-edge { fill: #f0efe9; stroke: #1a1a1a; stroke-width: 1.5; }
+      .accent-fill { fill: #dbeaff; stroke: #3a85ff; stroke-width: 1.5; }
+      .ok-fill     { fill: #dcf2e4; stroke: #3aaa6e; stroke-width: 1.5; }
+      .warn-fill   { fill: #ffe5dc; stroke: #e85d3a; stroke-width: 1.5; }
+
+      .h-title { font: 600 28px Inter, system-ui, sans-serif; fill: #1a1a1a; }
+      .h-cap   { font: 400 14px Inter, system-ui, sans-serif; fill: #666666; }
+      .h-layer { font: 600 18px Inter, system-ui, sans-serif; fill: #1a1a1a; }
+      .h-sec   { font: 600 14px Inter, system-ui, sans-serif; fill: #1a1a1a; }
+      .lbl     { font: 600 13px Inter, system-ui, sans-serif; fill: #1a1a1a; }
+      .lbl-sm  { font: 400 12px Inter, system-ui, sans-serif; fill: #1a1a1a; }
+      .mut     { font: 400 11px Inter, system-ui, sans-serif; fill: #666666; }
+      .mut-12  { font: 400 12px Inter, system-ui, sans-serif; fill: #666666; }
+      .mono    { font: 400 12px "IBM Plex Mono", "JetBrains Mono", Menlo, monospace; fill: #1a1a1a; }
+      .mono-sm { font: 400 11px "IBM Plex Mono", "JetBrains Mono", Menlo, monospace; fill: #1a1a1a; }
+      .mono-mu { font: 400 11px "IBM Plex Mono", "JetBrains Mono", Menlo, monospace; fill: #666666; }
+      .mono-acc{ font: 600 11px "IBM Plex Mono", "JetBrains Mono", Menlo, monospace; fill: #3a85ff; }
+      .ann     { font: italic 12px Inter, system-ui, sans-serif; fill: #3a85ff; }
+      .ann-ok  { font: italic 12px Inter, system-ui, sans-serif; fill: #3aaa6e; }
+      .ann-warn{ font: italic 12px Inter, system-ui, sans-serif; fill: #e85d3a; }
+
+      .arrow   { fill: none; stroke: #1a1a1a; stroke-width: 1.5; }
+      .arrow-a { fill: none; stroke: #3a85ff; stroke-width: 2; }
+      .arrow-soft { fill: none; stroke: #999; stroke-width: 1; stroke-dasharray: 3 3; }
+    </style>
+
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#1a1a1a"/>
+    </marker>
+    <marker id="ah-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3a85ff"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1400" height="900"/>
+
+  <!-- title -->
+  <text class="h-title" x="40" y="50">pipeline + curation config — three layers, one resolution order</text>
+  <text class="h-cap"   x="40" y="76">cli flags override pipeline yaml; pipeline yaml overrides curation yaml; curation yaml overrides module defaults.</text>
+
+  <!-- ============================================================
+       LAYER 1 — pipeline yamls (top row)
+       ============================================================ -->
+  <text class="h-layer" x="40" y="118">layer 1 — pipeline yamls</text>
+  <text class="mut-12"  x="216" y="118">pipelines/*.yaml — m4l per-stem template + warp + effects + (optional) prechop.</text>
+
+  <!-- default -->
+  <rect class="panel-edge" x="40"  y="136" width="200" height="118" rx="12"/>
+  <text class="lbl"     x="56"  y="160">default</text>
+  <text class="mono-mu" x="56"  y="178">default.yaml</text>
+  <text class="mut-12"  x="56"  y="200">clean stems, warped + looped.</text>
+  <text class="mut-12"  x="56"  y="218">no post-split steps.</text>
+  <text class="mut-12"  x="56"  y="238">stems → template tracks (sf | drums raw, sf | bass…).</text>
+
+  <!-- arrangement -->
+  <rect class="accent-fill" x="256" y="136" width="200" height="118" rx="12"/>
+  <text class="lbl"     x="272" y="160">arrangement</text>
+  <text class="mono-mu" x="272" y="178">arrangement.yaml</text>
+  <text class="mut-12"  x="272" y="200">stem-split, then prechop:</text>
+  <text class="mono-sm" x="272" y="216">bars=4 pad_bars=1</text>
+  <text class="mono-sm" x="272" y="232">pad_last=true</text>
+  <text class="mono-sm" x="272" y="248">beats_per_bar=4</text>
+
+  <!-- curation family -->
+  <rect class="panel-edge" x="472" y="136" width="464" height="118" rx="12"/>
+  <text class="lbl"     x="488" y="160">curation_* family</text>
+  <text class="mut-12"  x="488" y="178">production-mode curation — phrase/loop/oneshot, layout, song form.</text>
+  <g class="mono-sm" font-size="11">
+    <text x="488" y="200">curation.yaml</text>
+    <text x="610" y="200">curation_nopad.yaml</text>
+    <text x="752" y="200">curation_nopad_perf.yaml</text>
+    <text x="488" y="218">curation_nopad_phrase2.yaml</text>
+    <text x="660" y="218">curation_nopad_section.yaml</text>
+    <text x="488" y="236">curation_session.yaml</text>
+    <text x="652" y="236">curation_session_drums4.yaml</text>
+  </g>
+  <text class="mut" x="488" y="252">variants knob phrase_bars, oneshot_mode, layout.mode (production/session/loops-only), pad-trim policy.</text>
+
+  <!-- production_idm -->
+  <rect class="panel-edge" x="952" y="136" width="200" height="118" rx="12"/>
+  <text class="lbl"     x="968" y="160">production_idm</text>
+  <text class="mono-mu" x="968" y="178">production_idm.yaml</text>
+  <text class="mut-12"  x="968" y="200">idm rack flavor —</text>
+  <text class="mut-12"  x="968" y="218">crushed drums, bass, glitch</text>
+  <text class="mut-12"  x="968" y="236">other; m4l effects chains.</text>
+
+  <!-- compile-to-json callout -->
+  <rect class="ok-fill" x="1168" y="136" width="200" height="118" rx="12"/>
+  <text class="lbl"     x="1184" y="160">compiled to json</text>
+  <text class="mono-sm" x="1184" y="180">stemforge generate-</text>
+  <text class="mono-sm" x="1184" y="196">pipeline-json</text>
+  <text class="mut-12"  x="1184" y="218">m4l device reads json,</text>
+  <text class="mut-12"  x="1184" y="236">js side cannot read yaml.</text>
+  <text class="ann-ok"  x="1184" y="252">artifacts: pipelines/*.json</text>
+
+  <!-- ============================================================
+       LAYER 2 — curation config blocks (middle)
+       ============================================================ -->
+  <text class="h-layer" x="40" y="312">layer 2 — curation config blocks</text>
+  <text class="mut-12"  x="320" y="312">parsed by stemforge.config.load_curation_config — defaults + per-stem overrides + layout/song/dj.</text>
+
+  <!-- defaults block -->
+  <rect class="panel-edge" x="40" y="328" width="248" height="174" rx="12"/>
+  <text class="h-sec"   x="56" y="350">defaults</text>
+  <text class="mut"     x="56" y="366">StemCurationConfig fallbacks</text>
+  <g class="mono-sm">
+    <text x="56" y="388">phrase_bars=1  loop_count=8</text>
+    <text x="56" y="404">oneshot_count=8</text>
+    <text x="56" y="420">strategy=max-diversity</text>
+    <text x="56" y="436">oneshot_mode=diverse</text>
+    <text x="56" y="452">rms_floor=0.005  crest_min=4.0</text>
+    <text x="56" y="468">content_density_min=0.0</text>
+    <text x="56" y="484">distance_weights={r/s/e}</text>
+  </g>
+
+  <!-- stems block -->
+  <rect class="panel-edge" x="304" y="328" width="280" height="174" rx="12"/>
+  <text class="h-sec"   x="320" y="350">stems  (per-stem overrides)</text>
+  <text class="mut"     x="320" y="366">drums • bass • vocals • other</text>
+  <g class="mono-sm">
+    <text x="320" y="388">strategy: max-diversity |</text>
+    <text x="320" y="404">          rhythm-taxonomy | sectional</text>
+    <text x="320" y="420">midi_extract chromatic bottom_mode</text>
+    <text x="320" y="436">trim_to_first_onset (perf-mode)</text>
+    <text x="320" y="452">alts_per_section max_sections</text>
+    <text x="320" y="468">processing: [{pipeline: default},</text>
+    <text x="320" y="484">             {pipeline: glitch}, …]</text>
+  </g>
+
+  <!-- layout block -->
+  <rect class="panel-edge" x="600" y="328" width="208" height="174" rx="12"/>
+  <text class="h-sec"   x="616" y="350">layout</text>
+  <text class="mut"     x="616" y="366">LayoutConfig — pad-grid plan</text>
+  <g class="mono-sm">
+    <text x="616" y="388">mode: production |</text>
+    <text x="616" y="404">      session | stems |</text>
+    <text x="616" y="420">      dj | dual-deck |</text>
+    <text x="616" y="436">      loops-only</text>
+    <text x="616" y="452">pad_grid: 8x8</text>
+    <text x="616" y="468">quadrant_size: 4x4</text>
+  </g>
+
+  <!-- song block -->
+  <rect class="panel-edge" x="824" y="328" width="200" height="174" rx="12"/>
+  <text class="h-sec"   x="840" y="350">song</text>
+  <text class="mut"     x="840" y="366">SongConfig — boundaries</text>
+  <g class="mono-sm">
+    <text x="840" y="388">boundary_method:</text>
+    <text x="840" y="404">  recurrence | novelty</text>
+    <text x="840" y="420">min_segment_bars=4</text>
+    <text x="840" y="436">max_segments=8</text>
+    <text x="840" y="452">prefer_transitions=true</text>
+    <text x="840" y="468">transition_window_bars=2</text>
+  </g>
+
+  <!-- dj block -->
+  <rect class="panel-edge" x="1040" y="328" width="200" height="174" rx="12"/>
+  <text class="h-sec"   x="1056" y="350">dj</text>
+  <text class="mut"     x="1056" y="366">DJConfig — single-deck pads</text>
+  <g class="mono-sm">
+    <text x="1056" y="388">base_position=top_left</text>
+    <text x="1056" y="404">subloop_axis=vertical</text>
+    <text x="1056" y="420">oneshot_axis=horizontal</text>
+    <text x="1056" y="436">subloop_divisions=</text>
+    <text x="1056" y="452">  [1, 0.5, 0.5, 0.25]</text>
+    <text x="1056" y="468">fill_mode=combo</text>
+  </g>
+
+  <!-- inheritance arrow: defaults → stems -->
+  <path class="arrow-soft" d="M 288 412 L 304 412" marker-end="url(#ah)"/>
+  <text class="mut" x="289" y="406">merge</text>
+
+  <!-- ============================================================
+       LAYER 3 — cli flags (bottom)
+       ============================================================ -->
+  <text class="h-layer" x="40" y="558">layer 3 — cli flags  (override everything)</text>
+
+  <!-- split flags -->
+  <rect class="panel-edge" x="40" y="576" width="380" height="220" rx="12"/>
+  <text class="h-sec" x="56" y="600">stemforge split  &lt;audio&gt;</text>
+  <g class="mono-sm">
+    <text x="56" y="624">--model {default,fine,6stem}</text>
+    <text x="56" y="642">--pipeline &lt;name&gt;</text>
+    <text x="56" y="660">--output &lt;dir&gt;</text>
+    <text x="56" y="678">--no-slice  --no-normalize</text>
+    <text x="56" y="696">--silence-threshold &lt;db&gt;</text>
+  </g>
+  <text class="ann" x="56" y="720">tempo-fix flags  ↓</text>
+  <g class="mono-acc">
+    <text x="56" y="740">--bpm  --first-downbeat</text>
+    <text x="56" y="758">--refine-downbeat</text>
+    <text x="56" y="776">--pre-bars  --pad-pre-bars  --pad-post-bars</text>
+  </g>
+
+  <!-- forge flags -->
+  <rect class="panel-edge" x="436" y="576" width="320" height="220" rx="12"/>
+  <text class="h-sec" x="452" y="600">stemforge forge  &lt;audio&gt;</text>
+  <g class="mono-sm">
+    <text x="452" y="624">--analysis &lt;json&gt;</text>
+    <text x="452" y="642">--model {default,fine,6stem}</text>
+    <text x="452" y="660">--strategy</text>
+    <text x="452" y="678">--n-bars &lt;int&gt;</text>
+    <text x="452" y="696">--time-sig 4/4</text>
+    <text x="452" y="714">--output &lt;dir&gt;</text>
+    <text x="452" y="732">--curation pipelines/curation.yaml</text>
+  </g>
+  <text class="mut" x="452" y="772">forge = split → curate (uses curation yaml directly).</text>
+
+  <!-- re-anchor flags + other commands -->
+  <rect class="panel-edge" x="772" y="576" width="328" height="220" rx="12"/>
+  <text class="h-sec" x="788" y="600">stemforge re-anchor  &lt;track-dir&gt;</text>
+  <g class="mono-acc">
+    <text x="788" y="624">--bpm  &lt;float, required&gt;</text>
+    <text x="788" y="642">--first-downbeat &lt;sec&gt;</text>
+    <text x="788" y="660">--pre-bars  --pad-pre-bars  --pad-post-bars</text>
+  </g>
+  <text class="mono-sm" x="788" y="678">--keep-old</text>
+  <text class="ann" x="788" y="700">re-runs prechop + manifest only;</text>
+  <text class="ann" x="788" y="716">does not re-run demucs.</text>
+
+  <text class="h-sec"  x="788" y="744">other commands</text>
+  <g class="mono-sm">
+    <text x="788" y="762">analyze • clean-beats • export-song</text>
+    <text x="788" y="780">generate-pipeline-json • create-templates • list</text>
+  </g>
+
+  <!-- ============================================================
+       RESOLUTION ORDER (right column)
+       ============================================================ -->
+  <rect class="ok-fill" x="1124" y="576" width="244" height="220" rx="12"/>
+  <text class="h-sec"  x="1140" y="600">resolution order</text>
+  <text class="mut-12" x="1140" y="618">later layer wins on conflict.</text>
+
+  <rect x="1140" y="630" width="212" height="32" rx="6" class="accent-fill"/>
+  <text class="lbl"  x="1156" y="650">cli flags</text>
+  <text class="mut" x="1264" y="650">(highest)</text>
+
+  <path class="arrow-a" d="M 1246 666 L 1246 678" marker-end="url(#ah-a)"/>
+
+  <rect x="1140" y="680" width="212" height="32" rx="6" class="panel-edge"/>
+  <text class="lbl"  x="1156" y="700">pipeline yaml</text>
+
+  <path class="arrow-a" d="M 1246 716 L 1246 728" marker-end="url(#ah-a)"/>
+
+  <rect x="1140" y="730" width="212" height="32" rx="6" class="panel-edge"/>
+  <text class="lbl"  x="1156" y="750">curation yaml</text>
+
+  <path class="arrow-a" d="M 1246 766 L 1246 778" marker-end="url(#ah-a)"/>
+
+  <rect x="1140" y="780" width="212" height="14" rx="4" class="panel"/>
+  <text class="mut" x="1156" y="791">module defaults  (lowest)</text>
+
+  <!-- ============================================================
+       LAYER LABELS — vertical guide ribbons
+       ============================================================ -->
+  <rect x="20" y="136" width="6" height="118" rx="3" fill="#1a1a1a"/>
+  <rect x="20" y="328" width="6" height="174" rx="3" fill="#1a1a1a"/>
+  <rect x="20" y="576" width="6" height="220" rx="3" fill="#1a1a1a"/>
+
+  <!-- ============================================================
+       EXAMPLE INVOCATIONS (bottom strip)
+       ============================================================ -->
+  <text class="h-sec"  x="40" y="828">example invocations  (effective config = flags ∪ yaml ∪ defaults)</text>
+  <g class="mono-sm">
+    <text x="40"  y="852">stemforge split track.wav --pipeline arrangement --bpm 90 --first-downbeat 0.42 --pad-pre-bars 1 --pad-post-bars 2</text>
+    <text x="40"  y="870">stemforge forge track.wav --curation pipelines/curation_nopad_perf.yaml --strategy rhythm-taxonomy --n-bars 16</text>
+    <text x="40"  y="888">stemforge re-anchor ~/stemforge/processed/track --bpm 85.11 --first-downbeat 0.18 --keep-old</text>
+  </g>
+  <text class="ann" x="900" y="852">→ prechop chunks anchored on bar 1, padded asymmetrically.</text>
+  <text class="ann" x="900" y="870">→ curation engine picks 16 bars by rhythm-taxonomy, perf-mode trim.</text>
+  <text class="ann" x="900" y="888">→ re-runs prechop only; demucs output preserved.</text>
+</svg>

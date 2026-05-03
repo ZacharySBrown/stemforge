@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import json, os, re, sys
+import json, re, sys
 import numpy as np
 from pathlib import Path
 
@@ -58,9 +58,7 @@ def ensure_wav(audio_path: Path, console: Console = None) -> tuple[Path, bool]:
     return wav_path, True
 
 
-from .backends.lalal import LalalBackend
 from .backends.demucs import DemucsBackend
-from .backends.musicai import MusicAiBackend
 from .slicer import (
     detect_bpm_and_beats,
     slice_at_beats,
@@ -79,12 +77,7 @@ from .manifest_schema import (
 )
 from .config import (
     PROCESSED_DIR,
-    LALAL_PRESETS,
-    LALAL_STEMS,
-    LALAL_DEFAULT_PRESET,
     DEMUCS_MODELS,
-    MUSIC_AI_WORKFLOWS,
-    MUSIC_AI_DEFAULT_WORKFLOW,
 )
 
 console = Console()
@@ -99,21 +92,7 @@ def cli():
 @cli.command()
 @click.argument("audio_file", type=click.Path(exists=True, path_type=Path))
 @click.option(
-    "--backend",
-    "-b",
-    type=click.Choice(["lalal", "demucs", "musicai", "auto"]),
-    default="auto",
-    help="'auto' uses LALAL if key is set, else Demucs.",
-)
-@click.option(
-    "--stems",
-    "-s",
-    default=None,
-    help=f"[lalal] Preset ({', '.join(LALAL_PRESETS)}) or "
-    f"comma-separated stems. Default: {LALAL_DEFAULT_PRESET}",
-)
-@click.option(
-    "--model", "-m", default="default", help=f"[demucs] Model key: {', '.join(DEMUCS_MODELS)}."
+    "--model", "-m", default="default", help=f"Demucs model key: {', '.join(DEMUCS_MODELS)}."
 )
 @click.option(
     "--pipeline",
@@ -142,44 +121,84 @@ def cli():
     type=float,
     help="RMS threshold below which beat slices are discarded. Default: 0.001",
 )
+@click.option(
+    "--bpm",
+    "bpm_override",
+    type=float,
+    default=None,
+    help="Manual BPM override. Bypasses auto-detection. Pair with --first-downbeat for full manual control.",
+)
+@click.option(
+    "--first-downbeat",
+    "first_downbeat_override",
+    type=float,
+    default=None,
+    help="Manual first-downbeat-time override (seconds). Where bar 1 starts in the source audio.",
+)
+@click.option(
+    "--refine-downbeat",
+    is_flag=True,
+    default=False,
+    help="Sub-beat refinement of auto-detected first_downbeat via kick-onset cross-correlation. "
+    "Opt-in: assumes kick is ON the downbeat (fails for tracks where bar 1 is implied).",
+)
+@click.option(
+    "--pre-bars",
+    type=int,
+    default=None,
+    help="Bars of intro material BEFORE bar 1 to include as additional chunks at the same bar grid. "
+    "Default: auto-fill the intro (= floor(first_downbeat / bar_period / bars) × bars) when "
+    "first_downbeat > 0. Pass 0 to drop the intro entirely.",
+)
+@click.option(
+    "--pad-pre-bars",
+    type=int,
+    default=0,
+    help="Bars of pre-pad inside each chunk WAV (audio BEFORE the loop region). "
+    "Default 0 = chunk WAV starts AT bar 1 of that chunk's content (no leading silence/prior-bar audio). "
+    "Set >0 to enable drag-extending into the previous bar — but be aware that "
+    "Ableton's auto-warp may snap start_marker to a grid, exposing the pad as leading air.",
+)
+@click.option(
+    "--pad-post-bars",
+    type=int,
+    default=1,
+    help="Bars of post-pad inside each chunk WAV (audio AFTER the loop region). "
+    "Default 1 — useful for drag-extending forward + crossfade headroom at the seam.",
+)
 def split(
-    audio_file, backend, stems, model, pipeline, output, no_slice, no_normalize, silence_threshold
+    audio_file,
+    model,
+    pipeline,
+    output,
+    no_slice,
+    no_normalize,
+    silence_threshold,
+    bpm_override,
+    first_downbeat_override,
+    refine_downbeat,
+    pre_bars,
+    pad_pre_bars,
+    pad_post_bars,
 ):
     """
     Split an audio file into stems and slice at beat boundaries.
 
     \b
     Examples:
-      stemforge split track.wav                          # auto backend, IDM preset
-      stemforge split track.wav --backend lalal          # force LALAL.AI
-      stemforge split track.wav --backend demucs         # force local Demucs
-      stemforge split track.wav --stems chop             # drum+bass only (LALAL)
+      stemforge split track.wav                          # default Demucs model
       stemforge split track.wav --model 6stem            # 6-stem Demucs model
       stemforge split track.wav --pipeline glitch        # use 'glitch' pipeline config
       stemforge split track.wav --no-slice               # full stems, no beat files
       stemforge split track.mp3                          # auto-converts to WAV
+      stemforge split track.wav --bpm 85.11 --first-downbeat 0.1   # known-good manual values
     """
     # ── Auto-convert to WAV if needed ────────────────────────────────────────
     audio_file, _ = ensure_wav(audio_file, console)
 
-    # ── Resolve backend ──────────────────────────────────────────────────────
-    if backend == "auto":
-        has_lalal = bool(os.environ.get("LALAL_LICENSE_KEY", "").strip())
-        has_musicai = bool(os.environ.get("MUSIC_AI_API_KEY", "").strip())
-        if has_lalal:
-            backend = "lalal"
-        elif has_musicai:
-            backend = "musicai"
-        else:
-            backend = "demucs"
-        console.print(f"  [dim]Auto-selected backend: {backend}[/dim]")
-
-    if backend == "lalal":
-        be = LalalBackend()
-    elif backend == "musicai":
-        be = MusicAiBackend()
-    else:
-        be = DemucsBackend()
+    # ── Backend (Demucs only) ────────────────────────────────────────────────
+    backend = "demucs"
+    be = DemucsBackend()
 
     # ── Output dir ───────────────────────────────────────────────────────────
     out_root = output or PROCESSED_DIR
@@ -187,28 +206,7 @@ def split(
     track_out = out_root / track_name
     track_out.mkdir(parents=True, exist_ok=True)
 
-    # ── Backend-specific kwargs ──────────────────────────────────────────────
-    backend_kwargs = {}
-    if backend == "lalal":
-        if stems is None:
-            backend_kwargs["preset"] = LALAL_DEFAULT_PRESET
-        elif stems in LALAL_PRESETS:
-            backend_kwargs["preset"] = stems
-        else:
-            stem_list = [s.strip() for s in stems.split(",")]
-            bad = [s for s in stem_list if s not in LALAL_STEMS]
-            if bad:
-                raise click.UsageError(f"Unknown stems: {bad}. Available: {LALAL_STEMS}")
-            backend_kwargs["stems"] = stem_list
-    elif backend == "musicai":
-        if stems and stems in MUSIC_AI_WORKFLOWS:
-            backend_kwargs["workflow"] = stems
-        elif stems:
-            backend_kwargs["workflow"] = stems
-        else:
-            backend_kwargs["workflow"] = MUSIC_AI_DEFAULT_WORKFLOW
-    else:
-        backend_kwargs["model"] = model
+    backend_kwargs = {"model": model}
 
     # ── Header ────────────────────────────────────────────────────────────────
     console.print(Rule(f"[bold cyan]StemForge[/bold cyan] — {track_name}"))
@@ -235,17 +233,97 @@ def split(
     console.print("[bold]2/3  BPM detection + beat slicing[/bold]")
 
     # Prefer drums/drum stem for BPM accuracy
-    bpm_source = (
-        stem_paths.get("drums")
-        or stem_paths.get("drum")
-        or stem_paths.get("bass")
-        or next(iter(stem_paths.values()))
+    drums_stem = stem_paths.get("drums") or stem_paths.get("drum")
+    bpm_source = drums_stem or stem_paths.get("bass") or next(iter(stem_paths.values()))
+
+    from .tempo_reconciler import reconcile_tempo
+
+    # Always run reconciler — even when overrides are present — so the manifest
+    # records what auto-detection said vs what the user override was. That
+    # comparison is the labeled-example data we need to keep improving the
+    # detector. Skipping it would save ~10s but cost the future-fix signal.
+    reconciled = reconcile_tempo(
+        mix_path=audio_file,
+        drums_path=drums_stem,
+        kick_tiebreaker=True,
+        kick_workdir=track_out / "tempo_substems",
     )
-    bpm, beat_times = detect_bpm_and_beats(bpm_source)
+    auto_bpm = reconciled.bpm
+    auto_beats = reconciled.beat_times
+    auto_downbeats = reconciled.downbeat_times
+    auto_first_downbeat = (
+        float(auto_downbeats[0]) if len(auto_downbeats) > 0 else 0.0
+    )
+
+    # Apply manual overrides. When BPM is overridden we resynthesize the
+    # beat grid at the user's tempo, anchored on whichever first_downbeat
+    # is in effect — overridden if given, else auto-detected.
+    overrides_active = (bpm_override is not None) or (first_downbeat_override is not None)
+    bpm = bpm_override if bpm_override is not None else auto_bpm
+    first_downbeat_sec = (
+        first_downbeat_override
+        if first_downbeat_override is not None
+        else auto_first_downbeat
+    )
+
+    if bpm_override is not None:
+        # Synthesize beats at the override tempo, anchored on first_downbeat_sec.
+        import soundfile as _sf
+
+        duration = float(_sf.info(str(audio_file)).duration)
+        beat_times = np.arange(first_downbeat_sec, duration, 60.0 / bpm)
+        downbeat_times = beat_times[::4]
+    else:
+        beat_times = auto_beats
+        downbeat_times = auto_downbeats
+
+    # Sub-beat refinement (opt-in). Only useful when the user did NOT pass an
+    # explicit --first-downbeat — if they did, they trust their value over
+    # any algorithmic refinement.
+    if refine_downbeat and first_downbeat_override is None:
+        from .tempo_reconciler import refine_first_downbeat
+
+        refined = refine_first_downbeat(audio_file, bpm, first_downbeat_sec)
+        delta = refined - first_downbeat_sec
+        console.print(
+            f"  [cyan]--refine-downbeat[/cyan] shifted first_downbeat: "
+            f"{first_downbeat_sec:.4f}s → {refined:.4f}s (Δ {delta:+.4f}s)"
+        )
+        first_downbeat_sec = refined
+
+    # Fallback: if reconciler returned no usable beats (very short clip,
+    # detector silently failed), revive the legacy librosa path so the CLI
+    # never returns an empty result.
+    if len(beat_times) == 0:
+        bpm, beat_times = detect_bpm_and_beats(bpm_source)
+
+    src_color = "green" if (overrides_active or reconciled.confidence == "high") else (
+        "yellow" if reconciled.confidence == "medium" else "red"
+    )
     console.print(
-        f"  BPM: [bold cyan]{bpm:.1f}[/bold cyan]  "
-        f"half-time: {bpm / 2:.1f}  |  {len(beat_times)} beats"
+        f"  BPM: [bold cyan]{bpm:.2f}[/bold cyan]  "
+        f"first_downbeat: {first_downbeat_sec:.3f}s  |  "
+        f"{len(beat_times)} beats, {len(downbeat_times)} downbeats"
     )
+    if overrides_active:
+        diff_bpm = (bpm - auto_bpm) if bpm_override is not None else 0.0
+        diff_dn = (
+            (first_downbeat_sec - auto_first_downbeat)
+            if first_downbeat_override is not None
+            else 0.0
+        )
+        console.print(
+            f"  Source: [green]user-override[/green]  "
+            f"(detector said BPM={auto_bpm:.2f} Δ{diff_bpm:+.2f}, "
+            f"first_downbeat={auto_first_downbeat:.3f}s Δ{diff_dn:+.3f}s)"
+        )
+    else:
+        console.print(
+            f"  Source: [{src_color}]{reconciled.source}[/{src_color}] "
+            f"(confidence: {reconciled.confidence})"
+        )
+        if reconciled.warning:
+            console.print(f"  [yellow]warn:[/yellow] {reconciled.warning}")
 
     slice_counts = {}
     if not no_slice:
@@ -266,6 +344,43 @@ def split(
     # ── 3. Write manifest ─────────────────────────────────────────────────────
     console.print()
     console.print("[bold]3/3  Writing stems.json manifest[/bold]")
+    from .manifest import TempoProvenance
+
+    if overrides_active:
+        # Build a warning that captures the detector vs override delta — that
+        # comparison is the labeled-example data we want to preserve.
+        override_warning_parts = []
+        if bpm_override is not None:
+            override_warning_parts.append(
+                f"bpm override {bpm_override:.3f} (detector said {auto_bpm:.3f})"
+            )
+        if first_downbeat_override is not None:
+            override_warning_parts.append(
+                f"first_downbeat override {first_downbeat_override:.3f}s "
+                f"(detector said {auto_first_downbeat:.3f}s)"
+            )
+        override_warning = " ; ".join(override_warning_parts)
+        if reconciled.warning:
+            override_warning = f"{override_warning} | detector_warning: {reconciled.warning}"
+        tempo_provenance = TempoProvenance(
+            source="user-override",
+            confidence="high",
+            first_downbeat_sec=float(first_downbeat_sec),
+            n_downbeats=int(len(downbeat_times)),
+            warning=override_warning,
+            all_estimates=[e.to_dict() for e in reconciled.all_estimates],
+        )
+    else:
+        tempo_provenance = TempoProvenance(
+            source=reconciled.source,
+            confidence=reconciled.confidence,
+            first_downbeat_sec=(
+                float(downbeat_times[0]) if len(downbeat_times) > 0 else None
+            ),
+            n_downbeats=int(len(downbeat_times)),
+            warning=reconciled.warning,
+            all_estimates=[e.to_dict() for e in reconciled.all_estimates],
+        )
     manifest_path = write_manifest(
         output_dir=track_out,
         track_name=track_name,
@@ -276,6 +391,7 @@ def split(
         stem_paths=stem_paths,
         slice_counts=slice_counts,
         pipeline=pipeline,
+        tempo=tempo_provenance,
     )
     console.print(f"  Written: {manifest_path}")
 
@@ -289,11 +405,25 @@ def split(
         pipeline_cfg = None
 
     if pipeline_cfg is not None and pipeline_cfg.prechop is not None:
+        # Resolve pre_bars: explicit value, or auto-fill the intro to keep
+        # all preceding bars as chunks on the same bar grid (the user almost
+        # never wants to silently drop 22 seconds of intro audio).
+        bars_per_chunk = pipeline_cfg.prechop.bars
+        bar_period_sec = bars_per_chunk * pipeline_cfg.prechop.beats_per_bar * 60.0 / bpm
+        if pre_bars is None:
+            # Auto: round DOWN to a whole-chunk count of intro bars.
+            n_pre_chunks = int(first_downbeat_sec // bar_period_sec)
+            resolved_pre_bars = n_pre_chunks * bars_per_chunk
+        else:
+            resolved_pre_bars = max(0, pre_bars)
+
         console.print()
         console.print(
             f"[bold]Prechop[/bold]  bars={pipeline_cfg.prechop.bars} "
             f"pad_bars={pipeline_cfg.prechop.pad_bars} "
-            f"pad_last={pipeline_cfg.prechop.pad_last}"
+            f"pad_last={pipeline_cfg.prechop.pad_last} "
+            f"first_downbeat={first_downbeat_sec:.3f}s "
+            f"pre_bars={resolved_pre_bars}"
         )
         try:
             status_post = run_post_split_steps(
@@ -301,6 +431,10 @@ def split(
                 stem_paths,
                 track_out,
                 bpm=bpm,
+                first_downbeat_sec=first_downbeat_sec,
+                pre_bars=resolved_pre_bars,
+                pad_pre_bars=pad_pre_bars,
+                pad_post_bars=pad_post_bars,
             )
             pc = status_post.get("prechop", {})
             if pc:
@@ -322,27 +456,251 @@ def split(
     console.print("\n[dim]The M4L device in Ableton will detect stems.json automatically.[/dim]")
     console.print("[dim]Or: Ableton browser → Places → stemforge/processed → drag files.[/dim]")
 
+    # If auto-detection wasn't high-confidence, surface the re-anchor escape
+    # hatch — it's the difference between a 30s re-forge and a sub-second fix.
+    if not overrides_active and reconciled.confidence != "high":
+        console.print()
+        console.print("[yellow]Detection confidence was not high.[/yellow] If chunks look")
+        console.print("misaligned in arrangement view:")
+        console.print(
+            f"  1. [cyan]uv run python tools/probe_loop.py {audio_file} "
+            f"--bpm BPM --first-downbeat DN --start-bar 28[/cyan]"
+        )
+        console.print("     iterate BPM + DN until the loop seam is clean and kick is on bar 1")
+        console.print(
+            f"  2. [cyan]stemforge re-anchor {track_out} --bpm BPM --first-downbeat DN[/cyan]"
+        )
+        console.print("     rewrites prechop in-place; no Demucs re-run needed (~1s).")
 
-@cli.command()
-def balance():
-    """Show remaining LALAL.AI API minutes."""
-    be = LalalBackend()
-    with console.status("Checking..."):
-        data = be.check_minutes()
-    console.print("\n[bold]LALAL.AI minutes remaining:[/bold]")
-    console.print(f"  Fast:    [cyan]{data.get('fast_minutes_left', '?')}[/cyan]")
-    console.print(f"  Relaxed: [cyan]{data.get('relaxed_minutes_left', '?')}[/cyan]")
+
+@cli.command("re-anchor")
+@click.argument("track_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.option("--bpm", type=float, required=True, help="Manual BPM override.")
+@click.option(
+    "--first-downbeat",
+    "first_downbeat",
+    type=float,
+    required=True,
+    help="Where bar 1 starts in the source audio (seconds).",
+)
+@click.option(
+    "--pre-bars",
+    type=int,
+    default=None,
+    help="Bars of intro material BEFORE bar 1 to include as additional chunks at the same bar grid. "
+    "Default: auto-fill the intro. Pass 0 to drop the intro entirely.",
+)
+@click.option(
+    "--pad-pre-bars",
+    type=int,
+    default=0,
+    help="Bars of pre-pad inside each chunk WAV (default 0 = chunk WAV frame 0 IS bar 1, no leading air).",
+)
+@click.option(
+    "--pad-post-bars",
+    type=int,
+    default=1,
+    help="Bars of post-pad inside each chunk WAV (default 1 = drag-extend headroom forward).",
+)
+@click.option(
+    "--keep-old",
+    is_flag=True,
+    default=False,
+    help="Keep the previous prechop output as `<stem>_prechop.bak/` instead of overwriting.",
+)
+def re_anchor(track_dir, bpm, first_downbeat, pre_bars, pad_pre_bars, pad_post_bars, keep_old):
+    """
+    Re-cut the prechop chunks of an already-forged track at user-supplied
+    BPM + first_downbeat. Skips Demucs re-run (~30 s saved) — only re-runs
+    the chunk extraction step. Use after `probe_loop.py` confirms values.
+
+    \b
+    Iteration loop when auto-detection fails:
+      1. stemforge split track.wav --pipeline arrangement
+      2. drag a chunk into Ableton — kicks off bar grid?
+      3. uv run python tools/probe_loop.py track.wav \\
+              --bpm 85.11 --first-downbeat 0.1 --start-bar 28
+         (iterate BPM + DN until loop is seamless and kick on bar 1)
+      4. stemforge re-anchor PROCESSED/track --bpm 85.11 --first-downbeat 0.1
+         → done in ~1 s, no Demucs.
+
+    \b
+    What gets rewritten:
+      - <stem>_prechop/ (recut at new BPM/downbeat)
+      - prechop_manifest.json
+      - stems.json (tempo provenance updated with re-anchor history)
+
+    \b
+    What stays put:
+      - drums.wav / bass.wav / vocals.wav / other.wav (Demucs output unchanged)
+      - <stem>_beats/ (per-beat slices unchanged)
+      - input_audio fingerprint (sha256 + sample_rate + duration_samples)
+    """
+    import json
+    from .manifest import TempoProvenance, _input_audio_for, write_manifest
+    from .pipelines import load_pipeline, run_post_split_steps
+
+    if bpm <= 0:
+        console.print(f"[red]--bpm must be > 0, got {bpm}[/red]")
+        sys.exit(1)
+    if first_downbeat < 0:
+        console.print(f"[red]--first-downbeat must be >= 0, got {first_downbeat}[/red]")
+        sys.exit(1)
+
+    stems_json = track_dir / "stems.json"
+    if not stems_json.exists():
+        console.print(f"[red]No stems.json at {stems_json}[/red]")
+        sys.exit(1)
+
+    sj = json.loads(stems_json.read_text())
+    track_name = sj["track_name"]
+    pipeline_name = sj.get("pipeline", "default")
+    backend = sj.get("backend", "demucs")
+
+    # Reconstruct stem_paths from stems.json
+    stem_paths = {}
+    for s in sj["stems"]:
+        wav = Path(s["wav_path"])
+        if not wav.exists():
+            console.print(f"[red]Missing stem WAV: {wav}[/red]")
+            sys.exit(1)
+        stem_paths[s["name"]] = wav
+
+    console.print(Rule(f"[bold cyan]StemForge re-anchor[/bold cyan] — {track_name}"))
+    console.print(f"  Track dir:      {track_dir}")
+    console.print(f"  Old BPM:        [yellow]{sj['bpm']}[/yellow]")
+    console.print(f"  New BPM:        [green]{bpm}[/green]")
+    if sj.get("tempo"):
+        old_dn = sj["tempo"].get("first_downbeat_sec")
+        console.print(
+            f"  Old first_downbeat: [yellow]{old_dn}s[/yellow]"
+            if old_dn is not None else "  Old first_downbeat: [dim]none recorded[/dim]"
+        )
+    console.print(f"  New first_downbeat: [green]{first_downbeat}s[/green]")
+
+    # Backup or wipe old prechop dirs
+    import shutil as _sh
+
+    for stem_name in stem_paths:
+        old_dir = track_dir / f"{stem_name}_prechop"
+        if not old_dir.exists():
+            continue
+        if keep_old:
+            bak = track_dir / f"{stem_name}_prechop.bak"
+            if bak.exists():
+                _sh.rmtree(bak)
+            old_dir.rename(bak)
+            console.print(f"  [dim]backed up {old_dir.name} → {bak.name}[/dim]")
+        else:
+            _sh.rmtree(old_dir)
+
+    old_manifest = track_dir / "prechop_manifest.json"
+    if old_manifest.exists() and keep_old:
+        old_manifest.rename(track_dir / "prechop_manifest.bak.json")
+
+    # Synthesize beat times from override values for the slice_at_beats path
+    # we don't actually rerun (we'd need duration here only for stems.json).
+    # The reconciler is also skipped — re-anchor trusts the user's values
+    # by definition.
+
+    # Re-run prechop with overrides
+    pipeline_cfg = load_pipeline(pipeline_name)
+    if pipeline_cfg is None or pipeline_cfg.prechop is None:
+        console.print(
+            f"[yellow]Pipeline {pipeline_name!r} has no prechop block — nothing to re-anchor.[/yellow]"
+        )
+        sys.exit(0)
+
+    bars_per_chunk = pipeline_cfg.prechop.bars
+    bar_period_sec = bars_per_chunk * pipeline_cfg.prechop.beats_per_bar * 60.0 / bpm
+    if pre_bars is None:
+        n_pre_chunks = int(first_downbeat // bar_period_sec)
+        resolved_pre_bars = n_pre_chunks * bars_per_chunk
+    else:
+        resolved_pre_bars = max(0, pre_bars)
+
+    console.print()
+    console.print(
+        f"[bold]Re-cutting prechop[/bold]  bars={pipeline_cfg.prechop.bars} "
+        f"pad_bars={pipeline_cfg.prechop.pad_bars} "
+        f"first_downbeat={first_downbeat}s "
+        f"pre_bars={resolved_pre_bars}"
+    )
+    status = run_post_split_steps(
+        pipeline_cfg,
+        stem_paths,
+        track_dir,
+        bpm=bpm,
+        first_downbeat_sec=first_downbeat,
+        pre_bars=resolved_pre_bars,
+        pad_pre_bars=pad_pre_bars,
+        pad_post_bars=pad_post_bars,
+    )
+    pc = status.get("prechop", {})
+    if pc:
+        console.print(f"  Written: {pc['manifest']}")
+
+    # Update stems.json's tempo provenance to reflect the re-anchor
+    prior_source = sj.get("tempo", {}).get("source", "unknown")
+    prior_bpm = sj.get("bpm")
+    prior_dn = sj.get("tempo", {}).get("first_downbeat_sec")
+    reanchor_warning = (
+        f"re-anchored from bpm={prior_bpm} first_downbeat={prior_dn}s "
+        f"(prior source: {prior_source})"
+    )
+    if sj.get("tempo", {}).get("warning"):
+        reanchor_warning = f"{reanchor_warning} | prior: {sj['tempo']['warning']}"
+
+    tempo_provenance = TempoProvenance(
+        source="user-override",
+        confidence="high",
+        first_downbeat_sec=float(first_downbeat),
+        n_downbeats=int((sj.get("tempo") or {}).get("n_downbeats", 0)),
+        warning=reanchor_warning,
+        all_estimates=(sj.get("tempo") or {}).get("all_estimates", []),
+    )
+
+    # Re-write stems.json (preserve audio fingerprint, slice counts unchanged)
+    slice_counts = {s["name"]: s["beat_count"] for s in sj["stems"]}
+    source_file = Path(sj["source_file"])
+    input_audio = None
+    if sj.get("input_audio"):
+        from .manifest import InputAudio
+
+        ia = sj["input_audio"]
+        input_audio = InputAudio(
+            sample_rate=ia["sample_rate"],
+            duration_samples=ia["duration_samples"],
+            sha256=ia["sha256"],
+        )
+    elif source_file.exists():
+        input_audio = _input_audio_for(source_file)
+
+    write_manifest(
+        output_dir=track_dir,
+        track_name=track_name,
+        source_file=source_file,
+        backend=backend,
+        bpm=bpm,
+        beat_count=sj.get("beat_count", 0),
+        stem_paths=stem_paths,
+        slice_counts=slice_counts,
+        pipeline=pipeline_name,
+        tempo=tempo_provenance,
+        input_audio=input_audio,
+    )
+
+    console.print()
+    console.print(Rule("[bold green]Re-anchored[/bold green]"))
+    console.print(f"  BPM: [cyan]{bpm}[/cyan]  first_downbeat: [cyan]{first_downbeat}s[/cyan]")
+    console.print("  stems.json + prechop_manifest.json updated.")
+    if keep_old:
+        console.print("  [dim]Old chunks preserved at <stem>_prechop.bak/.[/dim]")
 
 
 @cli.command("list")
 def list_options():
-    """Show available stems, presets, and models."""
-    console.print("\n[bold]LALAL.AI presets:[/bold]")
-    for name, stem_list in LALAL_PRESETS.items():
-        console.print(
-            f"  [cyan]{name:<8}[/cyan]  {', '.join(stem_list)}  [dim]({len(stem_list)}x cost)[/dim]"
-        )
-    console.print(f"\n[bold]All LALAL stems:[/bold]  {', '.join(LALAL_STEMS)}")
+    """Show available Demucs models."""
     console.print("\n[bold]Demucs models:[/bold]")
     descs = {
         "default": "htdemucs — drums, bass, vocals, other (fast, ~1x realtime on M2)",
@@ -351,14 +709,6 @@ def list_options():
     }
     for key, desc in descs.items():
         console.print(f"  [cyan]{key:<8}[/cyan]  {desc}")
-    console.print("\n[bold]Music.AI workflows:[/bold]")
-    wf_descs = {
-        "suite": "stem-separation-suite — up to 9 stems (vocals, drums, bass, keys, strings, guitars, piano, wind, other)",
-        "vocals": "stems-vocals-accompaniment — 4 stems (vocals, drums, bass, other)",
-    }
-    for key, desc in wf_descs.items():
-        default = " [dim](default)[/dim]" if key == MUSIC_AI_DEFAULT_WORKFLOW else ""
-        console.print(f"  [cyan]{key:<8}[/cyan]  {desc}{default}")
 
 
 @cli.command("create-templates")
@@ -532,13 +882,10 @@ def analyze(audio_file, json_out):
     console.print()
 
     # ── Quick command ──────────────────────────────────────────────────────
-    if profile.recommended_backend == "demucs":
-        model_key = {"htdemucs": "default", "htdemucs_ft": "fine", "htdemucs_6s": "6stem"}.get(
-            profile.recommended_model, "default"
-        )
-        cmd = f"stemforge split {audio_file} --backend demucs --model {model_key}"
-    else:
-        cmd = f"stemforge split {audio_file} --backend musicai --stems suite"
+    model_key = {"htdemucs": "default", "htdemucs_ft": "fine", "htdemucs_6s": "6stem"}.get(
+        profile.recommended_model, "default"
+    )
+    cmd = f"stemforge split {audio_file} --model {model_key}"
     console.print(f"  [bold]Run:[/bold]  [green]{cmd}[/green]")
     console.print()
 
@@ -651,9 +998,6 @@ def generate_pipeline_json(pipeline_dir):
     default=None,
     help="Ableton analysis JSON. If omitted, uses librosa beat detection.",
 )
-@click.option(
-    "--backend", "-b", default="demucs", type=click.Choice(["demucs", "lalal", "musicai"])
-)
 @click.option("--model", "-m", default="default")
 @click.option(
     "--strategy",
@@ -677,7 +1021,8 @@ def generate_pipeline_json(pipeline_dir):
     "produces a production-mode manifest (layout_mode=production, version=2). "
     "Omit to use forge's built-in v1 curation path.",
 )
-def forge(audio_file, analysis, backend, model, strategy, n_bars, time_sig, output, curation):
+def forge(audio_file, analysis, model, strategy, n_bars, time_sig, output, curation):
+    backend = "demucs"
     """
     Full pipeline: split → slice at bars → curate → curated WAVs + manifest.
 
@@ -713,17 +1058,9 @@ def forge(audio_file, analysis, backend, model, strategy, n_bars, time_sig, outp
 
     # ── 1. Separation ──
     emit("progress", phase="splitting", pct=0)
-    if backend == "lalal":
-        be = LalalBackend()
-    elif backend == "musicai":
-        be = MusicAiBackend()
-    else:
-        be = DemucsBackend()
+    be = DemucsBackend()
     try:
-        if backend == "demucs":
-            stem_paths = be.separate(audio_file, track_out, model=model)
-        else:
-            stem_paths = be.separate(audio_file, track_out)
+        stem_paths = be.separate(audio_file, track_out, model=model)
     except Exception as e:
         emit("error", phase="splitting", message=str(e))
         sys.exit(1)
@@ -791,11 +1128,23 @@ def forge(audio_file, analysis, backend, model, strategy, n_bars, time_sig, outp
     # When no analysis, reuse a single beat detection on drums for all stems.
     shared_beat_times = None
     detected_bpm: float | None = None
+    reconciled_for_forge = None
     if analysis_data is None:
-        bpm_source = (
-            stem_paths.get("drums") or stem_paths.get("drum") or next(iter(stem_paths.values()))
+        drums_stem_f = stem_paths.get("drums") or stem_paths.get("drum")
+        from .tempo_reconciler import reconcile_tempo as _reconcile
+
+        reconciled_for_forge = _reconcile(
+            mix_path=audio_file,
+            drums_path=drums_stem_f,
+            kick_tiebreaker=True,
+            kick_workdir=track_out / "tempo_substems",
         )
-        detected_bpm, shared_beat_times = detect_bpm_and_beats(bpm_source)
+        detected_bpm = reconciled_for_forge.bpm
+        shared_beat_times = reconciled_for_forge.beat_times
+        if shared_beat_times is None or len(shared_beat_times) == 0:
+            # Reconciler had no usable beats — fall back to librosa.
+            bpm_source = drums_stem_f or next(iter(stem_paths.values()))
+            detected_bpm, shared_beat_times = detect_bpm_and_beats(bpm_source)
     else:
         # Ableton analysis JSON carries the project tempo at the top level.
         ab_bpm = analysis_data.get("bpm") or analysis_data.get("tempo")
@@ -1243,3 +1592,78 @@ def export_song(arrangement_path, manifest_path, reference_template, project_slo
 
 if __name__ == "__main__":
     cli()
+
+
+@cli.command("export-koala")
+@click.argument(
+    "project_dir",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+)
+@click.option(
+    "--loops-per-stem",
+    type=int,
+    default=4,
+    show_default=True,
+    help="Loops per stem in bank 1 (4 stems × N must be ≤ 16).",
+)
+@click.option(
+    "--oneshots-per-part",
+    type=int,
+    default=None,
+    help="Cap oneshots per drum part. Default: pack to fill bank 2 evenly.",
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=Path("koala_exports"),
+    show_default=True,
+    help="Where to write the .zip.",
+)
+@click.option(
+    "--keep-unzipped",
+    is_flag=True,
+    help="Leave the staging folder next to the zip (debugging).",
+)
+def export_koala_cmd(
+    project_dir: Path,
+    loops_per_stem: int,
+    oneshots_per_part: int | None,
+    output_dir: Path,
+    keep_unzipped: bool,
+) -> None:
+    """
+    Export a curated stemforge project as a Koala Sampler bank set (.zip).
+
+    \b
+    PROJECT_DIR can be either:
+      - the project root (e.g. processed/bel/) — we'll find curated/ inside it
+      - the curated dir directly (e.g. processed/bel/curated/)
+
+    \b
+    Example:
+        stemforge export-koala processed/bel
+        # → koala_exports/bel_koala.zip
+    """
+    from .exporters.koala import KoalaExportConfig, export_koala
+
+    if (project_dir / "curated").exists():
+        curated_dir = project_dir / "curated"
+    elif project_dir.name == "curated":
+        curated_dir = project_dir
+    else:
+        raise click.ClickException(
+            f"{project_dir} is not a stemforge project (no curated/ subdir) "
+            f"nor a curated/ dir itself."
+        )
+
+    config = KoalaExportConfig(
+        loops_per_stem=loops_per_stem,
+        oneshots_per_part=oneshots_per_part,
+        output_dir=output_dir,
+        keep_unzipped=keep_unzipped,
+    )
+
+    click.echo(f"Building Koala export from {curated_dir}...")
+    zip_path = export_koala(curated_dir, config)
+    click.echo(f"✓ {zip_path} ({zip_path.stat().st_size / 1024 / 1024:.1f} MB)")
+    click.echo("AirDrop to phone → share to 'Send to Koala Sampler' Shortcut.")

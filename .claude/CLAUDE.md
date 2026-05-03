@@ -38,8 +38,7 @@ uv run ruff format --check .               # Format check
 # StemForge CLI
 uv run stemforge split <audio_file>        # Full stem + slice pipeline
 uv run stemforge forge <audio_file>        # Integrated M4L workflow
-uv run stemforge list                      # List pipelines/options
-uv run stemforge balance                   # Check LALAL.AI credits
+uv run stemforge list                      # List Demucs models
 
 # Pipeline management
 uv run stemforge generate-pipeline-json    # Compile YAML → JSON for M4L
@@ -63,7 +62,7 @@ class AbstractBackend(ABC):
     def separate(self, audio_path, output_dir, **kwargs) -> dict[str, Path]:
         """Returns {stem_name: stem_wav_path}"""
 
-# Implementations: DemucsBackend (local), LalalBackend (API), MusicAiBackend (SDK)
+# Implementation: DemucsBackend (local). Add new backends by extending AbstractBackend.
 ```
 
 ## Pipeline Flow

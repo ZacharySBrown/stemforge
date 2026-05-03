@@ -137,54 +137,31 @@ INSTRUMENT_LABELS = {
 GENRE_STEM_MAP = {
     "electronic": {
         "demucs_model": "htdemucs",
-        "musicai_workflow": "music-ai/stem-separation-suite",
-        "musicai_stems": ["vocals", "drums", "bass", "keys", "strings", "other"],
-        "reason": "Electronic — heavy synth layering. Music AI 9-stem recommended to separate synths, keys, and textures individually.",
+        "reason": "Electronic — heavy synth layering. Demucs 4-stem keeps drums/bass/vocals separate from a synth-heavy 'other' bus.",
     },
     "hip_hop": {
         "demucs_model": "htdemucs",
-        "musicai_workflow": "music-ai/stem-separation-suite",
-        "musicai_stems": ["vocals", "drums", "bass", "keys", "other"],
-        "reason": "Hip hop — 808s and vocals are key. 9-stem captures vocal layers and bass separately.",
+        "reason": "Hip hop — 808s and vocals are key. Standard 4-stem split works well.",
     },
     "rock": {
         "demucs_model": "htdemucs_6s",
-        "musicai_workflow": "music-ai/stem-separation-suite",
-        "musicai_stems": ["vocals", "drums", "bass", "guitars", "piano", "other"],
-        "reason": "Rock — guitar separation is critical. Demucs 6-stem or Music AI 9-stem recommended.",
+        "reason": "Rock — guitar separation is critical. Demucs 6-stem isolates guitar + piano.",
     },
     "jazz": {
         "demucs_model": "htdemucs_6s",
-        "musicai_workflow": "music-ai/stem-separation-suite",
-        "musicai_stems": [
-            "vocals",
-            "drums",
-            "bass",
-            "piano",
-            "guitars",
-            "strings",
-            "wind",
-            "other",
-        ],
-        "reason": "Jazz — complex instrumentation. 6-stem Demucs for guitar+piano, or Music AI for full separation including wind/strings.",
+        "reason": "Jazz — complex instrumentation. Demucs 6-stem for guitar + piano.",
     },
     "acoustic": {
         "demucs_model": "htdemucs_6s",
-        "musicai_workflow": "music-ai/stem-separation-suite",
-        "musicai_stems": ["vocals", "guitars", "piano", "strings", "other"],
-        "reason": "Acoustic — guitar and vocal clarity matter most. 6-stem Demucs to isolate guitar.",
+        "reason": "Acoustic — guitar and vocal clarity matter most. Demucs 6-stem to isolate guitar.",
     },
     "pop": {
         "demucs_model": "htdemucs",
-        "musicai_workflow": "music-ai/stems-vocals-accompaniment",
-        "musicai_stems": ["vocals", "drums", "bass", "other"],
         "reason": "Pop — vocals are the focus. Standard 4-stem split works well.",
     },
     "orchestral": {
         "demucs_model": "htdemucs",
-        "musicai_workflow": "music-ai/stem-separation-suite",
-        "musicai_stems": ["strings", "wind", "drums", "piano", "bass", "other"],
-        "reason": "Orchestral — Demucs struggles here. Music AI 9-stem recommended for strings, wind, and keys.",
+        "reason": "Orchestral — Demucs is the only local option; expect 'other' bus to carry most of the orchestration.",
     },
 }
 
@@ -282,17 +259,12 @@ def analyze(audio_path: Path, duration_limit: float = 30.0) -> AudioProfile:
         demucs_model = "htdemucs_6s"
         reason += " Guitar/piano detected — upgrading to 6-stem Demucs."
 
-    if genre in ("electronic", "orchestral", "jazz"):
-        recommended_backend = "musicai"
-        recommended_model = stem_map["musicai_workflow"]
-        recommended_stems = stem_map["musicai_stems"]
+    recommended_backend = "demucs"
+    recommended_model = demucs_model
+    if demucs_model == "htdemucs_6s":
+        recommended_stems = ["drums", "bass", "vocals", "guitar", "piano", "other"]
     else:
-        recommended_backend = "demucs"
-        recommended_model = demucs_model
-        if demucs_model == "htdemucs_6s":
-            recommended_stems = ["drums", "bass", "vocals", "guitar", "piano", "other"]
-        else:
-            recommended_stems = ["drums", "bass", "vocals", "other"]
+        recommended_stems = ["drums", "bass", "vocals", "other"]
 
     return AudioProfile(
         bpm=librosa_features["bpm"],

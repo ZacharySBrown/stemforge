@@ -168,9 +168,10 @@ Per [`v0/interfaces/device.yaml`](../v0/interfaces/device.yaml)
 - **"StemForge"** title label (top-left).
 - **"Drop audio here"** file-drop target (large, across the top).
   Accepts `wav`, `mp3`, `aiff`, `m4a`, `flac`, `ogg`.
-- **Backend** dropdown — options `auto`, `demucs`, `lalal`,
-  `musicai`. Default `auto`. For v0 local-only testing, leave on
-  `auto` (resolves to demucs).
+- **Backend** dropdown — Demucs (local) is the only supported backend
+  on main. The dropdown may still show legacy options from the v0
+  device's earlier wave; pick `demucs` (or `auto`, which resolves to
+  demucs).
 - **Pipeline** dropdown — options `default`, `idm_crushed`,
   `glitch`, `ambient`. Default `default`.
 - **Slice beats** toggle — default on.

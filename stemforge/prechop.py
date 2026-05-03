@@ -90,6 +90,9 @@ class ChunkMeta:
     loop_start_sec: float
     loop_end_sec: float
     total_sec: float  # total duration of the padded WAV
+    chunk_duration_samples: int = 0  # integer frame count — catches silent resamples
+    sample_rate: int = 0  # WAV sample rate
+    source_offset_sec: float = 0.0  # where in the source stem this chunk's bar 1 sits
 
     def asdict(self) -> dict:
         return asdict(self)
@@ -109,42 +112,107 @@ def prechop_stem(
     pad_last: bool = True,
     beats_per_bar: int = 4,
     write_sidecars: bool = True,
+    first_downbeat_sec: float = 0.0,
+    pre_bars: int = 0,
+    pad_pre_bars: int | None = None,
+    pad_post_bars: int | None = None,
 ) -> list[ChunkMeta]:
-    """Chop one stem into padded N-bar chunks. See module docstring."""
+    """Chop one stem into padded N-bar chunks. See module docstring.
+
+    `first_downbeat_sec`: where bar 1 starts in the source stem. Pre-downbeat
+    audio (the intro / count-in / measure-fragment that precedes the first
+    musical bar) is dropped from the chunk grid so chunks align on real
+    musical bar boundaries. Default 0.0 preserves the legacy "start at frame
+    zero" behavior for callers that don't have downbeat information.
+
+    `pre_bars`: how many bars of intro material BEFORE bar 1 to include as
+    additional chunks at the same bar grid. Useful when first_downbeat_sec
+    is large (e.g. hip-hop tracks with long DJ intros) and you don't want
+    to lose the intro. The pre-chunks come first in the timeline; chunk 1
+    is the OLDEST pre-chunk, and the chunk corresponding to musical bar 1
+    is `(pre_bars // bars) + 1`. Pre-chunks that would land entirely before
+    the audio file's first frame are silently skipped.
+
+    `pad_pre_bars` / `pad_post_bars`: split-controllable padding (default to
+    `pad_bars` for backward compat). Setting `pad_pre_bars=0` makes WAV
+    frame 0 == loop_start == bar 1's audio, which is what you want when
+    you don't trust the downstream loader's start_marker handling. When
+    chunk 1's source frames would otherwise be clamped (= source has less
+    audio before bar 1 than `pad_pre_bars × bar_period`), trimming pre-pad
+    avoids embedding pure silence at the chunk's start.
+    """
     if bars <= 0:
         raise ValueError(f"bars must be > 0, got {bars}")
     if pad_bars < 0:
         raise ValueError(f"pad_bars must be >= 0, got {pad_bars}")
     if bpm <= 0:
         raise ValueError(f"bpm must be > 0, got {bpm}")
+    if first_downbeat_sec < 0:
+        raise ValueError(f"first_downbeat_sec must be >= 0, got {first_downbeat_sec}")
+    if pre_bars < 0:
+        raise ValueError(f"pre_bars must be >= 0, got {pre_bars}")
+
+    # Resolve pre/post pad (back-compat default = symmetric pad_bars).
+    if pad_pre_bars is None:
+        pad_pre_bars = pad_bars
+    if pad_post_bars is None:
+        pad_post_bars = pad_bars
+    if pad_pre_bars < 0 or pad_post_bars < 0:
+        raise ValueError(
+            f"pad_pre_bars and pad_post_bars must be >= 0, got {pad_pre_bars}/{pad_post_bars}"
+        )
 
     y, sr = sf.read(str(stem_path), always_2d=True)  # (frames, channels)
     total = y.shape[0]
 
     fpb = frames_per_bar(bpm, sr, beats_per_bar=beats_per_bar)
     chunk_frames = fpb * bars
-    pad_frames = fpb * pad_bars
-    target_total_frames = chunk_frames + 2 * pad_frames
+    pad_pre_frames = fpb * pad_pre_bars
+    pad_post_frames = fpb * pad_post_bars
+    target_total_frames = chunk_frames + pad_pre_frames + pad_post_frames
 
-    n_chunks = chunk_count_for(total, fpb, bars, pad_last=pad_last)
-    if n_chunks == 0:
+    # Anchor the chunk grid on the first detected downbeat.
+    downbeat_offset = int(round(first_downbeat_sec * sr))
+
+    # Available audio AFTER the downbeat — that's what the post-downbeat chunk
+    # count covers.
+    audio_after_downbeat = max(0, total - downbeat_offset)
+    n_post_chunks = chunk_count_for(audio_after_downbeat, fpb, bars, pad_last=pad_last)
+
+    # Pre-downbeat chunks: how many full N-bar windows of intro material we
+    # want, capped by what fits before downbeat_offset (skip windows that
+    # would land entirely before the audio file's start).
+    n_pre_chunks_requested = pre_bars // bars
+    n_pre_chunks = 0
+    for k in range(1, n_pre_chunks_requested + 1):
+        cand_start = downbeat_offset - k * chunk_frames
+        # Skip if the entire chunk window (including its loop region end)
+        # would land before the audio file starts.
+        if cand_start + chunk_frames <= 0:
+            break
+        n_pre_chunks = k
+
+    if n_post_chunks == 0 and n_pre_chunks == 0:
         return []
 
     out_dir = output_dir / f"{stem_name}_prechop"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     metas: list[ChunkMeta] = []
-
-    for i in range(n_chunks):
-        target_start = i * chunk_frames
+    # Iterate from the OLDEST pre-chunk to the NEWEST post-chunk so chunk
+    # filenames are 1-indexed in timeline order.
+    iter_indices = list(range(-n_pre_chunks, n_post_chunks))
+    for timeline_index, i in enumerate(iter_indices):
+        target_start = downbeat_offset + i * chunk_frames
         target_end = target_start + chunk_frames
 
-        # Read window (clamped to file).
-        read_start = max(0, target_start - pad_frames)
-        read_end = min(total, target_end + pad_frames)
+        # Read window (clamped to file). Pre-pad and post-pad are now
+        # independently configurable via pad_pre_frames / pad_post_frames.
+        read_start = max(0, target_start - pad_pre_frames)
+        read_end = min(total, target_end + pad_post_frames)
         chunk = y[read_start:read_end, :]
 
-        # Actual padding applied (in frames, may be < pad_frames at edges).
+        # Actual padding applied (in frames, may be < requested at edges).
         actual_pre = target_start - read_start
         actual_post = read_end - target_end  # may be negative if last chunk truncated
 
@@ -171,13 +239,15 @@ def prechop_stem(
         loop_end_sec = loop_end_frames / float(sr)
         total_sec = chunk.shape[0] / float(sr)
 
-        fname = out_dir / f"{stem_name}_chunk_{i + 1:03d}.wav"
+        # 1-indexed in timeline order — pre-chunks come first, then post.
+        chunk_index_1based = timeline_index + 1
+        fname = out_dir / f"{stem_name}_chunk_{chunk_index_1based:03d}.wav"
         sf.write(str(fname), chunk, sr, subtype="PCM_24")
 
         cm = ChunkMeta(
             file=str(fname.relative_to(output_dir)),
             stem=stem_name,
-            chunk_index=i + 1,
+            chunk_index=chunk_index_1based,
             bars=bars,
             pad_bars=pad_bars,
             pad_pre_bars=actual_pre / float(fpb) if fpb else 0.0,
@@ -185,6 +255,9 @@ def prechop_stem(
             loop_start_sec=loop_start_sec,
             loop_end_sec=loop_end_sec,
             total_sec=total_sec,
+            chunk_duration_samples=int(chunk.shape[0]),
+            sample_rate=int(sr),
+            source_offset_sec=float(target_start) / float(sr),
         )
         metas.append(cm)
 
@@ -195,7 +268,7 @@ def prechop_stem(
                 else None
             )
             meta = SampleMeta(
-                name=f"{stem_name} {i + 1:03d}",
+                name=f"{stem_name} {chunk_index_1based:03d}",
                 bpm=float(bpm),
                 time_mode="bpm",
                 bars=float(bars),
@@ -222,18 +295,41 @@ def prechop(
     beats_per_bar: int = 4,
     write_sidecars: bool = True,
     skip_stems: Iterable[str] = ("residual",),
+    first_downbeat_sec: float = 0.0,
+    pre_bars: int = 0,
+    pad_pre_bars: int | None = None,
+    pad_post_bars: int | None = None,
 ) -> Path:
     """Run prechop_stem across a stems dict. Writes a top-level manifest.
+
+    `pre_bars`: bars of intro material BEFORE the first downbeat to include
+    as additional chunks at the same bar grid (see `prechop_stem`).
+    Records `musical_bar_1_chunk_index` in the manifest so loaders can
+    distinguish intro chunks from main-beat chunks.
+
+    `pad_pre_bars` / `pad_post_bars`: split-control padding (default to
+    `pad_bars` for back-compat). Set `pad_pre_bars=0` to make WAV frame 0
+    of every chunk land on bar 1 of that chunk — eliminates leading-silence
+    artifacts from the loader.
 
     Returns the path to `prechop_manifest.json`.
     """
     skip_set = set(skip_stems)
+    n_pre_chunks = pre_bars // bars  # chunks before bar 1 (timeline-leading)
+    musical_bar_1_chunk_index = n_pre_chunks + 1  # 1-indexed
+    resolved_pre = pad_bars if pad_pre_bars is None else pad_pre_bars
+    resolved_post = pad_bars if pad_post_bars is None else pad_post_bars
     summary: dict = {
         "bpm": float(bpm),
         "bars": int(bars),
         "pad_bars": int(pad_bars),
+        "pad_pre_bars": int(resolved_pre),
+        "pad_post_bars": int(resolved_post),
         "pad_last": bool(pad_last),
         "beats_per_bar": int(beats_per_bar),
+        "first_downbeat_sec": float(first_downbeat_sec),
+        "pre_bars": int(pre_bars),
+        "musical_bar_1_chunk_index": int(musical_bar_1_chunk_index),
         "stems": {},
     }
 
@@ -250,6 +346,10 @@ def prechop(
             pad_last=pad_last,
             beats_per_bar=beats_per_bar,
             write_sidecars=write_sidecars,
+            first_downbeat_sec=first_downbeat_sec,
+            pre_bars=pre_bars,
+            pad_pre_bars=pad_pre_bars,
+            pad_post_bars=pad_post_bars,
         )
         summary["stems"][stem_name] = {
             "dir": f"{stem_name}_prechop",

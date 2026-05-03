@@ -77,14 +77,10 @@ stemforge split track.mp3
 stemforge split track.flac
 ```
 
-**Backends:**
+**Backend:**
 
-| Backend | Speed | Setup |
-|---------|-------|-------|
-| `demucs` (default) | ~8s per min of audio | None — works offline |
-| `modal` | ~1s per min of audio | `pip install modal` then `modal setup` |
-| `lalal` | ~5s per min | Set `LALAL_LICENSE_KEY` env var |
-| `musicai` | ~10s per min | Set `MUSIC_AI_API_KEY` env var |
+StemForge uses [Demucs](https://github.com/facebookresearch/demucs) locally
+(~8s per minute of audio on Apple Silicon, no network or credits required).
 
 ### `stemforge forge` — Split + Curate in one step
 

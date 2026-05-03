@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 800" font-family="Inter, system-ui, sans-serif" text-rendering="optimizeLegibility">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3a85ff"/>
+    </marker>
+    <marker id="arrow-warn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#e85d3a"/>
+    </marker>
+    <style>
+      .title       { font-size: 28px; font-weight: 600; fill: #1a1a1a; }
+      .subhead     { font-size: 14px; fill: #666666; }
+      .col-label   { font-size: 12px; fill: #666666; letter-spacing: 0.5px; }
+      .step-num    { font-size: 24px; font-weight: 700; fill: #3a85ff; }
+      .box-title   { font-size: 14px; font-weight: 600; fill: #1a1a1a; }
+      .box-sub     { font-size: 12px; fill: #666666; }
+      .body        { font-size: 13px; fill: #1a1a1a; }
+      .mono        { font-family: "IBM Plex Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
+      .code-sm     { font-family: "IBM Plex Mono", "JetBrains Mono", Menlo, Consolas, monospace; font-size: 12px; fill: #1a1a1a; }
+      .code-accent { font-family: "IBM Plex Mono", "JetBrains Mono", Menlo, Consolas, monospace; font-size: 13px; fill: #3a85ff; font-weight: 600; }
+      .code-warn   { font-family: "IBM Plex Mono", "JetBrains Mono", Menlo, Consolas, monospace; font-size: 12px; fill: #e85d3a; font-weight: 600; }
+      .code-ok     { font-family: "IBM Plex Mono", "JetBrains Mono", Menlo, Consolas, monospace; font-size: 12px; fill: #3aaa6e; font-weight: 600; }
+      .annot-warn  { font-family: Inter, system-ui, sans-serif; font-size: 13px; fill: #e85d3a; font-weight: 500; }
+      .annot-ok    { font-family: Inter, system-ui, sans-serif; font-size: 13px; fill: #3aaa6e; font-weight: 500; }
+      .input-box   { fill: #fafaf7; stroke: #1a1a1a; stroke-width: 1.5; }
+      .stage-box   { fill: #dbeaff; stroke: #3a85ff; stroke-width: 1.5; }
+      .warn-box    { fill: #ffe5dc; stroke: #e85d3a; stroke-width: 1.5; }
+      .ok-box      { fill: #dcf2e4; stroke: #3aaa6e; stroke-width: 1.5; }
+    </style>
+  </defs>
+
+  <rect width="1400" height="800" fill="#fafaf7"/>
+
+  <text x="48" y="50" class="title">arrangement-load invariants</text>
+  <text x="48" y="74" class="subhead">what <tspan class="mono">sf_arrangement_loader.js</tspan> does, in order — and the lom gotchas that took weeks to find.</text>
+
+  <text x="48" y="108" class="col-label">step-by-step flow</text>
+  <text x="900" y="108" class="col-label">footguns (warn) + invariants (ok)</text>
+
+  <!-- Step 1: read manifest -->
+  <g transform="translate(48, 130)">
+    <rect width="800" height="80" rx="10" class="input-box"/>
+    <text x="20" y="32" class="step-num">1</text>
+    <text x="60" y="30" class="box-title">read prechop_manifest.json</text>
+    <text x="60" y="50" class="box-sub">walk the json + parse top-level + per-stem chunks</text>
+    <text x="60" y="68" class="code-sm">{ bpm, first_downbeat_sec, bars, pad_pre_bars, pad_post_bars, beats_per_bar, stems: {...} }</text>
+  </g>
+
+  <!-- Step 2: tempo -->
+  <g transform="translate(48, 222)">
+    <rect width="800" height="80" rx="10" class="stage-box"/>
+    <text x="20" y="32" class="step-num">2</text>
+    <text x="60" y="30" class="box-title">live_set.tempo = manifest.bpm</text>
+    <text x="60" y="50" class="box-sub">must be set BEFORE clip creation — order matters</text>
+    <text x="60" y="68" class="code-accent">songApi.set("tempo", bpm)</text>
+  </g>
+
+  <!-- Step 3: per-chunk loop -->
+  <g transform="translate(48, 314)">
+    <rect width="800" height="120" rx="10" class="input-box"/>
+    <text x="20" y="32" class="step-num">3</text>
+    <text x="60" y="30" class="box-title">for each chunk in timeline order:</text>
+    <text x="60" y="48" class="box-sub">place clip at startBeat = i × bars × beats_per_bar</text>
+    <text x="60" y="72" class="code-accent">trackApi.call("create_audio_clip", absWavPath, startBeat)</text>
+    <text x="60" y="92" class="code-sm">→ pre-chunks come first when pre_bars &gt; 0;</text>
+    <text x="60" y="108" class="code-sm">  chunk_index = timeline_index + 1 (1-based)</text>
+  </g>
+
+  <!-- Step 4: per-clip config -->
+  <g transform="translate(48, 446)">
+    <rect width="800" height="184" rx="10" class="ok-box"/>
+    <text x="20" y="32" class="step-num">4</text>
+    <text x="60" y="30" class="box-title">configure clip — order matters</text>
+    <text x="60" y="48" class="box-sub">all markers in seconds (warping=0 mode)</text>
+    <text x="60" y="74" class="code-ok">clip.set("warping", 0)</text>
+    <text x="60" y="92" class="code-sm">clip.set("start_marker", loop_start_sec)</text>
+    <text x="60" y="108" class="code-sm">clip.set("end_marker",   loop_end_sec)</text>
+    <text x="60" y="124" class="code-sm">clip.set("loop_start",   loop_start_sec)</text>
+    <text x="60" y="140" class="code-sm">clip.set("loop_end",     loop_end_sec)</text>
+    <text x="60" y="156" class="code-sm">clip.set("looping", 1)</text>
+    <text x="60" y="172" class="code-accent">clip.set("length", bars × beats_per_bar)</text>
+  </g>
+
+  <!-- Step 5: result -->
+  <g transform="translate(48, 642)">
+    <rect width="800" height="100" rx="10" class="ok-box"/>
+    <text x="20" y="32" class="step-num">5</text>
+    <text x="60" y="30" class="box-title">result: chunks tile timeline at correct beat positions</text>
+    <text x="60" y="50" class="annot-ok">✓ project tempo = manifest bpm  ✓ each chunk's loop region plays its 4 bars</text>
+    <text x="60" y="68" class="annot-ok">✓ pad_pre_bars=0 invariant: wav frame 0 IS bar 1 — start_marker = 0 → no snap risk</text>
+    <text x="60" y="86" class="annot-ok">✓ chunk seams align (post-pad of N overlaps pre-pad of N+1, but only when pad &gt; 0)</text>
+  </g>
+
+  <!-- ====================================================== -->
+  <!-- RIGHT: footguns                                          -->
+  <!-- ====================================================== -->
+
+  <g transform="translate(880, 130)">
+    <rect width="492" height="74" rx="10" class="warn-box"/>
+    <text x="16" y="24" class="annot-warn">⚠ warp_bpm is read-only</text>
+    <text x="16" y="44" class="box-sub">'Clip' object has no attribute 'warp_bpm' — don't try to set it.</text>
+    <text x="16" y="62" class="code-warn">use live_set.tempo + clip.warping=0 instead.</text>
+  </g>
+
+  <g transform="translate(880, 218)">
+    <rect width="492" height="74" rx="10" class="warn-box"/>
+    <text x="16" y="24" class="annot-warn">⚠ end_time set returns "Invalid syntax"</text>
+    <text x="16" y="44" class="box-sub">arrangement clip endpoint isn't directly writable.</text>
+    <text x="16" y="62" class="code-warn">use clip.set("length", lengthBeats) instead — beats not seconds.</text>
+  </g>
+
+  <g transform="translate(880, 306)">
+    <rect width="492" height="100" rx="10" class="warn-box"/>
+    <text x="16" y="24" class="annot-warn">⚠ marker units flip with warping</text>
+    <text x="16" y="44" class="box-sub">start_marker / end_marker / loop_* are SECONDS when warping=0,</text>
+    <text x="16" y="62" class="box-sub">BEATS when warping=1. pass converted beat values into an unwarped</text>
+    <text x="16" y="80" class="box-sub">clip and live reads them as seconds — clamps anywhere.</text>
+    <text x="16" y="96" class="code-warn">we use warping=0 throughout → all markers in seconds.</text>
+  </g>
+
+  <g transform="translate(880, 420)">
+    <rect width="492" height="100" rx="10" class="warn-box"/>
+    <text x="16" y="24" class="annot-warn">⚠ ableton's 4/3 auto-warp trap</text>
+    <text x="16" y="44" class="box-sub">when a clip is dragged in manually, ableton's auto-warp guesses</text>
+    <text x="16" y="62" class="box-sub">tempo by analyzing transients. on hip-hop it locks 4/3 the truth</text>
+    <text x="16" y="80" class="box-sub">(85.11 → 113.48, 89.88 → 119.84). same family of error librosa makes.</text>
+    <text x="16" y="96" class="code-warn">warping=0 sidesteps this entirely.</text>
+  </g>
+
+  <g transform="translate(880, 534)">
+    <rect width="492" height="100" rx="10" class="warn-box"/>
+    <text x="16" y="24" class="annot-warn">⚠ ableton timeline display drift</text>
+    <text x="16" y="44" class="box-sub">manifest first_downbeat_sec=22.59 → ableton shows ~22.56 in</text>
+    <text x="16" y="62" class="box-sub">arrangement-view timeline. ~30ms display lie. audio is correct.</text>
+    <text x="16" y="80" class="box-sub">don't trust the readout — trust the played audio.</text>
+    <text x="16" y="96" class="code-warn">noted in feature-backlog; investigate before locator-anchor ships.</text>
+  </g>
+
+  <g transform="translate(880, 648)">
+    <rect width="492" height="94" rx="10" class="ok-box"/>
+    <text x="16" y="24" class="annot-ok">✓ recovery: probe + re-anchor</text>
+    <text x="16" y="42" class="box-sub">when chunks look misaligned in arrangement view:</text>
+    <text x="16" y="60" class="code-sm">1. probe_loop.py at candidate bpm + first_downbeat</text>
+    <text x="16" y="76" class="code-sm">2. iterate until clean loop + kick on bar 1</text>
+    <text x="16" y="92" class="code-accent">3. stemforge re-anchor &lt;dir&gt; --bpm X --first-downbeat Y  (~2s)</text>
+  </g>
+
+  <!-- arrows between steps -->
+  <path d="M 448 210 L 448 222" stroke="#3a85ff" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 448 302 L 448 314" stroke="#3a85ff" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 448 434 L 448 446" stroke="#3a85ff" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 448 630 L 448 642" stroke="#3a85ff" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+</svg>
