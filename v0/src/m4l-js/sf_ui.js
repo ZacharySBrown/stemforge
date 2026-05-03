@@ -751,7 +751,12 @@ function drawRightButton(state) {
     const bw = 88;
     const bh = 32;
     const bx = canvasW - bw - 8;
-    const by = 75 - 16;     // centered around y=75 per spec
+    // Primary anchored at center y=55 (was 75): shifts the whole right-column
+    // stack up 20px so the bottom secondary (LOAD/ANCH row) clears Ableton's
+    // device-strip chrome instead of clipping at the canvas edge. Layout:
+    //   primary 39-71 | BOUNCE 75-91 | EXPORT 94-110 | LOAD|ANCH 113-129
+    // → 20px breathing room at the bottom of the 149px canvas.
+    const by = 55 - 16;
 
     let label = "FORGE";
     let fillRgb = COL.violet;
