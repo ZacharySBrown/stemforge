@@ -316,7 +316,11 @@ def prechop(
     """
     skip_set = set(skip_stems)
     n_pre_chunks = pre_bars // bars  # chunks before bar 1 (timeline-leading)
-    musical_bar_1_chunk_index = n_pre_chunks + 1  # 1-indexed
+    # 0-indexed: chunks[0..n_pre_chunks-1] are intro, chunks[n_pre_chunks]
+    # is the first chunk that starts at first_downbeat_sec (i.e., bar 1).
+    # Earlier versions stored this 1-indexed by accident; the only consumer
+    # (sf_locator_anchor.js) treats it 0-indexed.
+    musical_bar_1_chunk_index = n_pre_chunks
     resolved_pre = pad_bars if pad_pre_bars is None else pad_pre_bars
     resolved_post = pad_bars if pad_post_bars is None else pad_post_bars
     summary: dict = {
