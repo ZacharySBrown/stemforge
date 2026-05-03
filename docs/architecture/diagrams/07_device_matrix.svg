@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" font-family="Inter, system-ui, sans-serif" text-rendering="optimizeLegibility">
+  <defs>
+    <style>
+      .title       { font-size: 28px; font-weight: 600; fill: #1a1a1a; }
+      .subhead     { font-size: 14px; fill: #666666; }
+      .col-label   { font-size: 13px; font-weight: 600; fill: #1a1a1a; letter-spacing: 0.3px; }
+      .row-label   { font-size: 14px; font-weight: 600; fill: #1a1a1a; }
+      .row-sub     { font-size: 11px; fill: #666666; }
+      .cell-status { font-size: 12px; font-weight: 600; }
+      .cell-asserts{ font-size: 11px; fill: #1a1a1a; }
+      .cell-muted  { font-size: 11px; fill: #666666; font-style: italic; }
+      .body        { font-size: 13px; fill: #1a1a1a; }
+      .mono        { font-family: "IBM Plex Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
+      .code-sm     { font-family: "IBM Plex Mono", "JetBrains Mono", Menlo, Consolas, monospace; font-size: 12px; fill: #1a1a1a; }
+      .code-muted  { font-family: "IBM Plex Mono", "JetBrains Mono", Menlo, Consolas, monospace; font-size: 11px; fill: #666666; }
+      .legend-text { font-size: 12px; fill: #1a1a1a; }
+      .ok-fill     { fill: #dcf2e4; stroke: #3aaa6e; stroke-width: 1.5; }
+      .accent-fill { fill: #dbeaff; stroke: #3a85ff; stroke-width: 1.5; }
+      .panel-fill  { fill: #f0efe9; stroke: #999999; stroke-width: 1.5; stroke-dasharray: 4 3; }
+      .warn-fill   { fill: #ffe5dc; stroke: #e85d3a; stroke-width: 1.5; }
+      .header-fill { fill: #1a1a1a; }
+      .corner-fill { fill: #fafaf7; stroke: #1a1a1a; stroke-width: 1; }
+    </style>
+  </defs>
+
+  <rect width="1400" height="900" fill="#fafaf7"/>
+
+  <text x="48" y="50" class="title">device × export-flavor matrix</text>
+  <text x="48" y="74" class="subhead">3 devices × 4 flavors = 12 cells. cell color = ship status.</text>
+
+  <!-- Matrix dimensions -->
+  <!-- 4 column headers (a/b/c/d), each 280px wide -->
+  <!-- 3 row headers (devices), each 200px tall -->
+  <!-- corner cell 200px wide -->
+  <!-- start at x=48 y=120 -->
+
+  <!-- corner cell -->
+  <rect x="48" y="120" width="200" height="60" class="corner-fill"/>
+  <text x="58" y="142" class="col-label" fill="#666666">device</text>
+  <text x="58" y="160" class="col-label" fill="#666666">↘ export flavor</text>
+
+  <!-- column headers -->
+  <g>
+    <rect x="248" y="120" width="288" height="60" class="header-fill"/>
+    <text x="262" y="144" class="col-label" fill="#fafaf7">(a) session export</text>
+    <text x="262" y="166" class="row-sub" fill="#dbeaff">curated bars + oneshots in clip slots</text>
+  </g>
+  <g>
+    <rect x="536" y="120" width="288" height="60" class="header-fill"/>
+    <text x="550" y="144" class="col-label" fill="#fafaf7">(b) session bounce</text>
+    <text x="550" y="166" class="row-sub" fill="#dbeaff">bounced wavs with manifests</text>
+  </g>
+  <g>
+    <rect x="824" y="120" width="288" height="60" class="header-fill"/>
+    <text x="838" y="144" class="col-label" fill="#fafaf7">(c) arrangement + locators</text>
+    <text x="838" y="166" class="row-sub" fill="#dbeaff">song-mode .ppak, scenes from locators</text>
+  </g>
+  <g>
+    <rect x="1112" y="120" width="240" height="60" class="header-fill"/>
+    <text x="1124" y="144" class="col-label" fill="#fafaf7">(d) arrangement bounce</text>
+    <text x="1124" y="166" class="row-sub" fill="#dbeaff">— not yet implemented —</text>
+  </g>
+
+  <!-- Row 1: EP-133 -->
+  <rect x="48" y="180" width="200" height="160" class="corner-fill"/>
+  <text x="58" y="208" class="row-label">ep-133 k.o. ii</text>
+  <text x="58" y="226" class="row-sub mono">stemforge.exporters.ep133*</text>
+  <text x="58" y="244" class="row-sub">the shipped target.</text>
+  <text x="58" y="262" class="row-sub">batch + song-mode .ppak</text>
+  <text x="58" y="280" class="row-sub">via usb-midi sysex.</text>
+  <text x="58" y="306" class="row-sub" fill="#3aaa6e">🥊 production ready</text>
+
+  <rect x="248" y="180" width="288" height="160" class="ok-fill"/>
+  <text x="262" y="206" class="cell-status" fill="#3aaa6e">SHIPPED</text>
+  <text x="262" y="226" class="cell-asserts">• 4×12 pad layout</text>
+  <text x="262" y="244" class="cell-asserts">• .ppak byte-equal to golden</text>
+  <text x="262" y="262" class="cell-asserts">• sidecars present (per-pad)</text>
+  <text x="262" y="280" class="cell-asserts">• bpm in pad metadata</text>
+  <text x="262" y="306" class="cell-muted">implemented + tests passing</text>
+
+  <rect x="536" y="180" width="288" height="160" class="accent-fill"/>
+  <text x="550" y="206" class="cell-status" fill="#3a85ff">SHIPPED — golden pending</text>
+  <text x="550" y="226" class="cell-asserts">• bounced wavs A01..D12</text>
+  <text x="550" y="244" class="cell-asserts">• correct trim from clip</text>
+  <text x="550" y="262" class="cell-asserts">• sidecars match BatchManifest</text>
+  <text x="550" y="280" class="cell-asserts">• .ppak round-trips</text>
+  <text x="550" y="306" class="cell-muted">a812a05 / 5506a5b — needs golden fixture</text>
+
+  <rect x="824" y="180" width="288" height="160" class="accent-fill"/>
+  <text x="838" y="206" class="cell-status" fill="#3a85ff">SHIPPED — partial tests</text>
+  <text x="838" y="226" class="cell-asserts">• scenes count = locator count</text>
+  <text x="838" y="244" class="cell-asserts">• scene→pad map per song_resolver</text>
+  <text x="838" y="262" class="cell-asserts">• arrangement_length_sec honored</text>
+  <text x="838" y="280" class="cell-asserts">• time signature carried</text>
+  <text x="838" y="306" class="cell-muted">song_synthesizer + ppak_writer</text>
+
+  <rect x="1112" y="180" width="240" height="160" class="warn-fill"/>
+  <text x="1124" y="206" class="cell-status" fill="#e85d3a">NOT IMPLEMENTED</text>
+  <text x="1124" y="226" class="cell-asserts">test file scaffolded:</text>
+  <text x="1124" y="244" class="code-sm">@pytest.mark.skip</text>
+  <text x="1124" y="262" class="cell-asserts">expected fixtures stubbed</text>
+  <text x="1124" y="290" class="cell-muted">remove skip when done</text>
+
+  <!-- Row 2: SPD-SX Pro -->
+  <rect x="48" y="340" width="200" height="160" class="corner-fill"/>
+  <text x="58" y="368" class="row-label">spd-sx pro</text>
+  <text x="58" y="386" class="row-sub">roland — wfm kit format</text>
+  <text x="58" y="404" class="row-sub">44.1khz / 24-bit / stereo</text>
+  <text x="58" y="430" class="row-sub" fill="#666666">scaffold only</text>
+
+  <rect x="248" y="340" width="288" height="160" class="panel-fill"/>
+  <text x="262" y="366" class="cell-status" fill="#666666">SCAFFOLD</text>
+  <text x="262" y="386" class="cell-asserts">• wfm kit file produced</text>
+  <text x="262" y="404" class="cell-asserts">• wavs at device spec</text>
+  <text x="262" y="422" class="cell-asserts">• pad layout per device profile</text>
+  <text x="262" y="448" class="cell-muted">DeviceProfile.naming_strategy</text>
+
+  <rect x="536" y="340" width="288" height="160" class="panel-fill"/>
+  <text x="550" y="366" class="cell-status" fill="#666666">SCAFFOLD</text>
+  <text x="550" y="386" class="cell-asserts">same as (a) but driven by</text>
+  <text x="550" y="404" class="cell-asserts">bounced clips not curated bars</text>
+  <text x="550" y="430" class="cell-muted">depends on (a) implementation</text>
+
+  <rect x="824" y="340" width="288" height="160" class="panel-fill"/>
+  <text x="838" y="366" class="cell-status" fill="#666666">RESEARCH NEEDED</text>
+  <text x="838" y="386" class="cell-asserts">locator-derived patterns/kits</text>
+  <text x="838" y="404" class="cell-asserts">depends on spd-sx pro's</text>
+  <text x="838" y="422" class="cell-asserts">native arrangement format</text>
+  <text x="838" y="448" class="cell-muted">~1 day reverse-engineering</text>
+
+  <rect x="1112" y="340" width="240" height="160" class="panel-fill"/>
+  <text x="1124" y="366" class="cell-status" fill="#666666">SCAFFOLD</text>
+  <text x="1124" y="386" class="code-sm">@pytest.mark.skip</text>
+  <text x="1124" y="412" class="cell-muted">blocked on (b) + (c)</text>
+
+  <!-- Row 3: Koala -->
+  <rect x="48" y="500" width="200" height="160" class="corner-fill"/>
+  <text x="58" y="528" class="row-label">koala sampler</text>
+  <text x="58" y="546" class="row-sub">ios — flat folder + json</text>
+  <text x="58" y="564" class="row-sub">44.1khz / 16-bit</text>
+  <text x="58" y="590" class="row-sub" fill="#666666">scaffold only</text>
+
+  <rect x="248" y="500" width="288" height="160" class="panel-fill"/>
+  <text x="262" y="526" class="cell-status" fill="#666666">SCAFFOLD</text>
+  <text x="262" y="546" class="cell-asserts">• flat .koala-importable folder</text>
+  <text x="262" y="564" class="cell-asserts">• wavs at 44.1k / 16-bit</text>
+  <text x="262" y="582" class="cell-asserts">• koala.json with bank/pad</text>
+  <text x="262" y="608" class="cell-muted">simpler than ep-133 (no project file)</text>
+
+  <rect x="536" y="500" width="288" height="160" class="panel-fill"/>
+  <text x="550" y="526" class="cell-status" fill="#666666">SCAFFOLD</text>
+  <text x="550" y="546" class="cell-asserts">same as (a) but bounced</text>
+  <text x="550" y="590" class="cell-muted">depends on (a)</text>
+
+  <rect x="824" y="500" width="288" height="160" class="panel-fill"/>
+  <text x="838" y="526" class="cell-status" fill="#666666">RESEARCH NEEDED</text>
+  <text x="838" y="546" class="cell-asserts">koala has no native arrangement</text>
+  <text x="838" y="564" class="cell-asserts">format. likely flatten-to-banks.</text>
+  <text x="838" y="608" class="cell-muted">design call: drop or flatten?</text>
+
+  <rect x="1112" y="500" width="240" height="160" class="panel-fill"/>
+  <text x="1124" y="526" class="cell-status" fill="#666666">SCAFFOLD</text>
+  <text x="1124" y="546" class="code-sm">@pytest.mark.skip</text>
+  <text x="1124" y="572" class="cell-muted">blocked on (b) + (c)</text>
+
+  <!-- DeviceProfile -->
+  <g transform="translate(48, 700)">
+    <rect width="1304" height="170" rx="12" fill="#fafaf7" stroke="#1a1a1a" stroke-width="1.5"/>
+    <text x="20" y="28" class="row-label">planned: DeviceProfile dataclass</text>
+    <text x="20" y="48" class="row-sub">one DeviceProfile + four golden fixture dirs = full new device. blocking item: this abstraction doesn't exist yet.</text>
+
+    <text x="20" y="80" class="code-sm">@dataclass class DeviceProfile:</text>
+    <text x="40" y="98" class="code-sm">name: str                    # "ep133", "spdsx", "koala"</text>
+    <text x="40" y="114" class="code-sm">sample_rate: int             # 44100 / 48000</text>
+    <text x="40" y="130" class="code-sm">bit_depth: int               # 16 / 24</text>
+    <text x="40" y="146" class="code-sm">channels: int                # 1 mono / 2 stereo</text>
+
+    <text x="660" y="80" class="code-sm">max_duration_s: float        # per-pad limit</text>
+    <text x="660" y="98" class="code-sm">memory_bytes: int | None     # None = unbounded</text>
+    <text x="660" y="114" class="code-sm">naming_strategy: Callable    # filename rules</text>
+    <text x="660" y="130" class="code-sm">writes_project_file: bool    # ep133=True (.ppak), spdsx=False, koala=False</text>
+    <text x="660" y="146" class="code-sm code-muted">finalize: Callable           # per-device project synthesis</text>
+  </g>
+
+  <!-- Legend -->
+  <g transform="translate(48, 882)">
+    <rect x="0" y="-12" width="14" height="14" class="ok-fill"/>
+    <text x="20" y="0" class="legend-text">shipped + tests passing</text>
+    <rect x="200" y="-12" width="14" height="14" class="accent-fill"/>
+    <text x="220" y="0" class="legend-text">shipped, golden fixture pending</text>
+    <rect x="500" y="-12" width="14" height="14" class="panel-fill"/>
+    <text x="520" y="0" class="legend-text">scaffold only (skipped tests)</text>
+    <rect x="780" y="-12" width="14" height="14" class="warn-fill"/>
+    <text x="800" y="0" class="legend-text">not yet implemented</text>
+  </g>
+</svg>
