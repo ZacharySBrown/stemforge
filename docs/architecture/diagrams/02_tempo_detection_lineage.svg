@@ -1,0 +1,162 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 720" text-rendering="optimizeLegibility" font-family="Inter, system-ui, -apple-system, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1a1a1a"/>
+    </marker>
+    <marker id="arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#3a85ff"/>
+    </marker>
+    <marker id="arrow-warn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#e85d3a"/>
+    </marker>
+    <marker id="arrow-muted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#666666"/>
+    </marker>
+  </defs>
+
+  <!-- background -->
+  <rect width="1400" height="720" fill="#fafaf7"/>
+
+  <!-- title + caption -->
+  <text x="40" y="50" font-size="28" font-weight="600" fill="#1a1a1a">tempo detection lineage</text>
+  <text x="40" y="76" font-size="14" fill="#666666">five detection paths feed one reconciler. bar-period beats beat-ibi by ~1%; ratio tiebreaker stays gated.</text>
+
+  <!-- column headers -->
+  <text x="80" y="120" font-size="13" font-weight="600" fill="#666666">inputs</text>
+  <text x="380" y="120" font-size="13" font-weight="600" fill="#666666">detection paths</text>
+  <text x="980" y="120" font-size="13" font-weight="600" fill="#666666">reconciler output</text>
+
+  <!-- ───────────── inputs ───────────── -->
+  <rect x="40" y="160" width="220" height="64" rx="12" fill="#f0efe9" stroke="#1a1a1a" stroke-width="1.5"/>
+  <text x="60" y="188" font-size="14" font-weight="600" fill="#1a1a1a">full mix wav</text>
+  <text x="60" y="208" font-size="12" fill="#666666">source audio (any sample rate)</text>
+
+  <rect x="40" y="248" width="220" height="64" rx="12" fill="#f0efe9" stroke="#1a1a1a" stroke-width="1.5"/>
+  <text x="60" y="276" font-size="14" font-weight="600" fill="#1a1a1a">drums stem wav</text>
+  <text x="60" y="296" font-size="12" fill="#666666">demucs output, peak-normalized</text>
+
+  <!-- override sidecar (input layer) -->
+  <rect x="40" y="370" width="220" height="84" rx="12" fill="#dbeaff" stroke="#3a85ff" stroke-width="1.5"/>
+  <text x="60" y="396" font-size="13" font-weight="600" fill="#1a1a1a">user override</text>
+  <text x="60" y="416" font-size="12" font-family="IBM Plex Mono, Menlo, monospace" fill="#1a1a1a">--bpm float</text>
+  <text x="60" y="434" font-size="12" font-family="IBM Plex Mono, Menlo, monospace" fill="#1a1a1a">--first-downbeat float</text>
+  <text x="60" y="450" font-size="11" fill="#666666" font-style="italic">cli.py split / re-anchor</text>
+
+  <!-- override note -->
+  <text x="40" y="488" font-size="12" fill="#3a85ff">override does not skip the reconciler —</text>
+  <text x="40" y="504" font-size="12" fill="#3a85ff">detector reading is preserved in `warning`</text>
+  <text x="40" y="520" font-size="12" fill="#3a85ff">as a labeled example for future fixes.</text>
+
+  <!-- ───────────── detection paths ───────────── -->
+
+  <!-- 1. librosa fallback -->
+  <rect x="320" y="148" width="320" height="84" rx="12" fill="#fafaf7" stroke="#666666" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <text x="340" y="172" font-size="13" font-weight="600" fill="#666666">1. librosa beat_track  (legacy, fallback)</text>
+  <text x="340" y="192" font-size="12" font-family="IBM Plex Mono, Menlo, monospace" fill="#1a1a1a">bpm = 60 / median(diff(beats))</text>
+  <text x="340" y="210" font-size="12" fill="#666666">drum-band biased; locked 120 on definition</text>
+  <text x="340" y="226" font-size="12" fill="#666666">no downbeats — used only when beat-this missing</text>
+
+  <!-- 2. beat-this beat-ibi -->
+  <rect x="320" y="252" width="320" height="84" rx="12" fill="#fafaf7" stroke="#1a1a1a" stroke-width="1.5"/>
+  <text x="340" y="276" font-size="13" font-weight="600" fill="#1a1a1a">2. beat-this  (beat-ibi median)</text>
+  <text x="340" y="296" font-size="12" font-family="IBM Plex Mono, Menlo, monospace" fill="#1a1a1a">cpjku ismir 2024, dbn=false</text>
+  <text x="340" y="314" font-size="12" fill="#666666">returns beats[] + downbeats[]</text>
+  <text x="340" y="330" font-size="12" fill="#666666">~0.5–1.2% high; jitter biases the median</text>
+
+  <!-- 3. bar-period BPM -->
+  <rect x="320" y="356" width="320" height="100" rx="12" fill="#dcf2e4" stroke="#3aaa6e" stroke-width="2"/>
+  <text x="340" y="380" font-size="13" font-weight="600" fill="#1a1a1a">3. bar-period bpm  (default path)</text>
+  <text x="340" y="400" font-size="12" font-family="IBM Plex Mono, Menlo, monospace" fill="#1a1a1a">60 × beats_per_bar / median(diff(downbeats[1:]))</text>
+  <text x="340" y="418" font-size="12" fill="#1a1a1a">skip-first downbeat (phantoms)</text>
+  <text x="340" y="434" font-size="12" fill="#1a1a1a">filter ibis within ±20% of rough median</text>
+  <text x="340" y="450" font-size="11" fill="#3aaa6e" font-style="italic">closes ooh la la 85.71→85.106 (truth 85.11)</text>
+
+  <!-- 4. ratio reconciliation -->
+  <rect x="320" y="476" width="320" height="100" rx="12" fill="#fafaf7" stroke="#1a1a1a" stroke-width="1.5"/>
+  <text x="340" y="500" font-size="13" font-weight="600" fill="#1a1a1a">4. factor-ratio check  (mix vs drums)</text>
+  <text x="340" y="520" font-size="12" font-family="IBM Plex Mono, Menlo, monospace" fill="#1a1a1a">|mix - drums| / max &lt; 0.5%  →  high conf</text>
+  <text x="340" y="538" font-size="12" font-family="IBM Plex Mono, Menlo, monospace" fill="#1a1a1a">ratio in {0.5, .667, .75, 1.333, 1.5, 2.0} ±1%</text>
+  <text x="340" y="554" font-size="12" fill="#666666">half / double / triplet / dotted disagreement</text>
+  <text x="340" y="570" font-size="11" fill="#666666" font-style="italic">tempo_reconciler._is_suspicious_ratio</text>
+
+  <!-- 5. kick tiebreaker -->
+  <rect x="320" y="596" width="320" height="92" rx="12" fill="#ffe5dc" stroke="#e85d3a" stroke-width="1.5"/>
+  <text x="340" y="620" font-size="13" font-weight="600" fill="#1a1a1a">5. larsnet kick tiebreaker  (gated)</text>
+  <text x="340" y="640" font-size="12" fill="#1a1a1a">isolate kick → beat-this on kick stem</text>
+  <text x="340" y="656" font-size="12" fill="#1a1a1a">winner = whichever bpm is closest to kick</text>
+  <text x="340" y="672" font-size="11" fill="#e85d3a" font-style="italic">~10s cost; fires only on suspicious ratio</text>
+
+  <!-- arrows: paths into reconciler box -->
+  <!-- mix wav into path 2,3,4 -->
+  <path d="M260 192 C 290 192, 300 192, 320 192" fill="none" stroke="#1a1a1a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M260 192 C 290 200, 300 270, 320 290" fill="none" stroke="#1a1a1a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M260 192 C 290 220, 300 380, 320 400" fill="none" stroke="#3aaa6e" stroke-width="2" marker-end="url(#arrow-accent)"/>
+
+  <!-- drums into path 2,3,4,5 -->
+  <path d="M260 280 C 290 270, 300 270, 320 290" fill="none" stroke="#1a1a1a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M260 280 C 290 320, 300 390, 320 410" fill="none" stroke="#3aaa6e" stroke-width="2" marker-end="url(#arrow-accent)"/>
+  <path d="M260 280 C 290 380, 300 510, 320 530" fill="none" stroke="#1a1a1a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M260 280 C 290 480, 300 620, 320 640" fill="none" stroke="#e85d3a" stroke-width="1.5" marker-end="url(#arrow-warn)"/>
+
+  <!-- ───────────── reconciler output ───────────── -->
+
+  <!-- the reconciler decision node -->
+  <rect x="700" y="280" width="220" height="160" rx="12" fill="#dbeaff" stroke="#3a85ff" stroke-width="2"/>
+  <text x="720" y="306" font-size="14" font-weight="600" fill="#1a1a1a">reconcile_tempo()</text>
+  <text x="720" y="328" font-size="12" fill="#1a1a1a">if mix == drums (≤0.5%)</text>
+  <text x="720" y="344" font-size="11" fill="#3aaa6e">  → high confidence</text>
+  <text x="720" y="364" font-size="12" fill="#1a1a1a">elif suspicious ratio</text>
+  <text x="720" y="380" font-size="11" fill="#e85d3a">  → fire kick tiebreaker</text>
+  <text x="720" y="400" font-size="12" fill="#1a1a1a">else fuzzy disagreement</text>
+  <text x="720" y="416" font-size="11" fill="#666666">  → prefer mix, low conf</text>
+  <text x="720" y="432" font-size="11" fill="#666666" font-style="italic">single-source → medium</text>
+
+  <!-- arrows: paths into reconciler -->
+  <path d="M640 192 C 670 220, 680 290, 700 320" fill="none" stroke="#666666" stroke-width="1.5" stroke-dasharray="3 3" marker-end="url(#arrow-muted)"/>
+  <path d="M640 296 C 670 308, 680 320, 700 332" fill="none" stroke="#1a1a1a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M640 410 C 670 388, 680 366, 700 354" fill="none" stroke="#3aaa6e" stroke-width="2" marker-end="url(#arrow-accent)"/>
+  <path d="M640 526 C 670 488, 680 408, 700 386" fill="none" stroke="#1a1a1a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M640 642 C 670 540, 680 430, 700 408" fill="none" stroke="#e85d3a" stroke-width="1.5" marker-end="url(#arrow-warn)"/>
+
+  <!-- override path bypass arrow -->
+  <path d="M260 412 C 480 412, 520 412, 700 412" fill="none" stroke="#3a85ff" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow-accent)"/>
+  <text x="450" y="402" font-size="12" fill="#3a85ff" font-style="italic">override skips decision; bpm + first_downbeat win</text>
+
+  <!-- ───────────── ReconciledTempo dataclass ───────────── -->
+  <rect x="980" y="160" width="380" height="408" rx="12" fill="#fafaf7" stroke="#1a1a1a" stroke-width="2"/>
+  <text x="1000" y="188" font-size="14" font-weight="600" fill="#1a1a1a">ReconciledTempo</text>
+  <text x="1000" y="206" font-size="12" font-family="IBM Plex Mono, Menlo, monospace" fill="#1a1a1a">bpm: float</text>
+  <text x="1000" y="224" font-size="12" font-family="IBM Plex Mono, Menlo, monospace" fill="#1a1a1a">beat_times: ndarray</text>
+  <text x="1000" y="242" font-size="12" font-family="IBM Plex Mono, Menlo, monospace" fill="#1a1a1a">downbeat_times: ndarray</text>
+  <text x="1000" y="260" font-size="12" font-family="IBM Plex Mono, Menlo, monospace" fill="#1a1a1a">source: TempoSource</text>
+  <text x="1000" y="278" font-size="12" font-family="IBM Plex Mono, Menlo, monospace" fill="#1a1a1a">confidence: high|medium|low</text>
+  <text x="1000" y="296" font-size="12" font-family="IBM Plex Mono, Menlo, monospace" fill="#1a1a1a">all_estimates: list[TempoEstimate]</text>
+  <text x="1000" y="314" font-size="12" font-family="IBM Plex Mono, Menlo, monospace" fill="#1a1a1a">warning: str | None</text>
+
+  <line x1="1000" y1="332" x2="1340" y2="332" stroke="#e8e8e3" stroke-width="1"/>
+
+  <text x="1000" y="354" font-size="13" font-weight="600" fill="#666666">tempo source enum</text>
+  <text x="1000" y="372" font-size="12" font-family="IBM Plex Mono, Menlo, monospace" fill="#1a1a1a">beat-this:mix</text>
+  <text x="1000" y="388" font-size="12" font-family="IBM Plex Mono, Menlo, monospace" fill="#1a1a1a">beat-this:drums</text>
+  <text x="1000" y="404" font-size="12" font-family="IBM Plex Mono, Menlo, monospace" fill="#1a1a1a">beat-this:kick</text>
+  <text x="1000" y="420" font-size="12" font-family="IBM Plex Mono, Menlo, monospace" fill="#666666">librosa:mix  /  librosa:drums</text>
+  <text x="1000" y="436" font-size="12" font-family="IBM Plex Mono, Menlo, monospace" fill="#3a85ff">user-override</text>
+
+  <line x1="1000" y1="456" x2="1340" y2="456" stroke="#e8e8e3" stroke-width="1"/>
+
+  <text x="1000" y="478" font-size="13" font-weight="600" fill="#666666">manifest.TempoProvenance</text>
+  <text x="1000" y="496" font-size="12" fill="#1a1a1a">written into stems.json — every detector</text>
+  <text x="1000" y="512" font-size="12" fill="#1a1a1a">reading is kept, not just the winner.</text>
+  <text x="1000" y="530" font-size="11" fill="#3aaa6e" font-style="italic">→ each override = labeled example for</text>
+  <text x="1000" y="546" font-size="11" fill="#3aaa6e" font-style="italic">   future detector improvement.</text>
+
+  <!-- arrow reconciler → ReconciledTempo -->
+  <path d="M920 360 C 950 360, 960 360, 980 360" fill="none" stroke="#3a85ff" stroke-width="2" marker-end="url(#arrow-accent)"/>
+
+  <!-- ───────────── empirical evidence panel ───────────── -->
+  <rect x="700" y="600" width="660" height="92" rx="12" fill="#dcf2e4" stroke="#3aaa6e" stroke-width="1.5"/>
+  <text x="720" y="624" font-size="13" font-weight="600" fill="#1a1a1a">empirical results  (3 test tracks, 2026-05)</text>
+  <text x="720" y="644" font-size="12" font-family="IBM Plex Mono, Menlo, monospace" fill="#1a1a1a">ooh la la       beat-ibi 85.71  →  bar-period 85.106  (truth 85.11)</text>
+  <text x="720" y="660" font-size="12" font-family="IBM Plex Mono, Menlo, monospace" fill="#1a1a1a">definition      beat-ibi 90.91  →  bar-period 90.226  (truth 89.88)</text>
+  <text x="720" y="676" font-size="12" font-family="IBM Plex Mono, Menlo, monospace" fill="#e85d3a">factor-ratio tiebreaker:  0 firings — gate kept; deletable after 50 tracks if still 0</text>
+</svg>

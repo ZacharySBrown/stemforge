@@ -155,6 +155,83 @@ sj['stems'][*].beats_dir    = str(new_root / track / f'{stem}_beats')
 
 ---
 
+## Ableton-anchored auto-detection (the auto-detection ceiling closer)
+
+**Captured 2026-05-02** during the Ooh La La / Definition tempo-fix session.
+Auto-detection (beat-this + bar-period BPM + mode-walk first downbeat) gives
+a CORRECT BAR GRID, but the algorithm cannot tell which bar of the grid is
+musically bar 1 — that's a perceptual call only the user can make. The
+current workflow makes the user iterate `probe_loop.py` candidates to find
+the right `first_downbeat`, then `re-anchor` the forge in place. Iteration
+is fast (re-anchor is ~2s) but it's still N round-trips through Ableton.
+
+**Two Ableton-integrated affordances would close the gap:**
+
+1. **Anchor from a locator / warp marker.** User drops a locator (or warp
+   marker) at what they hear as the song's bar 1, then triggers an
+   "anchor here" command in the M4L device. The device reads the marker
+   position from the LOM, exports it to disk, and the Python side
+   re-anchors the forge to that exact source-time. Single click, no CLI.
+   Probably reuses sf_arrangement_loader's LOM access patterns.
+
+2. **Validate BPM from a dragged loop region.** User drags the loop region
+   to enclose a known-clean N-bar loop, triggers "verify BPM." The device
+   reads `loop_start` / `loop_end` (in seconds, with warping=0), computes
+   `60×4×N / (loop_end - loop_start)` for various N (in 1, 2, 4, 8, 16),
+   shows the candidate BPMs, and lets the user pick + re-anchor. Catches
+   the cases where bar-period detection lands ~1% off.
+
+Both build on the LOM access we already have. Polish needed: button on the
+device, status feedback, error handling for missing source file, etc.
+
+**Also worth flagging — Ableton timeline display drift.**
+Confirmed 2026-05-02: when first_downbeat in the manifest is 22.59s, Ableton's
+arrangement-view timeline shows the corresponding chunk start at ~22.56s.
+~30ms of display drift between our seconds-precise `start_marker` /
+`source_offset_sec` and what Ableton renders. Doesn't affect playback (clip
+content is correct, beats align with the project grid), but it's confusing
+for the manual fine-tune workflow because the user can't read off the same
+seconds value the manifest claims. Possible causes: Ableton rounding to its
+display granularity, latency from start_marker setting, our chunk's WAV
+header reporting durations a few samples shorter than expected. Investigate
+before shipping the locator-anchor feature so the user's eyeballed time
+matches what the device records.
+
+---
+
+## Trim-leading-silence preprocessor
+
+**Captured 2026-05-02.** When a source audio file has true silence at the
+start (e.g. studio recordings with cold-cut intros: Believer-class tracks),
+we currently still detect first_downbeat via kick onset analysis + override
+iteration. A simple `--trim-leading-silence-below DB` preprocessor would
+strip leading frames whose RMS is below threshold (e.g. -60 dB) from the
+source mix BEFORE Demucs / detection runs. For silent-intro tracks, the
+trimmed source has bar 1 near frame 0 — auto-detection becomes trivial.
+
+For tracks with non-silent intros (Ooh La La's 22s of DJ scratching, etc.),
+the trim is a no-op since RMS exceeds the threshold from frame 0.
+
+**Scope** (~30 lines):
+- `stemforge.preprocess.trim_leading_silence(audio_path, threshold_db) -> trimmed_audio_path`
+- CLI flag `--trim-leading-silence-below DB` on `split` (default off; set to e.g. -60 to enable)
+- Record `trimmed_leading_seconds` in stems.json so `source_offset_sec` math
+  in prechop_manifest stays consistent with the original source file
+  (consumer adds back the trimmed offset if it cares about original timeline)
+
+**Caveats** (the failure modes that mean this can't be the only fix):
+- Vinyl crackle, room tone, noise floor → "silence" is at -40 dB not -inf;
+  threshold becomes track-dependent
+- Fade-ins → ambiguous cut point
+- Bar 1 starting on a rest (anacrusis pickup precedes) → trim would skip past
+- Leading content IS musical (intros, count-ins, samples) → trim discards
+  legitimate audio that user might want as `--pre-bars` material
+
+So: useful as an opt-in preprocessor for the easy case. Doesn't replace
+first_downbeat detection.
+
+---
+
 ## Cross-Cutting: Manifest-Spec Conformance
 
 For all four items, when implemented:

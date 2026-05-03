@@ -1,0 +1,324 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 800" font-family="Inter, system-ui, sans-serif" text-rendering="optimizeLegibility">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3a85ff"/>
+    </marker>
+    <marker id="arrow-muted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#999999"/>
+    </marker>
+    <marker id="arrow-warn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#e85d3a"/>
+    </marker>
+    <marker id="arrow-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3aaa6e"/>
+    </marker>
+    <style>
+      .title       { font-size: 28px; font-weight: 600; fill: #1a1a1a; }
+      .subhead     { font-size: 14px; fill: #666666; }
+      .col-label   { font-size: 12px; fill: #666666; letter-spacing: 0.5px; }
+      .box-title   { font-size: 14px; font-weight: 600; fill: #1a1a1a; }
+      .box-sub     { font-size: 12px; fill: #666666; }
+      .caption     { font-size: 12px; fill: #666666; }
+      .body        { font-size: 13px; fill: #1a1a1a; }
+      .mono        { font-family: "IBM Plex Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
+      .code-sm     { font-family: "IBM Plex Mono", "JetBrains Mono", Menlo, Consolas, monospace; font-size: 12px; fill: #1a1a1a; }
+      .code-muted  { font-family: "IBM Plex Mono", "JetBrains Mono", Menlo, Consolas, monospace; font-size: 11px; fill: #666666; }
+      .code-accent { font-family: "IBM Plex Mono", "JetBrains Mono", Menlo, Consolas, monospace; font-size: 13px; fill: #3a85ff; font-weight: 600; }
+      .code-warn   { font-family: "IBM Plex Mono", "JetBrains Mono", Menlo, Consolas, monospace; font-size: 12px; fill: #e85d3a; font-weight: 600; }
+      .code-ok     { font-family: "IBM Plex Mono", "JetBrains Mono", Menlo, Consolas, monospace; font-size: 12px; fill: #3aaa6e; font-weight: 600; }
+      .annot       { font-family: Inter, system-ui, sans-serif; font-size: 13px; fill: #3a85ff; }
+      .annot-muted { font-family: Inter, system-ui, sans-serif; font-size: 12px; fill: #666666; }
+      .annot-warn  { font-family: Inter, system-ui, sans-serif; font-size: 13px; fill: #e85d3a; }
+      .annot-ok    { font-family: Inter, system-ui, sans-serif; font-size: 13px; fill: #3aaa6e; }
+      .input-box   { fill: #fafaf7; stroke: #1a1a1a; stroke-width: 1.5; }
+      .stage-box   { fill: #dbeaff; stroke: #3a85ff; stroke-width: 1.5; }
+      .out-box     { fill: #f0efe9; stroke: #1a1a1a; stroke-width: 1.5; }
+      .child-box   { fill: #fafaf7; stroke: #e8e8e3; stroke-width: 1; }
+      .warn-box    { fill: #ffe5dc; stroke: #e85d3a; stroke-width: 1.5; }
+      .ok-box      { fill: #dcf2e4; stroke: #3aaa6e; stroke-width: 1.5; }
+      .dict-box    { fill: #f0efe9; stroke: #3a85ff; stroke-width: 1.5; stroke-dasharray: 4 3; }
+    </style>
+  </defs>
+
+  <!-- background -->
+  <rect width="1400" height="800" fill="#fafaf7"/>
+
+  <!-- title block -->
+  <text x="48" y="50" class="title">m4l integration surface</text>
+  <text x="48" y="74" class="subhead">stemforge processed/&lt;track&gt; → 5 js modules in the .amxd → what shows up in ableton.</text>
+
+  <!-- column labels -->
+  <text x="48"   y="108" class="col-label">stemforge outputs (filesystem)</text>
+  <text x="500"  y="108" class="col-label">m4l device — js modules (v0/src/m4l-js/)</text>
+  <text x="1080" y="108" class="col-label">ableton live (lom + ui)</text>
+
+  <!-- ====================================================== -->
+  <!-- LEFT: stemforge filesystem outputs                      -->
+  <!-- ====================================================== -->
+
+  <!-- root container -->
+  <g transform="translate(48, 124)">
+    <rect width="408" height="528" rx="12" fill="#f0efe9" stroke="#1a1a1a" stroke-width="1"/>
+    <text x="16" y="22" class="code-sm mono">~/stemforge/processed/&lt;track&gt;/</text>
+  </g>
+
+  <!-- prechop_manifest.json -->
+  <g transform="translate(64, 158)">
+    <rect width="376" height="86" rx="8" class="input-box"/>
+    <text x="14" y="22" class="box-title">prechop_manifest.json</text>
+    <text x="14" y="40" class="box-sub">arrangement-view source (padded n-bar chunks)</text>
+    <text x="14" y="60" class="code-sm">{ bpm, bars, pad_bars, beats_per_bar,</text>
+    <text x="14" y="76" class="code-sm">  stems: { drums|bass|vocals|other: [chunks] } }</text>
+  </g>
+
+  <!-- curated/manifest.json -->
+  <g transform="translate(64, 256)">
+    <rect width="376" height="86" rx="8" class="input-box"/>
+    <text x="14" y="22" class="box-title">curated/manifest.json</text>
+    <text x="14" y="40" class="box-sub">session-view source (curation v2 bars + oneshots)</text>
+    <text x="14" y="60" class="code-sm">{ session_tracks, warp_markers, raw_*_sec,</text>
+    <text x="14" y="76" class="code-sm">  offsets, loop_*_sec }</text>
+  </g>
+
+  <!-- stems.json -->
+  <g transform="translate(64, 354)">
+    <rect width="376" height="74" rx="8" class="input-box"/>
+    <text x="14" y="22" class="box-title">stems.json</text>
+    <text x="14" y="40" class="box-sub">top-level pipeline manifest</text>
+    <text x="14" y="60" class="code-sm">{ bpm, track_name, stems[].wav_path, beats_dir }</text>
+  </g>
+
+  <!-- bounced wavs + sidecars (output, not input — drawn dashed) -->
+  <g transform="translate(64, 440)">
+    <rect width="376" height="92" rx="8" class="input-box" stroke-dasharray="5 4"/>
+    <text x="14" y="22" class="box-title">~/stemforge/exports/&lt;ts&gt;/</text>
+    <text x="14" y="40" class="box-sub">bounce outputs (written, not read)</text>
+    <text x="14" y="60" class="code-sm">{slot}_{name}.wav</text>
+    <text x="14" y="76" class="code-sm">.manifest_&lt;hash&gt;.json + .manifest.json</text>
+  </g>
+
+  <!-- arrangement snapshot.json (output, not input) -->
+  <g transform="translate(64, 544)">
+    <rect width="376" height="86" rx="8" class="input-box" stroke-dasharray="5 4"/>
+    <text x="14" y="22" class="box-title">snapshot.json</text>
+    <text x="14" y="40" class="box-sub">arrangement read output (consumed by export-song)</text>
+    <text x="14" y="60" class="code-sm">{ tempo, time_sig, locators[],</text>
+    <text x="14" y="76" class="code-sm">  tracks: { a, b, c, d } }</text>
+  </g>
+
+  <!-- stem-color legend -->
+  <g transform="translate(48, 668)">
+    <text x="0" y="0" class="caption">stem-color legend (stemforge/config.py STEM_COLORS):</text>
+    <g transform="translate(0, 12)">
+      <rect x="0"   y="0" width="14" height="14" rx="3" fill="#ff2400"/>
+      <text x="20"  y="11" class="code-sm">drums</text>
+      <rect x="74"  y="0" width="14" height="14" rx="3" fill="#0055ff"/>
+      <text x="94"  y="11" class="code-sm">bass</text>
+      <rect x="142" y="0" width="14" height="14" rx="3" fill="#ff8800"/>
+      <text x="162" y="11" class="code-sm">vocals</text>
+      <rect x="216" y="0" width="14" height="14" rx="3" fill="#00aa44"/>
+      <text x="236" y="11" class="code-sm">other</text>
+      <rect x="280" y="0" width="14" height="14" rx="3" fill="#aa00ff"/>
+      <text x="300" y="11" class="code-sm">piano</text>
+      <rect x="340" y="0" width="14" height="14" rx="3" fill="#ffcc00"/>
+      <text x="360" y="11" class="code-sm">guitar</text>
+    </g>
+  </g>
+
+  <!-- ====================================================== -->
+  <!-- MIDDLE: 5 js modules                                    -->
+  <!-- ====================================================== -->
+
+  <!-- sf_arrangement_loader.js (production path) -->
+  <g transform="translate(496, 140)">
+    <rect width="320" height="84" rx="10" class="stage-box"/>
+    <text x="14" y="22" class="code-accent">sf_arrangement_loader.js</text>
+    <text x="14" y="40" class="box-sub">runArrangementLoad(manifestPath)</text>
+    <text x="14" y="58" class="code-sm">reads: prechop_manifest.json</text>
+    <text x="14" y="74" class="code-sm">writes: arrangement clips + tempo</text>
+  </g>
+
+  <!-- sf_arrangement_loader warn callout: warping=0 -->
+  <g transform="translate(820, 140)">
+    <rect width="232" height="84" rx="8" class="warn-box"/>
+    <text x="12" y="20" class="annot-warn">warping = 0 invariant</text>
+    <text x="12" y="38" class="annot-warn">markers in seconds</text>
+    <text x="12" y="56" class="code-warn">skips ableton's 4/3</text>
+    <text x="12" y="72" class="code-warn">auto-warp tempo trap</text>
+  </g>
+
+  <!-- stemforge_loader.v0.js (session path) -->
+  <g transform="translate(496, 248)">
+    <rect width="320" height="84" rx="10" class="stage-box"/>
+    <text x="14" y="22" class="code-accent">stemforge_loader.v0.js</text>
+    <text x="14" y="40" class="box-sub">loadStemForge / applyCurationV2Clip</text>
+    <text x="14" y="58" class="code-sm">reads: curated/manifest.json, stems.json</text>
+    <text x="14" y="74" class="code-sm">writes: clip_slots + warp markers</text>
+  </g>
+
+  <!-- session-load callout: warping=ON + warp markers (different path) -->
+  <g transform="translate(820, 248)">
+    <rect width="232" height="84" rx="8" class="ok-box"/>
+    <text x="12" y="20" class="annot-ok">warping = 1 path</text>
+    <text x="12" y="38" class="annot-ok">markers in beats</text>
+    <text x="12" y="56" class="code-ok">add_warp_marker via Dict</text>
+    <text x="12" y="72" class="code-ok">{beat_time, sample_time}</text>
+  </g>
+
+  <!-- sf_clip_export.js (bounce) -->
+  <g transform="translate(496, 356)">
+    <rect width="320" height="84" rx="10" class="stage-box"/>
+    <text x="14" y="22" class="code-accent">sf_clip_export.js</text>
+    <text x="14" y="40" class="box-sub">exportClips(trackNames…)</text>
+    <text x="14" y="58" class="code-sm">reads: clip.file_path, loop_start/end</text>
+    <text x="14" y="74" class="code-sm">writes: spec.json → /tmp; spawns helper</text>
+  </g>
+
+  <!-- python helper callout -->
+  <g transform="translate(820, 356)">
+    <rect width="232" height="84" rx="8" fill="#f0efe9" stroke="#1a1a1a" stroke-width="1"/>
+    <text x="12" y="20" class="box-title">tools/m4l_export_clips.py</text>
+    <text x="12" y="38" class="annot-muted">reads /tmp/spec.json</text>
+    <text x="12" y="56" class="annot-muted">slices source wavs</text>
+    <text x="12" y="74" class="code-muted">→ wavs + sidecars + batch</text>
+  </g>
+
+  <!-- sf_arrangement_reader.js (snapshot) -->
+  <g transform="translate(496, 464)">
+    <rect width="320" height="84" rx="10" class="stage-box"/>
+    <text x="14" y="22" class="code-accent">sf_arrangement_reader.js</text>
+    <text x="14" y="40" class="box-sub">runArrangementExport(outputPath)</text>
+    <text x="14" y="58" class="code-sm">reads: live_set tempo, locators, tracks a/b/c/d</text>
+    <text x="14" y="74" class="code-sm">writes: snapshot.json (lom → json)</text>
+  </g>
+
+  <!-- export-song downstream callout -->
+  <g transform="translate(820, 464)">
+    <rect width="232" height="84" rx="8" fill="#f0efe9" stroke="#1a1a1a" stroke-width="1"/>
+    <text x="12" y="20" class="box-title">stemforge export-song</text>
+    <text x="12" y="38" class="annot-muted">snapshot + manifest</text>
+    <text x="12" y="56" class="annot-muted">→ ep-133 .ppak</text>
+    <text x="12" y="74" class="code-muted">via ep133.song / ep133.ppak</text>
+  </g>
+
+  <!-- 5th: stemforge template duplicator (loadManifest path inside loader.v0) -->
+  <g transform="translate(496, 572)">
+    <rect width="320" height="84" rx="10" class="stage-box"/>
+    <text x="14" y="22" class="code-accent">stemforge_loader.v0.js (templates)</text>
+    <text x="14" y="40" class="box-sub">loadManifest — duplicate SF | * tracks</text>
+    <text x="14" y="58" class="code-sm">reads: stems.json STEM_TARGETS</text>
+    <text x="14" y="74" class="code-sm">writes: duplicated audio tracks (drums/bass/...)</text>
+  </g>
+
+  <!-- template callout: 7 SF | tracks -->
+  <g transform="translate(820, 572)">
+    <rect width="232" height="84" rx="8" fill="#f0efe9" stroke="#1a1a1a" stroke-width="1"/>
+    <text x="12" y="20" class="box-title">SF | template tracks</text>
+    <text x="12" y="38" class="annot-muted">drums raw, bass, vocals,</text>
+    <text x="12" y="56" class="annot-muted">texture verb, beat chop simpler,</text>
+    <text x="12" y="74" class="code-muted">authored in StemForge.als</text>
+  </g>
+
+  <!-- sf_settings + sf_state shared dict (centered below modules) -->
+  <g transform="translate(496, 680)">
+    <rect width="556" height="92" rx="10" class="dict-box"/>
+    <text x="14" y="22" class="box-title">shared coordination — Max Dict</text>
+    <text x="14" y="42" class="code-accent">sf_settings</text>
+    <text x="100" y="42" class="code-sm">  paths, model, manifest dir, preset dir</text>
+    <text x="14" y="60" class="code-accent">sf_state</text>
+    <text x="100" y="60" class="code-sm">  forge phase, current track, ui phase</text>
+    <text x="14" y="80" class="code-muted">every js module reads via Dict.get; only sf_settings.js / sf_state.js write</text>
+  </g>
+
+  <!-- ====================================================== -->
+  <!-- RIGHT: ableton outcomes                                 -->
+  <!-- ====================================================== -->
+
+  <!-- arrangement view -->
+  <g transform="translate(1080, 140)">
+    <rect width="272" height="84" rx="10" class="out-box"/>
+    <text x="14" y="22" class="box-title">arrangement view</text>
+    <text x="14" y="40" class="box-sub">live_set tempo + tracks a/b/c/d</text>
+    <text x="14" y="60" class="code-sm">audio clips placed at i × bars × bpb</text>
+    <text x="14" y="76" class="code-sm">warping=0, length=bars × bpb</text>
+  </g>
+
+  <!-- session view -->
+  <g transform="translate(1080, 248)">
+    <rect width="272" height="84" rx="10" class="out-box"/>
+    <text x="14" y="22" class="box-title">session view</text>
+    <text x="14" y="40" class="box-sub">curation v2 bars + oneshots</text>
+    <text x="14" y="60" class="code-sm">clip_slots 0..n on stem tracks</text>
+    <text x="14" y="76" class="code-sm">warping=1, warp_markers applied</text>
+  </g>
+
+  <!-- desktop wavs + sidecars -->
+  <g transform="translate(1080, 356)">
+    <rect width="272" height="84" rx="10" class="out-box"/>
+    <text x="14" y="22" class="box-title">~/stemforge/exports/&lt;ts&gt;/</text>
+    <text x="14" y="40" class="box-sub">bounced wavs + sidecars</text>
+    <text x="14" y="60" class="code-sm">spec-conformant SampleMeta sidecars</text>
+    <text x="14" y="76" class="code-sm">ready for ep-133 batch loader</text>
+  </g>
+
+  <!-- snapshot.json -->
+  <g transform="translate(1080, 464)">
+    <rect width="272" height="84" rx="10" class="out-box"/>
+    <text x="14" y="22" class="box-title">snapshot.json</text>
+    <text x="14" y="40" class="box-sub">on disk; consumed downstream</text>
+    <text x="14" y="60" class="code-sm">arrangement → song-mode export</text>
+    <text x="14" y="76" class="code-sm">handed to stemforge export-song</text>
+  </g>
+
+  <!-- session tracks duplicated -->
+  <g transform="translate(1080, 572)">
+    <rect width="272" height="84" rx="10" class="out-box"/>
+    <text x="14" y="22" class="box-title">duplicated tracks</text>
+    <text x="14" y="40" class="box-sub">SF | drums raw → "song | drums" etc.</text>
+    <text x="14" y="60" class="code-sm">color from STEM_COLORS</text>
+    <text x="14" y="76" class="code-sm">simpler track for drum chops</text>
+  </g>
+
+  <!-- ====================================================== -->
+  <!-- ARROWS                                                  -->
+  <!-- ====================================================== -->
+
+  <!-- prechop_manifest → arrangement_loader -->
+  <path d="M 440 200 C 470 200, 480 180, 496 180" fill="none" stroke="#3a85ff" stroke-width="2" marker-end="url(#arrow)"/>
+  <!-- curated/manifest → stemforge_loader.v0 (curation v2) -->
+  <path d="M 440 296 C 470 296, 480 290, 496 290" fill="none" stroke="#3a85ff" stroke-width="2" marker-end="url(#arrow)"/>
+  <!-- curated/manifest also feeds session-template (stems.json) muted curve -->
+  <path d="M 440 392 C 462 392, 478 396, 496 396" fill="none" stroke="#3a85ff" stroke-width="2" marker-end="url(#arrow)"/>
+  <!-- stems.json → templates -->
+  <path d="M 440 392 C 460 392, 480 614, 496 614" fill="none" stroke="#999999" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#arrow-muted)"/>
+
+  <!-- modules → ableton outcomes -->
+  <path d="M 1052 182 C 1064 182, 1070 182, 1080 182" fill="none" stroke="#3a85ff" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M 1052 290 C 1064 290, 1070 290, 1080 290" fill="none" stroke="#3a85ff" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M 1052 398 C 1064 398, 1070 398, 1080 398" fill="none" stroke="#3a85ff" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M 1052 506 C 1064 506, 1070 506, 1080 506" fill="none" stroke="#3a85ff" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M 1052 614 C 1064 614, 1070 614, 1080 614" fill="none" stroke="#3a85ff" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- arrangement view → snapshot reader (it reads what was placed) muted upward arrow -->
+  <path d="M 1216 224 C 1216 320, 1216 400, 1216 464" fill="none" stroke="#999999" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#arrow-muted)"/>
+  <text x="1224" y="404" class="annot-muted">reader walks lom of</text>
+  <text x="1224" y="420" class="annot-muted">whatever's in arrangement</text>
+
+  <!-- session view → bounce (export reads selected slots) muted -->
+  <path d="M 1216 332 C 1216 348, 1216 358, 1216 356" fill="none" stroke="#999999" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#arrow-muted)"/>
+
+  <!-- bounce wavs feed back into ~/stemforge/exports (loop) -->
+  <path d="M 1080 398 C 880 700, 600 700, 440 486" fill="none" stroke="#999999" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#arrow-muted)"/>
+  <text x="700" y="722" class="annot-muted">bounced wavs land in ~/stemforge/exports — re-ingestable</text>
+
+  <!-- shared dict — modules read/write -->
+  <path d="M 656 224 C 656 660, 656 670, 700 680" fill="none" stroke="#3a85ff" stroke-width="1" stroke-dasharray="3 3"/>
+  <path d="M 656 332 C 656 660, 656 670, 740 680" fill="none" stroke="#3a85ff" stroke-width="1" stroke-dasharray="3 3"/>
+  <path d="M 656 440 C 656 660, 656 670, 780 680" fill="none" stroke="#3a85ff" stroke-width="1" stroke-dasharray="3 3"/>
+  <path d="M 656 548 C 656 660, 656 670, 820 680" fill="none" stroke="#3a85ff" stroke-width="1" stroke-dasharray="3 3"/>
+  <path d="M 656 656 C 656 660, 656 670, 860 680" fill="none" stroke="#3a85ff" stroke-width="1" stroke-dasharray="3 3"/>
+
+  <!-- tiny boxing glove nod -->
+  <text x="1370" y="788" font-size="12" fill="#999999" text-anchor="end">🥊</text>
+</svg>

@@ -142,6 +142,30 @@ def cli():
     help="Sub-beat refinement of auto-detected first_downbeat via kick-onset cross-correlation. "
     "Opt-in: assumes kick is ON the downbeat (fails for tracks where bar 1 is implied).",
 )
+@click.option(
+    "--pre-bars",
+    type=int,
+    default=None,
+    help="Bars of intro material BEFORE bar 1 to include as additional chunks at the same bar grid. "
+    "Default: auto-fill the intro (= floor(first_downbeat / bar_period / bars) × bars) when "
+    "first_downbeat > 0. Pass 0 to drop the intro entirely.",
+)
+@click.option(
+    "--pad-pre-bars",
+    type=int,
+    default=0,
+    help="Bars of pre-pad inside each chunk WAV (audio BEFORE the loop region). "
+    "Default 0 = chunk WAV starts AT bar 1 of that chunk's content (no leading silence/prior-bar audio). "
+    "Set >0 to enable drag-extending into the previous bar — but be aware that "
+    "Ableton's auto-warp may snap start_marker to a grid, exposing the pad as leading air.",
+)
+@click.option(
+    "--pad-post-bars",
+    type=int,
+    default=1,
+    help="Bars of post-pad inside each chunk WAV (audio AFTER the loop region). "
+    "Default 1 — useful for drag-extending forward + crossfade headroom at the seam.",
+)
 def split(
     audio_file,
     model,
@@ -153,6 +177,9 @@ def split(
     bpm_override,
     first_downbeat_override,
     refine_downbeat,
+    pre_bars,
+    pad_pre_bars,
+    pad_post_bars,
 ):
     """
     Split an audio file into stems and slice at beat boundaries.
@@ -378,12 +405,25 @@ def split(
         pipeline_cfg = None
 
     if pipeline_cfg is not None and pipeline_cfg.prechop is not None:
+        # Resolve pre_bars: explicit value, or auto-fill the intro to keep
+        # all preceding bars as chunks on the same bar grid (the user almost
+        # never wants to silently drop 22 seconds of intro audio).
+        bars_per_chunk = pipeline_cfg.prechop.bars
+        bar_period_sec = bars_per_chunk * pipeline_cfg.prechop.beats_per_bar * 60.0 / bpm
+        if pre_bars is None:
+            # Auto: round DOWN to a whole-chunk count of intro bars.
+            n_pre_chunks = int(first_downbeat_sec // bar_period_sec)
+            resolved_pre_bars = n_pre_chunks * bars_per_chunk
+        else:
+            resolved_pre_bars = max(0, pre_bars)
+
         console.print()
         console.print(
             f"[bold]Prechop[/bold]  bars={pipeline_cfg.prechop.bars} "
             f"pad_bars={pipeline_cfg.prechop.pad_bars} "
             f"pad_last={pipeline_cfg.prechop.pad_last} "
-            f"first_downbeat={first_downbeat_sec:.3f}s"
+            f"first_downbeat={first_downbeat_sec:.3f}s "
+            f"pre_bars={resolved_pre_bars}"
         )
         try:
             status_post = run_post_split_steps(
@@ -392,6 +432,9 @@ def split(
                 track_out,
                 bpm=bpm,
                 first_downbeat_sec=first_downbeat_sec,
+                pre_bars=resolved_pre_bars,
+                pad_pre_bars=pad_pre_bars,
+                pad_post_bars=pad_post_bars,
             )
             pc = status_post.get("prechop", {})
             if pc:
@@ -441,12 +484,31 @@ def split(
     help="Where bar 1 starts in the source audio (seconds).",
 )
 @click.option(
+    "--pre-bars",
+    type=int,
+    default=None,
+    help="Bars of intro material BEFORE bar 1 to include as additional chunks at the same bar grid. "
+    "Default: auto-fill the intro. Pass 0 to drop the intro entirely.",
+)
+@click.option(
+    "--pad-pre-bars",
+    type=int,
+    default=0,
+    help="Bars of pre-pad inside each chunk WAV (default 0 = chunk WAV frame 0 IS bar 1, no leading air).",
+)
+@click.option(
+    "--pad-post-bars",
+    type=int,
+    default=1,
+    help="Bars of post-pad inside each chunk WAV (default 1 = drag-extend headroom forward).",
+)
+@click.option(
     "--keep-old",
     is_flag=True,
     default=False,
     help="Keep the previous prechop output as `<stem>_prechop.bak/` instead of overwriting.",
 )
-def re_anchor(track_dir, bpm, first_downbeat, keep_old):
+def re_anchor(track_dir, bpm, first_downbeat, pre_bars, pad_pre_bars, pad_post_bars, keep_old):
     """
     Re-cut the prechop chunks of an already-forged track at user-supplied
     BPM + first_downbeat. Skips Demucs re-run (~30 s saved) — only re-runs
@@ -549,11 +611,20 @@ def re_anchor(track_dir, bpm, first_downbeat, keep_old):
         )
         sys.exit(0)
 
+    bars_per_chunk = pipeline_cfg.prechop.bars
+    bar_period_sec = bars_per_chunk * pipeline_cfg.prechop.beats_per_bar * 60.0 / bpm
+    if pre_bars is None:
+        n_pre_chunks = int(first_downbeat // bar_period_sec)
+        resolved_pre_bars = n_pre_chunks * bars_per_chunk
+    else:
+        resolved_pre_bars = max(0, pre_bars)
+
     console.print()
     console.print(
         f"[bold]Re-cutting prechop[/bold]  bars={pipeline_cfg.prechop.bars} "
         f"pad_bars={pipeline_cfg.prechop.pad_bars} "
-        f"first_downbeat={first_downbeat}s"
+        f"first_downbeat={first_downbeat}s "
+        f"pre_bars={resolved_pre_bars}"
     )
     status = run_post_split_steps(
         pipeline_cfg,
@@ -561,6 +632,9 @@ def re_anchor(track_dir, bpm, first_downbeat, keep_old):
         track_dir,
         bpm=bpm,
         first_downbeat_sec=first_downbeat,
+        pre_bars=resolved_pre_bars,
+        pad_pre_bars=pad_pre_bars,
+        pad_post_bars=pad_post_bars,
     )
     pc = status.get("prechop", {})
     if pc:

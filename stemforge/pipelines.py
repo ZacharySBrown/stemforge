@@ -94,11 +94,17 @@ def run_post_split_steps(
     *,
     bpm: float,
     first_downbeat_sec: float = 0.0,
+    pre_bars: int = 0,
+    pad_pre_bars: int | None = None,
+    pad_post_bars: int | None = None,
 ) -> dict[str, Any]:
     """Apply any Python-side post-split steps from the pipeline.
 
     `first_downbeat_sec` forwarded to prechop so chunks anchor on the
     first detected musical bar instead of the audio file's frame zero.
+    `pre_bars` includes that many bars of intro material before bar 1.
+    `pad_pre_bars` / `pad_post_bars` override the symmetric `pad_bars`
+    config when set (None = use the pipeline's `pad_bars`).
 
     Returns a small status dict keyed by step name. Today: just `prechop`.
     """
@@ -116,12 +122,18 @@ def run_post_split_steps(
             pad_last=pipeline.prechop.pad_last,
             beats_per_bar=pipeline.prechop.beats_per_bar,
             first_downbeat_sec=first_downbeat_sec,
+            pre_bars=pre_bars,
+            pad_pre_bars=pad_pre_bars,
+            pad_post_bars=pad_post_bars,
         )
         status["prechop"] = {
             "manifest": str(manifest_path),
             "bars": pipeline.prechop.bars,
             "pad_bars": pipeline.prechop.pad_bars,
+            "pad_pre_bars": pad_pre_bars,
+            "pad_post_bars": pad_post_bars,
             "first_downbeat_sec": float(first_downbeat_sec),
+            "pre_bars": int(pre_bars),
         }
 
     return status
