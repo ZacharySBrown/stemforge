@@ -95,6 +95,7 @@ OBJ_SF_LOGGER           = "obj-sf-logger"
 OBJ_SF_NDJSON_PARSER    = "obj-sf-ndjson-parser"
 OBJ_SF_LOM_LOADER       = "obj-sf-lom-loader"
 OBJ_SF_CLIP_EXPORT      = "obj-sf-clip-export"
+OBJ_SF_LOCATOR_ANCHOR   = "obj-sf-locator-anchor"
 
 OBJ_DICT_STATE          = "obj-dict-sf-state"
 OBJ_DICT_PRESET         = "obj-dict-sf-preset"
@@ -148,6 +149,12 @@ OBJ_CX_ERROR_PREP       = "obj-cx-error-prepend"
 OBJ_BOUNCE_CLIPS_MSG    = "obj-bounce-clips-msg"
 OBJ_EXPORT_SONG_MSG     = "obj-export-song-msg"
 OBJ_LOAD_ARR_MSG        = "obj-load-arrangement-msg"
+
+# Locator-anchor wiring (sf_locator_anchor message names).
+OBJ_ANCHOR_CLICK_MSG    = "obj-anchor-click-msg"
+OBJ_LA_STARTED_PREP     = "obj-la-started-prepend"
+OBJ_LA_COMPLETE_PREP    = "obj-la-complete-prepend"
+OBJ_LA_ERROR_PREP       = "obj-la-error-prepend"
 
 OBJ_PLUGIN_IN           = "obj-plugin-in"
 OBJ_PLUGOUT             = "obj-plugout"
@@ -530,6 +537,24 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         )
     )
 
+    # sf_locator_anchor — re-anchor a forged track to a user-placed Ableton
+    # locator. Driven by the ANCH button in sf_ui's right column.
+    #   outlet 0 = status
+    #   outlet 1 = [shell] spawn commands for tools/m4l_locator_anchor.py
+    #   outlet 2 = manifest path → loadArrangementFromManifest in sf_lom_loader
+    #              (re-paints clips on the arrangement view after re-anchor)
+    boxes.append(
+        _js_box(
+            OBJ_SF_LOCATOR_ANCHOR,
+            "sf_locator_anchor.js",
+            (16.0 + (js_w + js_gap), js_row_y + 102, js_w, 22.0),
+            scripting_name="sf_locator_anchor",
+            numinlets=1,
+            numoutlets=3,
+            outlettype=["", "", ""],
+        )
+    )
+
     # ── Visible native umenus (left column, presentation mode) ──────────────
     #
     # Pragmatic fix (2026-04-23): the previous transparent-overlay approach on
@@ -745,14 +770,14 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
              # width
              860.0, 22.0),
             numinlets=1,
-            numoutlets=12,  # 11 events + unmatched
-            outlettype=["", "", "", "", "", "", "", "", "", "", "", ""],
+            numoutlets=13,  # 12 events + unmatched
+            outlettype=[""] * 13,
             extras={
                 "text": (
                     "route preset_click source_click forge_click "
                     "cancel_click retry_click done_click settings_click "
                     "commit_click bounce_clips_click export_song_click "
-                    "arrangement_load_click"
+                    "arrangement_load_click anchor_locator_click"
                 )
             },
         )
@@ -974,10 +999,79 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     lines.append(_line(OBJ_LOAD_ARR_REGEX, 0, OBJ_LOAD_ARR_PREPEND, 0))
     lines.append(_line(OBJ_LOAD_ARR_PREPEND, 0, OBJ_SF_LOM_LOADER, 0))
 
+    # Side-tap: extract dirname(manifest_path) and feed it as `trackDir <dir>`
+    # to sf_locator_anchor so the next ANCH click has a valid cached track dir
+    # without a separate user-facing setup step. Runs in parallel to the
+    # arrangement-load path above.
+    OBJ_LA_DIRNAME_REGEX = "obj-la-dirname-regex"
+    OBJ_LA_TRACKDIR_PREP = "obj-la-trackdir-prepend"
+    boxes.append(
+        _box(
+            OBJ_LA_DIRNAME_REGEX,
+            "newobj",
+            (410.0 + 8 * 110, js_row_y + 68, 280.0, 22.0),
+            numinlets=1,
+            numoutlets=5,
+            outlettype=["", "", "", "", ""],
+            # Capture everything up to the last slash.
+            extras={"text": "regexp (.+)/[^/]+\\.json @substitute %1"},
+        )
+    )
+    lines.append(_line(OBJ_LOAD_ARR_REGEX, 0, OBJ_LA_DIRNAME_REGEX, 0))
+    boxes.append(
+        _box(
+            OBJ_LA_TRACKDIR_PREP,
+            "newobj",
+            (410.0 + 8 * 110, js_row_y + 94, 180.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "prepend trackDir"},
+        )
+    )
+    lines.append(_line(OBJ_LA_DIRNAME_REGEX, 0, OBJ_LA_TRACKDIR_PREP, 0))
+    lines.append(_line(OBJ_LA_TRACKDIR_PREP, 0, OBJ_SF_LOCATOR_ANCHOR, 0))
+
+    # Outlet 11 — anchor_locator_click → [message anchor] → sf_locator_anchor.
+    # The JS uses its cached track dir (set from the most recent successful
+    # arrangement load) to know which manifest to re-anchor.
+    boxes.append(
+        _box(
+            OBJ_ANCHOR_CLICK_MSG,
+            "message",
+            (410.0 + 9 * 110, js_row_y - 10, 80.0, 22.0),
+            numinlets=2,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "anchor"},
+        )
+    )
+    lines.append(_line(OBJ_ROUTE_UI_EVENTS, 11, OBJ_ANCHOR_CLICK_MSG, 0))
+    lines.append(_line(OBJ_ANCHOR_CLICK_MSG, 0, OBJ_SF_LOCATOR_ANCHOR, 0))
+
     # sf_clip_export outlet 0 = status (currently logged inside the JS only;
     # could be wired to status text later). Outlet 1 = [shell] spawn commands
     # for the Python helper. Goes to the SAME shell sf_forge feeds.
     lines.append(_line(OBJ_SF_CLIP_EXPORT, 1, OBJ_SHELL, 0))
+    # sf_locator_anchor outlet 1 also feeds [shell] (PYTHON_BIN + helper.py
+    # + arg pairs). Outlet 0 is status, currently logged inside the JS only.
+    lines.append(_line(OBJ_SF_LOCATOR_ANCHOR, 1, OBJ_SHELL, 0))
+    # sf_locator_anchor outlet 2 → prepend loadArrangementFromManifest →
+    # sf_lom_loader. Triggers a clip-grid refresh after a successful re-anchor.
+    OBJ_LA_RELOAD_PREP = "obj-la-reload-prepend"
+    boxes.append(
+        _box(
+            OBJ_LA_RELOAD_PREP,
+            "newobj",
+            (410.0 + 9 * 110, js_row_y + 16, 230.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "prepend loadArrangementFromManifest"},
+        )
+    )
+    lines.append(_line(OBJ_SF_LOCATOR_ANCHOR, 2, OBJ_LA_RELOAD_PREP, 0))
+    lines.append(_line(OBJ_LA_RELOAD_PREP, 0, OBJ_SF_LOM_LOADER, 0))
 
     # ── sf_state outlet 0 → v8ui refresh ────────────────────────────────────
     # The state mgr emits `bang` on mutation. We prepend `refresh` so the
@@ -1038,15 +1132,16 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         _box(
             OBJ_ROUTE_NDJSON,
             "newobj",
-            (16.0 + 2 * (js_w + js_gap), js_row_y + 68, 760.0, 22.0),
+            (16.0 + 2 * (js_w + js_gap), js_row_y + 68, 920.0, 22.0),
             numinlets=1,
-            numoutlets=14,
-            outlettype=[""] * 14,
+            numoutlets=17,
+            outlettype=[""] * 17,
             extras={
                 "text": (
                     "route progress stem bpm slice_dir complete curated error "
                     "export_started export_progress export_clip_done "
-                    "export_clip_error export_complete export_error"
+                    "export_clip_error export_complete export_error "
+                    "anchor_started anchor_complete anchor_error"
                 )
             },
         )
@@ -1166,6 +1261,30 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         )
         lines.append(_line(OBJ_ROUTE_NDJSON, route_idx, obj_id, 0))
         lines.append(_line(obj_id, 0, OBJ_SF_CLIP_EXPORT, 0))
+
+    # ── Locator-anchor NDJSON routes (sf_locator_anchor ← [shell] ← Python) ─
+    # Each event from tools/m4l_locator_anchor.py becomes a prepend → message
+    # call into the sf_locator_anchor [js] box. Names mirror the JS handlers.
+    _LA_PREPENDS = [
+        # (route_outlet_idx, prepend_obj_id, message_name, x_offset_idx)
+        (13, OBJ_LA_STARTED_PREP,  "onAnchorStarted",  6),
+        (14, OBJ_LA_COMPLETE_PREP, "onAnchorComplete", 7),
+        (15, OBJ_LA_ERROR_PREP,    "onAnchorError",    8),
+    ]
+    for route_idx, obj_id, msg_name, x_idx in _LA_PREPENDS:
+        boxes.append(
+            _box(
+                obj_id,
+                "newobj",
+                (16.0 + x_idx * 170.0, js_row_y + 250, 160.0, 22.0),
+                numinlets=1,
+                numoutlets=1,
+                outlettype=[""],
+                extras={"text": "prepend " + msg_name},
+            )
+        )
+        lines.append(_line(OBJ_ROUTE_NDJSON, route_idx, obj_id, 0))
+        lines.append(_line(obj_id, 0, OBJ_SF_LOCATOR_ANCHOR, 0))
 
     # ── Status bar updates — sf_state.getStateJson emits `state <json>` but
     # for the status bar we key off a lightweight prefix.  v1: just wire the
