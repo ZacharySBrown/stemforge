@@ -254,9 +254,9 @@ test('anchor: bails when no locators placed', () => {
     assert.equal(anchor(), false);
 });
 
-test('anchor: emits shell atoms with computed source time', () => {
-    // Locator at beat 16 (start of chunk 1) → source time = 11.1667.
-    // Live tempo overrides manifest BPM in the shell args.
+test('anchor: emits reload atoms (path + shift) on outlet 2', () => {
+    // Manifest has musical_bar_1_chunk_index implicit=0, chunkBeats=16.
+    // Locator at beat 16 → shift = 16 - 0 = 16 beats.
     const ctx = freshSandbox({
         tempo: 90,
         cuePoints: [{ name: 'anchor', time: 16 }]
@@ -266,23 +266,39 @@ test('anchor: emits shell atoms with computed source time', () => {
     trackDir(dir);
     assert.equal(anchor(), true);
 
-    const calls = maxApi.state.outlets[1] || [];
-    assert.equal(calls.length, 1, 'expected one shell-atom emission');
+    const calls = maxApi.state.outlets[2] || [];
+    assert.equal(calls.length, 1, 'expected one reload emission on outlet 2');
     const atoms = calls[0];
-    assert.ok(atoms.length >= 9, 'expected ≥9 atoms, got ' + atoms.length);
-    assert.equal(atoms[2], '--track-dir');
-    assert.equal(atoms[3], dir);
-    assert.equal(atoms[4], '--bpm');
-    assert.equal(String(atoms[5]), '90');
-    assert.equal(atoms[6], '--first-downbeat');
-    assert.ok(Math.abs(Number(atoms[7]) - 11.1667) < 1e-3,
-        '--first-downbeat atom: ' + atoms[7]);
-    assert.equal(atoms[8], '--manifest-out');
-    assert.equal(atoms[9], dir + '/prechop_manifest.json');
+    assert.equal(atoms.length, 2, 'expected [path, shift] atoms, got ' + atoms.length);
+    assert.equal(atoms[0], dir + '/prechop_manifest.json');
+    assert.equal(Number(atoms[1]), 16);
+
+    // Outlet 1 (the old shell path) must NOT fire under shift-only semantics.
+    const shellCalls = maxApi.state.outlets[1] || [];
+    assert.equal(shellCalls.length, 0, 'shell outlet must be silent under shift-only');
 });
 
-test('anchor: returns false when locator beat falls outside chunk grid', () => {
-    // 3 chunks * 16 chunkBeats = beat 48 is the first out-of-grid beat.
+test('anchor: shift respects musical_bar_1_chunk_index from manifest', () => {
+    // pre_bars manifest: bar 1 lives in chunk[1] (idx=1, beat 16).
+    // Locator at beat 24 → shift = 24 - 16 = 8.
+    const m = buildManifest();
+    m.musical_bar_1_chunk_index = 1;
+    const ctx = freshSandbox({
+        tempo: 90,
+        cuePoints: [{ name: 'downbeat', time: 24 }]
+    });
+    const dir = seedTrackDir(m);
+    const { anchor, trackDir } = getTestExports(ctx);
+    trackDir(dir);
+    assert.equal(anchor(), true);
+
+    const atoms = (maxApi.state.outlets[2] || [])[0];
+    assert.equal(Number(atoms[1]), 8, 'shift should be locator − bar1Idx*chunkBeats');
+});
+
+test('anchor: locator beat outside original grid still shifts (no bail)', () => {
+    // Pure shift cares nothing about grid extent — locator at beat 100 just
+    // produces a large shift. Caller (Live) handles negative-clamp on its end.
     const ctx = freshSandbox({
         tempo: 90,
         cuePoints: [{ name: '', time: 100 }]
@@ -290,5 +306,7 @@ test('anchor: returns false when locator beat falls outside chunk grid', () => {
     const dir = seedTrackDir(buildManifest());
     const { anchor, trackDir } = getTestExports(ctx);
     trackDir(dir);
-    assert.equal(anchor(), false);
+    assert.equal(anchor(), true);
+    const atoms = (maxApi.state.outlets[2] || [])[0];
+    assert.equal(Number(atoms[1]), 100);
 });

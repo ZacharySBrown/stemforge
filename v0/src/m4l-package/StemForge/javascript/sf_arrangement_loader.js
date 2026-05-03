@@ -442,7 +442,7 @@ function _alClearStemfgClips(trackIdx, manifestDir) {
     return deleted;
 }
 
-function _alLoadStem(stemName, stemBlock, manifestDir, bpm, beatsPerBar) {
+function _alLoadStem(stemName, stemBlock, manifestDir, bpm, beatsPerBar, shiftBeats) {
     // Returns {ok: bool, clips_created: int}.
     var trackIdx = _alResolveTrack(stemName);
     if (trackIdx < 0) {
@@ -461,6 +461,7 @@ function _alLoadStem(stemName, stemBlock, manifestDir, bpm, beatsPerBar) {
 
     var chunks = (stemBlock && stemBlock.chunks) ? stemBlock.chunks : [];
     var created = 0;
+    var shift = Number(shiftBeats) || 0;
 
     for (var i = 0; i < chunks.length; i++) {
         var ch = chunks[i];
@@ -468,7 +469,12 @@ function _alLoadStem(stemName, stemBlock, manifestDir, bpm, beatsPerBar) {
 
         var absWav = _alJoin(manifestDir, ch.file);
         var bars = (ch.bars != null) ? Number(ch.bars) : 4;
-        var startBeat = i * bars * beatsPerBar;
+        var startBeat = i * bars * beatsPerBar + shift;
+        // Ableton refuses negative start_time; clamp to 0. Note: this
+        // clips off the leading portion of any intro chunk that would
+        // have hung off the left edge. User-visible result: a partial
+        // intro chunk at the very start of the timeline.
+        if (startBeat < 0) startBeat = 0;
         // Markers stay in SECONDS — the configurer disables warping, which
         // is the unit Live uses for unwarped clip markers/loop boundaries.
         var loopStartSec = Number(ch.loop_start_sec) || 0;
@@ -494,9 +500,14 @@ function _alLoadStem(stemName, stemBlock, manifestDir, bpm, beatsPerBar) {
     return { ok: created > 0, clips_created: created };
 }
 
-function runArrangementLoad(manifestPath) {
+function runArrangementLoad(manifestPath, shiftBeats) {
     // Public entry point. Reads `manifestPath`, then walks each stem block
     // creating arrangement-view audio clips with proper loop regions.
+    //
+    // shiftBeats (optional, default 0): translate every chunk's start_time
+    // by this many beats. Used by sf_locator_anchor's ANCH button to slide
+    // the whole arrangement so musical bar 1 lands at the user's locator,
+    // without re-cutting source audio.
     //
     // Returns true on success (every stem loaded at least one clip), false
     // otherwise. Either way, status is logged to ~/stemforge/logs/sf_debug.log
@@ -506,6 +517,7 @@ function runArrangementLoad(manifestPath) {
         return false;
     }
     var path = _alExpandTilde(String(manifestPath));
+    var shift = Number(shiftBeats) || 0;
 
     var raw = _alReadFile(path);
     if (raw == null) return false;
@@ -534,13 +546,14 @@ function runArrangementLoad(manifestPath) {
     var anyOk = false;
     for (var stemName in stems) {
         if (!Object.prototype.hasOwnProperty.call(stems, stemName)) continue;
-        var res = _alLoadStem(stemName, stems[stemName], manifestDir, bpm, beatsPerBar);
+        var res = _alLoadStem(stemName, stems[stemName], manifestDir, bpm, beatsPerBar, shift);
         if (res.ok) anyOk = true;
         totalCreated += res.clips_created;
     }
 
     _alStatus("loaded " + totalCreated + " clips from " + path
-        + " (bpm=" + bpm + ", beats_per_bar=" + beatsPerBar + ")");
+        + " (bpm=" + bpm + ", beats_per_bar=" + beatsPerBar
+        + (shift !== 0 ? ", shift=" + shift.toFixed(2) + " beats" : "") + ")");
     return anyOk;
 }
 

@@ -199,7 +199,13 @@ function setStemforgeRepo(p) { STEMFORGE_REPO = String(p || STEMFORGE_REPO); }
 function trackDir(p) { TRACK_DIR = String(p || ""); _status("trackDir set: " + TRACK_DIR); }
 
 function anchor() {
-    // Optional first arg overrides cached TRACK_DIR
+    // Pure timeline shift: BPM and source content are assumed correct.
+    // We compute where "musical bar 1" *currently* lives in the arrangement
+    // (idx_of_bar_1 × chunk_beats) and slide every chunk by enough beats so
+    // that the bar-1 chunk lands at the user's locator. Intro chunks (added
+    // via --pre-bars) follow the same shift, preserving their relative
+    // position before bar 1. No re-cut, no Demucs, no Python — just
+    // re-place the existing WAVs at shifted timeline positions.
     var argv = arrayfromargs(arguments);
     var dir = argv.length ? String(argv[0]) : TRACK_DIR;
     if (!dir) {
@@ -221,33 +227,31 @@ function anchor() {
         return false;
     }
     var picked = _pickLocator(locators);
-    _status("anchor: using locator '" + (picked.name || "(unnamed)") +
-            "' at beat " + picked.time_beats);
 
-    var sourceTime = _sourceTimeAtTimelineBeat(manifest, picked.time_beats);
-    if (sourceTime == null) {
-        _status("anchor: locator at beat " + picked.time_beats + " falls outside the chunk grid");
-        return false;
-    }
+    var bars = Number(manifest.bars) || 4;
+    var beatsPerBar = Number(manifest.beats_per_bar) || 4;
+    var chunkBeats = bars * beatsPerBar;
+    // musical_bar_1_chunk_index is set by the prechop step when --pre-bars
+    // is used; absent fields default to 0 (chunk 0 IS bar 1).
+    var bar1Idx = Number(manifest.musical_bar_1_chunk_index) || 0;
+    var pristineBar1Beat = bar1Idx * chunkBeats;
+    var locatorBeat = Number(picked.time_beats) || 0;
+    var shift = locatorBeat - pristineBar1Beat;
 
-    // Live's tempo is the source of truth; manifest bpm follows.
-    var tempo = 120;
-    try { tempo = Number(new LiveAPI("live_set").get("tempo")); } catch (_) {}
-    if (!isFinite(tempo) || tempo <= 0) tempo = Number(manifest.bpm) || 120;
+    _status("anchor: locator '" + (picked.name || "(unnamed)") +
+            "' at beat " + locatorBeat.toFixed(2) +
+            " → shift " + shift.toFixed(2) +
+            " beats (bar 1 chunk index=" + bar1Idx +
+            ", chunk_beats=" + chunkBeats + ")");
 
-    _status("anchor: dir=" + dir + " bpm=" + tempo +
-            " first_downbeat_sec=" + sourceTime.toFixed(4));
-
-    // Shell out to the helper. Same pattern as sf_clip_export — selector +
-    // atoms = argv via shell.mxo's `anything` route.
+    // Outlet 2 → patcher's `prepend loadArrangementFromManifest` →
+    // sf_lom_loader. We pass two atoms (path + shift); the loader detects
+    // a numeric tail atom as the shift, otherwise treats everything as
+    // path (for backward compat with shift-less callers).
     try {
-        outlet(1, PYTHON_BIN, HELPER_PATH,
-               "--track-dir", dir,
-               "--bpm", String(tempo),
-               "--first-downbeat", sourceTime.toFixed(6),
-               "--manifest-out", manifestPath);
+        outlet(2, manifestPath, shift);
     } catch (e) {
-        _status("anchor: spawn outlet error: " + e);
+        _status("anchor: reload outlet error: " + e);
         return false;
     }
     return true;
