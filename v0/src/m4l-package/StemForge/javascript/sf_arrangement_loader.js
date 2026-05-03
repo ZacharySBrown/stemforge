@@ -387,12 +387,12 @@ function _alCreateAndConfigureClip(trackIdx, absWavPath, startBeat, lengthBeats,
         _alStatus("set looping fail: " + e);
     }
 
-    // Trim arrangement-view extent to the loop region so the post-pad bars
-    // don't show as visible audio after the music body. Without this, Live
-    // sets length from the full audio file length (including padding).
-    // `end_time` is not directly writable (Invalid syntax); use `length`,
-    // which is in beats and writable on arrangement audio clips.
-    try { clip.set("length", lengthBeats); } catch (_) {}
+    // The arrangement-view extent is governed by `end_marker` (set above):
+    // playback stops there, and the visible block ends there. `Clip.length`
+    // is read-only in current Live and `Clip.end_time` returns "Invalid
+    // syntax", so neither helps; both prior attempts at writing them
+    // produced 1 console error per chunk × N chunks.
+    void lengthBeats;
 
     return idx;
 }
