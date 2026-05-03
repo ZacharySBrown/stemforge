@@ -208,3 +208,159 @@ This is probably the right scope. Phase 3 as originally specced (mod
 `barSeconds`) is more theoretical and harder to explain; Phase 3a
 maps directly to the user's mental model ("I corrected the tempo by
 ear, now lock it in").
+
+## 2026-05-03 update — Why Phase 3 is needed even with beat-this in the loop
+
+After installing the `beat` extra (`uv sync --extra beat --extra native`)
+and re-stemming all three test tracks, BPM detection became reliable on
+all of them — including Definition (90.23 vs truth 89.88, well within
+tolerance). But the user still hit a gap on Definition that pure-shift
+ANCH cannot close:
+
+**The mismatch:** beat-this returns the *first audible bar boundary* it
+detects. For tracks with a clean opening kick (Believer, source 0.300s),
+that equals "bar 1 of the song" in the user's musical sense. For tracks
+with an intro section before the main drop (Definition, Ooh La La),
+beat-this lands on the intro's first bar — which is not what the user
+hears as bar 1.
+
+Concretely on Definition:
+- beat-this `first_downbeat` = 3.78s (some early intro bar)
+- User's "bar 1 of the song" = ~22s (where the main drop hits)
+- 22 − 3.78 ≈ 18.2s ≈ 6.8 bars — the user's bar 1 is bar ~7 of beat-this's grid
+
+**Why pure-shift can't fix this.** Pure-shift moves chunk[0] to the
+locator's timeline position. But chunk[0]'s *content* is source[3.78s,
+3.78 + chunk_period], which is the intro music — not the drop. After
+the shift, the drop audio (which was at some later timeline beat in the
+loaded clips) is also pushed further right; it never lands at the
+locator. The locator placement and the audio identity are decoupled in
+the pure-shift model.
+
+What's needed instead is a **source-level re-anchor**: change
+`first_downbeat_sec` in the manifest so chunk[0] starts at *the source
+time the user heard at the locator*, then reload at the default position.
+That's what the original (pre-pivot) Python re-anchor flow did; the
+pivot to pure-shift removed it from the JS button.
+
+### What's still wired (dormant) vs. what was disabled
+
+The pure-shift pivot only edited one function — `anchor()` in
+`v0/src/m4l-js/sf_locator_anchor.js`. Everything else still exists:
+
+| Component | State |
+|---|---|
+| Patcher route `anchor_started` / `anchor_complete` / `anchor_error` | wired in `.amxd` |
+| `tools/m4l_locator_anchor.py` helper | on disk in main repo |
+| NDJSON parser cases for the three anchor events | in `stemforge_ndjson_parser.v0.js` |
+| `outlet 1` from `sf_locator_anchor` → `[shell]` | wired in `.amxd` |
+| `onAnchorStarted` / `onAnchorComplete` / `onAnchorError` handlers | defined in `sf_locator_anchor.js` |
+| `outlet 2` → `loadArrangementFromManifest` (reload after anchor) | wired in `.amxd` |
+| `_sourceTimeAtTimelineBeat()` helper for back-computing source time | in `sf_locator_anchor.js` |
+
+What was removed: the *call* to `outlet(1, PYTHON_BIN, HELPER_PATH, ...)`
+inside `anchor()`. Restoring it doesn't need a `.amxd` rebuild or any
+patcher edits.
+
+### Minimal restoration diff
+
+Replace the body of `anchor()` in
+`v0/src/m4l-js/sf_locator_anchor.js` with something close to the
+pre-pivot version:
+
+```javascript
+function anchor() {
+    var argv = arrayfromargs(arguments);
+    var dir = argv.length ? String(argv[0]) : TRACK_DIR;
+    if (!dir) {
+        _status("anchor: no track dir set (call trackDir <path> first)");
+        return false;
+    }
+    dir = _expandTilde(dir);
+
+    var manifestPath = _join(dir, "prechop_manifest.json");
+    var manifest = _readJsonFile(manifestPath);
+    if (!manifest) {
+        _status("anchor: cannot read " + manifestPath);
+        return false;
+    }
+
+    var locators = _readLocators();
+    if (!locators.length) {
+        _status("anchor: drop a locator first");
+        return false;
+    }
+    var picked = _pickLocator(locators);
+
+    // Convert the locator's timeline beat → source-time using the
+    // CURRENT chunk grid in the loaded manifest.
+    var sourceTime = _sourceTimeAtTimelineBeat(manifest, picked.time_beats);
+    if (sourceTime == null) {
+        _status("anchor: locator at beat " + picked.time_beats +
+                " falls outside the chunk grid");
+        return false;
+    }
+
+    // Live's tempo wins for BPM. Lets the user nudge tempo before ANCH
+    // (the Phase 3a workflow) and have it picked up automatically.
+    var tempo = 120;
+    try { tempo = Number(new LiveAPI("live_set").get("tempo")); } catch (_) {}
+    if (!isFinite(tempo) || tempo <= 0) tempo = Number(manifest.bpm) || 120;
+
+    _status("anchor: locator '" + (picked.name || "(unnamed)") +
+            "' at beat " + picked.time_beats.toFixed(2) +
+            " → source " + sourceTime.toFixed(4) + "s, bpm=" + tempo);
+
+    // Shell to the helper. The patcher's prepend `loadArrangementFromManifest`
+    // (wired to outlet 2) handles the reload after `onAnchorComplete` fires.
+    try {
+        outlet(1, PYTHON_BIN, HELPER_PATH,
+               "--track-dir", dir,
+               "--bpm", String(tempo),
+               "--first-downbeat", sourceTime.toFixed(6),
+               "--manifest-out", manifestPath);
+    } catch (e) {
+        _status("anchor: spawn outlet error: " + e);
+        return false;
+    }
+    return true;
+}
+```
+
+Then update `onAnchorComplete` to outlet on outlet 2 with the manifest
+path (no shift atom — the chunks are now bar-aligned in source so
+default load position is correct). The current outlet-2 path emits
+`(manifestPath, shift=0)` which the loader handles fine.
+
+### Decision points for the next session
+
+1. **Replace pure-shift, or keep both?** Pure-shift is fast (~10ms)
+   and works perfectly for tracks where chunks are already bar-aligned
+   in the user's musical sense (e.g., Believer). Re-anchor is slower
+   (~2s) but corrects source-level mistakes (Definition, Ooh La La).
+   Options:
+   - **Replace.** Plain ANCH = re-anchor always. Simpler mental model;
+     the ~2s cost is acceptable since users only ANCH a few times per
+     track.
+   - **Modifier-split.** Plain click = re-anchor (the harder case);
+     shift-click or alt-click = pure shift (the visual nudge). Easy to
+     wire in `sf_ui.js`'s `onclick(x, y, button, mod1, shift, ctrl, mod2)`.
+   - **Two buttons.** ANCH and SHIFT side-by-side. Most discoverable but
+     eats more canvas real estate.
+
+2. **What to do about Live's tempo override.** The minimal diff above
+   reads Live's tempo and passes it as `--bpm`. That's the Phase 3a
+   behavior baked in. For Believer (where BPM is already correct in
+   the manifest), Live's tempo will match and re-anchor is a no-op
+   on BPM, just corrects `first_downbeat`. For Definition (where the
+   user might have manually corrected tempo), it adopts the new BPM.
+   Worth keeping as the default; no toggle needed.
+
+3. **Update the test suite.** The Phase 3 implementation removes the
+   shift-from-outlet-2 contract from anchor() (replaced with a
+   reload-via-onAnchorComplete contract). Three tests in
+   `tests/js_mocks/test_locator_anchor.test.js` assert outlet-2 atoms
+   directly (`anchor: emits reload atoms (path + shift) on outlet 2`,
+   `anchor: shift respects musical_bar_1_chunk_index`, `anchor:
+   locator beat outside original grid still shifts`). They'll need
+   to be rewritten or replaced to assert outlet-1 (shell) atoms.
