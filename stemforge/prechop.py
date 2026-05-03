@@ -212,8 +212,27 @@ def prechop_stem(
         read_end = min(total, target_end + pad_post_frames)
         chunk = y[read_start:read_end, :]
 
-        # Actual padding applied (in frames, may be < requested at edges).
-        actual_pre = target_start - read_start
+        # Pre-source silence padding. When the chunk's WAV layout would extend
+        # left of source frame 0 — either because target_start < 0 (a pre-chunk
+        # whose loop region crosses source 0) or because target_start <
+        # pad_pre_frames (a near-start chunk whose pad_pre region runs off the
+        # left edge) — prepend silence to make the music body land at the
+        # correct WAV-frame position. Without this, actual_pre below either
+        # goes negative (loop_start_sec/loop_end_sec turn negative in the
+        # manifest, breaking the M4L loader and showing as visual gaps in
+        # Ableton) or under-fills the pre-pad region inconsistently across
+        # chunks. Silence at the START represents source frames before file
+        # start that don't exist on disk.
+        silence_before_frames = max(0, pad_pre_frames - target_start)
+        if silence_before_frames > 0:
+            silence_before = np.zeros(
+                (silence_before_frames, chunk.shape[1]), dtype=chunk.dtype
+            )
+            chunk = np.concatenate([silence_before, chunk], axis=0)
+            actual_pre = pad_pre_frames
+        else:
+            actual_pre = target_start - read_start
+
         actual_post = read_end - target_end  # may be negative if last chunk truncated
 
         # If we want every chunk to be the same length, pad with silence.

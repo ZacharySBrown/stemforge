@@ -153,11 +153,11 @@ def cli():
 @click.option(
     "--pad-pre-bars",
     type=int,
-    default=0,
-    help="Bars of pre-pad inside each chunk WAV (audio BEFORE the loop region). "
-    "Default 0 = chunk WAV starts AT bar 1 of that chunk's content (no leading silence/prior-bar audio). "
-    "Set >0 to enable drag-extending into the previous bar — but be aware that "
-    "Ableton's auto-warp may snap start_marker to a grid, exposing the pad as leading air.",
+    default=1,
+    help="Bars of pre-pad inside each chunk WAV (audio BEFORE the loop region) "
+    "for drag-extending the loop start backwards in Ableton. Default 1 bar. "
+    "Set 0 if you want chunk WAV frame 0 to BE bar 1 of that chunk's content "
+    "(no leading prior-bar audio).",
 )
 @click.option(
     "--pad-post-bars",
@@ -493,8 +493,8 @@ def split(
 @click.option(
     "--pad-pre-bars",
     type=int,
-    default=0,
-    help="Bars of pre-pad inside each chunk WAV (default 0 = chunk WAV frame 0 IS bar 1, no leading air).",
+    default=1,
+    help="Bars of pre-pad inside each chunk WAV (default 1 = drag-extend headroom backward).",
 )
 @click.option(
     "--pad-post-bars",

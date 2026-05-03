@@ -123,9 +123,13 @@ def test_loop_region_round_trips_to_target_audio(tmp_path):
     )
 
 
-def test_first_chunk_clamps_pre_padding(tmp_path):
-    # Convention: first chunk has actual pre-pad = 0 (no audio before the file
-    # starts), so loop_start_sec == 0 and loop_end_sec == bars worth of seconds.
+def test_first_chunk_silence_pads_pre_padding(tmp_path):
+    # Convention (post-2026-05-03): every chunk's pad_pre region is exactly
+    # pad_bars worth, silence-padded if the source can't supply real audio
+    # there. So the first chunk's pad_pre_bars == pad_bars (silence), the
+    # loop starts at WAV frame pad_pre_seconds, and loop length == bars
+    # worth of seconds. This makes all chunks uniform — required by the
+    # M4L arrangement loader (start_marker = pad_pre_seconds for every clip).
     bars = 2
     pad_bars = 1
     n_frames = FPB * 4
@@ -144,9 +148,10 @@ def test_first_chunk_clamps_pre_padding(tmp_path):
     )
     first = metas[0]
     assert first.chunk_index == 1
-    assert first.pad_pre_bars == 0.0
-    assert first.loop_start_sec == 0.0
-    assert abs(first.loop_end_sec - bars * (FPB / float(SR))) < 1e-6
+    assert first.pad_pre_bars == pad_bars  # silence-padded to full pad_pre
+    pad_pre_sec = pad_bars * (FPB / float(SR))
+    assert abs(first.loop_start_sec - pad_pre_sec) < 1e-6
+    assert abs(first.loop_end_sec - (pad_pre_sec + bars * (FPB / float(SR)))) < 1e-6
 
 
 def test_last_chunk_silence_padded_to_uniform_length(tmp_path):
