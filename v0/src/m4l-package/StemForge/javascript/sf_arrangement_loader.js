@@ -406,12 +406,57 @@ function _alSecToBeats(sec, bpm) {
     return b;
 }
 
+function _alClearStemfgClips(trackIdx, manifestDir) {
+    // Delete every arrangement_clip on this track whose file_path sits inside
+    // `manifestDir`. Why scoped to that dir: a re-load (e.g. after re-anchor)
+    // must wipe the prior chunks before placing new ones, otherwise the new
+    // clips collide with the old ones at identical start beats and
+    // create_audio_clip silently fails — leaving the OLD audio on the
+    // arrangement view despite the WAV files having been rewritten on disk.
+    // Scoping to `manifestDir` preserves any user-placed clips (their own
+    // recordings, MIDI bounces, etc.) that share the stem track.
+    //
+    // Walk arrangement_clips in REVERSE so deletion doesn't shift the
+    // indices of clips we haven't visited yet.
+    var trackApi = new LiveAPI("live_set tracks " + trackIdx);
+    var n = 0;
+    try { n = trackApi.getcount("arrangement_clips") | 0; }
+    catch (_) { return 0; }
+    var deleted = 0;
+    var prefix = String(manifestDir || "");
+    for (var i = n - 1; i >= 0; i--) {
+        var clipPath = "live_set tracks " + trackIdx + " arrangement_clips " + i;
+        var clip = new LiveAPI(clipPath);
+        if (!clip || clip.id === "0") continue;
+        var fp = "";
+        try { fp = String(clip.get("file_path") || ""); } catch (_) {}
+        if (!fp) continue;
+        if (fp.indexOf(prefix) !== 0) continue;
+        try {
+            trackApi.call("delete_clip", "id", clip.id);
+            deleted++;
+        } catch (e) {
+            _alStatus("delete_clip failed for " + fp + ": " + e);
+        }
+    }
+    return deleted;
+}
+
 function _alLoadStem(stemName, stemBlock, manifestDir, bpm, beatsPerBar) {
     // Returns {ok: bool, clips_created: int}.
     var trackIdx = _alResolveTrack(stemName);
     if (trackIdx < 0) {
         _alStatus("could not resolve track for stem " + stemName);
         return { ok: false, clips_created: 0 };
+    }
+
+    // Wipe any prior stemforge-owned clips on this track before placing the
+    // new ones. Necessary on re-anchor: the WAV file paths often coincide
+    // with prior load (drums_chunk_001.wav etc), and create_audio_clip won't
+    // overwrite a clip already at the same start_time.
+    var wiped = _alClearStemfgClips(trackIdx, manifestDir);
+    if (wiped > 0) {
+        _alStatus("stem " + stemName + " → wiped " + wiped + " prior clip(s)");
     }
 
     var chunks = (stemBlock && stemBlock.chunks) ? stemBlock.chunks : [];
