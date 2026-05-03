@@ -152,3 +152,59 @@ chunks cover bars 1, 2, 3 at source 0.93, 3.6, 6.27 respectively.
 The user explicitly wants to think about this before any code changes
 go in. The Phase 1+2 fixes already handle the immediate issue (full
 song coverage with intro chunks). Phase 3 is an enhancement on top.
+
+## Empirical test data (2026-05-03 from-scratch restem)
+
+To inform the Phase 3 decision, three tracks were restemmed with no
+overrides and no pre-existing manifest. Auto-detection landed:
+
+| Track | BPM detected | BPM truth | first_downbeat | Reconciler source |
+|---|---|---|---|---|
+| Definition | 120.19 | 89.88 | None | `librosa:drums`, low conf |
+| Believer | 126.05 | ~125 | None | `librosa:drums`, low conf |
+| Ooh La La | 84.72 | ~85.11 | None | `librosa:drums`, low conf |
+
+All three fell back to `librosa:drums` with low confidence — the
+multi-source reconciler did not reach consensus on any of them. None
+got a `first_downbeat`, so prechop defaulted to cutting from source 0
+(`pre_bars=0`, `musical_bar_1_chunk_index=0`).
+
+### What this implies for Phase 3 scope
+
+- **Definition is the only case where BPM is materially wrong** (doubled
+  — the half-time hip-hop trap the reconciler was supposed to catch but
+  didn't here). Pure-shift ANCH cannot fix this: chunks are physically
+  the wrong duration in source-time, so shifting them just relocates
+  wrongly-sized clips. This case needs a re-anchor with `--bpm`
+  override.
+- **Believer and Ooh La La have correct BPM**, just missing
+  `first_downbeat`. For these, pure-shift ANCH (the current behavior)
+  is sufficient: drop a locator at any audible bar, ANCH shifts
+  chunks so that bar lands at the locator. No re-cut needed.
+
+### Possible smaller-scoped Phase 3
+
+Rather than full bar-grid re-anchor, consider:
+
+**Phase 3a — "ANCH adopts Live's tempo as new BPM."**
+On every ANCH press, if Live's project tempo differs from the manifest's
+BPM by more than a small ε, treat that as a BPM correction signal:
+shell `stemforge re-anchor --bpm <Live tempo> --first-downbeat <derived
+from locator>`. If Live's tempo matches the manifest, do the current
+pure-shift. This way the user's manual workflow becomes:
+1. Listen to the chunks; if they're playing the wrong tempo, drag
+   Live's tempo until the loop seam is clean (the existing
+   `probe_loop.py` workflow but in-Ableton).
+2. Drop a locator at bar 1.
+3. ANCH — picks up the corrected tempo AND the bar-1 source position
+   in one shot.
+
+This handles the Definition case (BPM correction) and the Believer /
+Ooh La La case (downbeat correction) without forcing a full re-anchor
+on every press. **Cost**: still ~2s per press when BPM differs (Python
+shell-out); free (~10ms) when BPM matches (pure shift).
+
+This is probably the right scope. Phase 3 as originally specced (mod
+`barSeconds`) is more theoretical and harder to explain; Phase 3a
+maps directly to the user's mental model ("I corrected the tempo by
+ear, now lock it in").

@@ -123,6 +123,92 @@ def test_loop_region_round_trips_to_target_audio(tmp_path):
     )
 
 
+def test_pre_chunk_crossing_source_zero_silence_pads_at_start(tmp_path):
+    """Regression test for the 2026-05-03 prechop pre-chunk fix.
+
+    When a pre-chunk's source range crosses source 0 (target_start < 0),
+    earlier code appended silence at the END of the WAV via pad_last and
+    wrote NEGATIVE loop_start_sec/loop_end_sec into the manifest. The M4L
+    arrangement loader passes those values to Live's start_marker, which
+    silently clamps negative values, producing visible gaps between
+    chunks in the arrangement view.
+
+    The fix: prepend silence to the WAV so the music body lands at the
+    correct WAV-frame position; loop_start_frames is always pad_pre_frames
+    (non-negative); the leading silence frames represent the missing
+    pre-source region (source content that doesn't exist on disk).
+
+    Setup: 1 bar of source intro, first_downbeat at exactly 1 bar in,
+    then 8 bars of "real" song. With bars=4 chunks and pre_bars=4, the
+    prechop generates one pre-chunk whose source range is [-3 bars, +1 bar]
+    — i.e., target_start = -3 bars (NEGATIVE). The fix puts 3 bars of
+    silence at the start of that chunk's WAV.
+    """
+    bars = 4
+    pad_pre_bars = 1
+    pad_post_bars = 1
+    pre_bars = bars  # one pre-chunk's worth, identical to chunk size
+    bar_frames = FPB
+    n_intro_frames = 1 * bar_frames  # 1 bar of intro source
+    n_total_frames = 9 * bar_frames  # 1 bar intro + 8 bars song
+    first_downbeat_sec = bar_frames / float(SR)  # exactly 1 bar in
+
+    stem = tmp_path / "drums.wav"
+    _write_marker_stem(stem, n_total_frames)
+
+    metas = prechop_stem(
+        stem,
+        tmp_path,
+        "drums",
+        bpm=BPM,
+        bars=bars,
+        pad_bars=1,
+        pad_last=True,
+        first_downbeat_sec=first_downbeat_sec,
+        pre_bars=pre_bars,
+        pad_pre_bars=pad_pre_bars,
+        pad_post_bars=pad_post_bars,
+        write_sidecars=False,
+    )
+
+    # Layout: 1 pre-chunk + N post-chunks. Pre-chunk's target_start is
+    # 1 bar (downbeat) - 4 bars (pre_bars) = -3 bars (negative).
+    pre_chunk = metas[0]
+
+    # Loop offsets must be NON-NEGATIVE (the bug-fix invariant).
+    assert pre_chunk.loop_start_sec >= 0, (
+        f"loop_start_sec must be non-negative; got {pre_chunk.loop_start_sec}. "
+        "Negative values break the M4L loader's start_marker."
+    )
+    assert pre_chunk.loop_end_sec > pre_chunk.loop_start_sec
+    # Every chunk's WAV total length should be (bars + pad_pre + pad_post) bars.
+    expected_total_frames = (bars + pad_pre_bars + pad_post_bars) * bar_frames
+    expected_total_sec = expected_total_frames / float(SR)
+    assert abs(pre_chunk.total_sec - expected_total_sec) < 1e-6
+    # Loop length should equal exactly bars worth of seconds (consistent across all chunks).
+    expected_loop_sec = bars * (bar_frames / float(SR))
+    assert abs((pre_chunk.loop_end_sec - pre_chunk.loop_start_sec) - expected_loop_sec) < 1e-6
+    # Loop should start at the pad_pre boundary (always pad_pre_seconds in).
+    assert abs(pre_chunk.loop_start_sec - pad_pre_bars * (bar_frames / float(SR))) < 1e-6
+
+    # And the prepended silence is REAL silence — not source audio. Read the
+    # first frames of the WAV; they must be zero.
+    wav = tmp_path / pre_chunk.file
+    data, _ = sf.read(str(wav), always_2d=True)
+    # The first 3 bars (the missing-pre-source region) plus 1 bar pad_pre =
+    # WAV frames [0, 4*FPB] should all be zero (silence).
+    silence_region = data[: 3 * bar_frames + pad_pre_bars * bar_frames, :]
+    assert np.allclose(silence_region, 0.0), (
+        "pre-chunk's leading region must be silence (representing source < 0)"
+    )
+
+    # Sanity: every other chunk must have the same total + loop layout.
+    for cm in metas[1:]:
+        assert abs(cm.total_sec - expected_total_sec) < 1e-6
+        assert abs((cm.loop_end_sec - cm.loop_start_sec) - expected_loop_sec) < 1e-6
+        assert abs(cm.loop_start_sec - pre_chunk.loop_start_sec) < 1e-6
+
+
 def test_first_chunk_silence_pads_pre_padding(tmp_path):
     # Convention (post-2026-05-03): every chunk's pad_pre region is exactly
     # pad_bars worth, silence-padded if the source can't supply real audio
