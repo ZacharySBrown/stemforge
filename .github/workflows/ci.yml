@@ -164,3 +164,15 @@ jobs:
               sys.exit("amxd missing expected container magic")
           print(f"OK: .amxd {len(data)} bytes, container magic present")
           PY
+
+      - name: Run stemforge.verifiers (non-blocking)
+        # Hardening Stream C.2 — runs the 9 patcher-level + 2 .amxd-level
+        # verifiers from stemforge/verifiers.py against the freshly-built
+        # device. NON-BLOCKING by design: surfaces structural drift without
+        # gating PR merge while #27 (canonical plugin~/plugout~ shape) is
+        # being tracked separately. Promote to blocking once all 11 pass.
+        if: hashFiles('v0/build/StemForge.amxd') != ''
+        continue-on-error: true
+        run: |
+          uv pip install --system -e '.'
+          python -m stemforge.verifiers verify-amxd v0/build/StemForge.amxd
