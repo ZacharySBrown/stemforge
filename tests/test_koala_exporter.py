@@ -16,7 +16,6 @@ from pathlib import Path
 import pytest
 
 from stemforge.exporters.koala import (
-    LOOPS_BANK_PADS,
     PADS_PER_BANK,
     KoalaExportConfig,
     export_koala,
@@ -70,9 +69,7 @@ def curated_dir(tmp_path: Path) -> Path:
     oneshot_counts = {"kick": 12, "snare": 8, "hihat": 6, "toms": 3, "cymbals": 4}
     for part, count in oneshot_counts.items():
         for i in range(1, count + 1):
-            _write_silent_wav(
-                curated / f"{part}_oneshots" / f"{part}_oneshot_{i:03d}.wav"
-            )
+            _write_silent_wav(curated / f"{part}_oneshots" / f"{part}_oneshot_{i:03d}.wav")
 
     manifest = {"bpm": 126.05, "n_bars": loops_per_stem, "stems": manifest_stems}
     (curated / "manifest.json").write_text(json.dumps(manifest, indent=2))
@@ -124,9 +121,7 @@ def test_bank_01_uses_correct_pad_layout(curated_dir: Path, tmp_path: Path) -> N
     assert bank_01_basenames[15].startswith("16_vocals")
 
 
-def test_bank_02_substems_first_then_oneshots(
-    curated_dir: Path, tmp_path: Path
-) -> None:
+def test_bank_02_substems_first_then_oneshots(curated_dir: Path, tmp_path: Path) -> None:
     config = KoalaExportConfig(output_dir=tmp_path / "out")
     zip_path = export_koala(curated_dir, config)
 

@@ -38,7 +38,6 @@ import shutil
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
 
 # Koala hard limits (per the manual)
 PADS_PER_BANK = 64
@@ -114,9 +113,7 @@ def export_koala(curated_dir: Path, config: KoalaExportConfig | None = None) -> 
     bank_02_count = _build_bank_02_kit(curated_dir, bank_02, config)
 
     # README for the human at the other end of the AirDrop
-    _write_readme(
-        staging, project_name, manifest, bank_01_count, bank_02_count, config
-    )
+    _write_readme(staging, project_name, manifest, bank_01_count, bank_02_count, config)
 
     # Zip it
     zip_path = config.output_dir / f"{project_name}_koala.zip"
@@ -153,7 +150,6 @@ def _build_bank_01_loops(
     keeps the visual 4×4 grid alignment stable across exports — drums always
     on row 1, bass always on row 2, etc.
     """
-    pad_index = 1
     files_copied = 0
 
     for row, stem in enumerate(STEM_ORDER):
@@ -186,8 +182,6 @@ def _build_bank_01_loops(
             dest_name = f"{pad:02d}_{stem}_{slot + 1:02d}.wav"
             shutil.copy2(src, bank_dir / dest_name)
             files_copied += 1
-
-        pad_index = row_start + config.loops_per_stem
 
     return files_copied
 
@@ -252,8 +246,7 @@ def _load_manifest(curated_dir: Path) -> dict:
     manifest_path = curated_dir / "manifest.json"
     if not manifest_path.exists():
         raise FileNotFoundError(
-            f"No manifest.json in {curated_dir}. "
-            f"Did you run `stemforge curate` on this project?"
+            f"No manifest.json in {curated_dir}. Did you run `stemforge curate` on this project?"
         )
     return json.loads(manifest_path.read_text())
 
@@ -284,10 +277,7 @@ def _ranked_loops_for_stem(manifest: dict, stem: str, limit: int) -> list[str]:
 
     # Shape B: {"loops": [{"stem": "drums", "file": "...", "rank": 1}, ...]}
     if "loops" in manifest and isinstance(manifest["loops"], list):
-        entries = [
-            e for e in manifest["loops"]
-            if isinstance(e, dict) and e.get("stem") == stem
-        ]
+        entries = [e for e in manifest["loops"] if isinstance(e, dict) and e.get("stem") == stem]
         sorted_entries = sorted(
             entries,
             key=lambda e: e.get("rank", e.get("position", e.get("score", 0))),
@@ -309,7 +299,7 @@ def _write_readme(
     bpm = manifest.get("bpm", "unknown")
     readme = f"""\
 {project_name} — Koala Sampler bank set
-{'=' * 60}
+{"=" * 60}
 
 Source BPM: {bpm}
 Bank 1 (loops): {bank_01_count} samples

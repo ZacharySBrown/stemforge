@@ -152,7 +152,6 @@ def test_pre_chunk_crossing_source_zero_silence_pads_at_start(tmp_path):
     pad_post_bars = 1
     pre_bars = bars  # one pre-chunk's worth, identical to chunk size
     bar_frames = FPB
-    n_intro_frames = 1 * bar_frames  # 1 bar of intro source
     n_total_frames = 9 * bar_frames  # 1 bar intro + 8 bars song
     first_downbeat_sec = bar_frames / float(SR)  # exactly 1 bar in
 
@@ -480,7 +479,7 @@ def test_emit_partial_creates_chunk_001_with_silence_left_pad(tmp_path):
     assert not np.allclose(real_segment, 0.0)
     # The real audio is the source's [0, leftover_frames) — constant 0.5
     # baseline, so RMS should be ~0.5.
-    assert abs(float(np.sqrt(np.mean(real_segment ** 2))) - 0.5) < 0.01
+    assert abs(float(np.sqrt(np.mean(real_segment**2))) - 0.5) < 0.01
     # Post-pad: also real audio (continues from leftover_frames into source).
     post_pad_start = real_end
     post_pad_end = post_pad_start + pad_post_frames
@@ -622,7 +621,7 @@ def test_decide_emit_partial_any_stem_with_content_triggers_emit(tmp_path):
     stem's leading region has content, all stems emit a partial."""
     drums = tmp_path / "drums.wav"
     bass = tmp_path / "bass.wav"
-    _write_silent_stem(drums, FPB * 8)             # silent
+    _write_silent_stem(drums, FPB * 8)  # silent
     _write_marker_stem_offset(bass, FPB * 8, 0.5)  # has content
     bars = 4
     leftover_bars = 2

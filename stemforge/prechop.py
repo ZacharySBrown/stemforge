@@ -261,9 +261,7 @@ def prechop_stem(
         # start that don't exist on disk.
         silence_before_frames = max(0, pad_pre_frames - target_start)
         if silence_before_frames > 0:
-            silence_before = np.zeros(
-                (silence_before_frames, chunk.shape[1]), dtype=chunk.dtype
-            )
+            silence_before = np.zeros((silence_before_frames, chunk.shape[1]), dtype=chunk.dtype)
             chunk = np.concatenate([silence_before, chunk], axis=0)
             actual_pre = pad_pre_frames
         else:
@@ -468,9 +466,7 @@ def _decide_emit_partial(
         if name in skip_set:
             continue
         try:
-            data, _ = sf.read(
-                str(path), start=0, stop=leftover_frames, always_2d=True
-            )
+            data, _ = sf.read(str(path), start=0, stop=leftover_frames, always_2d=True)
         except Exception:
             continue
         if data.size == 0:
