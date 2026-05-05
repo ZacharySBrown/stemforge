@@ -123,7 +123,13 @@ def write_manifest(
     )
 
     path = output_dir / "stems.json"
-    path.write_text(json.dumps(asdict(manifest), indent=2))
+    payload = asdict(manifest)
+    # Hardening Stream A.2 — validate at the write boundary so producer-side
+    # shape drift fails loud at the CLI rather than at downstream M4L read.
+    from .schemas import validate_stems_manifest
+
+    validate_stems_manifest(payload)
+    path.write_text(json.dumps(payload, indent=2))
 
     # Update index.json in the parent (processed/) dir for M4L device discovery
     update_index(output_dir.parent, track_name)
