@@ -4,19 +4,54 @@
 // used by StemForge JS modules. Lives entirely in Node; no Max install needed.
 //
 // Scope: just enough surface to execute sf_preset_loader.js, sf_state.js,
-// sf_forge.js, and the priority-chain section of stemforge_loader.v0.js for
-// offline regression tests.
+// sf_forge.js, sf_arrangement_reader.js, sf_arrangement_loader.js,
+// stemforge_loader.v0.js's `_commitSessionTracks`, and the priority-chain
+// section of stemforge_loader.v0.js for offline regression tests.
 //
 // Module state is intentionally global-on-this-module so multiple modules
 // loaded in the same sandbox share Dict state (mirroring the real Max runtime
 // where `new Dict("sf_preset")` returns a handle to a single process-wide
 // dict).
+//
+// LiveAPI hardening (Hardening Stream B.2):
+//   The LiveAPI constructor traverses a backing `state.liveTree` — a nested
+//   dict where each node has `_properties` (scalar properties accessible via
+//   `.get(prop)`) and named children (collections as arrays, singletons as
+//   objects). Path syntax mirrors Live's: space-separated tokens like
+//   "live_set tracks 0 clip_slots 0 clip". Unseeded paths fall back to the
+//   no-op behavior (returning 0 / [] / 'no-op set') so existing tests that
+//   don't set up a tree continue to work.
+//
+//   LOM quirks honored (per `feedback_arrangement_clip_lom`):
+//     * `warp_bpm` writes are silently dropped (read-only LOM property)
+//     * `end_time` writes are silently dropped (read-only on Clip)
+//     * Marker-unit flip with warping is exposed via `liveMarkerUnit(path)`
+//       (returns "beats" if warping=1, "seconds" if warping=0). Mock does
+//       NOT auto-convert; tests can assert the unit flag and verify caller
+//       logic uses the right interpretation.
 // ─────────────────────────────────────────────────────────────────────────────
 
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
+
+// LOM properties that the real Live runtime accepts writes for but silently
+// ignores. Documented in `memory/feedback_arrangement_clip_lom.md`.
+const LOM_READONLY_PROPS = Object.freeze({
+    warp_bpm: true,
+    end_time: true,
+});
+
+// Properties whose unit (seconds vs beats) flips with the clip's `warping`
+// flag. Used by `liveMarkerUnit()` so tests can assert against the right
+// numeric basis.
+const LOM_MARKER_PROPS = Object.freeze({
+    start_marker: true,
+    end_marker: true,
+    loop_start: true,
+    loop_end: true,
+});
 
 // Shared global state per harness session.
 const state = {
@@ -25,6 +60,9 @@ const state = {
     logs: [],                          // post() captures
     outlets: Object.create(null),      // outletNum (number) -> list of arg-arrays
     liveApiCalls: [],                  // for optional inspection
+    liveTree: null,                    // root LOM mock; null = unseeded → no-op
+    liveCallHandlers: Object.create(null), // verb -> (lomPath, args) => result
+    liveReadonlyDrops: [],             // log of writes silently dropped
 };
 
 function resetState() {
@@ -33,6 +71,9 @@ function resetState() {
     state.logs.length = 0;
     state.outlets = Object.create(null);
     state.liveApiCalls.length = 0;
+    state.liveTree = null;
+    state.liveCallHandlers = Object.create(null);
+    state.liveReadonlyDrops.length = 0;
 }
 
 // ── Path helpers ─────────────────────────────────────────────────────────────
@@ -258,17 +299,177 @@ function arrayfromargs(/* ...args */) {
     return out;
 }
 
+// ── liveTree path resolution ─────────────────────────────────────────────────
+// Path syntax (LOM):  "live_set" | "live_set tracks 0" |
+//   "live_set tracks 0 clip_slots 0 clip" |
+//   "live_set cue_points 0".
+//
+// Tree shape:
+//   {
+//     _properties: { tempo: 120, signature_numerator: 4, ... },
+//     tracks: [                          // collection (array)
+//       {
+//         _properties: { name: "A", color: 1 },
+//         clip_slots: [
+//           { _properties: { has_clip: 1 },
+//             clip: {                     // scalar child (object, not array)
+//               _properties: {
+//                 file_path: "...", start_marker: 0, ..., warping: 1,
+//               },
+//               warp_markers: [ { _properties: {...} }, ... ],
+//             },
+//           },
+//         ],
+//         arrangement_clips: [...],
+//       },
+//     ],
+//     cue_points: [
+//       { _properties: { time: 0, name: "Verse" } },
+//     ],
+//   }
+
+function _splitPath(pathStr) {
+    return String(pathStr || '')
+        .trim()
+        .split(/\s+/)
+        .filter(function (s) { return s.length; });
+}
+
+function _resolveNode(rootKey, segs) {
+    if (!state.liveTree) return null;
+    if (segs[0] !== rootKey) return null;
+    let node = state.liveTree;
+    let i = 1;
+    while (i < segs.length) {
+        const childKey = segs[i];
+        const child = node[childKey];
+        if (Array.isArray(child)) {
+            // Collection — next seg is the index.
+            const idxStr = segs[i + 1];
+            if (idxStr === undefined) return null;
+            const idx = Number(idxStr);
+            if (!Number.isFinite(idx) || idx < 0 || idx >= child.length) return null;
+            node = child[idx];
+            if (!node) return null;
+            i += 2;
+        } else if (child && typeof child === 'object') {
+            // Singleton child (e.g., clip_slot.clip) — no index follows.
+            node = child;
+            i += 1;
+        } else {
+            return null;
+        }
+    }
+    return node;
+}
+
+// Public seeders for tests. Pass a plain JS object using the tree shape above.
+function seedLiveTree(tree) {
+    state.liveTree = tree || null;
+}
+
+function getLiveTree() {
+    return state.liveTree;
+}
+
+// Set/get a property at any LOM path. For tests + diagnostics.
+function setLiveProperty(lomPath, prop, value) {
+    const segs = _splitPath(lomPath);
+    if (!segs.length) return false;
+    const node = _resolveNode(segs[0], segs);
+    if (!node) return false;
+    if (!node._properties) node._properties = {};
+    node._properties[prop] = value;
+    return true;
+}
+
+function getLiveProperty(lomPath, prop) {
+    const segs = _splitPath(lomPath);
+    if (!segs.length) return undefined;
+    const node = _resolveNode(segs[0], segs);
+    if (!node || !node._properties) return undefined;
+    return node._properties[prop];
+}
+
+// Marker-unit oracle. Call after seeding a clip's warping flag to know which
+// numeric basis loop_start/end + start/end_marker live in.
+function liveMarkerUnit(lomPath) {
+    const segs = _splitPath(lomPath);
+    if (!segs.length) return 'beats';
+    const node = _resolveNode(segs[0], segs);
+    if (!node || !node._properties) return 'beats';
+    const w = node._properties.warping;
+    return (w === 0 || w === false) ? 'seconds' : 'beats';
+}
+
+// Register a handler for a specific LiveAPI.call() verb. Handler signature:
+//   (lomPath, argsArray) -> any
+function setLiveCallHandler(verb, handler) {
+    state.liveCallHandlers[String(verb)] = handler;
+}
+
 // ── Mock LiveAPI ─────────────────────────────────────────────────────────────
 function LiveAPI(pathOrCb, maybePath) {
-    // Minimal — don't throw on construction. Track calls for optional assertions.
-    this._path = typeof pathOrCb === 'string' ? pathOrCb : maybePath || '';
+    // Mirror Max LiveAPI: first arg can be a callback fn or a path string.
+    this._path = typeof pathOrCb === 'string' ? pathOrCb : (maybePath || '');
     state.liveApiCalls.push({ ctor: this._path });
 }
-LiveAPI.prototype.getcount = function () { return 0; };
-LiveAPI.prototype.get = function () { return []; };
-LiveAPI.prototype.set = function () { /* no-op */ };
-LiveAPI.prototype.call = function () { return 0; };
-LiveAPI.prototype.goto = function () { /* no-op */ };
+
+LiveAPI.prototype._node = function () {
+    if (!state.liveTree) return null;
+    const segs = _splitPath(this._path);
+    if (!segs.length) return null;
+    return _resolveNode(segs[0], segs);
+};
+
+LiveAPI.prototype.getcount = function (childName) {
+    if (!state.liveTree) return 0;
+    const node = this._node();
+    if (!node) return 0;
+    const child = node[childName];
+    return Array.isArray(child) ? child.length : 0;
+};
+
+LiveAPI.prototype.get = function (prop) {
+    if (!state.liveTree) return [];
+    const node = this._node();
+    if (!node || !node._properties) return [];
+    const val = node._properties[prop];
+    if (val === undefined) return [];
+    // LOM scalar reads return a 1-element array. Lists stay lists.
+    return Array.isArray(val) ? val.slice() : [val];
+};
+
+LiveAPI.prototype.set = function (prop, value) {
+    if (LOM_READONLY_PROPS[prop]) {
+        // Mirror Live: silent drop.
+        state.liveReadonlyDrops.push({ path: this._path, prop, value });
+        return;
+    }
+    if (!state.liveTree) return;
+    const node = this._node();
+    if (!node) return;
+    if (!node._properties) node._properties = {};
+    node._properties[prop] = value;
+};
+
+LiveAPI.prototype.call = function (verb /* , ...args */) {
+    const args = Array.prototype.slice.call(arguments, 1);
+    const handlers = state.liveCallHandlers || {};
+    const handler = handlers[verb];
+    if (typeof handler === 'function') {
+        return handler(this._path, args);
+    }
+    state.liveApiCalls.push({ unhandledCall: { path: this._path, verb, args } });
+    return 0;
+};
+
+LiveAPI.prototype.goto = function (p) {
+    this._path = String(p || '');
+};
+
+// `property` is sometimes assigned on real LiveAPI for observer callbacks.
+// Keep as a simple writable string; not load-bearing for our test paths.
 LiveAPI.prototype.property = '';
 
 // ── Exports ──────────────────────────────────────────────────────────────────
@@ -277,6 +478,8 @@ module.exports = {
     File,
     Folder,
     LiveAPI,
+    LOM_READONLY_PROPS,
+    LOM_MARKER_PROPS,
     post,
     outlet,
     arrayfromargs,
@@ -285,4 +488,10 @@ module.exports = {
     seedFilesystem,
     seedDir,
     seedFile,
+    seedLiveTree,
+    getLiveTree,
+    setLiveProperty,
+    getLiveProperty,
+    liveMarkerUnit,
+    setLiveCallHandler,
 };
