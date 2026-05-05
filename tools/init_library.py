@@ -63,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
     root = args.root.expanduser()
     if not root.exists():
         print(f"[!] Library root does not exist: {root}", file=sys.stderr)
-        print(f"    Create it first or pass --root <path>.", file=sys.stderr)
+        print("    Create it first or pass --root <path>.", file=sys.stderr)
         return 2
 
     created, existed = init_library(root, dry_run=args.dry_run)
