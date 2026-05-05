@@ -23,6 +23,8 @@ import click
 from rich.console import Console
 from rich.rule import Rule
 
+from .audit import with_audit
+
 
 NON_WAV_FORMATS = {".mp3", ".m4a", ".aac", ".ogg", ".flac", ".aiff", ".wma", ".opus"}
 
@@ -525,6 +527,7 @@ def split(
     default=False,
     help="Keep the previous prechop output as `<stem>_prechop.bak/` instead of overwriting.",
 )
+@with_audit("re-anchor")
 def re_anchor(track_dir, bpm, first_downbeat, pre_bars, pad_pre_bars, pad_post_bars, keep_old):
     """
     Re-cut the prechop chunks of an already-forged track at user-supplied
@@ -1039,6 +1042,7 @@ def generate_pipeline_json(pipeline_dir):
     "produces a production-mode manifest (layout_mode=production, version=2). "
     "Omit to use forge's built-in v1 curation path.",
 )
+@with_audit("forge")
 def forge(audio_file, analysis, model, strategy, n_bars, time_sig, output, curation):
     backend = "demucs"
     """
@@ -1523,6 +1527,7 @@ def export(
     type=click.Choice(["locator"]),
     help="Scene-derivation mode. v1 only supports 'locator'.",
 )
+@with_audit("export-song")
 def export_song(arrangement_path, manifest_path, reference_template, project_slot, out_path, mode):
     """
     Build an EP-133 K.O. II song-mode .ppak from an Ableton arrangement snapshot.
