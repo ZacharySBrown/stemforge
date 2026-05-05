@@ -124,6 +124,13 @@ let exportSongBtnRect = null;
 // lays out the padded chunks as audio clips on the arrangement view.
 let arrangementLoadBtnRect = null;
 
+// Anchor-locator hit-rect — sits next to LOADARR on the same row. Reads
+// the first cue_point from the live_set and shells `stemforge re-anchor`
+// at the back-computed source-time, then refreshes the loaded clips. The
+// last-loaded track dir is held by sf_locator_anchor.js (set via the
+// `trackDir <path>` message after each successful arrangement load).
+let anchorLocatorBtnRect = null;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -744,7 +751,12 @@ function drawRightButton(state) {
     const bw = 88;
     const bh = 32;
     const bx = canvasW - bw - 8;
-    const by = 75 - 16;     // centered around y=75 per spec
+    // Primary anchored at center y=55 (was 75): shifts the whole right-column
+    // stack up 20px so the bottom secondary (LOAD/ANCH row) clears Ableton's
+    // device-strip chrome instead of clipping at the canvas edge. Layout:
+    //   primary 39-71 | BOUNCE 75-91 | EXPORT 94-110 | LOAD|ANCH 113-129
+    // → 20px breathing room at the bottom of the 149px canvas.
+    const by = 55 - 16;
 
     let label = "FORGE";
     let fillRgb = COL.violet;
@@ -891,23 +903,33 @@ function drawRightButton(state) {
                COL.cyan, FONT_SIZE_BTN, 1.0);
         exportSongBtnRect = { x: ebx, y: eby, w: ebw, h: sbh };
 
-        // Quinary LOADARR button — sits below EXPORT. Opens a file picker
-        // in the patcher (via [opendialog] driven from the route's
-        // `arrangement_load_click` outlet) and on selection lays out the
-        // padded chunk WAVs from prechop_manifest.json as arrangement-view
-        // clips. Color: violet — a "load/import" complement to the cyan
-        // EXPORT (which is the inverse direction: arrangement → JSON).
-        const lbw = bw;
+        // Quinary row — split into LOAD (left) + ANCHOR (right). Both sit
+        // below EXPORT.
+        //   LOAD: opens [opendialog]; sf_arrangement_loader lays out chunks.
+        //   ANCHOR: reads first cue_point, back-computes source time, shells
+        //   `stemforge re-anchor`, refreshes clips. (color: green — "fix it")
+        const splitGap = 3;
+        const lbw = Math.floor((bw - splitGap) * 0.6);   // ~51px LOAD
+        const abw = bw - splitGap - lbw;                  // ~34px ANCHOR
         const lbx = bx;
         const lby = eby + sbh + sgap;  // gap below EXPORT
         fillRoundedRect(lbx, lby, lbw, sbh, 8, COL.violet, 0.18);
         strokeRoundedRect(lbx, lby, lbw, sbh, 8, COL.violet, 0.85, 1);
         setFontSize(FONT_SIZE_BTN);
-        const lLabel = "LOADARR";
+        const lLabel = "LOAD";
         const llw = textWidth(lLabel, FONT_SIZE_BTN);
         textAt(lbx + lbw / 2 - llw / 2, lby + sbh / 2 + 4, lLabel,
                COL.violet, FONT_SIZE_BTN, 1.0);
         arrangementLoadBtnRect = { x: lbx, y: lby, w: lbw, h: sbh };
+
+        const abx = lbx + lbw + splitGap;
+        fillRoundedRect(abx, lby, abw, sbh, 8, COL.green, 0.18);
+        strokeRoundedRect(abx, lby, abw, sbh, 8, COL.green, 0.85, 1);
+        const aLabel = "ANCH";
+        const alw = textWidth(aLabel, FONT_SIZE_BTN);
+        textAt(abx + abw / 2 - alw / 2, lby + sbh / 2 + 4, aLabel,
+               COL.green, FONT_SIZE_BTN, 1.0);
+        anchorLocatorBtnRect = { x: abx, y: lby, w: abw, h: sbh };
     }
 }
 
@@ -963,6 +985,15 @@ function onclick(x, y, button, mod1, shift, ctrl, mod2) {
             x >= arrangementLoadBtnRect.x && x < arrangementLoadBtnRect.x + arrangementLoadBtnRect.w &&
             y >= arrangementLoadBtnRect.y && y < arrangementLoadBtnRect.y + arrangementLoadBtnRect.h) {
             outlet(0, "arrangement_load_click");
+            return;
+        }
+        // Quinary ANCH button — sits right of LOAD on the same row. Emits
+        // anchor_locator_click; patcher routes this directly into
+        // sf_locator_anchor's `anchor` inlet (which uses the cached track dir).
+        if (anchorLocatorBtnRect &&
+            x >= anchorLocatorBtnRect.x && x < anchorLocatorBtnRect.x + anchorLocatorBtnRect.w &&
+            y >= anchorLocatorBtnRect.y && y < anchorLocatorBtnRect.y + anchorLocatorBtnRect.h) {
+            outlet(0, "anchor_locator_click");
             return;
         }
         // Right column action button. Dispatch per state kind.

@@ -93,6 +93,21 @@ function emitEvent(evt) {
         case "error":
             outlet(0, "error", evt.phase || "", evt.message || "");
             break;
+        case "anchor_started":
+            outlet(0, "anchor_started",
+                   evt.track_dir || "",
+                   evt.bpm || 0,
+                   evt.first_downbeat || 0);
+            break;
+        case "anchor_complete":
+            outlet(0, "anchor_complete",
+                   evt.manifest || "",
+                   evt.bpm || 0,
+                   evt.first_downbeat || 0);
+            break;
+        case "anchor_error":
+            outlet(0, "anchor_error", evt.message || "");
+            break;
         default:
             post("[stemforge] unknown event: " + evt.event + "\n");
     }

@@ -1953,7 +1953,25 @@ function exportArrangementSnapshot() {
 // On success: outlet 0 status, outlet 1 bang. On failure: outlet 0 status only.
 function loadArrangementFromManifest() {
     var args = arrayfromargs(messagename, arguments).slice(1);
-    var manifestPath = args.length ? args.join(" ") : "";
+    if (!args.length) {
+        status("loadArrangementFromManifest: missing manifest path");
+        return;
+    }
+    // Optional trailing shift atom (in beats): if the last atom parses as a
+    // finite number AND we have at least 2 atoms, treat it as a timeline
+    // offset and pull it off. Path atoms are joined with spaces because Max
+    // splits paths-with-spaces into multiple atoms going through prepend.
+    // Paths always end with `.json` so the numeric-tail heuristic is safe.
+    var shiftBeats = 0;
+    if (args.length >= 2) {
+        var tail = args[args.length - 1];
+        var n = Number(tail);
+        if (!isNaN(n) && isFinite(n)) {
+            shiftBeats = n;
+            args = args.slice(0, args.length - 1);
+        }
+    }
+    var manifestPath = args.join(" ");
     if (!manifestPath) {
         status("loadArrangementFromManifest: missing manifest path");
         return;
@@ -1972,7 +1990,7 @@ function loadArrangementFromManifest() {
                 + "runArrangementLoad not in scope");
             return;
         }
-        ok = !!fn(manifestPath);
+        ok = !!fn(manifestPath, shiftBeats);
     } catch (e) {
         status("loadArrangementFromManifest: include/dispatch failed: " + e);
         return;

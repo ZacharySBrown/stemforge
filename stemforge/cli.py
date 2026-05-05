@@ -153,11 +153,11 @@ def cli():
 @click.option(
     "--pad-pre-bars",
     type=int,
-    default=0,
-    help="Bars of pre-pad inside each chunk WAV (audio BEFORE the loop region). "
-    "Default 0 = chunk WAV starts AT bar 1 of that chunk's content (no leading silence/prior-bar audio). "
-    "Set >0 to enable drag-extending into the previous bar — but be aware that "
-    "Ableton's auto-warp may snap start_marker to a grid, exposing the pad as leading air.",
+    default=1,
+    help="Bars of pre-pad inside each chunk WAV (audio BEFORE the loop region) "
+    "for drag-extending the loop start backwards in Ableton. Default 1 bar. "
+    "Set 0 if you want chunk WAV frame 0 to BE bar 1 of that chunk's content "
+    "(no leading prior-bar audio).",
 )
 @click.option(
     "--pad-post-bars",
@@ -324,6 +324,27 @@ def split(
         )
         if reconciled.warning:
             console.print(f"  [yellow]warn:[/yellow] {reconciled.warning}")
+
+        # Loud, actionable hint when the underlying issue is "venv missing
+        # the optional `beat` extra" — the reconciler silently degrades to
+        # librosa-only, which has no idea how to handle half-time hip-hop
+        # and never returns a first_downbeat. Hit hard 2026-05-03 after a
+        # uv-sync drift; the symptom (Definition's BPM coming back doubled
+        # at 120 instead of 90) was indistinguishable from a real DSP bug.
+        if (reconciled.warning or "").startswith("beat-this unavailable"):
+            console.print(Rule("[bold red]beat-this is not installed[/bold red]"))
+            console.print(
+                "  The neural downbeat detector is the half-time-hip-hop fix; "
+                "without it, BPM\n"
+                "  on tracks like Definition / DnB / trap will come back doubled, "
+                "and no\n"
+                "  first_downbeat will be detected on any track. Install with:\n\n"
+                "    [cyan]uv sync --extra beat --extra native[/cyan]\n\n"
+                "  Then re-run this split — the dirs you've already produced "
+                "have low-confidence\n"
+                "  metadata and should be re-stemmed for accurate detection."
+            )
+            console.print(Rule())
 
     slice_counts = {}
     if not no_slice:
@@ -493,8 +514,8 @@ def split(
 @click.option(
     "--pad-pre-bars",
     type=int,
-    default=0,
-    help="Bars of pre-pad inside each chunk WAV (default 0 = chunk WAV frame 0 IS bar 1, no leading air).",
+    default=1,
+    help="Bars of pre-pad inside each chunk WAV (default 1 = drag-extend headroom backward).",
 )
 @click.option(
     "--pad-post-bars",

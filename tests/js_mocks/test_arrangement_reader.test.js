@@ -486,4 +486,15 @@ test('package_sync — m4l-package copy matches m4l-js source of truth', () => {
     );
     assert.equal(loaderSrc, loaderPkg,
         'stemforge_loader.v0.js out of sync between m4l-js and m4l-package');
+
+    var anchorSrc = fs.readFileSync(
+        path.join(JS_DIR, 'sf_locator_anchor.js'), 'utf8'
+    );
+    var anchorPkg = fs.readFileSync(
+        path.join(REPO_ROOT, 'v0', 'src', 'm4l-package', 'StemForge',
+            'javascript', 'sf_locator_anchor.js'),
+        'utf8'
+    );
+    assert.equal(anchorSrc, anchorPkg,
+        'sf_locator_anchor.js out of sync between m4l-js and m4l-package');
 });
