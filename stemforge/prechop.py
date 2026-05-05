@@ -44,6 +44,25 @@ import soundfile as sf
 from .manifest_schema import SampleMeta, Stem, write_sidecar
 
 
+# ── Phase-3 leading-partial-chunk gates ──────────────────────────────────────
+# A "leading partial chunk" is an extra chunk_001 that holds the sub-chunk-
+# period intro material that sits before bar 1 (and before any whole-chunk
+# pre-bars chunks). It exists because the pad-stash convention can only hide
+# audio shorter than `pad_pre_bars` worth; anything longer needs a visible
+# clip in arrangement view to be reachable.
+
+# Minimum fraction of one chunk-period for the leftover region to be
+# considered visually meaningful. Set to 0 so any non-silent leading audio
+# becomes a visible chunk_001 (instead of being hidden in chunk_002's
+# pre-pad, where users couldn't reach pre-bar-1 transients without manual
+# clip-edge dragging). The RMS gate still skips truly silent leading
+# regions.
+MIN_LEFTOVER_FRAC = 0.0
+
+# RMS floor: leading region below this is treated as dead air; no emit.
+SILENCE_THRESHOLD_DBFS = -60.0
+
+
 # ── Math helpers ─────────────────────────────────────────────────────────────
 
 
@@ -116,6 +135,7 @@ def prechop_stem(
     pre_bars: int = 0,
     pad_pre_bars: int | None = None,
     pad_post_bars: int | None = None,
+    emit_partial: bool = False,
 ) -> list[ChunkMeta]:
     """Chop one stem into padded N-bar chunks. See module docstring.
 
@@ -192,15 +212,31 @@ def prechop_stem(
             break
         n_pre_chunks = k
 
-    if n_post_chunks == 0 and n_pre_chunks == 0:
+    # Phase-3 leading-partial-chunk: covers the sub-chunk-period intro
+    # remainder that sits BEFORE the first whole-chunk pre-bars chunk
+    # (or before the first post-downbeat chunk, when no pre-bars).
+    # Composes with arbitrary `pre_bars` because leftover is computed
+    # against the actual `n_pre_chunks` we'll emit.
+    do_emit_partial = False
+    leftover_frames = 0
+    silence_left_frames = 0
+    if emit_partial and first_downbeat_sec > 0:
+        leftover_frames = downbeat_offset - n_pre_chunks * chunk_frames
+        if 0 < leftover_frames < chunk_frames:
+            do_emit_partial = True
+            silence_left_frames = chunk_frames - leftover_frames
+
+    if n_post_chunks == 0 and n_pre_chunks == 0 and not do_emit_partial:
         return []
 
     out_dir = output_dir / f"{stem_name}_prechop"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     metas: list[ChunkMeta] = []
+    partial_offset = 1 if do_emit_partial else 0
     # Iterate from the OLDEST pre-chunk to the NEWEST post-chunk so chunk
-    # filenames are 1-indexed in timeline order.
+    # filenames are 1-indexed in timeline order. `partial_offset` shifts
+    # everything to make room for a chunk_001 emitted below.
     iter_indices = list(range(-n_pre_chunks, n_post_chunks))
     for timeline_index, i in enumerate(iter_indices):
         target_start = downbeat_offset + i * chunk_frames
@@ -259,7 +295,9 @@ def prechop_stem(
         total_sec = chunk.shape[0] / float(sr)
 
         # 1-indexed in timeline order — pre-chunks come first, then post.
-        chunk_index_1based = timeline_index + 1
+        # `partial_offset` shifts indices to leave chunk_001 for the
+        # leading-partial chunk emitted after this loop.
+        chunk_index_1based = timeline_index + 1 + partial_offset
         fname = out_dir / f"{stem_name}_chunk_{chunk_index_1based:03d}.wav"
         sf.write(str(fname), chunk, sr, subtype="PCM_24")
 
@@ -297,10 +335,151 @@ def prechop_stem(
             )
             write_sidecar(fname, meta)
 
+    if do_emit_partial:
+        # Leading partial chunk: holds the [0, leftover_sec) intro
+        # remainder, silence-padded on the LEFT inside the loop region so
+        # arrangement-view bars stay aligned. Pre-pad is all silence
+        # (nothing exists earlier than source 0); post-pad reads the start
+        # of what's in chunk_002.
+        n_chan = y.shape[1]
+        partial_index = 1
+
+        pre_pad_silence = np.zeros((pad_pre_frames, n_chan), dtype=y.dtype)
+        loop_silence_left = np.zeros((silence_left_frames, n_chan), dtype=y.dtype)
+        leading_region = y[0:leftover_frames, :]
+
+        post_pad_end = min(total, leftover_frames + pad_post_frames)
+        post_pad_real = y[leftover_frames:post_pad_end, :]
+        if post_pad_real.shape[0] < pad_post_frames:
+            tail = np.zeros(
+                (pad_post_frames - post_pad_real.shape[0], n_chan),
+                dtype=y.dtype,
+            )
+            post_pad_real = np.concatenate([post_pad_real, tail], axis=0)
+
+        partial_wav = np.concatenate(
+            [pre_pad_silence, loop_silence_left, leading_region, post_pad_real],
+            axis=0,
+        )
+
+        partial_fname = out_dir / f"{stem_name}_chunk_{partial_index:03d}.wav"
+        sf.write(str(partial_fname), partial_wav, sr, subtype="PCM_24")
+
+        loop_start_sec = pad_pre_frames / float(sr)
+        loop_end_sec = (pad_pre_frames + chunk_frames) / float(sr)
+        # Map "loop region start" → source frame -silence_left (the silent
+        # part of the loop region represents source frames before disk
+        # frame 0). Lets `_sourceTimeAtTimelineBeat` produce 0 at the
+        # WAV-frame boundary where real audio begins.
+        partial_source_offset_sec = -silence_left_frames / float(sr)
+
+        partial_meta = ChunkMeta(
+            file=str(partial_fname.relative_to(output_dir)),
+            stem=stem_name,
+            chunk_index=partial_index,
+            bars=bars,
+            pad_bars=pad_bars,
+            pad_pre_bars=float(pad_pre_bars),
+            pad_post_bars=float(pad_post_bars),
+            loop_start_sec=loop_start_sec,
+            loop_end_sec=loop_end_sec,
+            total_sec=partial_wav.shape[0] / float(sr),
+            chunk_duration_samples=int(partial_wav.shape[0]),
+            sample_rate=int(sr),
+            source_offset_sec=partial_source_offset_sec,
+        )
+        metas.insert(0, partial_meta)
+
+        if write_sidecars:
+            stem_literal_partial: Stem | None = (
+                stem_name  # type: ignore[assignment]
+                if stem_name in {"drums", "bass", "vocals", "other", "full"}
+                else None
+            )
+            partial_sidecar = SampleMeta(
+                name=f"{stem_name} {partial_index:03d}",
+                bpm=float(bpm),
+                time_mode="bpm",
+                bars=float(bars),
+                playmode="key",
+                stem=stem_literal_partial,
+                role="loop",
+            )
+            write_sidecar(partial_fname, partial_sidecar)
+
     return metas
 
 
 # ── Top-level orchestrator ───────────────────────────────────────────────────
+
+
+def _decide_emit_partial(
+    stem_paths: dict[str, Path],
+    skip_set: set[str],
+    *,
+    bpm: float,
+    bars: int,
+    beats_per_bar: int,
+    first_downbeat_sec: float,
+    n_pre_chunks: int,
+) -> bool:
+    """Phase-3 gating: should we emit a leading partial chunk?
+
+    Three gates, AND-combined:
+
+    1. `first_downbeat_sec > 0` — there's pre-downbeat material to consider.
+    2. Leftover region size: `leftover_sec / chunk_period_sec >= MIN_LEFTOVER_FRAC`.
+       Below this threshold the pad-stash mechanism handles it cleanly and
+       there's no need for a visible chunk_001.
+    3. RMS gate: max RMS across stems' leading regions >= -60 dBFS. Skips
+       emit when the leading region is dead air (e.g., a clean opening
+       silence that the BPM detector saw past).
+
+    Decision is shared across all stems for arrangement-loader consistency
+    (parallel chunks must align across tracks).
+    """
+    if first_downbeat_sec <= 0:
+        return False
+
+    sample_path = next(
+        (p for name, p in stem_paths.items() if name not in skip_set),
+        None,
+    )
+    if sample_path is None:
+        return False
+
+    info = sf.info(str(sample_path))
+    sr = info.samplerate
+    fpb = frames_per_bar(bpm, sr, beats_per_bar=beats_per_bar)
+    chunk_frames = fpb * bars
+    if chunk_frames <= 0:
+        return False
+
+    leftover_frames = int(round(first_downbeat_sec * sr)) - n_pre_chunks * chunk_frames
+    if leftover_frames <= 0 or leftover_frames >= chunk_frames:
+        return False
+
+    leftover_frac = leftover_frames / float(chunk_frames)
+    if leftover_frac < MIN_LEFTOVER_FRAC:
+        return False
+
+    floor_amp = 10.0 ** (SILENCE_THRESHOLD_DBFS / 20.0)
+    for name, path in stem_paths.items():
+        if name in skip_set:
+            continue
+        try:
+            data, _ = sf.read(
+                str(path), start=0, stop=leftover_frames, always_2d=True
+            )
+        except Exception:
+            continue
+        if data.size == 0:
+            continue
+        rms = float(np.sqrt(np.mean(data.astype(np.float64) ** 2)))
+        if rms >= floor_amp:
+            return True
+
+    return False
 
 
 def prechop(
@@ -318,6 +497,7 @@ def prechop(
     pre_bars: int = 0,
     pad_pre_bars: int | None = None,
     pad_post_bars: int | None = None,
+    emit_partial: bool | None = None,
 ) -> Path:
     """Run prechop_stem across a stems dict. Writes a top-level manifest.
 
@@ -335,11 +515,25 @@ def prechop(
     """
     skip_set = set(skip_stems)
     n_pre_chunks = pre_bars // bars  # chunks before bar 1 (timeline-leading)
+
+    if emit_partial is None:
+        emit_partial = _decide_emit_partial(
+            stem_paths,
+            skip_set,
+            bpm=bpm,
+            bars=bars,
+            beats_per_bar=beats_per_bar,
+            first_downbeat_sec=first_downbeat_sec,
+            n_pre_chunks=n_pre_chunks,
+        )
+
     # 0-indexed: chunks[0..n_pre_chunks-1] are intro, chunks[n_pre_chunks]
     # is the first chunk that starts at first_downbeat_sec (i.e., bar 1).
     # Earlier versions stored this 1-indexed by accident; the only consumer
     # (sf_locator_anchor.js) treats it 0-indexed.
-    musical_bar_1_chunk_index = n_pre_chunks
+    # When a leading partial chunk is emitted, it sits at chunks[0] and
+    # bumps everything down by one.
+    musical_bar_1_chunk_index = n_pre_chunks + (1 if emit_partial else 0)
     resolved_pre = pad_bars if pad_pre_bars is None else pad_pre_bars
     resolved_post = pad_bars if pad_post_bars is None else pad_post_bars
     summary: dict = {
@@ -353,6 +547,7 @@ def prechop(
         "first_downbeat_sec": float(first_downbeat_sec),
         "pre_bars": int(pre_bars),
         "musical_bar_1_chunk_index": int(musical_bar_1_chunk_index),
+        "leading_partial_emitted": bool(emit_partial),
         "stems": {},
     }
 
@@ -373,6 +568,7 @@ def prechop(
             pre_bars=pre_bars,
             pad_pre_bars=pad_pre_bars,
             pad_post_bars=pad_post_bars,
+            emit_partial=emit_partial,
         )
         summary["stems"][stem_name] = {
             "dir": f"{stem_name}_prechop",

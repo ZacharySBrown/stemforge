@@ -150,6 +150,17 @@ function _pickLocator(locators) {
     return locators[0];
 }
 
+// Parse first integer from locator name. Defaults to 1 (= "this is bar 1").
+//   "1" → 1, "bar 4" → 4, "Bar 4" → 4, "m4" → 4,
+//   "" → 1, null → 1, "downbeat 1" → 1, "verse" → 1
+function _parseBarFromLocatorName(name) {
+    if (!name) return 1;
+    var match = String(name).match(/(\d+)/);
+    if (!match) return 1;
+    var n = parseInt(match[1], 10);
+    return (isFinite(n) && n >= 1) ? n : 1;
+}
+
 // ── back-compute source time at a given timeline beat ────────────────────────
 
 function _sourceTimeAtTimelineBeat(manifest, timelineBeat) {
@@ -198,14 +209,24 @@ function setPythonBin(p)  { PYTHON_BIN  = String(p || PYTHON_BIN);  }
 function setStemforgeRepo(p) { STEMFORGE_REPO = String(p || STEMFORGE_REPO); }
 function trackDir(p) { TRACK_DIR = String(p || ""); _status("trackDir set: " + TRACK_DIR); }
 
+// Idempotency threshold (seconds). If the locator-derived first_downbeat
+// is within this distance of the manifest's existing first_downbeat, ANCH
+// no-ops with a status log instead of triggering a ~2s re-cut.
+var IDEMPOTENCY_THRESHOLD_SEC = 0.005;
+
+// PENDING_LOCATOR_BEAT: stashed by anchor() for onAnchorComplete to compute
+// the timeline shift that places the new bar-1 chunk at the locator's
+// timeline position. Without it, the loader tiles from timeline 0 and the
+// locator no longer marks bar 1 in the arrangement view.
+var PENDING_LOCATOR_BEAT = null;
+
 function anchor() {
-    // Pure timeline shift: BPM and source content are assumed correct.
-    // We compute where "musical bar 1" *currently* lives in the arrangement
-    // (idx_of_bar_1 × chunk_beats) and slide every chunk by enough beats so
-    // that the bar-1 chunk lands at the user's locator. Intro chunks (added
-    // via --pre-bars) follow the same shift, preserving their relative
-    // position before bar 1. No re-cut, no Demucs, no Python — just
-    // re-place the existing WAVs at shifted timeline positions.
+    // Bar-grid re-anchor: derive a small `first_downbeat_sec` correction
+    // from where the user's locator falls inside its containing chunk under
+    // the CURRENT grid, then shell to `stemforge re-anchor` to re-cut.
+    // Live's tempo wins (so the user can fix BPM in Ableton before pressing
+    // ANCH). Named-locator parsing lets the user mark "bar 4" if the
+    // detected grid is off by whole-chunk multiples.
     var argv = arrayfromargs(arguments);
     var dir = argv.length ? String(argv[0]) : TRACK_DIR;
     if (!dir) {
@@ -228,30 +249,78 @@ function anchor() {
     }
     var picked = _pickLocator(locators);
 
-    var bars = Number(manifest.bars) || 4;
+    var locatorSourceSec = _sourceTimeAtTimelineBeat(manifest, picked.time_beats);
+    if (locatorSourceSec == null) {
+        _status("anchor: locator '" + picked.name + "' at beat " +
+                Number(picked.time_beats).toFixed(2) + " falls outside the chunk grid");
+        return false;
+    }
+
+    // Live's tempo wins. Lets the user nudge tempo before ANCH and have it
+    // adopted automatically. Falls back to manifest BPM if LOM read fails.
+    var tempo = 120;
+    try { tempo = Number(new LiveAPI("live_set").get("tempo")); } catch (_) {}
+    if (!isFinite(tempo) || tempo <= 0) tempo = Number(manifest.bpm) || 120;
+
+    // Geometry — note the manifest field is `bars` (chunk width in bars).
     var beatsPerBar = Number(manifest.beats_per_bar) || 4;
-    var chunkBeats = bars * beatsPerBar;
-    // musical_bar_1_chunk_index is set by the prechop step when --pre-bars
-    // is used; absent fields default to 0 (chunk 0 IS bar 1).
-    var bar1Idx = Number(manifest.musical_bar_1_chunk_index) || 0;
-    var pristineBar1Beat = bar1Idx * chunkBeats;
-    var locatorBeat = Number(picked.time_beats) || 0;
-    var shift = locatorBeat - pristineBar1Beat;
+    var barsPerChunk = Number(manifest.bars) || 1;
+    var barSeconds = beatsPerBar * 60 / tempo;
+    var chunkPeriodSec = barsPerChunk * barSeconds;
+
+    // If the user named the locator with a bar number (e.g. "4", "bar 4"),
+    // shift the source time back so bar 1 is (N-1) bars earlier.
+    var locatorBarNumber = _parseBarFromLocatorName(picked.name);
+    var adjustedSourceSec = locatorSourceSec - (locatorBarNumber - 1) * barSeconds;
+    if (adjustedSourceSec < 0) {
+        _status("anchor: locator '" + picked.name + "' = bar " + locatorBarNumber +
+                " puts bar 1 at " + adjustedSourceSec.toFixed(3) +
+                "s (negative). Check locator name.");
+        return false;
+    }
+
+    // Direct: bar 1 is AT the user's locator (after named-locator adjustment).
+    // No snap-to-nearest math — the prior design's `mod chunkPeriodSec` snap
+    // collapsed multi-chunk-period corrections (a locator several bars deep
+    // gets "rounded" back to within half a chunk, mislabeling bar 1).
+    var newFirstDownbeat = adjustedSourceSec;
+    var oldFirstDownbeat = Number(manifest.first_downbeat_sec) || 0;
+    var deltaFD = newFirstDownbeat - oldFirstDownbeat;
+    // Suppress unused-var lint on chunkPeriodSec (kept for clarity in logs).
+    void chunkPeriodSec;
+
+    if (Math.abs(deltaFD) < IDEMPOTENCY_THRESHOLD_SEC) {
+        _status("anchor: locator '" + picked.name + "' (bar " + locatorBarNumber +
+                ") already on bar grid (Δ first_downbeat " +
+                (deltaFD * 1000).toFixed(1) + "ms < threshold), no-op");
+        return false;
+    }
+
+    // Stash the locator's timeline beat so onAnchorComplete can compute a
+    // shift = locatorBeat - bar1Idx*chunkBeats, placing the new bar-1 chunk
+    // AT the locator's timeline position rather than at the chunk-grid
+    // origin (timeline 0).
+    PENDING_LOCATOR_BEAT = Number(picked.time_beats) || 0;
 
     _status("anchor: locator '" + (picked.name || "(unnamed)") +
-            "' at beat " + locatorBeat.toFixed(2) +
-            " → shift " + shift.toFixed(2) +
-            " beats (bar 1 chunk index=" + bar1Idx +
-            ", chunk_beats=" + chunkBeats + ")");
+            "' = bar " + locatorBarNumber +
+            " at source " + locatorSourceSec.toFixed(3) +
+            "s, adjusted bar 1 → " + adjustedSourceSec.toFixed(3) +
+            "s, Δ first_downbeat " + deltaFD.toFixed(3) +
+            "s, newFirstDownbeat " + newFirstDownbeat.toFixed(4) +
+            "s, bpm=" + tempo);
 
-    // Outlet 2 → patcher's `prepend loadArrangementFromManifest` →
-    // sf_lom_loader. We pass two atoms (path + shift); the loader detects
-    // a numeric tail atom as the shift, otherwise treats everything as
-    // path (for backward compat with shift-less callers).
+    // Outlet 1 → [shell] → tools/m4l_locator_anchor.py → stemforge re-anchor.
+    // On completion, the helper emits NDJSON `anchor_complete <manifest>`,
+    // which the patcher routes to onAnchorComplete() → outlet 2 → loader.
     try {
-        outlet(2, manifestPath, shift);
+        outlet(1, PYTHON_BIN, HELPER_PATH,
+               "--track-dir", dir,
+               "--bpm", String(tempo),
+               "--first-downbeat", newFirstDownbeat.toFixed(6),
+               "--manifest-out", manifestPath);
     } catch (e) {
-        _status("anchor: reload outlet error: " + e);
+        _status("anchor: spawn outlet error: " + e);
         return false;
     }
     return true;
@@ -268,11 +337,48 @@ function onAnchorComplete() {
     var manifestPath = argv[0] || "";
     _status("re-anchor done; reloading from " + manifestPath);
     if (!manifestPath) return;
+
+    // Compute timeline shift so the new bar-1 chunk lands at the locator's
+    // timeline position (where the user dropped it). Without shift, the
+    // loader tiles chunks from timeline 0 and the locator no longer marks
+    // bar 1 in arrangement view.
+    //
+    // shift = locatorBeat - bar1Idx * chunkBeats
+    //
+    // If the result would be negative (= the new bar1Idx demands more
+    // pre-roll timeline space than exists between timeline 0 and the
+    // locator), clamp to 0 with a status warning. The user should re-drop
+    // the locator further right OR force --pre-bars 0 in re-anchor.
+    var shift = 0;
+    if (PENDING_LOCATOR_BEAT != null) {
+        var newManifest = _readJsonFile(manifestPath);
+        if (newManifest) {
+            var bar1Idx = Number(newManifest.musical_bar_1_chunk_index) || 0;
+            var bars = Number(newManifest.bars) || 1;
+            var beatsPerBar = Number(newManifest.beats_per_bar) || 4;
+            var chunkBeats = bars * beatsPerBar;
+            var rawShift = PENDING_LOCATOR_BEAT - bar1Idx * chunkBeats;
+            if (rawShift < 0) {
+                _status("anchor: locator at beat " +
+                        PENDING_LOCATOR_BEAT.toFixed(2) +
+                        " is too early for " + bar1Idx +
+                        "-chunk pre-roll (would require shift " +
+                        rawShift.toFixed(2) +
+                        " beats); clamping shift to 0. Drop locator at beat ≥ " +
+                        (bar1Idx * chunkBeats) + " for exact alignment.");
+                shift = 0;
+            } else {
+                shift = rawShift;
+            }
+        }
+        PENDING_LOCATOR_BEAT = null;
+    }
+
     // Each [js] box runs in its own classic-Max JS context, so we cannot
     // call runArrangementLoad directly. Emit on outlet 2 — the patcher
     // routes this back to sf_lom_loader as a `loadArrangementFromManifest`
     // message, which include()s sf_arrangement_loader.js and refreshes.
-    try { outlet(2, manifestPath); }
+    try { outlet(2, manifestPath, shift); }
     catch (e) { _status("reload outlet failed: " + e); }
 }
 
@@ -289,6 +395,7 @@ if (typeof module !== "undefined" && module.exports) {
         trackDir: trackDir,
         _readLocators: _readLocators,
         _pickLocator: _pickLocator,
+        _parseBarFromLocatorName: _parseBarFromLocatorName,
         _sourceTimeAtTimelineBeat: _sourceTimeAtTimelineBeat,
         _join: _join,
         _expandTilde: _expandTilde

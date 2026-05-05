@@ -25,16 +25,19 @@ const JS_DIR = path.join(REPO_ROOT, 'v0', 'src', 'm4l-js');
 const SF_LOCATOR_ANCHOR = path.join(JS_DIR, 'sf_locator_anchor.js');
 
 // Build a synthetic prechop_manifest with 3 chunks of 4 bars at 90 BPM.
-//   bars=4, beats_per_bar=4 → chunkBeats=16
+//   bars=4, beats_per_bar=4 → chunkBeats=16, chunkPeriodSec=10.6667
+//   barSeconds = 4 * 60/90 = 2.6667
 //   secPerBeat = 60/90 = 0.6667
-//   chunk[0] @ source_offset_sec=0.5 (intro padding)
-//   chunk[1] @ source_offset_sec=11.1667 (= 0.5 + 16 * 0.6667)
+//   first_downbeat_sec = 0.5 (where the OLD grid puts bar 1)
+//   chunk[0] @ source_offset_sec=0.5
+//   chunk[1] @ source_offset_sec=11.1667 (= 0.5 + 10.6667)
 //   chunk[2] @ source_offset_sec=21.8333
 function buildManifest() {
     return {
         bpm: 90.0,
         bars: 4,
         beats_per_bar: 4,
+        first_downbeat_sec: 0.5,
         stems: {
             drums: {
                 chunks: [
@@ -103,8 +106,53 @@ test('module loads and exposes test helpers', () => {
     assert.equal(typeof t.trackDir, 'function');
     assert.equal(typeof t._readLocators, 'function');
     assert.equal(typeof t._pickLocator, 'function');
+    assert.equal(typeof t._parseBarFromLocatorName, 'function');
     assert.equal(typeof t._sourceTimeAtTimelineBeat, 'function');
     assert.equal(typeof t._join, 'function');
+});
+
+// ── _parseBarFromLocatorName ────────────────────────────────────────────────
+
+test('_parseBarFromLocatorName: empty / null defaults to bar 1', () => {
+    const ctx = freshSandbox();
+    const { _parseBarFromLocatorName } = getTestExports(ctx);
+    assert.equal(_parseBarFromLocatorName(''), 1);
+    assert.equal(_parseBarFromLocatorName(null), 1);
+    assert.equal(_parseBarFromLocatorName(undefined), 1);
+});
+
+test('_parseBarFromLocatorName: bare integer string', () => {
+    const ctx = freshSandbox();
+    const { _parseBarFromLocatorName } = getTestExports(ctx);
+    assert.equal(_parseBarFromLocatorName('1'), 1);
+    assert.equal(_parseBarFromLocatorName('4'), 4);
+    assert.equal(_parseBarFromLocatorName('17'), 17);
+});
+
+test('_parseBarFromLocatorName: extracts first integer from common patterns', () => {
+    const ctx = freshSandbox();
+    const { _parseBarFromLocatorName } = getTestExports(ctx);
+    assert.equal(_parseBarFromLocatorName('bar 4'), 4);
+    assert.equal(_parseBarFromLocatorName('Bar 4'), 4);
+    assert.equal(_parseBarFromLocatorName('m4'), 4);
+    assert.equal(_parseBarFromLocatorName('downbeat 1'), 1);
+    assert.equal(_parseBarFromLocatorName('4 bar'), 4); // first integer wins
+});
+
+test('_parseBarFromLocatorName: non-numeric names default to bar 1', () => {
+    const ctx = freshSandbox();
+    const { _parseBarFromLocatorName } = getTestExports(ctx);
+    assert.equal(_parseBarFromLocatorName('verse'), 1);
+    assert.equal(_parseBarFromLocatorName('chorus'), 1);
+    assert.equal(_parseBarFromLocatorName('anchor'), 1);
+});
+
+test('_parseBarFromLocatorName: zero or negative integers fall back to 1', () => {
+    const ctx = freshSandbox();
+    const { _parseBarFromLocatorName } = getTestExports(ctx);
+    assert.equal(_parseBarFromLocatorName('0'), 1);
+    // Regex `(\d+)` rejects the minus sign — '-3' → matches '3' → 3.
+    assert.equal(_parseBarFromLocatorName('-3'), 3);
 });
 
 // ── _join / _expandTilde ────────────────────────────────────────────────────
@@ -254,51 +302,194 @@ test('anchor: bails when no locators placed', () => {
     assert.equal(anchor(), false);
 });
 
-test('anchor: emits reload atoms (path + shift) on outlet 2', () => {
-    // Manifest has musical_bar_1_chunk_index implicit=0, chunkBeats=16.
-    // Locator at beat 16 → shift = 16 - 0 = 16 beats.
+// Helpers for outlet-1 inspection (the shell-call path).
+function shellAtomsOf(call) {
+    // outlet(1, PYTHON_BIN, HELPER_PATH, "--track-dir", dir, "--bpm", tempo,
+    //        "--first-downbeat", newDB, "--manifest-out", manifestPath)
+    // Returns a flat parsed object for assertions.
+    const flat = {
+        python: call[0],
+        helper: call[1],
+        argv: call.slice(2),
+    };
+    flat.flags = {};
+    for (let i = 0; i < flat.argv.length; i += 2) {
+        flat.flags[flat.argv[i]] = flat.argv[i + 1];
+    }
+    return flat;
+}
+
+test('anchor: idempotent no-op when locator marks the existing bar 1', () => {
+    // Locator at beat 0 → source = chunk[0].source_offset_sec = 0.5
+    //                  = manifest.first_downbeat_sec.
+    // adjustedSourceSec = 0.5 (default bar 1, no name digit).
+    // newFirstDownbeat = 0.5. delta = 0 < 5ms → no-op.
     const ctx = freshSandbox({
         tempo: 90,
-        cuePoints: [{ name: 'anchor', time: 16 }]
+        cuePoints: [{ name: 'anchor', time: 0 }]
+    });
+    const dir = seedTrackDir(buildManifest());
+    const { anchor, trackDir } = getTestExports(ctx);
+    trackDir(dir);
+    assert.equal(anchor(), false, 'locator on existing bar 1 should no-op');
+
+    // Neither outlet should fire when no work to do.
+    assert.equal((maxApi.state.outlets[1] || []).length, 0,
+        'idempotent no-op must not spawn the helper');
+    assert.equal((maxApi.state.outlets[2] || []).length, 0,
+        'idempotent no-op must not emit on outlet 2');
+});
+
+test('anchor: emits shell atoms on outlet 1 when locator differs from old bar 1', () => {
+    // Locator at beat 18 → source 11.1667 + 2*0.6667 = 12.5s.
+    // adjustedSourceSec = 12.5 (default bar 1, no snap math).
+    // newFirstDownbeat = 12.5 (direct, no `mod chunkPeriodSec`).
+    // Δ = 12.5 - 0.5 = 12.0s, well above 5ms idempotency threshold.
+    const ctx = freshSandbox({
+        tempo: 90,
+        cuePoints: [{ name: 'anchor', time: 18 }]
     });
     const dir = seedTrackDir(buildManifest());
     const { anchor, trackDir } = getTestExports(ctx);
     trackDir(dir);
     assert.equal(anchor(), true);
 
-    const calls = maxApi.state.outlets[2] || [];
-    assert.equal(calls.length, 1, 'expected one reload emission on outlet 2');
-    const atoms = calls[0];
-    assert.equal(atoms.length, 2, 'expected [path, shift] atoms, got ' + atoms.length);
-    assert.equal(atoms[0], dir + '/prechop_manifest.json');
-    assert.equal(Number(atoms[1]), 16);
+    const calls = maxApi.state.outlets[1] || [];
+    assert.equal(calls.length, 1, 'expected one shell emission on outlet 1');
+    const atoms = shellAtomsOf(calls[0]);
+    assert.equal(atoms.flags['--track-dir'], dir);
+    assert.equal(Number(atoms.flags['--bpm']), 90);
+    assert.ok(Math.abs(Number(atoms.flags['--first-downbeat']) - 12.5) < 1e-3,
+        'expected newFirstDownbeat = adjustedSourceSec ≈ 12.5, got ' +
+        atoms.flags['--first-downbeat']);
+    assert.equal(atoms.flags['--manifest-out'], dir + '/prechop_manifest.json');
 
-    // Outlet 1 (the old shell path) must NOT fire under shift-only semantics.
-    const shellCalls = maxApi.state.outlets[1] || [];
-    assert.equal(shellCalls.length, 0, 'shell outlet must be silent under shift-only');
+    // outlet 2 only fires from onAnchorComplete (after the helper finishes),
+    // not from anchor() itself.
+    assert.equal((maxApi.state.outlets[2] || []).length, 0,
+        'outlet 2 must be silent during anchor() — only fires from onAnchorComplete');
 });
 
-test('anchor: shift respects musical_bar_1_chunk_index from manifest', () => {
-    // pre_bars manifest: bar 1 lives in chunk[1] (idx=1, beat 16).
-    // Locator at beat 24 → shift = 24 - 16 = 8.
-    const m = buildManifest();
-    m.musical_bar_1_chunk_index = 1;
+test('anchor: Live tempo wins over manifest BPM in --bpm arg', () => {
+    // No-snap math: newFirstDownbeat = adjustedSourceSec = 12.5,
+    // independent of Live tempo (since no name digit, default bar 1, no
+    // (N-1)*barSeconds adjustment that depends on tempo).
+    // The test verifies BPM passes through as Live's, not manifest's.
     const ctx = freshSandbox({
-        tempo: 90,
-        cuePoints: [{ name: 'downbeat', time: 24 }]
+        tempo: 120,
+        cuePoints: [{ name: 'anchor', time: 18 }]
     });
-    const dir = seedTrackDir(m);
+    const dir = seedTrackDir(buildManifest());
     const { anchor, trackDir } = getTestExports(ctx);
     trackDir(dir);
     assert.equal(anchor(), true);
 
-    const atoms = (maxApi.state.outlets[2] || [])[0];
-    assert.equal(Number(atoms[1]), 8, 'shift should be locator − bar1Idx*chunkBeats');
+    const atoms = shellAtomsOf((maxApi.state.outlets[1] || [])[0]);
+    assert.equal(Number(atoms.flags['--bpm']), 120,
+        'Live tempo (120) must override manifest bpm (90) in --bpm arg');
+    assert.ok(Math.abs(Number(atoms.flags['--first-downbeat']) - 12.5) < 1e-3,
+        'expected newFirstDownbeat ≈ 12.5 (no-snap), got ' +
+        atoms.flags['--first-downbeat']);
 });
 
-test('anchor: locator beat outside original grid still shifts (no bail)', () => {
-    // Pure shift cares nothing about grid extent — locator at beat 100 just
-    // produces a large shift. Caller (Live) handles negative-clamp on its end.
+// ── onAnchorComplete: timeline shift to align bar-1 chunk with locator ──────
+
+test('onAnchorComplete: emits manifest path + shift atom on outlet 2', () => {
+    // anchor() stashes locator beat. onAnchorComplete reads the (just-rewritten)
+    // manifest and computes shift = locatorBeat - bar1Idx * chunkBeats so the
+    // new bar-1 chunk lands at the locator's timeline position.
+    const ctx = freshSandbox({
+        tempo: 90,
+        cuePoints: [{ name: 'anchor', time: 18 }]
+    });
+    const dir = seedTrackDir(buildManifest());
+    const { anchor, trackDir } = getTestExports(ctx);
+    trackDir(dir);
+    anchor();  // stashes PENDING_LOCATOR_BEAT = 18
+
+    // Simulate the helper rewriting the manifest with a leading partial:
+    // bar1Idx = 1, bars = 4, beats_per_bar = 4 → chunkBeats = 16.
+    const newManifest = buildManifest();
+    newManifest.musical_bar_1_chunk_index = 1;
+    maxApi.seedFile(SYNTHETIC_MANIFEST, JSON.stringify(newManifest));
+
+    // Helper would emit anchor_complete <manifestPath> via NDJSON; the
+    // patcher routes that to onAnchorComplete().
+    ctx.onAnchorComplete(SYNTHETIC_MANIFEST);
+
+    const reloadCalls = maxApi.state.outlets[2] || [];
+    assert.equal(reloadCalls.length, 1, 'expected one reload on outlet 2');
+    const [path, shift] = reloadCalls[0];
+    assert.equal(path, SYNTHETIC_MANIFEST);
+    // shift = 18 - 1*16 = 2 → bar 1 chunk lands at timeline beat 18 (= locator)
+    assert.equal(Number(shift), 2,
+        'shift should align bar 1 chunk with locator timeline position');
+});
+
+test('onAnchorComplete: clamps negative shift to 0 (when bar1Idx pre-roll exceeds locator beat)', () => {
+    // Locator at beat 8 with bar1Idx = 2 (partial + 1 pre-chunk) → shift
+    // would be 8 - 2*16 = -24 (negative). Clamp to 0 with status warning.
+    const ctx = freshSandbox({
+        tempo: 90,
+        cuePoints: [{ name: 'anchor', time: 8 }]
+    });
+    const dir = seedTrackDir(buildManifest());
+    const { anchor, trackDir } = getTestExports(ctx);
+    trackDir(dir);
+    anchor();
+
+    const newManifest = buildManifest();
+    newManifest.musical_bar_1_chunk_index = 2;  // partial + 1 pre-chunk
+    maxApi.seedFile(SYNTHETIC_MANIFEST, JSON.stringify(newManifest));
+
+    ctx.onAnchorComplete(SYNTHETIC_MANIFEST);
+
+    const reloadCalls = maxApi.state.outlets[2] || [];
+    assert.equal(reloadCalls.length, 1);
+    assert.equal(Number(reloadCalls[0][1]), 0, 'negative shift must clamp to 0');
+});
+
+test('anchor: named locator subtracts (N-1)*barSeconds from adjustedSourceSec', () => {
+    // Locator at beat 16 named "2" (= "this is bar 2 of the song").
+    // locatorSourceSec = 11.1667. barSeconds @ 90 BPM = 2.6667.
+    // adjustedSourceSec = 11.1667 - 1 * 2.6667 = 8.5.
+    // relSec = 8.5 - 0.5 = 8.0.
+    // chunkPeriodSec = 10.6667. offsetWithinChunk = 8.0 % 10.6667 = 8.0.
+    // 8.0 > 5.333 → snap back: signedOffset = 8.0 - 10.6667 = -2.6667.
+    // newFirstDownbeat = 0.5 - 2.6667 → NEGATIVE → wrap: -2.1667 + 10.6667 = 8.5.
+    const ctx = freshSandbox({
+        tempo: 90,
+        cuePoints: [{ name: '2', time: 16 }]
+    });
+    const dir = seedTrackDir(buildManifest());
+    const { anchor, trackDir } = getTestExports(ctx);
+    trackDir(dir);
+    assert.equal(anchor(), true);
+
+    const atoms = shellAtomsOf((maxApi.state.outlets[1] || [])[0]);
+    assert.ok(Math.abs(Number(atoms.flags['--first-downbeat']) - 8.5) < 1e-3,
+        'expected newFirstDownbeat ≈ 8.5 with named locator "2", got '
+        + atoms.flags['--first-downbeat']);
+});
+
+test('anchor: bails when named locator pushes adjusted bar 1 negative', () => {
+    // Locator at beat 0 (source 0.5s) named "5". adjustedSourceSec =
+    // 0.5 - 4 * 2.6667 = -10.1667 → negative → bail with status, no shell.
+    const ctx = freshSandbox({
+        tempo: 90,
+        cuePoints: [{ name: '5', time: 0 }]
+    });
+    const dir = seedTrackDir(buildManifest());
+    const { anchor, trackDir } = getTestExports(ctx);
+    trackDir(dir);
+    assert.equal(anchor(), false);
+
+    assert.equal((maxApi.state.outlets[1] || []).length, 0);
+});
+
+test('anchor: locator beat outside original grid bails (no shell)', () => {
+    // 3 chunks * 16 chunkBeats = 48; beat 100 falls outside the grid.
+    // _sourceTimeAtTimelineBeat returns null → anchor() bails.
     const ctx = freshSandbox({
         tempo: 90,
         cuePoints: [{ name: '', time: 100 }]
@@ -306,7 +497,6 @@ test('anchor: locator beat outside original grid still shifts (no bail)', () => 
     const dir = seedTrackDir(buildManifest());
     const { anchor, trackDir } = getTestExports(ctx);
     trackDir(dir);
-    assert.equal(anchor(), true);
-    const atoms = (maxApi.state.outlets[2] || [])[0];
-    assert.equal(Number(atoms[1]), 100);
+    assert.equal(anchor(), false);
+    assert.equal((maxApi.state.outlets[1] || []).length, 0);
 });
