@@ -576,6 +576,11 @@ def prechop(
         }
 
     out_path = output_dir / "prechop_manifest.json"
+    # Hardening Stream A.2 — validate at the write boundary so producer-side
+    # shape drift fails loud at the CLI rather than at downstream M4L read.
+    from .schemas import validate_prechop_manifest
+
+    validate_prechop_manifest(summary)
     out_path.write_text(json.dumps(summary, indent=2))
     return out_path
 
