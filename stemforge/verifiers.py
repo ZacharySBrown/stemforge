@@ -470,9 +470,21 @@ def _format_result(r: Result) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m stemforge.verifiers")
     sub = parser.add_subparsers(dest="cmd", required=True)
+
     p_amxd = sub.add_parser("verify-amxd", help="Run all verifiers on a .amxd file")
     p_amxd.add_argument("path", type=Path)
     p_amxd.add_argument("--json", action="store_true", help="Emit JSON instead of text")
+
+    # Hardening Stream C.3 — pitfall #24 headless Max load-verifier.
+    p_load = sub.add_parser(
+        "verify-load",
+        help="Launch Max headless against a patch and parse error categories (Mac-only).",
+    )
+    p_load.add_argument("path", type=Path)
+    p_load.add_argument("--idle-seconds", type=float, default=3.0)
+    p_load.add_argument("--timeout", type=float, default=25.0)
+    p_load.add_argument("--json", action="store_true", help="Emit JSON instead of text")
+
     args = parser.parse_args(argv)
 
     if args.cmd == "verify-amxd":
@@ -499,6 +511,21 @@ def main(argv: list[str] | None = None) -> int:
                 if r.fix_hint and not r.passed:
                     print(f"    fix: {r.fix_hint}")
         return 0 if all(r.passed for r in results) else 1
+
+    if args.cmd == "verify-load":
+        # Lazy-import so verify-amxd users (Linux CI) don't pay the
+        # Darwin-only module-import cost or pull subprocess machinery.
+        from .load_verifier import _cli as load_cli
+
+        argv_load: list[str] = [str(args.path)]
+        if args.json:
+            argv_load.append("--json")
+        if args.idle_seconds != 3.0:
+            argv_load.extend(["--idle-seconds", str(args.idle_seconds)])
+        if args.timeout != 25.0:
+            argv_load.extend(["--timeout", str(args.timeout)])
+        return load_cli(argv_load)
+
     return 2
 
 
