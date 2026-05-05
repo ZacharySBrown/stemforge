@@ -35,6 +35,7 @@ Returns a `ReconciledTempo` with full provenance — every estimate that ran is
 preserved so the manifest can capture what each detector saw, not just the
 winner. That data is what makes future-fix work tractable.
 """
+
 from __future__ import annotations
 
 import logging
@@ -230,9 +231,7 @@ def _detect_beat_this(
         # too noisy to filter (e.g. drum-and-bass with one downbeat per phrase).
         bpm_from_bars = _bpm_from_downbeats(downbeats)
         bpm = (
-            bpm_from_bars
-            if bpm_from_bars is not None
-            else 60.0 / float(np.median(np.diff(beats)))
+            bpm_from_bars if bpm_from_bars is not None else 60.0 / float(np.median(np.diff(beats)))
         )
         # Trim phantom early downbeats: keep only from the first one whose
         # IBI to its successor matches the bar period within 5%. This makes
@@ -247,8 +246,10 @@ def _detect_beat_this(
             if idx > 0:
                 downbeats = downbeats[idx:]
         source: TempoSource = (
-            "beat-this:mix" if audio_label == "mix"
-            else "beat-this:drums" if audio_label == "drums"
+            "beat-this:mix"
+            if audio_label == "mix"
+            else "beat-this:drums"
+            if audio_label == "drums"
             else "beat-this:kick"
         )
         return TempoEstimate(
@@ -273,8 +274,7 @@ def _detect_librosa(
 
     bpm, beats = detect_bpm_and_beats(audio_path)
     source: TempoSource = (
-        "librosa:mix" if audio_label == "mix"
-        else "librosa:drums"
+        "librosa:mix" if audio_label == "mix" else "librosa:drums"
         # librosa never runs on kick stem in the reconciler — kick is
         # only used as a beat-this tiebreaker. But keep the type sound.
     )
@@ -315,14 +315,10 @@ def refine_first_downbeat(
 
     y, sr = librosa.load(str(audio_path), sr=None, mono=True)
     # Kick-band only — channel 0 of multi-band onset detection (~20-200 Hz)
-    onset_multi = librosa.onset.onset_strength_multi(
-        y=y, sr=sr, channels=[0, 32, 64, 96, 128]
-    )
+    onset_multi = librosa.onset.onset_strength_multi(y=y, sr=sr, channels=[0, 32, 64, 96, 128])
     kick_onset = onset_multi[0]
     hop = 512  # librosa default
-    onset_times = librosa.frames_to_time(
-        np.arange(len(kick_onset)), sr=sr, hop_length=hop
-    )
+    onset_times = librosa.frames_to_time(np.arange(len(kick_onset)), sr=sr, hop_length=hop)
 
     beat_period = 60.0 / bpm
     bar_period = beats_per_bar * beat_period

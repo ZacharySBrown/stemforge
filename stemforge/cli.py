@@ -251,9 +251,7 @@ def split(
     auto_bpm = reconciled.bpm
     auto_beats = reconciled.beat_times
     auto_downbeats = reconciled.downbeat_times
-    auto_first_downbeat = (
-        float(auto_downbeats[0]) if len(auto_downbeats) > 0 else 0.0
-    )
+    auto_first_downbeat = float(auto_downbeats[0]) if len(auto_downbeats) > 0 else 0.0
 
     # Apply manual overrides. When BPM is overridden we resynthesize the
     # beat grid at the user's tempo, anchored on whichever first_downbeat
@@ -261,9 +259,7 @@ def split(
     overrides_active = (bpm_override is not None) or (first_downbeat_override is not None)
     bpm = bpm_override if bpm_override is not None else auto_bpm
     first_downbeat_sec = (
-        first_downbeat_override
-        if first_downbeat_override is not None
-        else auto_first_downbeat
+        first_downbeat_override if first_downbeat_override is not None else auto_first_downbeat
     )
 
     if bpm_override is not None:
@@ -297,8 +293,10 @@ def split(
     if len(beat_times) == 0:
         bpm, beat_times = detect_bpm_and_beats(bpm_source)
 
-    src_color = "green" if (overrides_active or reconciled.confidence == "high") else (
-        "yellow" if reconciled.confidence == "medium" else "red"
+    src_color = (
+        "green"
+        if (overrides_active or reconciled.confidence == "high")
+        else ("yellow" if reconciled.confidence == "medium" else "red")
     )
     console.print(
         f"  BPM: [bold cyan]{bpm:.2f}[/bold cyan]  "
@@ -395,9 +393,7 @@ def split(
         tempo_provenance = TempoProvenance(
             source=reconciled.source,
             confidence=reconciled.confidence,
-            first_downbeat_sec=(
-                float(downbeat_times[0]) if len(downbeat_times) > 0 else None
-            ),
+            first_downbeat_sec=(float(downbeat_times[0]) if len(downbeat_times) > 0 else None),
             n_downbeats=int(len(downbeat_times)),
             warning=reconciled.warning,
             all_estimates=[e.to_dict() for e in reconciled.all_estimates],
@@ -595,7 +591,8 @@ def re_anchor(track_dir, bpm, first_downbeat, pre_bars, pad_pre_bars, pad_post_b
         old_dn = sj["tempo"].get("first_downbeat_sec")
         console.print(
             f"  Old first_downbeat: [yellow]{old_dn}s[/yellow]"
-            if old_dn is not None else "  Old first_downbeat: [dim]none recorded[/dim]"
+            if old_dn is not None
+            else "  Old first_downbeat: [dim]none recorded[/dim]"
         )
     console.print(f"  New first_downbeat: [green]{first_downbeat}s[/green]")
 

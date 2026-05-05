@@ -1,4 +1,5 @@
 """Tests for stemforge.tempo_reconciler — multi-source BPM detection."""
+
 from __future__ import annotations
 
 from unittest import mock
@@ -205,9 +206,7 @@ class TestReconcileTempo:
 
         with (
             mock.patch("stemforge.tempo_reconciler._detect_beat_this", return_value=None),
-            mock.patch(
-                "stemforge.tempo_reconciler._detect_librosa", return_value=librosa_estimate
-            ),
+            mock.patch("stemforge.tempo_reconciler._detect_librosa", return_value=librosa_estimate),
         ):
             result = reconcile_tempo(mix, drums, kick_tiebreaker=False)
 

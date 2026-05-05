@@ -607,7 +607,9 @@ def test_synthesize_loop_region_tiles_across_longer_pattern(manifest):
                 start_time_sec=0.0,
                 length_sec=16.0,
             ),
-            b_clip=None, c_clip=None, d_clip=None,
+            b_clip=None,
+            c_clip=None,
+            d_clip=None,
         ),
     ]
     spec = synthesize(snaps, enriched, 120.0, (4, 4), 1, arrangement_length_sec=16.0)
