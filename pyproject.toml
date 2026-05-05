@@ -88,6 +88,13 @@ ignore = ["E401", "E402", "E701", "E702"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    # Hardening Stream B.4 — opt-in marker for tests that drive a live Ableton
+    # session (or any out-of-CI integration). Default-skipped; opt in with
+    #   STEMFORGE_LIVE=1 uv run pytest -m live
+    # See `tests/conftest.py` for the auto-skip behavior.
+    "live: requires Ableton Live (or other dev-Mac integration); default-skip",
+]
 
 [tool.mypy]
 # Pragmatic defaults — the v0.x codebase has accumulated ~280 strict-mypy
