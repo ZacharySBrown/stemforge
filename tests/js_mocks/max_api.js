@@ -413,7 +413,21 @@ function LiveAPI(pathOrCb, maybePath) {
     // Mirror Max LiveAPI: first arg can be a callback fn or a path string.
     this._path = typeof pathOrCb === 'string' ? pathOrCb : (maybePath || '');
     state.liveApiCalls.push({ ctor: this._path });
+    // `id` mirrors Live's "0" = no object at this path / non-zero string
+    // for a real LOM object. Used by code paths like _commitSessionTracks's
+    // empty-slot check (`clipApi.id === "0"`).
+    this._refreshId();
 }
+
+LiveAPI.prototype._refreshId = function () {
+    if (!state.liveTree) {
+        // Unseeded: keep id "0" (back-compat with prior no-op mock).
+        this.id = '0';
+        return;
+    }
+    const node = this._node();
+    this.id = node ? '1' : '0';
+};
 
 LiveAPI.prototype._node = function () {
     if (!state.liveTree) return null;
@@ -466,6 +480,7 @@ LiveAPI.prototype.call = function (verb /* , ...args */) {
 
 LiveAPI.prototype.goto = function (p) {
     this._path = String(p || '');
+    this._refreshId();
 };
 
 // `property` is sometimes assigned on real LiveAPI for observer callbacks.
