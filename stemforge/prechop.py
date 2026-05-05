@@ -41,7 +41,7 @@ from typing import Iterable
 import numpy as np
 import soundfile as sf
 
-from .manifest_schema import SampleMeta, Stem, write_sidecar
+from .manifest_schema import SampleMeta, Stem, compute_audio_hash, write_sidecar
 
 
 # ── Phase-3 leading-partial-chunk gates ──────────────────────────────────────
@@ -112,6 +112,7 @@ class ChunkMeta:
     chunk_duration_samples: int = 0  # integer frame count — catches silent resamples
     sample_rate: int = 0  # WAV sample rate
     source_offset_sec: float = 0.0  # where in the source stem this chunk's bar 1 sits
+    audio_hash: str | None = None  # 16-hex sha256 prefix of the chunk WAV
 
     def asdict(self) -> dict:
         return asdict(self)
@@ -313,6 +314,7 @@ def prechop_stem(
             chunk_duration_samples=int(chunk.shape[0]),
             sample_rate=int(sr),
             source_offset_sec=float(target_start) / float(sr),
+            audio_hash=compute_audio_hash(fname),
         )
         metas.append(cm)
 
@@ -385,6 +387,7 @@ def prechop_stem(
             chunk_duration_samples=int(partial_wav.shape[0]),
             sample_rate=int(sr),
             source_offset_sec=partial_source_offset_sec,
+            audio_hash=compute_audio_hash(partial_fname),
         )
         metas.insert(0, partial_meta)
 

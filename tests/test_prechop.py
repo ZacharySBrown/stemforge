@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
+from stemforge.manifest_schema import HASH_LENGTH, compute_audio_hash
 from stemforge.prechop import (
     MIN_LEFTOVER_FRAC,
     SILENCE_THRESHOLD_DBFS,
@@ -374,6 +375,68 @@ def test_pad_bars_zero_yields_unpadded_chunks(tmp_path):
         assert data.shape[0] == expected
         assert cm.loop_start_sec == 0.0
         assert abs(cm.loop_end_sec - expected / float(SR)) < 1e-6
+
+
+def test_chunk_audio_hash_is_present_and_matches_file(tmp_path):
+    # Hardening Stream A.1: every chunk's manifest entry carries an `audio_hash`
+    # field that matches the on-disk WAV bytes. Configurator clip-refs and any
+    # "did this chunk actually change?" check downstream depend on this.
+    bars = 2
+    pad_bars = 1
+    n_frames = FPB * 6
+    stem = tmp_path / "drums.wav"
+    _write_marker_stem(stem, n_frames)
+
+    metas = prechop_stem(
+        stem,
+        tmp_path,
+        "drums",
+        bpm=BPM,
+        bars=bars,
+        pad_bars=pad_bars,
+        pad_last=True,
+        write_sidecars=False,
+    )
+    assert len(metas) >= 2
+    seen_hashes: set[str] = set()
+    for cm in metas:
+        assert cm.audio_hash is not None, "every chunk must carry audio_hash"
+        assert len(cm.audio_hash) == HASH_LENGTH
+        assert all(c in "0123456789abcdef" for c in cm.audio_hash)
+        wav = tmp_path / cm.file
+        assert cm.audio_hash == compute_audio_hash(wav), (
+            "audio_hash must match a fresh sha256 of the chunk WAV"
+        )
+        seen_hashes.add(cm.audio_hash)
+    # Distinct chunks have distinct content (marker stem makes this true).
+    assert len(seen_hashes) == len(metas)
+
+
+def test_top_level_manifest_serializes_audio_hash(tmp_path):
+    # The dataclass field flows through `asdict()` into prechop_manifest.json.
+    bars = 2
+    n_frames = FPB * 4
+    stem = tmp_path / "drums.wav"
+    _write_marker_stem(stem, n_frames)
+
+    out = tmp_path / "out"
+    out.mkdir()
+    manifest_path = prechop(
+        {"drums": stem},
+        out,
+        bpm=BPM,
+        bars=bars,
+        pad_bars=1,
+        pad_last=True,
+        write_sidecars=False,
+    )
+    data = json.loads(manifest_path.read_text())
+    chunks = data["stems"]["drums"]["chunks"]
+    assert chunks, "manifest must contain at least one chunk"
+    for chunk in chunks:
+        assert "audio_hash" in chunk
+        assert isinstance(chunk["audio_hash"], str)
+        assert len(chunk["audio_hash"]) == HASH_LENGTH
 
 
 # ── Phase-3: leading partial chunk emission ─────────────────────────────────
