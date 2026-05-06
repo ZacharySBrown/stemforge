@@ -260,168 +260,72 @@ function applyCurationV2Clip(clipApi, loopEntry, stemName, sessionBpm) {
     if (clipBlock.padded_start_sec === undefined) return false;
     if (!clipApi || clipApi.id === "0") return false;
 
+    // Mirror sf_arrangement_loader.js's _alCreateAndConfigureClip strategy:
+    // disable warping → markers interpreted in SECONDS → no fight with
+    // Ableton's auto-warp tempo guess. Curated bars are pre-rendered at
+    // manifest BPM, and session tempo is set to manifest BPM at load time
+    // (in loadSong), so unwarped playback at native rate stays in sync.
+    //
+    // Empirically the arrangement loader produces clips that DO show as
+    // warped with correct tempo in Live's Clip view — likely because Live
+    // re-enables warping after our `warping=0` set and its auto-warp
+    // anchors on session tempo. Either way, mirror the call sequence; the
+    // observable result is what we want.
+    //
+    // The earlier in-loader warp_marker manipulation (move_warp_marker /
+    // add_warp_marker) was abandoned 2026-05-06 because Ableton's auto-
+    // warp markers don't reliably match by sample_time, leaving clips at
+    // 120 BPM default. The arrangement loader's "just disable warping"
+    // strategy works without any of that.
     var offsets = loopEntry.offsets || {};
     var startOffset = Number(offsets.start_offset_sec) || 0.0;
     var endOffset = Number(offsets.end_offset_sec) || 0.0;
 
-    // Default start/end = musical bar boundaries (raw_*), not padded_*.
-    // Padding exists so the user can trim backward into it by committing a
-    // negative start_offset (reveal an early transient they want back), or
-    // forward past the bar end by committing a positive end_offset.
-    // Playback on first trigger should start at the musical content.
-    //
-    // CRITICAL: when `warping` is on, Ableton interprets start_marker,
-    // end_marker, loop_start, loop_end as BEATS (not seconds). Convert
-    // using the slope implied by our intended warp markers — this is the
-    // same slope we encode via move_warp_marker / add_warp_marker below,
-    // so the bar boundaries and loop region stay aligned with the
-    // musical content in beat-time.
     var rawStart = Number(clipBlock.raw_start_sec) || 0.0;
     var rawEnd = Number(clipBlock.raw_end_sec) || 0.0;
-    // Session-BPM override (2026-05-06): when caller passes a non-zero
-    // sessionBpm, every warp_marker's beat_pos is recomputed from
-    // `time_sec * sessionBpm / 60` instead of trusting the manifest's
-    // stale beat_pos values. The manifest is authored at curate time;
-    // if curate ran with a drifted BPM (pre-PR-#52) or before the user's
-    // re-anchor, the per-loop beat_pos values phase against session
-    // tempo. Forcing the slope to session BPM means every loaded clip
-    // plays at session tempo regardless of when its manifest was authored.
-    var secToBeat = 1.0;
-    var useSessionSlope = isFinite(sessionBpm) && Number(sessionBpm) > 0;
-    if (useSessionSlope) {
-        secToBeat = Number(sessionBpm) / 60.0;
-    } else if (loopEntry.warp_markers && loopEntry.warp_markers.length >= 2) {
-        var wmFirst = loopEntry.warp_markers[0];
-        var wmLast = loopEntry.warp_markers[loopEntry.warp_markers.length - 1];
-        var ds = Number(wmLast.time_sec) - Number(wmFirst.time_sec);
-        var db = Number(wmLast.beat_pos) - Number(wmFirst.beat_pos);
-        if (isFinite(ds) && isFinite(db) && ds > 0) {
-            secToBeat = db / ds;
-        }
-    }
-    var startMarker = (rawStart + startOffset) * secToBeat;
-    var endMarker = (rawEnd + endOffset) * secToBeat;
+    var startMarkerSec = rawStart + startOffset;
+    var endMarkerSec = rawEnd + endOffset;
 
-    // Set clip boundaries (spec §9)
-    try { clipApi.set("start_marker", startMarker); } catch (e) {
+    // Step 1: disable warping → markers/loop interpreted in SECONDS.
+    try { clipApi.set("warping", 0); } catch (_) {}
+
+    // Step 2: set markers in seconds.
+    try { clipApi.set("start_marker", startMarkerSec); } catch (e) {
         status("      start_marker set failed: " + e);
     }
-    try { clipApi.set("end_marker", endMarker); } catch (e) {
+    try { clipApi.set("end_marker", endMarkerSec); } catch (e) {
         status("      end_marker set failed: " + e);
     }
 
-    // Loop block (spec §5). Also in beats for warped clips.
+    // Step 3: loop region in seconds.
     var loopBlock = loopEntry.loop;
     if (loopBlock && loopBlock.enabled) {
         var ls = Number(loopBlock.loop_start_sec);
         var le = Number(loopBlock.loop_end_sec);
         if (isFinite(ls)) {
-            try { clipApi.set("loop_start", ls * secToBeat); } catch (_) {}
+            try { clipApi.set("loop_start", ls); } catch (_) {}
         }
         if (isFinite(le)) {
-            try { clipApi.set("loop_end", le * secToBeat); } catch (_) {}
+            try { clipApi.set("loop_end", le); } catch (_) {}
         }
+        // Order matters in some Live versions — set looping LAST.
         try { clipApi.set("looping", 1); } catch (_) {}
     }
 
-    // Per-stem warp mode from BAR_WARP_MODES (drums/bass = 0 Beats,
-    // vocals/other = 4 Complex). Falls back to 4 if stem is unknown.
+    // Per-stem warp_mode: still set even though warping is off, so if the
+    // user manually re-enables warping later they get the right algorithm
+    // (drums/bass = 0 Beats, vocals/other = 4 Complex).
     var wmode = 4;
     if (stemName && BAR_WARP_MODES[stemName] !== undefined) {
         wmode = BAR_WARP_MODES[stemName];
     }
     try { clipApi.set("warp_mode", wmode); } catch (_) {}
 
-    // Warp markers — Live 12 LOM (hard-won findings):
-    //   - `create_warp_marker` / `clear_all_warp_markers` are GHOST methods:
-    //     LiveAPI.call returns truthy for unknown names, so these appeared
-    //     to succeed but did nothing.
-    //   - `add_warp_marker` takes a Dict `{beat_time, sample_time}` — NOT
-    //     two floats, NOT flat key/value args. It also SILENTLY REJECTS
-    //     any attempt to add at a sample_time already occupied by a marker.
-    //   - `remove_warp_marker(beat_time)` takes a float beat_time, not an
-    //     index. Often rejects the shadow (last) marker.
-    //   - `move_warp_marker(beat_time, beat_delta)` shifts an existing
-    //     marker's beat_time by delta. Identify by CURRENT beat_time.
-    //   - `get("warp_markers")` returns a ONE-element array whose element
-    //     is a JSON string: `["{\"warp_markers\":[...]}"]`.
-    //
-    // Strategy: for each target anchor, match an existing marker by
-    // sample_time and MOVE its beat_time; add_warp_marker only if no
-    // marker exists at that sample. The shadow marker auto-repositions
-    // when we move the last visible marker.
-    var wmList = loopEntry.warp_markers;
-    if (wmList && wmList.length) {
-        var existing = [];
-        try {
-            var rawVal = clipApi.get("warp_markers");
-            if (rawVal && rawVal.length > 0) {
-                var rawStr = (typeof rawVal[0] === "string") ? rawVal[0] : String(rawVal[0]);
-                var parsed = JSON.parse(rawStr);
-                if (parsed && parsed.warp_markers && parsed.warp_markers.length) {
-                    existing = parsed.warp_markers;
-                }
-            }
-        } catch (_) {}
-
-        var moved = 0, addedNew = 0, noop = 0, failed = 0;
-        for (var wi = 0; wi < wmList.length; wi++) {
-            var wm = wmList[wi];
-            if (!wm) continue;
-            var targetTime = Number(wm.time_sec);
-            // Session-BPM override: derive beat_pos from time_sec at session
-            // tempo. The first marker stays at beat 0; each subsequent
-            // marker is `(time_sec - first.time_sec) * sessionBpm/60`.
-            // Ignores manifest's stale beat_pos when curate ran with a
-            // drifted detection.
-            var targetBeat;
-            if (useSessionSlope) {
-                var firstTime = Number(wmList[0].time_sec) || 0.0;
-                targetBeat = (targetTime - firstTime) * secToBeat;
-            } else {
-                targetBeat = Number(wm.beat_pos);
-            }
-            if (!isFinite(targetTime) || !isFinite(targetBeat)) continue;
-
-            var match = null;
-            for (var ei = 0; ei < existing.length; ei++) {
-                if (Math.abs(existing[ei].sample_time - targetTime) < 0.001) {
-                    match = existing[ei];
-                    break;
-                }
-            }
-
-            if (match) {
-                var delta = targetBeat - match.beat_time;
-                if (Math.abs(delta) < 0.0001) {
-                    noop++;
-                } else {
-                    try {
-                        clipApi.call("move_warp_marker", match.beat_time, delta);
-                        moved++;
-                    } catch (eMv) {
-                        status("      move_warp_marker(" + match.beat_time.toFixed(4)
-                            + ", " + delta.toFixed(4) + ") failed: " + eMv);
-                        failed++;
-                    }
-                }
-            } else {
-                try {
-                    var scratch = new Dict();
-                    scratch.set("beat_time", targetBeat);
-                    scratch.set("sample_time", targetTime);
-                    clipApi.call("add_warp_marker", scratch);
-                    addedNew++;
-                } catch (eAdd) {
-                    status("      add_warp_marker(beat=" + targetBeat.toFixed(3)
-                        + ", sample=" + targetTime.toFixed(3) + ") failed: " + eAdd);
-                    failed++;
-                }
-            }
-        }
-        status("      warp_markers: " + moved + " moved, " + addedNew + " added, "
-            + noop + " no-op, " + failed + " failed");
-    }
+    // sessionBpm parameter retained for ABI; arrangement-loader-style
+    // warping=0 doesn't need it. Kept so callers don't have to be
+    // touched again if we ever switch back to a marker-manipulation
+    // strategy.
+    void sessionBpm;
 
     return true;
 }

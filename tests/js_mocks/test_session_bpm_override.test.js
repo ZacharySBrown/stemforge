@@ -1,12 +1,16 @@
 // test_session_bpm_override.test.js
 // ─────────────────────────────────────────────────────────────────────────────
-// Tier-3 tests for the session-BPM override added 2026-05-06 to
-// applyCurationV2Clip. Believer regression: clip's effective tempo was being
-// set to 120 BPM (Ableton auto-warp default) or 126 BPM (curate-time drift)
-// instead of session BPM (125 = stems.json truth). The fix passes mf.bpm
-// through every loadClipsToTrack / applyCurationV2Clip call and recomputes
-// warp marker beat positions from session BPM at load time, ignoring the
-// manifest's potentially-stale beat_pos values.
+// Tier-3 tests for applyCurationV2Clip's tempo handling.
+//
+// Strategy (2026-05-06, mirrors sf_arrangement_loader.js):
+// applyCurationV2Clip disables warping on the clip and writes start_marker,
+// end_marker, loop_start, loop_end in SECONDS. Curated bars are pre-rendered
+// at manifest BPM, and session tempo is set to manifest BPM at load time
+// (in loadSong / _loadCuratedV2 / _loadCuratedManifest), so unwarped
+// playback at the native rate stays in sync. Avoids fighting Live's
+// auto-warp tempo guess — the prior move_warp_marker / add_warp_marker
+// strategy was abandoned because Ableton's auto-warp markers don't
+// reliably match by sample_time, leaving clips at 120 BPM default.
 // ─────────────────────────────────────────────────────────────────────────────
 
 'use strict';
@@ -28,151 +32,25 @@ function loadLoader() {
     return ctx;
 }
 
-function makeClipNode(propsOnly = false) {
-    return propsOnly
-        ? { _properties: {} }
-        : {
-              _properties: { warping: 1 },
-              warp_markers: [],  // we DON'T model marker reads here; the test asserts
-                                  // that applyCurationV2Clip computes the right beat_pos
-                                  // for its move/add calls, which the mock captures via
-                                  // setLiveCallHandler.
-          };
+function makeClipNode() {
+    return {
+        _properties: { warping: 1 },  // Live default is warping=1; our code flips to 0
+    };
+}
+
+function readProp(path, prop) {
+    return maxApi.getLiveProperty(path, prop);
 }
 
 
-// ── 1. With sessionBpm provided, beat_pos is recomputed from time_sec * sessionBpm/60 ──
+// ── 1. Warping is disabled (the core fix) ───────────────────────────────────
 
-test('applyCurationV2Clip: sessionBpm overrides manifest beat_pos values', () => {
+test('applyCurationV2Clip: disables warping on the clip', () => {
     const ctx = loadLoader();
-
-    // Capture move_warp_marker / add_warp_marker calls — that's where the
-    // beat positions our function computes actually land.
-    const calls = [];
-    maxApi.setLiveCallHandler('move_warp_marker', (lomPath, args) => {
-        calls.push({ verb: 'move', currentBeat: args[0], delta: args[1] });
-        return 1;
-    });
-    maxApi.setLiveCallHandler('add_warp_marker', (lomPath, args) => {
-        // args[0] is a Dict mock; pull the values back out.
-        const dict = args[0];
-        let beat, sample;
-        try {
-            beat = dict.get('beat_time');
-            sample = dict.get('sample_time');
-        } catch (_) {}
-        calls.push({ verb: 'add', beat_time: beat, sample_time: sample });
-        return 1;
-    });
-
-    // Seed a minimal liveTree so a clip lookup at "live_set tracks 0
-    // clip_slots 0 clip" returns a valid LOM-node mock.
-    maxApi.seedLiveTree({
-        tracks: [{
-            clip_slots: [{
-                clip: makeClipNode()
-            }]
-        }]
-    });
-
-    // Believer-shape loop entry: warp_markers encode 126 BPM (drift).
-    // Each marker pair (time_sec=3.808, beat_pos=8) implies 126 BPM.
-    const loopEntry = {
-        position: 1,
-        clip: {
-            raw_start_sec: 0.0,
-            raw_end_sec: 3.808,
-            padded_start_sec: 0.0,
-            padded_end_sec: 3.808,
-            pad_bars: 0,
-        },
-        warp_markers: [
-            { time_sec: 0.0, beat_pos: 0.0, type: 'start' },
-            { time_sec: 3.808, beat_pos: 8.0, type: 'end' },
-        ],
-    };
-
-    const clipApi = new ctx.LiveAPI('live_set tracks 0 clip_slots 0 clip');
-    // Pass session BPM = 125. Function should recompute beat_pos from
-    // time_sec * 125/60 instead of using manifest's 8.0 (which encodes 126).
-    ctx.applyCurationV2Clip(clipApi, loopEntry, 'drums', 125);
-
-    // Expected end-beat at 125 BPM, time_sec=3.808: 3.808 * 125/60 = 7.9333
-    // (NOT 8.0 from the manifest)
-    const adds = calls.filter((c) => c.verb === 'add');
-    const lastAdd = adds[adds.length - 1];
-    assert.ok(lastAdd, 'expected at least one add_warp_marker call');
-    const expectedBeat = 3.808 * 125 / 60;
-    assert.ok(
-        Math.abs(lastAdd.beat_time - expectedBeat) < 0.001,
-        `last warp marker should be at beat ${expectedBeat.toFixed(4)} (session BPM 125),
-         got ${lastAdd.beat_time}`
-    );
-});
-
-
-// ── 2. Without sessionBpm, falls back to manifest beat_pos values (back-compat) ──
-
-test('applyCurationV2Clip: no sessionBpm → uses manifest beat_pos values', () => {
-    const ctx = loadLoader();
-
-    const calls = [];
-    maxApi.setLiveCallHandler('add_warp_marker', (lomPath, args) => {
-        const dict = args[0];
-        let beat;
-        try { beat = dict.get('beat_time'); } catch (_) {}
-        calls.push({ verb: 'add', beat_time: beat });
-        return 1;
-    });
-
     maxApi.seedLiveTree({
         tracks: [{ clip_slots: [{ clip: makeClipNode() }] }]
     });
 
-    const loopEntry = {
-        position: 1,
-        clip: {
-            raw_start_sec: 0.0,
-            raw_end_sec: 3.808,
-            padded_start_sec: 0.0,
-            padded_end_sec: 3.808,
-            pad_bars: 0,
-        },
-        warp_markers: [
-            { time_sec: 0.0, beat_pos: 0.0, type: 'start' },
-            { time_sec: 3.808, beat_pos: 8.0, type: 'end' },
-        ],
-    };
-
-    const clipApi = new ctx.LiveAPI('live_set tracks 0 clip_slots 0 clip');
-    // No sessionBpm passed → fallback to manifest's 8.0.
-    ctx.applyCurationV2Clip(clipApi, loopEntry, 'drums');
-
-    const adds = calls.filter((c) => c.verb === 'add');
-    const lastAdd = adds[adds.length - 1];
-    assert.ok(lastAdd, 'expected at least one add_warp_marker call');
-    assert.ok(
-        Math.abs(lastAdd.beat_time - 8.0) < 0.001,
-        `back-compat: last warp marker should be at manifest beat 8.0, got ${lastAdd.beat_time}`
-    );
-});
-
-
-// ── 3. Zero / undefined sessionBpm should also fall back ──
-
-test('applyCurationV2Clip: sessionBpm=0 → fallback to manifest', () => {
-    const ctx = loadLoader();
-    const calls = [];
-    maxApi.setLiveCallHandler('add_warp_marker', (lomPath, args) => {
-        const dict = args[0];
-        let beat;
-        try { beat = dict.get('beat_time'); } catch (_) {}
-        calls.push({ beat_time: beat });
-        return 1;
-    });
-    maxApi.seedLiveTree({
-        tracks: [{ clip_slots: [{ clip: makeClipNode() }] }]
-    });
     const loopEntry = {
         position: 1,
         clip: { raw_start_sec: 0.0, raw_end_sec: 3.808, padded_start_sec: 0.0, padded_end_sec: 3.808 },
@@ -181,43 +59,153 @@ test('applyCurationV2Clip: sessionBpm=0 → fallback to manifest', () => {
             { time_sec: 3.808, beat_pos: 8.0, type: 'end' },
         ],
     };
-    const clipApi = new ctx.LiveAPI('live_set tracks 0 clip_slots 0 clip');
-    ctx.applyCurationV2Clip(clipApi, loopEntry, 'drums', 0);
 
-    const last = calls[calls.length - 1];
-    assert.ok(last, 'expected at least one add call');
-    assert.ok(
-        Math.abs(last.beat_time - 8.0) < 0.001,
-        `sessionBpm=0 should fall back to manifest 8.0, got ${last.beat_time}`
-    );
+    const clipApi = new ctx.LiveAPI('live_set tracks 0 clip_slots 0 clip');
+    const ok = ctx.applyCurationV2Clip(clipApi, loopEntry, 'drums', 125);
+    assert.equal(ok, true);
+    assert.equal(readProp('live_set tracks 0 clip_slots 0 clip', 'warping'), 0);
 });
 
 
-// ── 4. Acceptance gate sentinel ──────────────────────────────────────────────
+// ── 2. Markers are written in SECONDS, not beats ────────────────────────────
 
-test('clip-tempo session-BPM override sentinel: contract is wired', () => {
+test('applyCurationV2Clip: start_marker / end_marker in seconds', () => {
+    const ctx = loadLoader();
+    maxApi.seedLiveTree({
+        tracks: [{ clip_slots: [{ clip: makeClipNode() }] }]
+    });
+
+    const loopEntry = {
+        position: 1,
+        clip: {
+            raw_start_sec: 0.0,
+            raw_end_sec: 3.808,
+            padded_start_sec: 0.0,
+            padded_end_sec: 3.808,
+        },
+        warp_markers: [],
+    };
+
+    const clipApi = new ctx.LiveAPI('live_set tracks 0 clip_slots 0 clip');
+    ctx.applyCurationV2Clip(clipApi, loopEntry, 'drums', 125);
+
+    // Expect raw values in seconds — NOT 0 and 8 (beats at 126 BPM) and
+    // NOT 0 and 7.93 (beats at 125 BPM session). Just seconds.
+    const sm = readProp('live_set tracks 0 clip_slots 0 clip', 'start_marker');
+    const em = readProp('live_set tracks 0 clip_slots 0 clip', 'end_marker');
+    assert.ok(Math.abs(sm - 0.0) < 1e-9, `start_marker should be 0.0 seconds, got ${sm}`);
+    assert.ok(Math.abs(em - 3.808) < 1e-9, `end_marker should be 3.808 seconds, got ${em}`);
+});
+
+
+// ── 3. Loop region in seconds, looping enabled ──────────────────────────────
+
+test('applyCurationV2Clip: loop_start / loop_end in seconds when loop enabled', () => {
+    const ctx = loadLoader();
+    maxApi.seedLiveTree({
+        tracks: [{ clip_slots: [{ clip: makeClipNode() }] }]
+    });
+
+    const loopEntry = {
+        position: 1,
+        clip: { raw_start_sec: 0.952, raw_end_sec: 2.856, padded_start_sec: 0.0, padded_end_sec: 3.808 },
+        loop: {
+            enabled: true,
+            loop_start_sec: 0.952,
+            loop_end_sec: 2.856,
+        },
+        warp_markers: [],
+    };
+
+    const clipApi = new ctx.LiveAPI('live_set tracks 0 clip_slots 0 clip');
+    ctx.applyCurationV2Clip(clipApi, loopEntry, 'drums', 125);
+
+    const ls = readProp('live_set tracks 0 clip_slots 0 clip', 'loop_start');
+    const le = readProp('live_set tracks 0 clip_slots 0 clip', 'loop_end');
+    const looping = readProp('live_set tracks 0 clip_slots 0 clip', 'looping');
+    assert.ok(Math.abs(ls - 0.952) < 1e-9, `loop_start should be 0.952 seconds, got ${ls}`);
+    assert.ok(Math.abs(le - 2.856) < 1e-9, `loop_end should be 2.856 seconds, got ${le}`);
+    assert.equal(looping, 1);
+});
+
+
+// ── 4. warp_mode still set per-stem (in case user manually re-enables warping) ──
+
+test('applyCurationV2Clip: warp_mode set from BAR_WARP_MODES per stem', () => {
+    const ctx = loadLoader();
+    maxApi.seedLiveTree({
+        tracks: [{ clip_slots: [{ clip: makeClipNode() }] }]
+    });
+    const loopEntry = {
+        position: 1,
+        clip: { raw_start_sec: 0.0, raw_end_sec: 3.808, padded_start_sec: 0.0, padded_end_sec: 3.808 },
+        warp_markers: [],
+    };
+    const clipApi = new ctx.LiveAPI('live_set tracks 0 clip_slots 0 clip');
+    ctx.applyCurationV2Clip(clipApi, loopEntry, 'drums', 125);
+    // BAR_WARP_MODES.drums = 0 (Beats)
+    assert.equal(readProp('live_set tracks 0 clip_slots 0 clip', 'warp_mode'), 0);
+});
+
+
+// ── 5. sessionBpm parameter ignored under arrangement-loader-mirror strategy ──
+
+test('applyCurationV2Clip: behavior unchanged regardless of sessionBpm', () => {
+    const ctx = loadLoader();
+
+    function run(sessionBpm) {
+        maxApi.seedLiveTree({
+            tracks: [{ clip_slots: [{ clip: makeClipNode() }] }]
+        });
+        const loopEntry = {
+            position: 1,
+            clip: { raw_start_sec: 0.0, raw_end_sec: 3.808, padded_start_sec: 0.0, padded_end_sec: 3.808 },
+            warp_markers: [],
+        };
+        const clipApi = new ctx.LiveAPI('live_set tracks 0 clip_slots 0 clip');
+        ctx.applyCurationV2Clip(clipApi, loopEntry, 'drums', sessionBpm);
+        return {
+            warping: readProp('live_set tracks 0 clip_slots 0 clip', 'warping'),
+            sm: readProp('live_set tracks 0 clip_slots 0 clip', 'start_marker'),
+            em: readProp('live_set tracks 0 clip_slots 0 clip', 'end_marker'),
+        };
+    }
+
+    // sessionBpm=125 vs sessionBpm=undefined vs sessionBpm=0 all yield same.
+    const a = run(125);
+    const b = run(undefined);
+    const c = run(0);
+    assert.deepEqual(a, b);
+    assert.deepEqual(a, c);
+});
+
+
+// ── 6. Acceptance gate: confirm we mirror the arrangement loader's strategy ─
+
+test('applyCurationV2Clip mirrors sf_arrangement_loader.js strategy', () => {
     const fs = require('fs');
     const src = fs.readFileSync(SF_LOADER, 'utf8');
-    // applyCurationV2Clip signature includes sessionBpm
+
+    // Function disables warping (mirror of arrangement loader line 370)
+    const fnMatch = src.match(/function applyCurationV2Clip[\s\S]*?\n}/);
+    assert.ok(fnMatch, 'function applyCurationV2Clip not found');
+    const fnBody = fnMatch[0];
     assert.ok(
-        /function applyCurationV2Clip\([^)]*\bsessionBpm\b[^)]*\)/.test(src),
-        'applyCurationV2Clip must accept sessionBpm parameter'
+        /clipApi\.set\("warping",\s*0\)/.test(fnBody),
+        'applyCurationV2Clip must call clipApi.set("warping", 0) — the arrangement-loader strategy'
     );
-    // loadClipsToTrack signature includes sessionBpm
+
+    // Markers are NOT multiplied by secToBeat (no beats conversion)
     assert.ok(
-        /function loadClipsToTrack\([^)]*\bsessionBpm\b[^)]*\)/.test(src),
-        'loadClipsToTrack must accept sessionBpm parameter'
+        !/start_marker.*\*\s*secToBeat/.test(fnBody),
+        'start_marker should not be converted to beats — markers are in SECONDS now'
     );
-    // All three callers of applyCurationV2Clip pass mf.bpm or sessionBpm
-    const callsToApply = src.match(/applyCurationV2Clip\([^)]*\)/g) || [];
-    assert.ok(callsToApply.length >= 3, `expected ≥3 call sites, got ${callsToApply.length}`);
-    const callsWithBpm = callsToApply.filter(
-        (c) => /\bmf\.bpm\b|\bsessionBpm\b/.test(c)
-    );
-    assert.equal(
-        callsWithBpm.length, callsToApply.length,
-        `every applyCurationV2Clip call must pass mf.bpm or sessionBpm; non-passers: ${
-            callsToApply.filter((c) => !/\bmf\.bpm\b|\bsessionBpm\b/.test(c)).join(', ')
-        }`
+
+    // No more move_warp_marker / add_warp_marker CALL invocations (fight
+    // abandoned). Mention of the names in comments is fine — that's
+    // documenting the strategy change.
+    assert.ok(
+        !/\.call\(["'](?:move_warp_marker|add_warp_marker)["']/.test(fnBody),
+        'applyCurationV2Clip should no longer call move_warp_marker / add_warp_marker'
     );
 });
