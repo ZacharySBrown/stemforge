@@ -168,6 +168,12 @@ def cli():
     help="Bars of post-pad inside each chunk WAV (audio AFTER the loop region). "
     "Default 1 — useful for drag-extending forward + crossfade headroom at the seam.",
 )
+@click.option(
+    "--emit-partial/--no-emit-partial",
+    default=True,
+    help="Emit a leading partial chunk_001 when the user-supplied / detected "
+    "downbeat leaves a sub-chunk-period intro before bar 1. Default: True.",
+)
 def split(
     audio_file,
     model,
@@ -182,6 +188,7 @@ def split(
     pre_bars,
     pad_pre_bars,
     pad_post_bars,
+    emit_partial,
 ):
     """
     Split an audio file into stems and slice at beat boundaries.
@@ -454,6 +461,7 @@ def split(
                 pre_bars=resolved_pre_bars,
                 pad_pre_bars=pad_pre_bars,
                 pad_post_bars=pad_post_bars,
+                emit_partial=emit_partial,
             )
             pc = status_post.get("prechop", {})
             if pc:
@@ -522,13 +530,31 @@ def split(
     help="Bars of post-pad inside each chunk WAV (default 1 = drag-extend headroom forward).",
 )
 @click.option(
+    "--emit-partial/--no-emit-partial",
+    default=True,
+    help="Emit a leading partial chunk_001 capturing the sub-chunk-period "
+    "intro material between source frame 0 and bar 1. Default: True. "
+    "Pass --no-emit-partial to drop the intro entirely (the prior auto-gate "
+    "behavior, removed because RMS-based gating flipped binary on sub-dB "
+    "noise-floor drift between Demucs runs).",
+)
+@click.option(
     "--keep-old",
     is_flag=True,
     default=False,
     help="Keep the previous prechop output as `<stem>_prechop.bak/` instead of overwriting.",
 )
 @with_audit("re-anchor")
-def re_anchor(track_dir, bpm, first_downbeat, pre_bars, pad_pre_bars, pad_post_bars, keep_old):
+def re_anchor(
+    track_dir,
+    bpm,
+    first_downbeat,
+    pre_bars,
+    pad_pre_bars,
+    pad_post_bars,
+    emit_partial,
+    keep_old,
+):
     """
     Re-cut the prechop chunks of an already-forged track at user-supplied
     BPM + first_downbeat. Skips Demucs re-run (~30 s saved) — only re-runs
@@ -656,6 +682,7 @@ def re_anchor(track_dir, bpm, first_downbeat, pre_bars, pad_pre_bars, pad_post_b
         pre_bars=resolved_pre_bars,
         pad_pre_bars=pad_pre_bars,
         pad_post_bars=pad_post_bars,
+        emit_partial=emit_partial,
     )
     pc = status.get("prechop", {})
     if pc:

@@ -252,6 +252,25 @@ def test_re_anchor_smoke_help():
     assert "Re-cut" in result.output or "re-anchor" in result.output.lower()
 
 
+def test_re_anchor_help_advertises_emit_partial_flag():
+    # Believer-bar-1 follow-up (2026-05-05): --emit-partial / --no-emit-partial
+    # must appear in the CLI help so users can override the new always-emit
+    # default when they specifically don't want a leading partial chunk.
+    runner = CliRunner()
+    result = runner.invoke(cli, ["re-anchor", "--help"])
+    assert result.exit_code == 0
+    assert "--emit-partial" in result.output
+    assert "--no-emit-partial" in result.output
+
+
+def test_split_help_advertises_emit_partial_flag():
+    runner = CliRunner()
+    result = runner.invoke(cli, ["split", "--help"])
+    assert result.exit_code == 0
+    assert "--emit-partial" in result.output
+    assert "--no-emit-partial" in result.output
+
+
 # ── 9. split (heavy — needs torch/Demucs) ────────────────────────────────────
 
 

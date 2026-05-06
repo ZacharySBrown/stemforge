@@ -11,7 +11,6 @@ import soundfile as sf
 from stemforge.manifest_schema import HASH_LENGTH, compute_audio_hash
 from stemforge.prechop import (
     MIN_LEFTOVER_FRAC,
-    SILENCE_THRESHOLD_DBFS,
     _decide_emit_partial,
     chunk_count_for,
     frames_per_bar,
@@ -608,9 +607,8 @@ def test_decide_emit_partial_first_downbeat_zero(tmp_path):
 
 
 def test_decide_emit_partial_threshold_is_zero():
-    """`MIN_LEFTOVER_FRAC=0` (Believer-bar-1-transient feedback 2026-05-04):
-    any non-silent leading audio gets a visible chunk_001 instead of being
-    hidden in the pad-stash. RMS gate is now the only content filter."""
+    """`MIN_LEFTOVER_FRAC=0` is the boundary-only gate floor. Any non-empty
+    leftover (`0 < leftover_frames < chunk_frames`) earns a visible chunk_001."""
     assert MIN_LEFTOVER_FRAC == 0.0
 
 
@@ -637,15 +635,18 @@ def test_decide_emit_partial_tiny_leftover_with_content_emits(tmp_path):
     assert decision is True
 
 
-def test_decide_emit_partial_silent_leading_region(tmp_path):
-    """Above leftover_frac threshold but the leading region itself is dead
-    air → RMS gate fires, no emit. Gives Track-3-style tracks identical
-    behavior to today."""
+def test_decide_emit_partial_silent_leading_region_now_emits(tmp_path):
+    """Believer regression (2026-05-05): the prior RMS gate flipped binary
+    on sub-dB Demucs noise-floor drift, so a silent-looking leading region
+    on one run dropped the chunk_001 partial that another run kept. The
+    gate is now boundary-only — when the user supplies an explicit
+    downbeat, we trust their intent and emit the partial regardless of
+    audio level. Tests this new behavior: silent leading region with a
+    non-empty leftover region still emits."""
     stem = tmp_path / "drums.wav"
-    # 8 bars, all silence — leading region is silence, RMS = 0 < floor.
     _write_silent_stem(stem, FPB * 8)
     bars = 4
-    leftover_bars = 2  # 50% leftover_frac (above threshold)
+    leftover_bars = 2  # 50% leftover_frac
     first_downbeat_sec = (FPB * leftover_bars) / float(SR)
     decision = _decide_emit_partial(
         {"drums": stem},
@@ -656,8 +657,26 @@ def test_decide_emit_partial_silent_leading_region(tmp_path):
         first_downbeat_sec=first_downbeat_sec,
         n_pre_chunks=0,
     )
+    assert decision is True
+
+
+def test_decide_emit_partial_zero_leftover_does_not_emit():
+    """When the downbeat is on a whole-bar boundary (leftover_frames == 0),
+    there's literally no intro material to put in a partial chunk."""
+    bars = 4
+    chunk_period_sec = (bars * FPB) / float(SR)
+    # first_downbeat exactly one chunk-period — leftover_frames == 0.
+    first_downbeat_sec = chunk_period_sec
+    decision = _decide_emit_partial(
+        {},
+        skip_set=set(),
+        bpm=BPM,
+        bars=bars,
+        beats_per_bar=4,
+        first_downbeat_sec=first_downbeat_sec,
+        n_pre_chunks=1,
+    )
     assert decision is False
-    assert SILENCE_THRESHOLD_DBFS == -60.0  # spec default
 
 
 def test_decide_emit_partial_above_threshold_with_content_emits(tmp_path):
