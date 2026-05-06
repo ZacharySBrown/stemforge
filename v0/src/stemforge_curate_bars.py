@@ -137,6 +137,35 @@ def _synthesize_beat_grid(
     return beat_times, downbeats
 
 
+def _pipeline_injects_processing_config(pipeline: Path | None) -> bool:
+    """True if the given pipeline path will inject a `processing_config` into
+    the curated manifest.
+
+    The M4L loader's dispatcher (stemforge_loader.v0.js) routes to the
+    config-driven `loadSong()` path only when `layout_mode === "production"`.
+    Carrying a `processing_config` block without `layout_mode: production`
+    leaves the manifest in an impossible state — the legacy `_loadCuratedV2`
+    path runs, ignores the config, and tries to find pre-existing Simpler
+    templates that don't exist. Caller should override `layout_mode` to
+    "production" whenever this returns True.
+    """
+    if pipeline is None:
+        return False
+    candidate = pipeline if pipeline.exists() else pipeline.with_suffix(".json")
+    if not candidate.exists():
+        return False
+    try:
+        if candidate.suffix == ".json":
+            data = json.loads(candidate.read_text())
+        else:
+            import yaml as _yaml
+
+            data = _yaml.safe_load(candidate.read_text())
+    except Exception:
+        return False
+    return bool(isinstance(data, dict) and data.get("stems"))
+
+
 def _reslice_with_padding(
     *,
     source_stem_path: Path,
@@ -398,6 +427,20 @@ def run(
         schema_config = CurationSchemaConfig()
 
     layout_mode = curation_config.layout.mode
+
+    # If the caller supplied a `--pipeline` YAML that will inject a
+    # `processing_config` block, the intended consumer is loadSong() on the
+    # M4L side. loadSong() only fires when `layout_mode === "production"`,
+    # so override here so users don't have to remember `--curation` AND
+    # `--pipeline` together. Believer-bug regression 2026-05-06.
+    if _pipeline_injects_processing_config(pipeline) and layout_mode != "production":
+        if json_events:
+            emit({"event": "progress", "phase": "config", "pct": 0,
+                  "message": (f"--pipeline injects processing_config; "
+                              f"overriding layout_mode {layout_mode!r} -> 'production' "
+                              f"so the M4L loadSong() path triggers")})
+        layout_mode = "production"
+
     is_loops_only = layout_mode == "loops-only"
     is_production = layout_mode == "production"
 
@@ -634,7 +677,7 @@ def run(
         "bpm": bpm,
         "beat_count": len(beat_times),
         "time_signature_numerator": time_sig,
-        "layout_mode": curation_config.layout.mode,
+        "layout_mode": layout_mode,
         "stems": {},
     }
 
