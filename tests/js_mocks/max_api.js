@@ -186,6 +186,13 @@ Dict.prototype.get = function (key) {
     return tree[key];
 };
 
+// `set(key, value)` is the lighter Max Dict accessor (no JSON parsing of
+// string values); functionally an alias of `replace` for our purposes.
+Dict.prototype.set = function (key, value) {
+    const tree = this._tree();
+    tree[key] = value;
+};
+
 Dict.prototype.clear = function () {
     this._setTree(Object.create(null));
 };

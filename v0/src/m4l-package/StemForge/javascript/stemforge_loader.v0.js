@@ -254,7 +254,7 @@ function loadClip(trackIdx, slotIdx, wavPath, clipName, startMarkerBeats) {
 // `stemName` (optional) selects warp_mode from BAR_WARP_MODES. Drums/bass
 // default to 0 (Beats) — far cleaner stretching of transient-heavy bar-
 // aligned material than the generic 4 (Complex). Vocals/other stay at 4.
-function applyCurationV2Clip(clipApi, loopEntry, stemName) {
+function applyCurationV2Clip(clipApi, loopEntry, stemName, sessionBpm) {
     if (!loopEntry || !loopEntry.clip) return false;
     var clipBlock = loopEntry.clip;
     if (clipBlock.padded_start_sec === undefined) return false;
@@ -278,8 +278,19 @@ function applyCurationV2Clip(clipApi, loopEntry, stemName) {
     // musical content in beat-time.
     var rawStart = Number(clipBlock.raw_start_sec) || 0.0;
     var rawEnd = Number(clipBlock.raw_end_sec) || 0.0;
+    // Session-BPM override (2026-05-06): when caller passes a non-zero
+    // sessionBpm, every warp_marker's beat_pos is recomputed from
+    // `time_sec * sessionBpm / 60` instead of trusting the manifest's
+    // stale beat_pos values. The manifest is authored at curate time;
+    // if curate ran with a drifted BPM (pre-PR-#52) or before the user's
+    // re-anchor, the per-loop beat_pos values phase against session
+    // tempo. Forcing the slope to session BPM means every loaded clip
+    // plays at session tempo regardless of when its manifest was authored.
     var secToBeat = 1.0;
-    if (loopEntry.warp_markers && loopEntry.warp_markers.length >= 2) {
+    var useSessionSlope = isFinite(sessionBpm) && Number(sessionBpm) > 0;
+    if (useSessionSlope) {
+        secToBeat = Number(sessionBpm) / 60.0;
+    } else if (loopEntry.warp_markers && loopEntry.warp_markers.length >= 2) {
         var wmFirst = loopEntry.warp_markers[0];
         var wmLast = loopEntry.warp_markers[loopEntry.warp_markers.length - 1];
         var ds = Number(wmLast.time_sec) - Number(wmFirst.time_sec);
@@ -358,7 +369,18 @@ function applyCurationV2Clip(clipApi, loopEntry, stemName) {
             var wm = wmList[wi];
             if (!wm) continue;
             var targetTime = Number(wm.time_sec);
-            var targetBeat = Number(wm.beat_pos);
+            // Session-BPM override: derive beat_pos from time_sec at session
+            // tempo. The first marker stays at beat 0; each subsequent
+            // marker is `(time_sec - first.time_sec) * sessionBpm/60`.
+            // Ignores manifest's stale beat_pos when curate ran with a
+            // drifted detection.
+            var targetBeat;
+            if (useSessionSlope) {
+                var firstTime = Number(wmList[0].time_sec) || 0.0;
+                targetBeat = (targetTime - firstTime) * secToBeat;
+            } else {
+                targetBeat = Number(wm.beat_pos);
+            }
             if (!isFinite(targetTime) || !isFinite(targetBeat)) continue;
 
             var match = null;
@@ -541,7 +563,9 @@ function _loadCuratedManifest(mf) {
                         // Curation v2: apply padded markers + warp markers
                         // + offsets when present; fall back to legacy warp
                         // mode when the entry has no clip block.
-                        if (!applyCurationV2Clip(clipApi, bar, stemName)) {
+                        // mf.bpm forces clip warp markers to encode session
+                        // tempo, overriding any drifted manifest beat_pos.
+                        if (!applyCurationV2Clip(clipApi, bar, stemName, mf.bpm)) {
                             clipApi.set("warp_mode", warpMode);
                         }
                     }
@@ -1081,7 +1105,7 @@ function buildDrumRack(trackIdx, oneshots) {
     return loaded;
 }
 
-function loadClipsToTrack(trackIdx, loops, stemName) {
+function loadClipsToTrack(trackIdx, loops, stemName, sessionBpm) {
     var warpMode = BAR_WARP_MODES[stemName] || 0;
     var loaded = 0;
 
@@ -1098,7 +1122,9 @@ function loadClipsToTrack(trackIdx, loops, stemName) {
                         // Curation v2: if entry has a clip block, apply
                         // padded markers + warp markers + offsets. Otherwise
                         // fall back to legacy per-stem warp_mode.
-                        if (!applyCurationV2Clip(clipApi, item, stemName)) {
+                        // sessionBpm forces clip warp markers to encode the
+                        // session tempo (overrides manifest's stale beat_pos).
+                        if (!applyCurationV2Clip(clipApi, item, stemName, sessionBpm)) {
                             clipApi.set("warp_mode", warpMode);
                         }
                     }
@@ -1346,7 +1372,7 @@ function loadSong() {
                 var fallbackIdx = trackCount();
                 createAudioTrack(fallbackIdx);
                 renameTrack(fallbackIdx, stemCap + " Loops | " + songName, BAR_TRACK_COLORS[stemName]);
-                loaded += loadClipsToTrack(fallbackIdx, loops, stemName);
+                loaded += loadClipsToTrack(fallbackIdx, loops, stemName, mf.bpm);
                 status("  " + stemCap + " Loops: " + loops.length + " clips (no config)");
             }
             continue;
@@ -1386,7 +1412,7 @@ function loadSong() {
                     }
                 }
 
-                var clipsLoaded = loadClipsToTrack(clipsTrackIdx, loops, stemName);
+                var clipsLoaded = loadClipsToTrack(clipsTrackIdx, loops, stemName, mf.bpm);
                 loaded += clipsLoaded;
                 status("    " + clipsLoaded + " clips loaded");
 
@@ -1536,7 +1562,9 @@ function _restoreSessionTracks(mf, stemData) {
                 );
                 if (clipApi && clipApi.id !== "0") {
                     if (lookup && lookup.entry) {
-                        applyCurationV2Clip(clipApi, lookup.entry, lookup.stemName);
+                        // mf.bpm forces clip warp markers to encode session
+                        // tempo, overriding any drifted manifest beat_pos.
+                        applyCurationV2Clip(clipApi, lookup.entry, lookup.stemName, mf.bpm);
                     }
                     // Now override markers with the user's session-saved
                     // positions. clip is warped → markers are in beats.
