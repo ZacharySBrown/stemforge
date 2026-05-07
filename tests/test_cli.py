@@ -320,6 +320,77 @@ def test_analyze_help_loads_without_transformers():
     assert result.exit_code == 0
 
 
+# ── Stream E: tempo/anchor accuracy wiring (static sentinels) ────────────────
+#
+# These verify the wiring landed 2026-05-06 — refine_bpm always-on in
+# split + re-anchor, and the auto-reslice hook on re-anchor when curated/
+# manifest.json is present.
+#
+# Why static, not end-to-end: a full Demucs+detector pipeline on synth_song
+# locks onto half-time (240 BPM, 2x truth) because the fixture's eighth-note
+# hi-hats look like beats to beat-this. That's a fixture limitation, not a
+# wiring failure. refine_bpm's correctness is covered directly in
+# tests/test_tempo_reconciler.py::TestRefineBpm against a longer synth.
+#
+# These sentinels lock in the call sites so a future refactor can't silently
+# drop the wiring without flipping a test red.
+
+
+def test_split_path_invokes_refine_bpm():
+    """Stream E #3: `stemforge split` calls refine_bpm() after the reconciler.
+
+    Locks the always-on wiring in `stemforge/cli.py` for the split command.
+    """
+    cli_src = (Path(__file__).resolve().parent.parent / "stemforge" / "cli.py").read_text()
+    # Find the split function and assert refine_bpm is imported + called within it.
+    # split() runs reconcile_tempo, then optionally refine_first_downbeat, then
+    # always-on refine_bpm. We check both the import and a call.
+    assert "from .tempo_reconciler import refine_bpm" in cli_src, (
+        "refine_bpm must be imported in stemforge/cli.py — wiring removed?"
+    )
+    # The split path's refine_bpm call uses audio_file (mix). The re-anchor
+    # path uses drums_path. Both call sites must be present.
+    assert cli_src.count("refine_bpm(audio_file") == 1, (
+        "split path must call refine_bpm(audio_file, ...) exactly once"
+    )
+
+
+def test_re_anchor_path_invokes_refine_bpm():
+    """Stream E #4: `stemforge re-anchor` calls refine_bpm() with the drums
+    stem and the user-locked first_downbeat. The drums stem (post-Demucs) is
+    a cleaner kick-onset signal than the mix, and the user's locator-anchored
+    bar 1 is the trustworthy axis to refine BPM around.
+    """
+    cli_src = (Path(__file__).resolve().parent.parent / "stemforge" / "cli.py").read_text()
+    assert cli_src.count("refine_bpm(drums_path") == 1, (
+        "re-anchor must call refine_bpm(drums_path, bpm, first_downbeat) exactly "
+        "once — wiring removed?"
+    )
+
+
+def test_re_anchor_auto_reslices_curated():
+    """Stream E #5: `stemforge re-anchor` subprocess-invokes the curate
+    script with --reslice-only when curated/manifest.json exists.
+
+    Without this, a re-anchor leaves curated bar WAVs at the OLD anchor —
+    the user has to remember to manually re-curate (or use the
+    `stemforge reslice-curated` subcommand). The hook makes it automatic.
+    """
+    cli_src = (Path(__file__).resolve().parent.parent / "stemforge" / "cli.py").read_text()
+    # The hook sits inside the re-anchor command and checks for
+    # curated_manifest_path.exists() before subprocessing the curate script.
+    assert "curated_manifest_path = track_dir / \"curated\" / \"manifest.json\"" in cli_src, (
+        "auto-reslice hook's curated_manifest_path probe is missing"
+    )
+    assert "\"--reslice-only\"" in cli_src, (
+        "re-anchor must invoke the curate script with --reslice-only"
+    )
+    # And the standalone `stemforge reslice-curated` CLI command exists.
+    assert "@cli.command(\"reslice-curated\")" in cli_src, (
+        "reslice-curated CLI command missing"
+    )
+
+
 # ── Acceptance gate sentinels ────────────────────────────────────────────────
 
 
