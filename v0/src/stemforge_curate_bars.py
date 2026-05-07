@@ -141,12 +141,10 @@ def _pipeline_injects_processing_config(pipeline: Path | None) -> bool:
     """True if the given pipeline path will inject a `processing_config` into
     the curated manifest.
 
-    The M4L loader's dispatcher (stemforge_loader.v0.js) routes to the
-    config-driven `loadSong()` path only when `layout_mode === "production"`.
-    Carrying a `processing_config` block without `layout_mode: production`
-    leaves the manifest in an impossible state — the legacy `_loadCuratedV2`
-    path runs, ignores the config, and tries to find pre-existing Simpler
-    templates that don't exist. Caller should override `layout_mode` to
+    The M4L loader's dispatcher (stemforge_loader.v0.js) requires
+    `layout_mode === "production"` to route to `loadSong()`. Without that,
+    the loader surfaces a "manifest is not production" error (legacy v1/v2
+    paths were removed 2026-05-06). Caller should override `layout_mode` to
     "production" whenever this returns True.
     """
     if pipeline is None:
