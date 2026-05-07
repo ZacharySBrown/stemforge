@@ -11,8 +11,10 @@ from stemforge.tempo_reconciler import (
     SUSPICIOUS_RATIOS,
     ReconciledTempo,
     TempoEstimate,
+    _bar_period_from_downbeats,
     _is_suspicious_ratio,
     reconcile_tempo,
+    refine_bpm,
 )
 
 
@@ -246,3 +248,182 @@ class TestReconcileTempo:
         s = json.dumps(d)
         assert "90.91" in s
         assert json.loads(s) == d
+
+
+# ── _bar_period_from_downbeats: locks in mean (not median) of clean IBIs ────
+
+
+class TestBarPeriodFromDownbeats:
+    """The estimator was switched from median to mean on 2026-05-06.
+
+    beat-this's downbeat positions are quantized to its internal frame rate,
+    so most IBIs land on a single quantum (e.g. 2.660s exactly = 90.226 BPM).
+    The median locks onto that quantum even when the true bar period sits
+    BETWEEN quanta. The mean averages across them and recovers a more
+    accurate true period.
+
+    These tests fail if anyone "refactors back to median" later.
+    """
+
+    def test_mean_not_median_when_ibis_cluster(self):
+        # Twelve downbeats. The helper skips the first downbeat, so it sees
+        # diffs between downbeats[1..11] -> 10 IBIs. Construct so those 10 are
+        # 8 at exactly 2.660s + 2 at 2.680s.
+        # Median(those 10) = 2.660 (the cluster). Mean = 2.664. Function must
+        # return the mean.
+        first = 8.934
+        # IBI #1 (between downbeats[0] and downbeats[1]) is dropped by the
+        # helper. Make it 2.660 so the array is realistic; the 10 IBIs the
+        # helper actually sees are everything *after* that.
+        ibis_seen_by_function = [2.660] * 8 + [2.680] * 2
+        ibis = [2.660] + ibis_seen_by_function  # 11 IBIs total -> 12 downbeats
+        downbeats = [first]
+        for ibi in ibis:
+            downbeats.append(downbeats[-1] + ibi)
+
+        period = _bar_period_from_downbeats(np.asarray(downbeats))
+
+        assert period is not None
+        # Mean of clean IBIs (all within 20% of rough median = 2.660):
+        expected_mean = sum(ibis_seen_by_function) / len(ibis_seen_by_function)
+        assert abs(period - expected_mean) < 1e-6, f"expected mean({expected_mean}), got {period}"
+
+        # Sanity: median of the same array would have been 2.660 (the cluster),
+        # materially different from the mean.
+        median_of_clean = float(np.median(ibis_seen_by_function))
+        assert abs(period - median_of_clean) > 0.001, (
+            "function returned a value indistinguishable from the median — "
+            "did the implementation regress to median(clean)?"
+        )
+
+    def test_outlier_rejection_still_uses_median_anchor(self):
+        # The outlier filter compares against the rough median (= 2.660).
+        # An IBI at 5.00 (= ~88% off) is rejected; an IBI at 3.06 (= 15% off)
+        # is kept.
+        # First downbeat is skipped by the helper, so design the array so the
+        # SEEN IBIs include the outlier. Visible IBIs after skip:
+        # [2.660, 2.660, 5.00, 2.660, 3.06, 2.660, 2.660] -> 7 IBIs.
+        # Outlier 5.00 rejected (88% off rough median 2.660).
+        # 3.06 kept (15% off, within 20% tolerance).
+        # Mean of survivors: (5*2.660 + 3.06)/6 = 2.7267.
+        first = 0.0
+        ibis = [2.660] + [2.660, 2.660, 5.00, 2.660, 3.06, 2.660, 2.660]
+        downbeats = [first]
+        for ibi in ibis:
+            downbeats.append(downbeats[-1] + ibi)
+
+        period = _bar_period_from_downbeats(np.asarray(downbeats))
+        assert period is not None
+
+        survivors = [2.660, 2.660, 2.660, 3.06, 2.660, 2.660]
+        expected = sum(survivors) / len(survivors)
+        assert abs(period - expected) < 1e-3, f"expected mean of survivors {expected}, got {period}"
+
+    def test_returns_none_with_too_few_downbeats(self):
+        assert _bar_period_from_downbeats(np.array([0.0])) is None
+        assert _bar_period_from_downbeats(np.array([0.0, 2.66])) is None
+        assert _bar_period_from_downbeats(np.array([0.0, 2.66, 5.32])) is None
+        # 4 downbeats = 3 IBIs total = 2 IBIs after skipping the first downbeat.
+        # Survives the early bailout.
+        assert _bar_period_from_downbeats(np.array([0.0, 2.66, 5.32, 7.98])) is not None
+
+    def test_returns_none_when_all_outliers(self):
+        # Pathological: rough median is 1.0, but no IBI is within 20% of it
+        # because 5/6 IBIs differ wildly. (rough_median used as anchor.)
+        # Construct so median(IBIs) sits at 1.0 but mean(clean) would be empty.
+        # The clean filter is "abs(ibi - rough_median) < 0.2 * rough_median",
+        # i.e. within +/- 0.2 of 1.0 = [0.8, 1.2]. If all IBIs are outside
+        # that band, clean is empty and the function returns None.
+        downbeats = np.array([0.0, 0.5, 1.0, 1.5, 2.5, 4.0])  # IBIs after
+        # Skip first downbeat -> ibis from [0.5, 1.0, 1.5, 2.5, 4.0]:
+        # diffs = [0.5, 0.5, 1.0, 1.5]. Median = 0.75.
+        # Clean filter: within 20% of 0.75 = [0.6, 0.9]. None of [0.5, 0.5, 1.0, 1.5]
+        # sits in [0.6, 0.9], so clean is empty -> return None.
+        assert _bar_period_from_downbeats(downbeats) is None
+
+
+# ── refine_bpm: cross-correlation refinement vs synthesized truth ───────────
+
+
+import pytest as _pytest  # noqa: E402  -- inside-module pytest reference for fixtures
+
+
+@_pytest.fixture(scope="module")
+def long_synth_song(tmp_path_factory):
+    """24-bar synth song at 120.0 BPM (= 48s) for refine_bpm tests.
+
+    refine_bpm requires at least 8 bars to score; even a 2% wrong candidate
+    BPM must leave >=8 bars in the search window. The default 8-bar fixture
+    is too short for ±2% sweeps. 24 bars gives plenty of headroom.
+    """
+    from fixtures.synth_song import make_synth_song
+
+    out_dir = tmp_path_factory.mktemp("long_synth_song")
+    return make_synth_song(out_dir / "long_synth_song.wav", bars=24)
+
+
+class TestRefineBpm:
+    """refine_bpm() should recover the true BPM of a track to within a small
+    tolerance, even when seeded with a deliberately wrong candidate.
+
+    Uses a 24-bar deterministic synth song at 120.0 BPM. The fixture has
+    kicks on beats 1+3 of every bar — an ideal kick-comb signature.
+    """
+
+    def test_recovers_truth_from_low_candidate(self, long_synth_song):
+        # Synth fixture is 120.0 BPM. Seed with 119.0 (= 0.83% low).
+        refined = refine_bpm(
+            long_synth_song.path,
+            candidate_bpm=119.0,
+            first_downbeat=0.0,
+            bpm_tolerance_pct=2.0,
+            bpm_step=0.01,
+        )
+        truth = long_synth_song.bpm
+        assert abs(refined - truth) < 0.05, f"refined {refined} not within 0.05 of truth {truth}"
+
+    def test_recovers_truth_from_high_candidate(self, long_synth_song):
+        # Symmetric test from the other side — start at 121.5 (= 1.25% high).
+        refined = refine_bpm(
+            long_synth_song.path,
+            candidate_bpm=121.5,
+            first_downbeat=0.0,
+            bpm_tolerance_pct=2.0,
+            bpm_step=0.01,
+        )
+        truth = long_synth_song.bpm
+        assert abs(refined - truth) < 0.05, f"refined {refined} not within 0.05 of truth {truth}"
+
+    def test_falls_back_to_candidate_when_too_few_bars(self, long_synth_song):
+        # If first_downbeat is so late that fewer than 8 bars remain in the
+        # audio, refine_bpm has too little signal and returns the candidate
+        # unchanged (graceful degrade). 24-bar song = 48s. first_downbeat=44
+        # leaves 4s -- ~2 bars at 120 BPM, below the 8-bar minimum.
+        refined = refine_bpm(
+            long_synth_song.path,
+            candidate_bpm=130.0,  # arbitrary
+            first_downbeat=44.0,
+            bpm_tolerance_pct=2.0,
+            bpm_step=0.01,
+        )
+        assert refined == 130.0, (
+            "refine_bpm should return candidate unchanged when too few bars remain"
+        )
+
+    def test_returns_grid_point(self, long_synth_song):
+        # Every searched candidate sits on bpm_lo + k * bpm_step for integer
+        # k. So the returned BPM must lie on that grid (no interpolation).
+        candidate = 119.0
+        step = 0.5
+        refined = refine_bpm(
+            long_synth_song.path,
+            candidate_bpm=candidate,
+            first_downbeat=0.0,
+            bpm_tolerance_pct=2.0,
+            bpm_step=step,
+        )
+        bpm_lo = candidate * 0.98
+        offset = (refined - bpm_lo) / step
+        assert abs(offset - round(offset)) < 1e-3, (
+            f"refined {refined} not on the step grid (offset={offset})"
+        )
