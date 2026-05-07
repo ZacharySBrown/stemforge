@@ -395,17 +395,18 @@ test('anchor: Live tempo wins over manifest BPM in --bpm arg', () => {
 // ── onAnchorComplete: timeline shift to align bar-1 chunk with locator ──────
 
 test('onAnchorComplete: emits manifest path + shift atom on outlet 2', () => {
-    // anchor() stashes locator beat. onAnchorComplete reads the (just-rewritten)
-    // manifest and computes shift = locatorBeat - bar1Idx * chunkBeats so the
-    // new bar-1 chunk lands at the locator's timeline position.
+    // anchor() stashes locator beat (bar-snapped). onAnchorComplete reads the
+    // (just-rewritten) manifest and computes shift = snappedBeat - bar1Idx *
+    // chunkBeats so the new bar-1 chunk lands at the snapped locator position.
+    // Locator at session beat 20 = bar 6 boundary → no snap → shift = 4.
     const ctx = freshSandbox({
         tempo: 90,
-        cuePoints: [{ name: 'anchor', time: 18 }]
+        cuePoints: [{ name: 'anchor', time: 20 }]  // already on bar boundary
     });
     const dir = seedTrackDir(buildManifest());
     const { anchor, trackDir } = getTestExports(ctx);
     trackDir(dir);
-    anchor();  // stashes PENDING_LOCATOR_BEAT = 18
+    anchor();  // stashes PENDING_LOCATOR_BEAT = 20 (no snap needed)
 
     // Simulate the helper rewriting the manifest with a leading partial:
     // bar1Idx = 1, bars = 4, beats_per_bar = 4 → chunkBeats = 16.
@@ -421,9 +422,36 @@ test('onAnchorComplete: emits manifest path + shift atom on outlet 2', () => {
     assert.equal(reloadCalls.length, 1, 'expected one reload on outlet 2');
     const [path, shift] = reloadCalls[0];
     assert.equal(path, SYNTHETIC_MANIFEST);
-    // shift = 18 - 1*16 = 2 → bar 1 chunk lands at timeline beat 18 (= locator)
-    assert.equal(Number(shift), 2,
+    // shift = 20 - 1*16 = 4 → bar 1 chunk lands at timeline beat 20 (= locator)
+    assert.equal(Number(shift), 4,
         'shift should align bar 1 chunk with locator timeline position');
+});
+
+test('anchor: snaps sub-bar locator beat to nearest bar before stashing', () => {
+    // Locator at session beat 18 (= bar 5.5, halfway between bars 5 and 6).
+    // Snap rounds to the nearest bar — JS Math.round(.5) rounds up, so
+    // snapped beat = 20 (= bar 6). Curated clips fire at integer session
+    // bars, so the prechop arrangement must too — non-integer shifts cause
+    // sub-bar drift between the two systems.
+    const ctx = freshSandbox({
+        tempo: 90,
+        cuePoints: [{ name: 'anchor', time: 18 }]  // sub-bar
+    });
+    const dir = seedTrackDir(buildManifest());
+    const { anchor, trackDir } = getTestExports(ctx);
+    trackDir(dir);
+    anchor();
+
+    // After re-anchor completes, shift = snappedBeat (20) - bar1Idx (1) * 16 = 4
+    const newManifest = buildManifest();
+    newManifest.musical_bar_1_chunk_index = 1;
+    maxApi.seedFile(SYNTHETIC_MANIFEST, JSON.stringify(newManifest));
+    ctx.onAnchorComplete(SYNTHETIC_MANIFEST);
+
+    const reloadCalls = maxApi.state.outlets[2] || [];
+    const [, shift] = reloadCalls[reloadCalls.length - 1];
+    assert.equal(Number(shift), 4,
+        'shift should reflect snapped beat (20), not raw beat (18)');
 });
 
 test('onAnchorComplete: clamps negative shift to 0 (when bar1Idx pre-roll exceeds locator beat)', () => {

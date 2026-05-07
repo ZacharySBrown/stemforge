@@ -296,6 +296,25 @@ def split(
         )
         first_downbeat_sec = refined
 
+    # BPM refinement (always-on unless user passed --bpm override).
+    # The reconciler's bar-period mean estimator still has ~0.1-0.4%
+    # residual error from beat-this's per-frame downbeat quantization
+    # (Definition 2026-05-06: estimator gave 89.98 vs truth 89.88,
+    # accumulating to ~120ms drift by bar 12). refine_bpm cross-correlates
+    # a full-song bar-comb against kick onsets and recovers the true BPM
+    # to within ~0.01 BPM, dropping accumulated drift to ~10ms.
+    if bpm_override is None:
+        from .tempo_reconciler import refine_bpm
+
+        refined_bpm = refine_bpm(audio_file, bpm, first_downbeat_sec)
+        bpm_delta = refined_bpm - bpm
+        if abs(bpm_delta) >= 0.005:
+            console.print(
+                f"  [cyan]refine-bpm[/cyan] shifted BPM: "
+                f"{bpm:.4f} → {refined_bpm:.4f} (Δ {bpm_delta:+.4f})"
+            )
+        bpm = refined_bpm
+
     # Fallback: if reconciler returned no usable beats (very short clip,
     # detector silently failed), revive the legacy librosa path so the CLI
     # never returns an empty result.
@@ -657,6 +676,26 @@ def re_anchor(
             f"[yellow]Pipeline {pipeline_name!r} has no prechop block — nothing to re-anchor.[/yellow]"
         )
         sys.exit(0)
+
+    # BPM refinement (always-on). The user passes Live's session tempo via
+    # --bpm, but Live's tempo often inherits the original beat-this estimate
+    # which has ~0.1-0.4% residual bias (Definition 2026-05-06: estimate
+    # 90.23 vs truth 89.88). Cross-correlation of a bar-comb against kick
+    # onsets in the drums stem recovers the true BPM to ~0.01 BPM accuracy.
+    # The user's --first-downbeat is held fixed (it's their locator-anchored
+    # bar 1 — the trustworthy axis to refine BPM around).
+    drums_path = stem_paths.get("drums")
+    if drums_path and drums_path.exists():
+        from .tempo_reconciler import refine_bpm
+
+        refined_bpm = refine_bpm(drums_path, bpm, first_downbeat)
+        bpm_delta = refined_bpm - bpm
+        if abs(bpm_delta) >= 0.005:
+            console.print(
+                f"  [cyan]refine-bpm[/cyan] shifted BPM: "
+                f"{bpm:.4f} → {refined_bpm:.4f} (Δ {bpm_delta:+.4f})"
+            )
+            bpm = refined_bpm
 
     bars_per_chunk = pipeline_cfg.prechop.bars
     bar_period_sec = bars_per_chunk * pipeline_cfg.prechop.beats_per_bar * 60.0 / bpm

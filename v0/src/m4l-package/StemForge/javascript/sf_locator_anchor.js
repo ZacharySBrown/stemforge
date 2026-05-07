@@ -118,7 +118,10 @@ function _readJsonFile(absPath) {
 // ── locator selection ────────────────────────────────────────────────────────
 
 function _readLocators() {
-    // Returns array of {name, time_beats}. Empty if none placed.
+    // Returns array of {name, time_beats, index}. Empty if none placed.
+    // `index` lets callers reach back into LOM to move the cue_point (the
+    // bar-snap step in anchor() updates the locator's visual position so it
+    // agrees with the snapped session-bar position of bar 1 of song).
     var out = [];
     try {
         var liveSet = new LiveAPI("live_set");
@@ -130,7 +133,7 @@ function _readLocators() {
             try { name = String(cp.get("name") || ""); } catch (_) {}
             try { t = Number(cp.get("time")); } catch (_) {}
             if (!isFinite(t)) t = 0;
-            out.push({name: name, time_beats: t});
+            out.push({name: name, time_beats: t, index: i});
         }
     } catch (e) {
         _status("readLocators: " + e);
@@ -296,17 +299,39 @@ function anchor() {
         return false;
     }
 
-    // Stash the locator's timeline beat so onAnchorComplete can compute a
-    // shift = locatorBeat - bar1Idx*chunkBeats, placing the new bar-1 chunk
-    // AT the locator's timeline position rather than at the chunk-grid
-    // origin (timeline 0).
-    PENDING_LOCATOR_BEAT = Number(picked.time_beats) || 0;
+    // Snap the locator's session-beat position to the nearest bar so the
+    // shift the loader applies (= snappedBeat - bar1Idx*chunkBeats) is
+    // always an integer-bar multiple. Without this, dropping the locator
+    // at a sub-bar position causes every prechop chunk to tile at fractional
+    // session bars, which then disagrees with curated clips (always fired
+    // at integer session bars). source-time of bar 1 is unchanged — only
+    // the session-bar SLOT for bar 1 gets snapped.
+    var rawLocatorBeat = Number(picked.time_beats) || 0;
+    var snappedLocatorBeat = Math.round(rawLocatorBeat / beatsPerBar) * beatsPerBar;
+    var snapDelta = snappedLocatorBeat - rawLocatorBeat;
+
+    // Visually move the cue_point to its snapped position so the user sees
+    // locator + chunk_002 land on the same session bar after re-anchor.
+    if (Math.abs(snapDelta) > 1e-6 && picked.index != null) {
+        try {
+            var cp = new LiveAPI("live_set cue_points " + picked.index);
+            cp.set("time", snappedLocatorBeat);
+        } catch (eMv) {
+            _status("anchor: could not move locator to snapped beat " +
+                    snappedLocatorBeat.toFixed(2) + ": " + eMv);
+        }
+    }
+
+    PENDING_LOCATOR_BEAT = snappedLocatorBeat;
 
     _status("anchor: locator '" + (picked.name || "(unnamed)") +
             "' = bar " + locatorBarNumber +
             " at source " + locatorSourceSec.toFixed(3) +
             "s, adjusted bar 1 → " + adjustedSourceSec.toFixed(3) +
-            "s, Δ first_downbeat " + deltaFD.toFixed(3) +
+            "s, locator beat " + rawLocatorBeat.toFixed(2) +
+            " → snapped " + snappedLocatorBeat.toFixed(2) +
+            " (Δ " + snapDelta.toFixed(2) + " beats)" +
+            ", Δ first_downbeat " + deltaFD.toFixed(3) +
             "s, newFirstDownbeat " + newFirstDownbeat.toFixed(4) +
             "s, bpm=" + tempo);
 
