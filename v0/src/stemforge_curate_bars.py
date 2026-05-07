@@ -174,6 +174,7 @@ def _reslice_with_padding(
     phrase_bars: int,
     bar_duration_sec: float,
     pad_bars_yaml: float,
+    first_downbeat_sec: float = 0.0,
 ) -> dict:
     """Re-slice a padded window from the source stem WAV to dst_path.
 
@@ -183,11 +184,11 @@ def _reslice_with_padding(
     applied AFTER selection, only to the chosen bars, by reading the padded
     region straight from the source stem.
 
-    Bar index → time mapping uses uniform bar_duration_sec:
-        raw_start_in_stem = (bar_idx - 1) * bar_duration_sec
-    Bar filenames are already 1-indexed positions in the bar grid (see
-    stemforge.slicer._write_bar_slices), so this holds even when silent bars
-    leave gaps in the bar-file sequence.
+    Bar index → time mapping mirrors `stemforge.slicer._write_bar_slices`:
+        raw_start_in_stem = first_downbeat_sec + (bar_idx - 1) * bar_duration_sec
+    Bar filenames are 1-indexed positions in the bar grid; bar 1 is anchored
+    at first_downbeat_sec (NOT at 0), so callers must pass the anchor when
+    the track has any pre-bar-1 audio. Defaults to 0.0 for back-compat.
 
     Returns dict with resolved values the caller passes to build_curation_block:
         pad_bars_applied   — symmetric min of both sides after edge clamping
@@ -199,7 +200,9 @@ def _reslice_with_padding(
     sr = info.samplerate
     stem_duration = float(info.duration)
 
-    raw_start_in_stem = max(0.0, (bar_idx - 1) * bar_duration_sec)
+    raw_start_in_stem = max(
+        0.0, float(first_downbeat_sec) + (bar_idx - 1) * bar_duration_sec
+    )
     raw_end_in_stem = min(stem_duration, raw_start_in_stem + phrase_bars * bar_duration_sec)
 
     pad_sec = float(pad_bars_yaml) * bar_duration_sec
@@ -598,6 +601,21 @@ def run(
     if json_events:
         emit({"event": "bpm", "bpm": bpm, "beat_count": len(beat_times)})
 
+    # Capture the resolved bar-1 anchor for the source-stem reslicer below.
+    # In the manifest-tempo path it came from stems.json; in the fallback
+    # path we derive it from whatever downbeat array won (beat-this or
+    # librosa stride). Without this, _reslice_with_padding reads the source
+    # stem starting at t=0 instead of at first_downbeat — every curated bar
+    # WAV ends up shifted by `first_downbeat` seconds in the source.
+    if manifest_tempo is not None:
+        resolved_first_downbeat_sec = float(manifest_tempo["first_downbeat_sec"])
+    elif downbeat_times is not None and len(downbeat_times) > 0:
+        resolved_first_downbeat_sec = float(downbeat_times[0])
+    elif len(beat_times) > 0:
+        resolved_first_downbeat_sec = float(beat_times[0])
+    else:
+        resolved_first_downbeat_sec = 0.0
+
     # Step 2: Slice each stem into bars
     # Clean existing bar dirs first to avoid stale files from previous runs
     stem_bar_dirs: dict[str, Path] = {}
@@ -784,6 +802,7 @@ def run(
                         phrase_bars=1,
                         bar_duration_sec=bar_duration_sec,
                         pad_bars_yaml=pad_bars_yaml,
+                        first_downbeat_sec=resolved_first_downbeat_sec,
                     )
                     entry = {
                         "position": position + 1,
@@ -990,6 +1009,7 @@ def run(
                         phrase_bars=int(sc.phrase_bars),
                         bar_duration_sec=bar_duration_sec,
                         pad_bars_yaml=pad_bars_yaml,
+                        first_downbeat_sec=resolved_first_downbeat_sec,
                     )
                     entry = {
                         "position": position + 1,
@@ -1262,6 +1282,200 @@ def run(
     return manifest_path
 
 
+def reslice_curated_from_anchor(
+    *,
+    stems_dir: Path,
+    json_events: bool = False,
+) -> Path:
+    """Re-slice the curated bar loops at the current ``stems.json`` anchor.
+
+    Use case: after ``stemforge re-anchor`` rewrites ``stems.json`` (new
+    BPM and/or first_downbeat), the previously curated WAVs in
+    ``curated/<stem>/bar_NNN.wav`` are pinned to the OLD bar grid. This
+    function rewrites each loop's WAV from the original stem at the new
+    bar grid and updates ``curated/manifest.json``'s clip / warp_markers /
+    loop blocks to match.
+
+    Behaviour
+    ─────────
+    - **Loops are rebound to the NEW grid, not to the original audio
+      content.** Each loop keeps its ``source_bar_index`` (e.g. bar 104),
+      so the audio that loop now contains is whatever sits at "bar 104"
+      under the new anchor — which may differ from the originally curated
+      audio if first_downbeat shifted. This is the intended behaviour:
+      re-anchor's purpose is "the grid was wrong, fix the grid", not
+      "preserve the previously selected audio content". For the latter,
+      run a full re-curate.
+    - **One-shots are not touched** — they're peak-anchored, not
+      grid-aligned, so the new anchor is irrelevant to them.
+    - **Drum substems are not touched** — they're a byproduct of LarsNet
+      separation, not a curated artifact.
+    - **pad_bars per entry is preserved** — the user's pad setting from
+      the original curate run is honoured.
+
+    Returns the path to the (rewritten) ``curated/manifest.json``. Raises
+    ``FileNotFoundError`` if either ``stems.json`` or
+    ``curated/manifest.json`` is missing.
+    """
+    stems_dir = Path(stems_dir)
+    stems_json_path = stems_dir / "stems.json"
+    curated_dir = stems_dir / "curated"
+    manifest_path = curated_dir / "manifest.json"
+
+    if not stems_json_path.exists():
+        raise FileNotFoundError(f"No stems.json at {stems_json_path}")
+    if not manifest_path.exists():
+        raise FileNotFoundError(
+            f"No curated/manifest.json at {manifest_path} — nothing to re-slice"
+        )
+
+    manifest_tempo = _load_stems_manifest_tempo(stems_dir)
+    if manifest_tempo is None:
+        raise ValueError(
+            f"stems.json at {stems_json_path} has no tempo block; "
+            f"run `stemforge re-anchor` first to populate it."
+        )
+
+    new_bpm = float(manifest_tempo["bpm"])
+    new_first_downbeat = float(manifest_tempo["first_downbeat_sec"])
+
+    curated = json.loads(manifest_path.read_text())
+    time_sig_numerator = int(curated.get("time_signature_numerator", 4))
+    bar_duration_sec = 60.0 / new_bpm * time_sig_numerator
+
+    if json_events:
+        emit({
+            "event": "progress",
+            "phase": "reslice",
+            "pct": 0,
+            "message": (
+                f"reslicing curated loops at new anchor: bpm={new_bpm:.2f}, "
+                f"first_downbeat={new_first_downbeat:.4f}s, "
+                f"bar_duration={bar_duration_sec:.4f}s"
+            ),
+        })
+
+    # Locate source stem WAVs for re-extraction.
+    stems_by_name = find_stems(stems_dir)
+    schema_config = CurationSchemaConfig()
+
+    total_loops = sum(
+        len(block.get("loops", [])) if isinstance(block, dict) else 0
+        for block in curated.get("stems", {}).values()
+    )
+    n_done = 0
+    n_skipped = 0
+
+    for stem_name, block in curated.get("stems", {}).items():
+        if not isinstance(block, dict):
+            # v1 list-only format — no loops/oneshots split. Treat the whole
+            # list as loops.
+            loops = block
+            in_place_block = False
+        else:
+            loops = block.get("loops", [])
+            in_place_block = True
+
+        source_stem_path = stems_by_name.get(stem_name)
+        if source_stem_path is None or not source_stem_path.exists():
+            if json_events:
+                emit({
+                    "event": "progress",
+                    "phase": "reslice",
+                    "pct": int((n_done / max(total_loops, 1)) * 100),
+                    "message": f"{stem_name}: no source stem on disk; skipping {len(loops)} loops",
+                })
+            n_skipped += len(loops)
+            continue
+
+        stem_schema = schema_config.for_stem(stem_name)
+
+        for entry in loops:
+            bar_idx = entry.get("source_bar_index")
+            phrase_bars = int(entry.get("phrase_bars", 1) or 1)
+            file_path = entry.get("file")
+            pad_bars = float((entry.get("clip") or {}).get("pad_bars", 0.0) or 0.0)
+
+            if bar_idx is None or not file_path:
+                n_skipped += 1
+                continue
+
+            dst = Path(file_path)
+            try:
+                reslice = _reslice_with_padding(
+                    source_stem_path=source_stem_path,
+                    dst_path=dst,
+                    bar_idx=int(bar_idx),
+                    phrase_bars=phrase_bars,
+                    bar_duration_sec=bar_duration_sec,
+                    pad_bars_yaml=pad_bars,
+                    first_downbeat_sec=new_first_downbeat,
+                )
+            except ValueError as e:
+                if json_events:
+                    emit({
+                        "event": "progress",
+                        "phase": "reslice",
+                        "pct": int((n_done / max(total_loops, 1)) * 100),
+                        "message": f"{stem_name} bar {bar_idx}: {e}; skipping",
+                    })
+                n_skipped += 1
+                continue
+
+            # Rebuild the clip / warp_markers / loop / offsets blocks for
+            # the new WAV. Preserve any user-committed offsets from the
+            # prior manifest (their semantics — seconds inside the padded
+            # file — are still valid).
+            new_blocks = build_curation_block(
+                dst,
+                phrase_bars=phrase_bars,
+                time_sig_numerator=time_sig_numerator,
+                stem_schema=stem_schema,
+                bpm=new_bpm,
+                pad_bars_applied=reslice["pad_bars_applied"],
+                bar_duration_sec=bar_duration_sec,
+                ts_num=time_sig_numerator,
+                raw_start_sec=reslice["raw_start_sec"],
+            )
+            prior_offsets = entry.get("offsets")
+            entry["clip"] = new_blocks["clip"]
+            entry["warp_markers"] = new_blocks["warp_markers"]
+            entry["loop"] = new_blocks["loop"]
+            if prior_offsets is not None:
+                entry["offsets"] = prior_offsets
+            else:
+                entry["offsets"] = new_blocks["offsets"]
+            n_done += 1
+
+        if in_place_block:
+            block["loops"] = loops
+        else:
+            curated["stems"][stem_name] = loops
+
+    # Update top-level tempo fields. beat_count is recomputed from the
+    # longest source stem so it reflects the new grid.
+    curated["bpm"] = new_bpm
+    if stems_by_name:
+        max_duration = max(
+            float(sf.info(str(p)).duration) for p in stems_by_name.values()
+        )
+        curated["beat_count"] = int(max_duration * new_bpm / 60.0)
+
+    manifest_path.write_text(json.dumps(curated, indent=2))
+
+    if json_events:
+        emit({
+            "event": "resliced",
+            "manifest": str(manifest_path),
+            "loops_resliced": n_done,
+            "loops_skipped": n_skipped,
+            "bpm": new_bpm,
+            "first_downbeat_sec": new_first_downbeat,
+        })
+
+    return manifest_path
+
+
 def main():
     ap = argparse.ArgumentParser(description="Bar-slice + curate stems from a split session")
     ap.add_argument("--stems-dir", required=True, type=Path,
@@ -1278,7 +1492,27 @@ def main():
                     help="Curation config YAML (default: pipelines/curation.yaml)")
     ap.add_argument("--pipeline", type=Path, default=None,
                     help="Processing pipeline YAML to embed in manifest (e.g. pipelines/production_idm.yaml)")
+    ap.add_argument("--reslice-only", action="store_true",
+                    help="Skip bar-slicing + curation. Just rewrite the existing "
+                         "curated/<stem>/bar_NNN.wav files at the current "
+                         "stems.json anchor (BPM + first_downbeat). Used by "
+                         "`stemforge re-anchor` to keep curated loops in sync "
+                         "without re-running diversity selection or LarsNet.")
     args = ap.parse_args()
+
+    if args.reslice_only:
+        try:
+            manifest = reslice_curated_from_anchor(
+                stems_dir=args.stems_dir,
+                json_events=args.json_events,
+            )
+            if not args.json_events:
+                print(f"Resliced manifest: {manifest}")
+        except Exception as e:
+            if args.json_events:
+                emit({"event": "error", "phase": "reslice", "message": str(e)})
+            raise
+        return
 
     curation_cfg = load_curation_config(args.curation) if args.curation else None
     schema_cfg = load_curation_schema_config(args.curation) if args.curation else None

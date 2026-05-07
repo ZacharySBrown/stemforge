@@ -738,12 +738,94 @@ def re_anchor(
         input_audio=input_audio,
     )
 
+    # Keep curated bars in sync with the new anchor (loops only — one-shots
+    # are peak-anchored and grid-independent). Skip silently if no curated
+    # output exists for this track.
+    curated_manifest_path = track_dir / "curated" / "manifest.json"
+    if curated_manifest_path.exists():
+        import subprocess as _sp
+
+        script = Path(__file__).resolve().parents[1] / "v0/src/stemforge_curate_bars.py"
+        if script.exists():
+            console.print()
+            console.print(
+                "[bold]Re-slicing curated loops[/bold] at new anchor "
+                f"[dim](preserving picks from {curated_manifest_path.name})[/dim]"
+            )
+            _r = _sp.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--stems-dir",
+                    str(track_dir),
+                    "--reslice-only",
+                ],
+                check=False,
+            )
+            if _r.returncode != 0:
+                console.print(
+                    "  [yellow]reslice exited non-zero — curated loops may be "
+                    "stale; run `stemforge re-curate` if needed.[/yellow]"
+                )
+            else:
+                console.print("  curated/manifest.json + bar WAVs updated.")
+        else:
+            console.print(
+                f"  [yellow]curate script not found at {script}; curated/ left untouched.[/yellow]"
+            )
+
     console.print()
     console.print(Rule("[bold green]Re-anchored[/bold green]"))
     console.print(f"  BPM: [cyan]{bpm}[/cyan]  first_downbeat: [cyan]{first_downbeat}s[/cyan]")
     console.print("  stems.json + prechop_manifest.json updated.")
+    if curated_manifest_path.exists():
+        console.print("  curated/ re-sliced at new anchor.")
     if keep_old:
         console.print("  [dim]Old chunks preserved at <stem>_prechop.bak/.[/dim]")
+
+
+@cli.command("reslice-curated")
+@click.argument("track_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@with_audit("reslice-curated")
+def reslice_curated(track_dir):
+    """
+    Re-cut curated bar loops at the current stems.json anchor.
+
+    Use after `stemforge re-anchor` if you skipped the auto-reslice
+    (or pre-PR, when re-anchor didn't sync curated/). Rewrites every
+    curated/<stem>/bar_NNN.wav from the original stem at the new BPM +
+    first_downbeat, preserving the user's picks (source_bar_index,
+    one-shots, drum substems). One-shots are peak-anchored and stay
+    untouched.
+
+    For a fresh diversity selection (different picks, not just a different
+    grid), run `stemforge forge --curation ...` instead.
+    """
+    import subprocess as _sp
+
+    stems_json = track_dir / "stems.json"
+    curated = track_dir / "curated" / "manifest.json"
+    if not stems_json.exists():
+        console.print(f"[red]No stems.json at {stems_json}[/red]")
+        sys.exit(1)
+    if not curated.exists():
+        console.print(f"[red]No curated/manifest.json at {curated} — nothing to re-slice.[/red]")
+        sys.exit(1)
+
+    script = Path(__file__).resolve().parents[1] / "v0/src/stemforge_curate_bars.py"
+    if not script.exists():
+        console.print(f"[red]curate script missing at {script}[/red]")
+        sys.exit(1)
+
+    console.print(Rule(f"[bold cyan]StemForge reslice-curated[/bold cyan] — {track_dir.name}"))
+    result = _sp.run(
+        [sys.executable, str(script), "--stems-dir", str(track_dir), "--reslice-only"],
+        check=False,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]reslice exited {result.returncode}[/red]")
+        sys.exit(1)
+    console.print(Rule("[bold green]Resliced[/bold green]"))
 
 
 @cli.command("list")
