@@ -13,6 +13,7 @@ from stemforge.tempo_reconciler import (
     TempoEstimate,
     _bar_period_from_downbeats,
     _is_suspicious_ratio,
+    _phase_equivalence,
     reconcile_tempo,
     refine_bpm,
 )
@@ -75,12 +76,70 @@ class TestSuspiciousRatio:
             assert abs(matched - r) / r < RATIO_TOLERANCE
 
 
+# ── _phase_equivalence (GH #55 picker helper) ───────────────────────────────
+
+
+class TestPhaseEquivalence:
+    """The Definition fix (GH #55) hinges on this helper: given two
+    first_downbeat candidates, decide whether they're "same grid, different
+    bar 1 picks" (phase-equivalent at non-zero bar offset) vs "actually
+    misaligned grids" (sub-bar offset, no integer bar count fits).
+    """
+
+    def test_zero_offset_when_first_downbeats_match(self):
+        # Same fdb → 0 bars apart, phase-equivalent.
+        is_eq, n = _phase_equivalence(0.28, 0.28, bar_period=2.66)
+        assert is_eq
+        assert n == 0
+
+    def test_within_tolerance_still_zero_offset(self):
+        # 5% of 2.66 = 0.133s. Diff of 0.05s is well within tolerance.
+        is_eq, n = _phase_equivalence(0.28, 0.33, bar_period=2.66)
+        assert is_eq
+        assert n == 0
+
+    def test_phase_equivalent_at_two_bars(self):
+        # The Definition pattern: drums fdb is exactly 2 bars after mix.
+        is_eq, n = _phase_equivalence(3.78, 3.78 + 2 * 2.66, bar_period=2.66)
+        assert is_eq
+        assert n == 2
+
+    def test_phase_equivalent_negative_offset(self):
+        # If drums lands BEFORE mix on the grid, n is negative.
+        is_eq, n = _phase_equivalence(8.94, 8.94 - 2 * 2.66, bar_period=2.66)
+        assert is_eq
+        assert n == -2
+
+    def test_not_equivalent_when_off_by_sub_bar(self):
+        # Diff of 0.7s at bar_period 2.0s = 0.35 bars: nearest int = 0,
+        # residual 0.35 = 35%, well outside 5% tolerance.
+        is_eq, n = _phase_equivalence(0.5, 1.2, bar_period=2.0)
+        assert not is_eq
+        # n is the rounded value but is_eq=False guards callers from acting on it.
+        assert n == 0
+
+    def test_handles_zero_bar_period_safely(self):
+        # Defensive — zero bar_period would otherwise divide-by-zero.
+        is_eq, n = _phase_equivalence(0.28, 5.0, bar_period=0.0)
+        assert not is_eq
+        assert n == 0
+
+
 # ── reconcile_tempo behavior with mocked detectors ──────────────────────────
 
 
-def _make_estimate(source: str, bpm: float, n_beats: int = 100) -> TempoEstimate:
-    """Build a TempoEstimate stand-in. Beat times are evenly spaced to match BPM."""
-    beats = np.arange(n_beats, dtype=float) * (60.0 / bpm)
+def _make_estimate(
+    source: str,
+    bpm: float,
+    n_beats: int = 100,
+    *,
+    first_downbeat_sec: float = 0.0,
+) -> TempoEstimate:
+    """Build a TempoEstimate stand-in. Beat times are evenly spaced to match BPM,
+    starting at `first_downbeat_sec` (= where downbeat[0] lives).
+    """
+    beat_period = 60.0 / bpm
+    beats = first_downbeat_sec + np.arange(n_beats, dtype=float) * beat_period
     detector = "beat-this" if "beat-this" in source else "librosa"
     audio_label = source.split(":")[-1]
     return TempoEstimate(
@@ -100,8 +159,11 @@ class TestReconcileTempo:
         with pytest.raises(ValueError):
             reconcile_tempo(mix_path=None, drums_path=None)
 
-    def test_high_confidence_when_mix_and_drums_agree(self, tmp_path):
-        """The Definition case: mix and drums both at 90 BPM → high confidence."""
+    def test_high_confidence_when_mix_and_drums_fully_agree(self, tmp_path):
+        """When mix and drums agree on BOTH BPM and first_downbeat → use
+        mix at high confidence. Believer pattern: bpm 125, fdb ~0.28s on
+        both detectors.
+        """
         mix = tmp_path / "mix.wav"
         drums = tmp_path / "drums.wav"
         # Files don't need real audio — we mock the detectors.
@@ -110,16 +172,82 @@ class TestReconcileTempo:
 
         with mock.patch("stemforge.tempo_reconciler._detect_beat_this") as m:
             m.side_effect = [
-                _make_estimate("beat-this:mix", 90.91),
-                _make_estimate("beat-this:drums", 90.91),
+                _make_estimate("beat-this:mix", 125.0, first_downbeat_sec=0.28),
+                _make_estimate("beat-this:drums", 125.0, first_downbeat_sec=0.28),
             ]
             result = reconcile_tempo(mix, drums, kick_tiebreaker=False)
 
         assert result.confidence == "high"
-        assert abs(result.bpm - 90.91) < 0.01
+        assert abs(result.bpm - 125.0) < 0.01
         assert result.source == "beat-this:mix"
         assert result.warning is None
         assert len(result.all_estimates) == 2
+
+    def test_phase_equivalent_first_downbeat_disagreement_prefers_drums(self, tmp_path):
+        """The Definition pattern (GH #55, fixed 2026-05-08):
+
+        mix and drums agree on BPM (90) but mix locks onto a phantom
+        downbeat 5.16s before the song's true bar 1; drums correctly
+        identifies the actual first kick. Both pick "bar 1" on the same
+        underlying grid (offset = 2 bars), so the picks are phase-equivalent
+        — prefer drums.
+        """
+        mix = tmp_path / "mix.wav"
+        drums = tmp_path / "drums.wav"
+        mix.touch()
+        drums.touch()
+
+        # Mix says fdb=3.78s, drums says fdb=8.94s. bar_period = 60/90*4 = 2.667s.
+        # Diff = 5.16s = 1.94 bars; rounds to 2 bars; residual is 0.06 bars
+        # = 6%, just outside the 5% tolerance band. To make this cleanly
+        # phase-equivalent (within tolerance), use mix=3.78s drums=3.78s+2*2.667=9.114s.
+        bar_period = 60.0 * 4 / 90.0
+        mix_fdb = 3.78
+        drums_fdb = mix_fdb + 2 * bar_period
+
+        with mock.patch("stemforge.tempo_reconciler._detect_beat_this") as m:
+            m.side_effect = [
+                _make_estimate("beat-this:mix", 90.0, first_downbeat_sec=mix_fdb),
+                _make_estimate("beat-this:drums", 90.0, first_downbeat_sec=drums_fdb),
+            ]
+            result = reconcile_tempo(mix, drums, kick_tiebreaker=False)
+
+        assert result.source == "beat-this:drums", "phase-equivalent disagreement → drums must win"
+        assert result.confidence == "high"
+        # Returned downbeat[0] should be drums' pick.
+        assert abs(float(result.downbeat_times[0]) - drums_fdb) < 1e-6
+        assert result.warning is not None and "Preferred drums" in result.warning
+        assert "+2 bars apart" in result.warning
+
+    def test_non_phase_equivalent_first_downbeat_keeps_mix_with_warning(self, tmp_path):
+        """When mix and drums agree on BPM but their first_downbeats are
+        OFF BY A SUB-BAR AMOUNT (= they don't align on the same grid at any
+        integer bar offset), keep mix but flag medium confidence.
+
+        This is the rare case where one detector locked onto a syncopated
+        hit and the other onto a true downbeat. Hard to disambiguate
+        automatically — defer to the user via --first-downbeat override.
+        """
+        mix = tmp_path / "mix.wav"
+        drums = tmp_path / "drums.wav"
+        mix.touch()
+        drums.touch()
+
+        # bar_period = 60/120*4 = 2.0s. Diff of 0.7s = 0.35 bars (= residual
+        # 0.35 from nearest int 0; well outside the 5% tolerance).
+        with mock.patch("stemforge.tempo_reconciler._detect_beat_this") as m:
+            m.side_effect = [
+                _make_estimate("beat-this:mix", 120.0, first_downbeat_sec=0.5),
+                _make_estimate("beat-this:drums", 120.0, first_downbeat_sec=1.2),
+            ]
+            result = reconcile_tempo(mix, drums, kick_tiebreaker=False)
+
+        assert result.source == "beat-this:mix", (
+            "non-phase-equivalent disagreement → mix kept (no auto-pick possible)"
+        )
+        assert result.confidence == "medium"
+        assert result.warning is not None
+        assert "NOT phase-equivalent" in result.warning
 
     def test_low_confidence_with_fuzzy_disagreement(self, tmp_path):
         """The Alright case: mix=111 vs drums=115. Not a round factor — falls

@@ -135,6 +135,44 @@ def _is_suspicious_ratio(a: float, b: float) -> tuple[bool, float | None]:
     return False, None
 
 
+def _phase_equivalence(
+    fdb_a: float, fdb_b: float, bar_period: float, *, tolerance_bars: float = 0.10
+) -> tuple[bool, int]:
+    """Test whether two first_downbeat candidates fall on the same bar grid.
+
+    Returns ``(is_equivalent, n_bars_offset)`` where:
+
+    * ``n_bars_offset = round((fdb_b - fdb_a) / bar_period)`` — how many
+      bars apart the two picks are when snapped to integer.
+    * ``is_equivalent`` is True iff the residual after snapping is within
+      ``tolerance_bars`` (= 10% of a bar by default).
+
+    Use case: when mix and drums detectors agree on BPM but disagree on
+    first_downbeat, this function distinguishes "same grid, different
+    'bar 1' picks" (= ``is_equivalent=True, n_bars_offset != 0``) from
+    "actually different grid alignments" (= ``is_equivalent=False``). The
+    Definition pattern (mix=3.78s, drums=8.94s, bar_period=2.66s) gives
+    ``(True, 2)`` — same grid, drums picked the second-stable-downbeat
+    that's also the song's true bar 1.
+
+    Why 10% and not 5%: empirically (Definition 2026-05-08), beat-this's
+    per-frame quantization of downbeat positions can produce residuals
+    of ~6-7% of a bar when the structural offset is a clean integer.
+    Tighter tolerances reject the very pattern this helper exists to
+    catch. 10% is still well below half-a-bar (= the threshold beyond
+    which the offset would round to a different integer), so widening
+    here doesn't introduce false-positive bar-jumps.
+
+    ``n_bars_offset == 0`` with ``is_equivalent=True`` means the two
+    picks agree within tolerance.
+    """
+    if bar_period <= 0:
+        return False, 0
+    delta_bars = (fdb_b - fdb_a) / bar_period
+    n_bars = round(delta_bars)
+    return (abs(delta_bars - n_bars) < tolerance_bars, int(n_bars))
+
+
 def _bar_period_from_downbeats(downbeats: np.ndarray) -> float | None:
     """Mean bar period (seconds per bar) from downbeat IBIs.
 
@@ -550,14 +588,85 @@ def reconcile_tempo(
         bpm_close = abs(mix_est.bpm - drums_est.bpm) / max(mix_est.bpm, drums_est.bpm) < 0.005
 
         if bpm_close:
-            # They agree — high confidence in the mix estimate.
+            # BPMs agree. Now check whether mix and drums picked the same
+            # first_downbeat — if not, decide which to trust.
+            #
+            # Background (Definition + Ooh La La regression, 2026-05-08):
+            # On hip-hop tracks with intro material before bar 1, mix often
+            # locks onto an early synth/vocal/sample transient that beat-this
+            # interprets as a plausible downbeat. The drums stem (post-Demucs)
+            # has nothing meaningful before the actual first kick, so its
+            # downbeat[0] is usually the song's true bar 1.
+            #
+            # Strategy:
+            #   - If mix and drums agree on first_downbeat (within ~5% of a
+            #     bar) → use mix as before. High confidence.
+            #   - If they're PHASE-EQUIVALENT (= same grid, different "bar 1"
+            #     picks, mix's pick is N bars off drums') → prefer drums.
+            #     Same-grid means the user can re-anchor either to mix's or
+            #     drums' pick if the auto-pick is wrong, but drums is
+            #     statistically the cleaner choice.
+            #   - If they're NOT phase-equivalent (= they actually disagree
+            #     on grid alignment, off by a sub-bar amount) → keep mix
+            #     and downgrade confidence. This is rare and usually means
+            #     a tempo change or odd-time material; flag for the user.
+            mix_fdb = (
+                float(mix_est.downbeat_times[0])
+                if len(mix_est.downbeat_times) > 0
+                else 0.0
+            )
+            drums_fdb = (
+                float(drums_est.downbeat_times[0])
+                if len(drums_est.downbeat_times) > 0
+                else 0.0
+            )
+            bar_period = 60.0 * 4 / mix_est.bpm
+            is_equiv, n_bars_offset = _phase_equivalence(mix_fdb, drums_fdb, bar_period)
+
+            if is_equiv and n_bars_offset == 0:
+                # First_downbeats agree — original behavior.
+                return ReconciledTempo(
+                    bpm=mix_est.bpm,
+                    beat_times=mix_est.beat_times,
+                    downbeat_times=mix_est.downbeat_times,
+                    source=mix_est.source,
+                    confidence="high",
+                    all_estimates=estimates,
+                )
+
+            if is_equiv:
+                # Phase-equivalent disagreement → prefer drums.
+                return ReconciledTempo(
+                    bpm=drums_est.bpm,
+                    beat_times=drums_est.beat_times,
+                    downbeat_times=drums_est.downbeat_times,
+                    source=drums_est.source,
+                    confidence="high",
+                    all_estimates=estimates,
+                    warning=(
+                        f"mix and drums agreed on BPM ({mix_est.bpm:.2f}) but "
+                        f"differed on first_downbeat: mix={mix_fdb:.3f}s, "
+                        f"drums={drums_fdb:.3f}s ({n_bars_offset:+d} bars apart). "
+                        f"Preferred drums (cleaner kick signal)."
+                    ),
+                )
+
+            # Not phase-equivalent — sub-bar grid disagreement.
+            # Keep mix but downgrade to medium confidence and flag the
+            # diagnostic so the user can override with --first-downbeat.
             return ReconciledTempo(
                 bpm=mix_est.bpm,
                 beat_times=mix_est.beat_times,
                 downbeat_times=mix_est.downbeat_times,
                 source=mix_est.source,
-                confidence="high",
+                confidence="medium",
                 all_estimates=estimates,
+                warning=(
+                    f"mix and drums agreed on BPM ({mix_est.bpm:.2f}) but their "
+                    f"first_downbeats are NOT phase-equivalent: mix={mix_fdb:.3f}s, "
+                    f"drums={drums_fdb:.3f}s, sub-bar offset. "
+                    f"Using mix; consider --first-downbeat override."
+                ),
             )
 
         if ratio_suspicious and kick_tiebreaker and drums_path is not None:

@@ -82,7 +82,7 @@ CANONICAL_TRACKS: list[CanonicalTempo] = [
         truth_first_downbeat_sec=8.934,
         bpm_tolerance=0.15,  # mean estimator + refine_bpm typically lands within 0.05
         fdb_tolerance_sec=0.05,
-        fdb_assert_pending_fix=True,  # GH #55 not yet implemented
+        fdb_assert_pending_fix=False,  # GH #55 not yet implemented
         pending_fix_issue=55,
     ),
     CanonicalTempo(
@@ -96,7 +96,7 @@ CANONICAL_TRACKS: list[CanonicalTempo] = [
         # beat-this:mix returns ~0.02s (a phantom transient at the very
         # start of the long intro); beat-this:drums returns ~22.60s
         # (the actual first kick). The reconciler currently picks mix.
-        fdb_assert_pending_fix=True,
+        fdb_assert_pending_fix=False,
         pending_fix_issue=55,
     ),
     CanonicalTempo(
