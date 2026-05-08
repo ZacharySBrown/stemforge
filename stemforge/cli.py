@@ -17,7 +17,6 @@ def to_snake_case(name: str) -> str:
 
 import shutil
 import subprocess
-import tempfile
 
 import click
 from rich.console import Console
@@ -1694,9 +1693,7 @@ def export_song(arrangement_path, manifest_path, reference_template, project_slo
         --out song.ppak
     """
 
-    from .exporters.ep133.ppak_writer import build_ppak, build_synthetic_template_ppak
-    from .exporters.ep133.song_resolver import resolve_scenes
-    from .exporters.ep133.song_synthesizer import synthesize
+    from .exporters.ep133.projector import Ep133Projector
 
     console.print(Rule(f"[bold cyan]StemForge[/bold cyan] — export-song (mode={mode})"))
     console.print(f"  Arrangement: {arrangement_path}")
@@ -1723,35 +1720,32 @@ def export_song(arrangement_path, manifest_path, reference_template, project_slo
         f"  Tempo:       [cyan]{bpm:.2f}[/cyan]  Time sig: [cyan]{time_sig[0]}/{time_sig[1]}[/cyan]"
     )
 
-    snapshots = resolve_scenes(arrangement, manifest)
-    console.print(f"  Snapshots:   [cyan]{len(snapshots)}[/cyan]")
-
     arrangement_length_sec = arrangement.get("arrangement_length_sec")
-    spec = synthesize(
-        snapshots,
+    projector = Ep133Projector()
+    for warning in projector.validate(arrangement, manifest, project_slot=int(project_slot)):
+        console.print(f"  [yellow]warn:[/yellow] {warning}")
+    spec = projector.synthesize_spec(
+        arrangement,
         manifest,
-        bpm,
-        time_sig,
-        int(project_slot),
+        project_bpm=bpm,
+        time_sig=time_sig,
+        project_slot=int(project_slot),
         arrangement_length_sec=(
             float(arrangement_length_sec) if arrangement_length_sec is not None else None
         ),
     )
 
     console.print(
-        f"  Patterns:    [cyan]{len(spec.patterns)}[/cyan]  "
-        f"Scenes: [cyan]{len(spec.scenes)}[/cyan]  "
+        f"  Scenes:      [cyan]{len(spec.scenes)}[/cyan]  "
+        f"Patterns: [cyan]{len(spec.patterns)}[/cyan]  "
         f"Pads: [cyan]{len(spec.pads)}[/cyan]  "
         f"Sounds: [cyan]{len(spec.sounds)}[/cyan]"
     )
 
-    if reference_template is None:
-        with tempfile.TemporaryDirectory() as td:
-            synth = Path(td) / "synthetic_template.ppak"
-            build_synthetic_template_ppak(synth, project_slot=int(project_slot))
-            payload = build_ppak(spec, synth)
-    else:
-        payload = build_ppak(spec, reference_template)
+    payload = projector.build_bytes_from_spec(
+        spec,
+        reference_template=Path(reference_template) if reference_template else None,
+    )
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_bytes(payload)
