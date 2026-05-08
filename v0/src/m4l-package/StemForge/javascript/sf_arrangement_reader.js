@@ -149,10 +149,16 @@ function _arrGetLomNumber(api, prop) {
 }
 
 function _arrGetLomString(api, prop) {
+    // Returns "" for missing / null / undefined LOM properties. See
+    // stemforge_loader.v0.js:_getLomString for the rationale (literal
+    // "undefined" string was leaking through truthy checks pre-2026-05-08).
     try {
         var v = api.get(prop);
-        if (v && typeof v === "object") return String(v[0]);
-        return String(v);
+        var s = (v && typeof v === "object") ? v[0] : v;
+        if (s === undefined || s === null) return "";
+        var str = String(s);
+        if (str === "undefined") return "";
+        return str;
     } catch (_) {
         return "";
     }

@@ -491,6 +491,34 @@ test('_commitSessionTracks: empty arrangement on a track is a no-op', () => {
     assert.deepEqual(normalize(mf.session_tracks.A), []);
 });
 
+test('_commitSessionTracks: arrangement clip with no file_path is skipped', () => {
+    // Regression test for the pre-2026-05-08 bug where _getLomString returned
+    // the literal string "undefined" for missing properties, which was truthy
+    // and caused empty clips to be registered as { file: "undefined", ... }.
+    const { commit } = loadCommit();
+    maxApi.seedLiveTree({
+        tracks: [makeArrTrack('A', [], [
+            { start_marker: 0, end_marker: 4, length: 4, warping: 1 },  // no file_path
+        ])],
+    });
+    const mf = { bpm: 120 };
+    commit(mf);
+    assert.deepEqual(normalize(mf.session_tracks.A), []);
+});
+
+test('_commitSessionTracks: session clip with no file_path is skipped', () => {
+    // Same regression check on the session-view walk.
+    const { commit } = loadCommit();
+    maxApi.seedLiveTree({
+        tracks: [makeTrack('A', [makeClipSlot({
+            start_marker: 0, end_marker: 4, length: 4, warping: 1,  // no file_path
+        })])],
+    });
+    const mf = { bpm: 120 };
+    commit(mf);
+    assert.deepEqual(normalize(mf.session_tracks.A), []);
+});
+
 // ── 14. Acceptance gate sentinel ───────────────────────────────────────────
 
 test('acceptance gate HIP-1: m4l.button.commit has ≥10 Tier-3 cases passing', () => {

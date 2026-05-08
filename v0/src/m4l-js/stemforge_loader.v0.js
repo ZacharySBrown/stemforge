@@ -1319,10 +1319,19 @@ function _stripHfsPrefix(s) {
 }
 
 function _getLomString(api, prop) {
+    // Returns "" for missing / null / undefined / empty-array LOM properties so
+    // downstream `if (!s)` checks work correctly. Pre-2026-05-08 this returned
+    // the literal string "undefined" when the property was absent (Live's mock
+    // and real-world LOM both surface missing props as `undefined` after the
+    // [0] indexing) — that string is truthy and slipped past empty-clip checks
+    // in `_commitSessionTracks` and friends.
     try {
         var v = api.get(prop);
-        if (v && typeof v === "object") return String(v[0]);
-        return String(v);
+        var s = (v && typeof v === "object") ? v[0] : v;
+        if (s === undefined || s === null) return "";
+        var str = String(s);
+        if (str === "undefined") return "";
+        return str;
     } catch (_) {
         return "";
     }
