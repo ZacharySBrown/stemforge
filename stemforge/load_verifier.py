@@ -100,6 +100,67 @@ def _find_max_bin() -> Path | None:
     return None
 
 
+def _extract_maxpat_from_amxd(amxd_path: Path) -> Path:
+    """Convert ``amxd_path`` to a standalone ``.maxpat`` Max can load headless.
+
+    Why: ``.amxd`` is the M4L container format. When Max opens an ``.amxd``
+    directly, it bounces to Live (which then instantiates the device on a
+    track). With Live not running, the verifier sees only Max's startup
+    banner and never parses the device contents — defeating the entire
+    purpose of pitfall #24's runtime check.
+
+    Fix: unpack the ``.amxd`` into its inner patcher dict, serialize that
+    as a ``.maxpat`` to a temp path, and hand the patcher to Max. Max
+    loads ``.maxpat`` headless without needing Live; runtime errors in
+    the patcher graph (gen~ syntax, missing inlets, audio cycles, etc.)
+    surface in the log just like they would inside a Live host.
+
+    Caveat: LOM-touching JS modules will still throw at load time because
+    the ``LiveAPI`` host isn't there. Those errors come back categorised as
+    ``js_no_function`` and friends — a known signal that this verifier
+    catches patcher-graph errors, not runtime LOM errors. Filter them in
+    the caller if needed; the extraction itself is correct.
+
+    Returns the path to the extracted ``.maxpat``. Caller owns cleanup.
+    """
+    import json
+    import sys
+    import tempfile
+
+    # Reuse the established v0/src/maxpat-builder import dance from
+    # stemforge.verifiers — keeps the v0 path off sys.path long-term.
+    repo_root = Path(__file__).resolve().parent.parent
+    builder_dir = repo_root / "v0" / "src" / "maxpat-builder"
+    if not (builder_dir / "amxd_pack.py").exists():
+        raise FileNotFoundError(f"amxd_pack.py not found at {builder_dir}; can't extract .amxd")
+
+    sys.path.insert(0, str(builder_dir))
+    try:
+        import amxd_pack  # type: ignore[import-not-found]
+
+        unpacked = amxd_pack.unpack_amxd(amxd_path)
+    finally:
+        if str(builder_dir) in sys.path:
+            sys.path.remove(str(builder_dir))
+
+    # unpack_amxd's 'patcher' field is the JSON-decoded ptch chunk, which
+    # already includes the standard {"patcher": {...}} envelope (it's the
+    # raw .maxpat content, just embedded inside the .amxd container). So
+    # we serialize it directly — wrapping again would produce the
+    # double-envelope {"patcher": {"patcher": {...}}} that Max can't load.
+    maxpat_json = json.dumps(unpacked["patcher"])
+
+    fd, tmp_path = tempfile.mkstemp(prefix=f"sfverify_{amxd_path.stem}_", suffix=".maxpat")
+    try:
+        with os.fdopen(fd, "w") as fh:
+            fh.write(maxpat_json)
+    except Exception:
+        Path(tmp_path).unlink(missing_ok=True)
+        raise
+
+    return Path(tmp_path)
+
+
 def _max_app_bundle(max_bin: Path) -> Path:
     """Given .../Max.app/Contents/MacOS/Max, return .../Max.app."""
     return max_bin.parents[2]
@@ -291,8 +352,31 @@ def verify_max_load(
     app_bundle = _max_app_bundle(max_bin)
 
     # ── Gate 3: actually launch and watch ───────────────────────────────
+    # If the patch is a .amxd, extract its inner patcher to a temp .maxpat
+    # so Max can load it headlessly (without bouncing to Live). See
+    # `_extract_maxpat_from_amxd` for the rationale.
+    extracted_maxpat: Path | None = None
+    launch_path = patch
+    if patch.suffix.lower() == ".amxd":
+        try:
+            extracted_maxpat = _extract_maxpat_from_amxd(patch)
+            launch_path = extracted_maxpat
+        except Exception as e:
+            return Result(
+                "max_load_clean",
+                False,
+                "#24",
+                detail=f"failed to extract .maxpat from .amxd: {e}",
+                fix_hint=(
+                    "verify v0/src/maxpat-builder/amxd_pack.py is present and "
+                    "the .amxd is well-formed (run `python -m stemforge.verifiers "
+                    "verify-amxd` first)"
+                ),
+                extra={"patch": str(patch), "extraction_error": str(e)},
+            )
+
     _clear_crash_recovery()
-    _launch_max(app_bundle, patch)
+    _launch_max(app_bundle, launch_path)
 
     # Wait briefly for the new Max to register so we can identify its PID(s).
     time.sleep(1.5)
@@ -305,6 +389,10 @@ def verify_max_load(
     finally:
         # Kill only PIDs we started. Re-probe in case the launcher forked.
         _kill_pids(our_pids or (_list_max_pids() - pre_pids))
+        # Clean up extracted .maxpat (if any) — temp dir should auto-clean
+        # but be explicit so dev machines don't accumulate sfverify_* files.
+        if extracted_maxpat is not None:
+            extracted_maxpat.unlink(missing_ok=True)
 
     text = new_bytes.decode("utf-8", errors="replace")
     error_lines = [ln for ln in text.splitlines() if ERROR_TAG.search(ln)]
