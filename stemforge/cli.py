@@ -1766,6 +1766,13 @@ def export_song(arrangement_path, manifest_path, reference_template, project_slo
     arrangement = json.loads(Path(arrangement_path).read_text())
     manifest = json.loads(Path(manifest_path).read_text())
 
+    # Phase-2 schema (v2): unwrap songs[0] if the JS reader emitted the wrapped
+    # shape. Legacy flat snapshots (existing fixtures, older .als exports) pass
+    # through unchanged. Multi-song UI is v2 of the spec; v1 always reads index 0.
+    songs_field = arrangement.get("songs")
+    if isinstance(songs_field, list) and songs_field:
+        arrangement = songs_field[0]
+
     bpm = float(arrangement.get("tempo", 120.0))
     sig_raw = arrangement.get("time_sig", [4, 4])
     time_sig = (int(sig_raw[0]), int(sig_raw[1]))
