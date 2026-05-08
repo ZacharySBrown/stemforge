@@ -610,15 +610,9 @@ def reconcile_tempo(
             #     on grid alignment, off by a sub-bar amount) → keep mix
             #     and downgrade confidence. This is rare and usually means
             #     a tempo change or odd-time material; flag for the user.
-            mix_fdb = (
-                float(mix_est.downbeat_times[0])
-                if len(mix_est.downbeat_times) > 0
-                else 0.0
-            )
+            mix_fdb = float(mix_est.downbeat_times[0]) if len(mix_est.downbeat_times) > 0 else 0.0
             drums_fdb = (
-                float(drums_est.downbeat_times[0])
-                if len(drums_est.downbeat_times) > 0
-                else 0.0
+                float(drums_est.downbeat_times[0]) if len(drums_est.downbeat_times) > 0 else 0.0
             )
             bar_period = 60.0 * 4 / mix_est.bpm
             is_equiv, n_bars_offset = _phase_equivalence(mix_fdb, drums_fdb, bar_period)
