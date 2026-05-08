@@ -52,15 +52,10 @@ from .manifest_schema import SampleMeta, Stem, compute_audio_hash, write_sidecar
 # clip in arrangement view to be reachable.
 
 # Minimum fraction of one chunk-period for the leftover region to be
-# considered visually meaningful. Set to 0 so any non-silent leading audio
-# becomes a visible chunk_001 (instead of being hidden in chunk_002's
-# pre-pad, where users couldn't reach pre-bar-1 transients without manual
-# clip-edge dragging). The RMS gate still skips truly silent leading
-# regions.
+# considered worth emitting. Default 0 = any non-empty leftover triggers
+# a visible chunk_001 so users can reach pre-bar-1 transients without
+# manual clip-edge dragging. Tweak only if you have a specific reason.
 MIN_LEFTOVER_FRAC = 0.0
-
-# RMS floor: leading region below this is treated as dead air; no emit.
-SILENCE_THRESHOLD_DBFS = -60.0
 
 
 # ── Math helpers ─────────────────────────────────────────────────────────────
@@ -426,59 +421,49 @@ def _decide_emit_partial(
 ) -> bool:
     """Phase-3 gating: should we emit a leading partial chunk?
 
-    Three gates, AND-combined:
+    Two boundary gates, AND-combined:
 
     1. `first_downbeat_sec > 0` — there's pre-downbeat material to consider.
-    2. Leftover region size: `leftover_sec / chunk_period_sec >= MIN_LEFTOVER_FRAC`.
-       Below this threshold the pad-stash mechanism handles it cleanly and
-       there's no need for a visible chunk_001.
-    3. RMS gate: max RMS across stems' leading regions >= -60 dBFS. Skips
-       emit when the leading region is dead air (e.g., a clean opening
-       silence that the BPM detector saw past).
+    2. `0 < leftover_frames < chunk_frames` — the leftover region (the
+       sub-chunk-period intro that sits between source frame 0 and the
+       first whole pre-chunk, or between source 0 and the first
+       post-downbeat chunk when no pre-bars) has audio worth a chunk
+       AND isn't already covered by a whole pre-bars chunk.
+
+    No content gate: when the user supplies an explicit downbeat (split
+    --first-downbeat or re-anchor), they intend to keep the intro
+    regardless of audio level. The previous RMS gate (≥ -60 dBFS across
+    any stem) was a binary cliff that flipped the decision based on
+    sub-dB noise-floor drift between Demucs runs. Per
+    ``feedback_downbeat_alignment``, we trust user-driven downbeats
+    explicitly; auto-detection paths funnel through the same gate but
+    typically land on first_downbeat=0 or a whole-bar-aligned position
+    where the leftover region is already empty.
 
     Decision is shared across all stems for arrangement-loader consistency
-    (parallel chunks must align across tracks).
+    (parallel chunks must align across tracks). The ``stem_paths`` /
+    ``skip_set`` parameters are retained for ABI back-compat with callers
+    who pass them; they're no longer read.
     """
+    del stem_paths, skip_set  # retained for ABI; no longer consulted
     if first_downbeat_sec <= 0:
         return False
-
-    sample_path = next(
-        (p for name, p in stem_paths.items() if name not in skip_set),
-        None,
-    )
-    if sample_path is None:
+    if bpm <= 0 or bars <= 0 or beats_per_bar <= 0:
         return False
 
-    info = sf.info(str(sample_path))
-    sr = info.samplerate
-    fpb = frames_per_bar(bpm, sr, beats_per_bar=beats_per_bar)
-    chunk_frames = fpb * bars
-    if chunk_frames <= 0:
+    # Reference SR comes from the first stem path's sample rate normally;
+    # since we no longer open files for the RMS gate, we compute everything
+    # in beat-period space which is sample-rate-agnostic.
+    bar_period_sec = bars * beats_per_bar * 60.0 / bpm
+    if bar_period_sec <= 0:
         return False
-
-    leftover_frames = int(round(first_downbeat_sec * sr)) - n_pre_chunks * chunk_frames
-    if leftover_frames <= 0 or leftover_frames >= chunk_frames:
+    leftover_sec = first_downbeat_sec - n_pre_chunks * bar_period_sec
+    if leftover_sec <= 0 or leftover_sec >= bar_period_sec:
         return False
-
-    leftover_frac = leftover_frames / float(chunk_frames)
+    leftover_frac = leftover_sec / bar_period_sec
     if leftover_frac < MIN_LEFTOVER_FRAC:
         return False
-
-    floor_amp = 10.0 ** (SILENCE_THRESHOLD_DBFS / 20.0)
-    for name, path in stem_paths.items():
-        if name in skip_set:
-            continue
-        try:
-            data, _ = sf.read(str(path), start=0, stop=leftover_frames, always_2d=True)
-        except Exception:
-            continue
-        if data.size == 0:
-            continue
-        rms = float(np.sqrt(np.mean(data.astype(np.float64) ** 2)))
-        if rms >= floor_amp:
-            return True
-
-    return False
+    return True
 
 
 def prechop(

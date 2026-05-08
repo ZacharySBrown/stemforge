@@ -97,6 +97,7 @@ def run_post_split_steps(
     pre_bars: int = 0,
     pad_pre_bars: int | None = None,
     pad_post_bars: int | None = None,
+    emit_partial: bool | None = None,
 ) -> dict[str, Any]:
     """Apply any Python-side post-split steps from the pipeline.
 
@@ -105,6 +106,10 @@ def run_post_split_steps(
     `pre_bars` includes that many bars of intro material before bar 1.
     `pad_pre_bars` / `pad_post_bars` override the symmetric `pad_bars`
     config when set (None = use the pipeline's `pad_bars`).
+    `emit_partial` controls the leading-partial chunk gate: True (CLI
+    default) always emits when boundary conditions allow; False skips;
+    None defers to prechop's auto-decide. The CLI flips this to True
+    explicitly so callers see deterministic behavior.
 
     Returns a small status dict keyed by step name. Today: just `prechop`.
     """
@@ -125,6 +130,7 @@ def run_post_split_steps(
             pre_bars=pre_bars,
             pad_pre_bars=pad_pre_bars,
             pad_post_bars=pad_post_bars,
+            emit_partial=emit_partial,
         )
         status["prechop"] = {
             "manifest": str(manifest_path),
@@ -134,6 +140,7 @@ def run_post_split_steps(
             "pad_post_bars": pad_post_bars,
             "first_downbeat_sec": float(first_downbeat_sec),
             "pre_bars": int(pre_bars),
+            "emit_partial": emit_partial,
         }
 
     return status
