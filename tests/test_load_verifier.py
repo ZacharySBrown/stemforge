@@ -132,7 +132,13 @@ def test_skip_when_env_var_disables_verifier(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_skip_when_no_max_binary_found(monkeypatch: pytest.MonkeyPatch):
+    # Force the platform gate past first — `_skip_reason` checks
+    # `platform.system() != "Darwin"` BEFORE `_find_max_bin()`, so on Linux
+    # CI the no-binary branch isn't reachable without faking the platform.
+    # On Mac dev machines the platform monkeypatch is a no-op (already Darwin);
+    # this keeps the test platform-independent.
     monkeypatch.setenv("MAX_LOAD_VERIFIER", "")  # don't trip the env-var skip
+    monkeypatch.setattr(lv.platform, "system", lambda: "Darwin")
     monkeypatch.setattr(lv, "_find_max_bin", lambda: None)
     r = lv.verify_max_load(STEMFORGE_AMXD)
     assert r.passed
