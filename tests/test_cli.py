@@ -379,16 +379,14 @@ def test_re_anchor_auto_reslices_curated():
     cli_src = (Path(__file__).resolve().parent.parent / "stemforge" / "cli.py").read_text()
     # The hook sits inside the re-anchor command and checks for
     # curated_manifest_path.exists() before subprocessing the curate script.
-    assert "curated_manifest_path = track_dir / \"curated\" / \"manifest.json\"" in cli_src, (
+    assert 'curated_manifest_path = track_dir / "curated" / "manifest.json"' in cli_src, (
         "auto-reslice hook's curated_manifest_path probe is missing"
     )
-    assert "\"--reslice-only\"" in cli_src, (
+    assert '"--reslice-only"' in cli_src, (
         "re-anchor must invoke the curate script with --reslice-only"
     )
     # And the standalone `stemforge reslice-curated` CLI command exists.
-    assert "@cli.command(\"reslice-curated\")" in cli_src, (
-        "reslice-curated CLI command missing"
-    )
+    assert '@cli.command("reslice-curated")' in cli_src, "reslice-curated CLI command missing"
 
 
 # ── Acceptance gate sentinels ────────────────────────────────────────────────

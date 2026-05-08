@@ -33,9 +33,7 @@ from stemforge.cli import cli
 
 
 @pytest.mark.has_phase3_inputs
-@pytest.mark.parametrize(
-    "track", CANONICAL_TRACKS, ids=[t.name for t in CANONICAL_TRACKS]
-)
+@pytest.mark.parametrize("track", CANONICAL_TRACKS, ids=[t.name for t in CANONICAL_TRACKS])
 def test_canonical_track_bpm_matches_truth(tmp_path: Path, track: CanonicalTempo):
     """`stemforge split` produces stems.json BPM within tolerance of truth.
 
@@ -70,9 +68,7 @@ def test_canonical_track_bpm_matches_truth(tmp_path: Path, track: CanonicalTempo
     [t for t in CANONICAL_TRACKS if not t.fdb_assert_pending_fix],
     ids=[t.name for t in CANONICAL_TRACKS if not t.fdb_assert_pending_fix],
 )
-def test_canonical_track_first_downbeat_matches_truth(
-    tmp_path: Path, track: CanonicalTempo
-):
+def test_canonical_track_first_downbeat_matches_truth(tmp_path: Path, track: CanonicalTempo):
     """`stemforge split` produces stems.json first_downbeat within tolerance.
 
     Tracks flagged `fdb_assert_pending_fix=True` are excluded from this
@@ -103,9 +99,7 @@ def test_canonical_track_first_downbeat_matches_truth(
     [t for t in CANONICAL_TRACKS if t.fdb_assert_pending_fix],
     ids=[t.name for t in CANONICAL_TRACKS if t.fdb_assert_pending_fix],
 )
-def test_canonical_track_first_downbeat_pending_fix(
-    tmp_path: Path, track: CanonicalTempo
-):
+def test_canonical_track_first_downbeat_pending_fix(tmp_path: Path, track: CanonicalTempo):
     """Documents tracks where auto-detect produces the wrong first_downbeat
     pending an open GH issue. When the issue is implemented, the relevant
     track should flip `fdb_assert_pending_fix=False` in known_tempos.py
