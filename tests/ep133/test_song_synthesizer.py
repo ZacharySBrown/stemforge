@@ -17,11 +17,13 @@ from stemforge.exporters.ep133.song_synthesizer import (
     MAX_PADS_PER_GROUP,
     MAX_SCENES,
     TICKS_PER_BAR,
-    _event_positions_bars,
-    _MAX_EVENTS_PER_PATTERN,
-    _scene_lengths_in_bars,
-    infer_bars,
     synthesize,
+)
+from stemforge.scene_model import (
+    MAX_EVENTS_PER_PATTERN,
+    infer_bars,
+    scene_lengths_in_bars,
+    tile_event_positions,
 )
 
 
@@ -76,28 +78,28 @@ def test_infer_bars_rejects_zero_or_negative_bpm():
         infer_bars(2.0, -120.0)
 
 
-# ── _event_positions_bars (multi-event tiling) ──────────────────────────────
+# ── tile_event_positions (multi-event tiling) ──────────────────────────────
 
 
 def test_event_positions_bar_length_slice_single_event():
     """A 1-bar slice in a 1-bar pattern fires once at position 0."""
-    assert _event_positions_bars(1.0, 1) == [0.0]
+    assert tile_event_positions(1.0, 1) == [0.0]
 
 
 def test_event_positions_two_bar_slice_in_two_bar_pattern_single_event():
     """A 2-bar slice in a 2-bar pattern is a single trigger."""
-    assert _event_positions_bars(2.0, 2) == [0.0]
+    assert tile_event_positions(2.0, 2) == [0.0]
 
 
 def test_event_positions_half_bar_slice_in_one_bar_pattern_two_events():
     """½-bar slice in 1-bar pattern → 2 events at 0 and ½."""
-    positions = _event_positions_bars(0.5, 1)
+    positions = tile_event_positions(0.5, 1)
     assert positions == pytest.approx([0.0, 0.5])
 
 
 def test_event_positions_eighth_bar_slice_quantizes_to_8_per_bar():
     """⅛-bar slice in 1-bar pattern → 8 events on the 16th-note grid."""
-    positions = _event_positions_bars(0.125, 1)
+    positions = tile_event_positions(0.125, 1)
     assert len(positions) == 8
     assert positions[0] == 0.0
     assert positions[-1] == pytest.approx(0.875)
@@ -108,7 +110,7 @@ def test_event_positions_one_beat_slice_at_136_snaps_to_eighth_note_grid():
     closer to 8 events (eighth-note grid) than to 4 (quarter-note) when
     rounding to nearest musical subdivision. This is the smack-bass case
     that previously produced a 6-tuplet feel — now snaps to 8/bar."""
-    positions = _event_positions_bars(0.156, 1)
+    positions = tile_event_positions(0.156, 1)
     assert len(positions) == 8
     spacings = [positions[i + 1] - positions[i] for i in range(len(positions) - 1)]
     assert all(s == pytest.approx(spacings[0]) for s in spacings)
@@ -119,75 +121,61 @@ def test_event_positions_snaps_to_quarter_note_grid_for_tweener():
     smaller for predictability. ⅓-bar slice → raw=3, candidates {1,2,4,
     8,16,32}. |3-2|=1 == |3-4|=1 → 2 (smaller). ⅖-bar slice (raw=2.5)
     → equidistant to 2 and 4? |2.5-2|=0.5 == |2.5-4|=1.5 → 2."""
-    assert len(_event_positions_bars(1 / 3, 1)) == 2
-    assert len(_event_positions_bars(2 / 5, 1)) == 2
+    assert len(tile_event_positions(1 / 3, 1)) == 2
+    assert len(tile_event_positions(2 / 5, 1)) == 2
 
 
 def test_event_positions_caps_at_max_events_per_pattern():
-    """Pathologically tiny slice (1/100 bar) caps at _MAX_EVENTS_PER_PATTERN
+    """Pathologically tiny slice (1/100 bar) caps at MAX_EVENTS_PER_PATTERN
     so we never emit a pattern with hundreds of triggers."""
-    positions = _event_positions_bars(0.01, 1)
-    assert len(positions) == _MAX_EVENTS_PER_PATTERN
+    positions = tile_event_positions(0.01, 1)
+    assert len(positions) == MAX_EVENTS_PER_PATTERN
 
 
 def test_event_positions_handles_slightly_short_slice_as_single_event():
     """raw_count<1.5 → single event (round() would land on 1)."""
     # 0.8 bar slice in 1 bar pattern → raw_count=1.25, < 1.5 → single event.
-    assert _event_positions_bars(0.8, 1) == [0.0]
+    assert tile_event_positions(0.8, 1) == [0.0]
 
 
 def test_event_positions_handles_zero_or_negative_slice():
     """Defensive: degenerate inputs return a safe single trigger."""
-    assert _event_positions_bars(0.0, 1) == [0.0]
-    assert _event_positions_bars(-1.0, 1) == [0.0]
+    assert tile_event_positions(0.0, 1) == [0.0]
+    assert tile_event_positions(-1.0, 1) == [0.0]
 
 
-# ── _scene_lengths_in_bars (locator-gap → scene length) ────────────────────
-
-
-def _snap(t: float) -> Snapshot:
-    return Snapshot(
-        locator_time_sec=t,
-        locator_name="",
-        a_clip=None,
-        b_clip=None,
-        c_clip=None,
-        d_clip=None,
-    )
+# ── scene_lengths_in_bars (locator-gap → scene length) ─────────────────────
 
 
 def test_scene_lengths_uniform_4_bar_scenes_at_120_bpm():
     """Locators every 8 sec @ 120 BPM = 4 bars between → all scenes 4 bars."""
-    snaps = [_snap(0.0), _snap(8.0), _snap(16.0)]
-    bars = _scene_lengths_in_bars(snaps, 120.0, arrangement_length_sec=24.0)
+    bars = scene_lengths_in_bars([0.0, 8.0, 16.0], 120.0, arrangement_length_sec=24.0)
     assert bars == [4, 4, 4]
 
 
 def test_scene_lengths_last_scene_uses_arrangement_length():
     """Last scene's length comes from arrangement_length - last locator."""
-    snaps = [_snap(0.0), _snap(4.0)]  # 2-bar gap @ 120
-    bars = _scene_lengths_in_bars(snaps, 120.0, arrangement_length_sec=12.0)
-    assert bars == [2, 4]  # 2 bars then 4 bars (12s − 4s = 8s = 4 bars)
+    # 2-bar gap @ 120; trailing scene = 12s − 4s = 8s = 4 bars
+    bars = scene_lengths_in_bars([0.0, 4.0], 120.0, arrangement_length_sec=12.0)
+    assert bars == [2, 4]
 
 
 def test_scene_lengths_last_scene_falls_back_to_median_gap_when_no_length():
     """Without arrangement_length, last scene matches the median of prior gaps."""
-    snaps = [_snap(0.0), _snap(8.0), _snap(16.0)]  # 4-bar gaps
-    bars = _scene_lengths_in_bars(snaps, 120.0, arrangement_length_sec=None)
+    bars = scene_lengths_in_bars([0.0, 8.0, 16.0], 120.0, arrangement_length_sec=None)
     assert bars == [4, 4, 4]
 
 
 def test_scene_lengths_single_locator_defaults_to_two_bars():
     """A 1-locator arrangement with no length info defaults to a 2-bar scene."""
-    snaps = [_snap(0.0)]
-    bars = _scene_lengths_in_bars(snaps, 120.0, arrangement_length_sec=None)
+    bars = scene_lengths_in_bars([0.0], 120.0, arrangement_length_sec=None)
     assert bars == [2]
 
 
 def test_scene_lengths_clamps_to_uint8_range():
     """Pattern bars header is uint8; very long scenes clamp at 255."""
-    snaps = [_snap(0.0), _snap(1000.0)]  # ~500 bars @ 120 BPM
-    bars = _scene_lengths_in_bars(snaps, 120.0, arrangement_length_sec=2000.0)
+    # ~500 bars @ 120 BPM
+    bars = scene_lengths_in_bars([0.0, 1000.0], 120.0, arrangement_length_sec=2000.0)
     assert all(1 <= b <= 255 for b in bars)
     assert bars[0] == 255  # clamped
 
@@ -199,8 +187,7 @@ def test_scene_lengths_quantize_drag_imprecise_locators_to_nearest_bar():
     # 120 BPM → 1 bar = 2.0s. Locators "intend" bars 0/2/4 (t=0/4/8s) but
     # were dragged slightly: t=0.04s, 4.06s, 7.92s. Each within 100ms of
     # its nearest bar.
-    snaps = [_snap(0.04), _snap(4.06), _snap(7.92)]
-    bars = _scene_lengths_in_bars(snaps, 120.0, arrangement_length_sec=12.0)
+    bars = scene_lengths_in_bars([0.04, 4.06, 7.92], 120.0, arrangement_length_sec=12.0)
     assert bars == [2, 2, 2]
 
 
@@ -209,8 +196,8 @@ def test_scene_lengths_preserves_odd_bar_counts_no_pow2_snap():
     A 3-bar scene is a valid musical section (Take Five, etc) and we do
     NOT silently round up to 4. Option (b) — pow2 snap — is earmarked
     as a future opt-in mode."""
-    snaps = [_snap(0.0), _snap(6.0)]  # 3 bars @ 120 BPM
-    bars = _scene_lengths_in_bars(snaps, 120.0, arrangement_length_sec=12.0)
+    # 3 bars @ 120 BPM
+    bars = scene_lengths_in_bars([0.0, 6.0], 120.0, arrangement_length_sec=12.0)
     assert bars == [3, 3]
 
 
@@ -345,9 +332,9 @@ def test_scene_lengths_smack_user_arrangement():
     to 1 bar (D4 slice is exactly 1 bar @ 136 so plays cleanly once)."""
     bar_dur = 240.0 / 136.0
     locator_bars = [1, 3, 6, 10, 14, 16]
-    snaps = [_snap((b - 1) * bar_dur) for b in locator_bars]
-    bars = _scene_lengths_in_bars(
-        snaps,
+    times = [(b - 1) * bar_dur for b in locator_bars]
+    bars = scene_lengths_in_bars(
+        times,
         136.0,
         arrangement_length_sec=28.36,
     )

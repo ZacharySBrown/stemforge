@@ -64,7 +64,10 @@ EXPECTED_OVERALL_SHA256 = "53bdc105369919ca15556c07798180a697d3242dfd3883675c874
 
 EXPECTED_ZIP_ENTRIES: dict[str, tuple[int, str]] = {
     "/meta.json": (301, "3bdbd9093e2ab58dd1aca932415321aeabfeda8a5430dcd6f8d40e30e2c59f0d"),
-    "/projects/P01.tar": (30720, "cf8b3f04d722adf0f57a00eb46bfa03adefaa9fb362a05989403066a30a76a03"),
+    "/projects/P01.tar": (
+        30720,
+        "cf8b3f04d722adf0f57a00eb46bfa03adefaa9fb362a05989403066a30a76a03",
+    ),
     "/sounds/700 700_loop_a1.wav": (
         12,
         "56ddf20bae94693a26732a7629d110957d63d8afd31c95f098b32b0d9ec5b387",
