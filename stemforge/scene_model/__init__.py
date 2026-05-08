@@ -30,6 +30,7 @@ format for the configurator's abstract scene model:
   :data:`Provenance` literals.
 """
 
+from .builders import GROUPS_DEFAULT, empty_project_from_manifest
 from .helpers import (
     BARS_CANDIDATES_FALLBACK,
     BARS_CANDIDATES_SNAP,
@@ -64,6 +65,7 @@ __all__ = [
     "BARS_CANDIDATES_FALLBACK",
     "BARS_CANDIDATES_SNAP",
     "BARS_TOLERANCE_SEC",
+    "GROUPS_DEFAULT",
     "MAX_EVENTS_PER_PATTERN",
     "MAX_SONGS_V1",
     "MUSICAL_TRIGGER_COUNTS",
@@ -77,6 +79,7 @@ __all__ = [
     "SceneSpec",
     "Song",
     "StretchMode",
+    "empty_project_from_manifest",
     "infer_bars",
     "project_from_json",
     "project_from_path",
