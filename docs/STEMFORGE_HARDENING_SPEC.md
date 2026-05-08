@@ -328,11 +328,18 @@ when all of these hold:
       `tests/js_mocks/test_locator_anchor.test.js`. (shipped 2026-05-06)
 - [x] `reslice_curated_from_anchor()` covered in
       `tests/test_reslice_curated_from_anchor.py` (8 cases). (shipped 2026-05-06)
-- [ ] `loadFromDict` rejects non-production manifests with clear error
-      (legacy v1/v2 paths removed 2026-05-06).
-- [ ] Canonical tempo regression fixtures (Definition / Ooh La La /
+- [x] `loadFromDict` rejects non-production manifests with clear error
+      (legacy v1/v2 paths removed 2026-05-06). Sentinel test in
+      `tests/js_mocks/test_loader_dispatch.test.js` (6 cases).
+      (shipped 2026-05-07)
+- [x] Canonical tempo regression fixtures (Definition / Ooh La La /
       Believer) wired as `@pytest.mark.has_phase3_inputs` tests; truth
-      values in `tests/fixtures/known_tempos.py`.
+      values in `tests/fixtures/known_tempos.py`. (shipped 2026-05-08)
+      Two tracks (Definition + Ooh La La) flagged
+      `fdb_assert_pending_fix=True` because they hit the open
+      mix-vs-drums first_downbeat disagreement (GH #55); BPM is
+      enforced strictly, first_downbeat assertion is deferred until #55
+      lands.
 
 **Outstanding tempo work (filed as GH issues, not blocking gate):**
 - GH #55 — reconciler: prefer `beat-this:drums` first_downbeat when BPMs agree

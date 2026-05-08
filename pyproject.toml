@@ -94,6 +94,11 @@ markers = [
     #   STEMFORGE_LIVE=1 uv run pytest -m live
     # See `tests/conftest.py` for the auto-skip behavior.
     "live: requires Ableton Live (or other dev-Mac integration); default-skip",
+    # Hardening Stream E (2026-05-08) — canonical real-world tempo regression
+    # tests. Auto-skipped when source files at /private/tmp/phase3_inputs/
+    # are missing. See tests/fixtures/known_tempos.py and
+    # tests/test_canonical_tempos.py.
+    "has_phase3_inputs: requires /private/tmp/phase3_inputs/*.wav; auto-skip",
 ]
 
 [tool.mypy]
