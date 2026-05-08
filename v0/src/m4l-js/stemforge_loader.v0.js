@@ -1499,6 +1499,18 @@ function _commitSessionTracks(mf) {
     // Dedup is by file_path: a file present in BOTH views is registered
     // once at its session-view slot.
     //
+    // PHASE 3 NOTE: file_path is the dedup key today because audio_hash
+    // populates as "" (configurator commit-side hashing not wired yet).
+    // When Phase 3 adds hashing at COMMIT time, switch dedup to audio_hash
+    // — same content under different paths (re-anchored WAVs, splice
+    // sources from another song's directory) should dedupe to one entry.
+    //
+    // Slot-claim ordering is now load-bearing: downstream code (the
+    // resolver, the EP-133 synthesizer's slot→pad mapping) depends on the
+    // sequential-from-zero rule. Any future change to this algorithm
+    // (e.g. "prefer historical assignments") must keep existing fixtures'
+    // slot assignments stable or migrate them explicitly.
+    //
     // Writes into mf.session_tracks = {A: [...], B: [...], C: [...], D: [...]}.
     // Empty arrays for letter-tracks that don't exist or have no clips
     // anywhere on either view.

@@ -127,6 +127,12 @@ class Ep133Projector(AbstractProjector):
         arrangement_length_sec: float | None = None,
         reference_template: Path | None = None,
     ) -> bytes:
+        # PHASE 3 CLEANUP: this method (and :meth:`synthesize_spec` /
+        # :meth:`validate`) accept the legacy arrangement+manifest signature.
+        # When :meth:`project_from_spec` is the only callsite (CLI default
+        # flips to --write-spec; M4L device strip drives the spec path),
+        # delete the arrangement/manifest variants. Byte identity guarantees
+        # the swap is invisible.
         spec = self.synthesize_spec(
             arrangement,
             manifest,

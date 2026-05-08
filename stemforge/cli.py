@@ -1820,6 +1820,14 @@ def export_song(
         f"Sounds: [cyan]{len(spec.sounds)}[/cyan]"
     )
 
+    # PHASE 3 CLEANUP: this two-step (synthesize_spec → build_bytes_from_spec)
+    # is the legacy direct path. Phase 3 should:
+    #   1. Always build the Project (the --write-spec branch below).
+    #   2. Drive bytes via ``projector.project_from_spec(project, manifest, ...)``.
+    #   3. Drop the synthesize_spec + build_bytes_from_spec calls + the spec
+    #      local; --write-spec becomes default-on (or the only mode).
+    # Byte identity is pinned by tests/ep133/test_projector_spec_parity.py so
+    # the swap is mechanically safe.
     payload = projector.build_bytes_from_spec(
         spec,
         reference_template=Path(reference_template) if reference_template else None,

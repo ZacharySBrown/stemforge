@@ -20,7 +20,19 @@ pipelines both populate. ``ArrangementClip.start_time_sec`` and ``warping``
 are reconstructed as placeholders (``0.0`` / ``1``) since
 :func:`synthesize` does not consume them.
 
-Removed in Phase 3 once the abstract scene model is the only path.
+PHASE 3 CLEANUP TARGETS
+=======================
+
+When the abstract scene model becomes the only input contract:
+
+- :func:`project_to_snapshots` is removable — once :func:`synthesize` is
+  lifted to consume :class:`Project` directly (or a target-agnostic
+  intermediate), the reverse-direction shim has no callers.
+- :func:`project_from_arrangement_and_manifest` likely **moves** to
+  ``stemforge/scene_model/`` (currently EP-133-zoned because
+  :func:`resolve_scenes` is in the EP-133 zone; Phase 3 should lift the
+  resolver too if Koala / Chompi need their own arrangement readers).
+- This entire module can be deleted once the lift is complete.
 """
 
 from __future__ import annotations
