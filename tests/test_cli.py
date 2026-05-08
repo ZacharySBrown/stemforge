@@ -239,6 +239,102 @@ def test_export_song_runs_against_minimal_fixtures(tmp_path: Path):
     assert result.exit_code in (0, 1, 2), result.output
 
 
+def test_export_song_help_advertises_write_spec_flag():
+    """Phase 2 commit 5: --write-spec / --no-write-spec must appear in help
+    so users can opt into the configurator's ProjectSpec dump."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["export-song", "--help"])
+    assert result.exit_code == 0
+    assert "--write-spec" in result.output
+    assert "--no-write-spec" in result.output
+
+
+def test_export_song_writes_projectspec_json_when_flag_set(tmp_path: Path):
+    """Round-trip check: when --write-spec is on, a sibling .projectspec.json
+    is dumped and deserializes back into a valid Project. Default-off path is
+    covered by the smoke test above (no spec file written by accident)."""
+    from stemforge.scene_model import project_from_path
+
+    # Build the canonical fixture structure (matching test_song_export_parity)
+    # so resolve_scenes succeeds and we exit 0.
+    arrangement = {
+        "tempo": 120.0,
+        "time_sig": [4, 4],
+        "arrangement_length_sec": 8.0,
+        "locators": [{"time_sec": 0.0, "name": "Verse"}],
+        "tracks": {
+            "A": [
+                {
+                    "file_path": str(tmp_path / "a.wav"),
+                    "start_time_sec": 0.0,
+                    "length_sec": 8.0,
+                    "warping": 1,
+                }
+            ],
+            "B": [],
+            "C": [],
+            "D": [],
+        },
+    }
+    (tmp_path / "a.wav").write_bytes(b"RIFF\x00\x00\x00\x00WAVE")
+    snapshot_path = tmp_path / "snapshot.json"
+    snapshot_path.write_text(json.dumps(arrangement))
+
+    manifest = {
+        "track_name": "spec_smoke",
+        "source_file": "x.wav",
+        "backend": "demucs",
+        "bpm": 120.0,
+        "beat_count": 0,
+        "stems": [],
+        "output_dir": str(tmp_path),
+        "pipeline": "default",
+        "processed_at": "2026-05-08T12:00:00",
+        "session_tracks": {
+            "A": [
+                {
+                    "slot": 0,
+                    "file": str(tmp_path / "a.wav"),
+                    "clip_length_sec": 8.0,
+                    "mode": "trim",
+                }
+            ],
+            "B": [],
+            "C": [],
+            "D": [],
+        },
+    }
+    manifest_path = tmp_path / "stems.json"
+    manifest_path.write_text(json.dumps(manifest))
+
+    out_path = tmp_path / "smoke.ppak"
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            "export-song",
+            "--arrangement",
+            str(snapshot_path),
+            "--manifest",
+            str(manifest_path),
+            "--reference-template",
+            str(REFERENCE_PPAK),
+            "--project",
+            "1",
+            "--out",
+            str(out_path),
+            "--write-spec",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    spec_path = out_path.with_suffix(".projectspec.json")
+    assert spec_path.exists(), "spec file was not written"
+    project = project_from_path(spec_path)
+    assert len(project.songs) == 1
+    assert project.songs[0].bpm == 120.0
+    assert len(project.songs[0].scenes) == 1
+
+
 # ── 8. re-anchor (smoke against minimal pre-split track dir) ─────────────────
 
 

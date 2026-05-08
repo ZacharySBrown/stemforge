@@ -1728,8 +1728,25 @@ def export(
     type=click.Choice(["locator"]),
     help="Scene-derivation mode. v1 only supports 'locator'.",
 )
+@click.option(
+    "--write-spec/--no-write-spec",
+    default=False,
+    help=(
+        "Also write the abstract ProjectSpec JSON next to the .ppak with "
+        "suffix '.projectspec.json'. Useful for the configurator popup and "
+        "for diffing arrangement → projection."
+    ),
+)
 @with_audit("export-song")
-def export_song(arrangement_path, manifest_path, reference_template, project_slot, out_path, mode):
+def export_song(
+    arrangement_path,
+    manifest_path,
+    reference_template,
+    project_slot,
+    out_path,
+    mode,
+    write_spec,
+):
     """
     Build an EP-133 K.O. II song-mode .ppak from an Ableton arrangement snapshot.
 
@@ -1810,6 +1827,21 @@ def export_song(arrangement_path, manifest_path, reference_template, project_slo
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_bytes(payload)
+
+    if write_spec:
+        # Phase-2: dump the abstract ProjectSpec next to the .ppak. Bytes-
+        # identical to the direct path is enforced by test_projector_spec_parity.
+        from .exporters.ep133.project_translator import (
+            project_from_arrangement_and_manifest,
+        )
+        from .scene_model import project_to_path
+
+        spec_out_path = out_path.with_suffix(".projectspec.json")
+        project = project_from_arrangement_and_manifest(arrangement, manifest)
+        for warning in projector.validate_spec(project):
+            console.print(f"  [yellow]warn(spec):[/yellow] {warning}")
+        project_to_path(project, spec_out_path)
+        console.print(f"  Spec:        [green]{spec_out_path}[/green]")
 
     kb = len(payload) / 1024.0
     console.print(Rule("[bold green]Done![/bold green]"))
