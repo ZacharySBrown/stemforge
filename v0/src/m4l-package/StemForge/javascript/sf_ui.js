@@ -12,8 +12,9 @@
  *     done / error) onto one canvas using mgraphics.
  *   - Dispatch click events through outlet 0 as lists:
  *       preset_click | source_click | forge_click | cancel_click |
- *       done_click   | retry_click  | settings_click | commit_click |
- *       bounce_clips_click | export_song_click | arrangement_load_click
+ *       done_click   | retry_click  | commit_click |
+ *       bounce_clips_click | export_song_click | arrangement_load_click |
+ *       anchor_locator_click
  *   - Drive a pulsing animation loop ONLY while state is "forging" to avoid
  *     unnecessary redraws.
  *
