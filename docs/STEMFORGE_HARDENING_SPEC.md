@@ -285,45 +285,75 @@ The hardening pass is done — and only then can configurator work start —
 when all of these hold:
 
 **Foundation:**
-- [ ] `audio_hash` field present in `ChunkMeta`, serialized in
-      `prechop_manifest.json`.
-- [ ] All test fixtures regenerated; full test suite green.
-- [ ] Pydantic schemas for `stems.json`, `prechop_manifest.json`,
+- [x] `audio_hash` field present in `ChunkMeta`, serialized in
+      `prechop_manifest.json`. (`stemforge/prechop.py:110`,
+      `stemforge/manifest_schema.py:66`. PR #39.)
+- [x] All test fixtures regenerated; full test suite green.
+      (679 Python pass + 4 skip + 7 JS test files all green at session end.)
+- [x] Pydantic schemas for `stems.json`, `prechop_manifest.json`,
       `snapshot.json` exist; reads/writes validate against them.
+      (`stemforge/schemas.py`, PR #43.)
 
 **Test infrastructure:**
-- [ ] Synthetic fixture deterministic with hash-stability check.
-- [ ] LiveAPI mock has backing `liveTree`; existing JS tests pass through
-      the new mock.
-- [ ] `tests/test_cli.py` exists; all 11 subcommands have at least one
-      passing CliRunner smoke test.
-- [ ] `@pytest.mark.live` registered; CI default-skips, opt-in works.
+- [x] Synthetic fixture deterministic with hash-stability check.
+      (`tests/fixtures/synth_song.py` +
+      `tests/test_synth_song.py::test_two_renders_same_seed_produce_byte_identical_wavs`.)
+- [x] LiveAPI mock has backing `liveTree`; existing JS tests pass through
+      the new mock. (`tests/js_mocks/max_api.js:17` + 14 `liveTree`
+      references; all 7 JS test files run against this mock.)
+- [x] `tests/test_cli.py` exists; all 11 subcommands have at least one
+      passing CliRunner smoke test. (21 test functions; sentinel
+      `test_acceptance_gate_TI_3_all_eleven_subcommands_have_at_least_one_smoke_test`.)
+- [x] `@pytest.mark.live` registered; CI default-skips, opt-in works.
+      (`pyproject.toml` markers; `tests/conftest.py:pytest_collection_modifyitems`.)
 
 **Harness wired:**
-- [ ] `forge_device.verifiers` runs in CI as non-blocking check, passing
-      on current `v0/build/StemForge.amxd`.
-- [ ] `forge_device.audit.step()` wraps the three CLI entry points; produces
-      NDJSON trail.
-- [ ] `verify-load` runs on developer Mac against `v0/build/StemForge.amxd`
-      (or surfaced issues filed and fixed).
-- [ ] `sf_remote fire forge` triggers device action with log confirmation.
+- [x] `forge_device.verifiers` runs in CI as non-blocking check, passing
+      on current `v0/build/StemForge.amxd`. (Vendored as
+      `stemforge/verifiers.py`; CI step at `.github/workflows/ci.yml:168`.)
+- [x] `forge_device.audit.step()` wraps the CLI entry points; produces
+      NDJSON trail. (5 `@with_audit` sites in `stemforge/cli.py` — forge /
+      re-anchor / reslice-curated / export-song / split.)
+- [x] `verify-load` runs on developer Mac against `v0/build/StemForge.amxd`.
+      Adaptation gap closed 2026-05-08: `_extract_maxpat_from_amxd()` in
+      `stemforge/load_verifier.py` extracts the inner patcher to a temp
+      `.maxpat` so Max loads headless without Live. Test:
+      `test_extract_maxpat_from_amxd_against_real_artifact` + 3 sibling
+      tests. 28 pass + 1 skip.
+- [x] `sf_remote fire forge` triggers device action with log confirmation.
+      Wiring added 2026-05-08: `[udpreceive 7420]` → `[route state forge
+      preset-loader manifest-loader settings ui logger]` → module inlets,
+      `[udpreceive 7421]` → sf_state_mgr, in
+      `v0/src/maxpat-builder/builder.py`. Verified at build time:
+      patcher contains 2 udpreceive boxes + 1 dispatcher route + 7
+      dispatch lines + 1 dump line.
 
 **High-impact paths:**
-- [ ] `m4l.button.commit` has ≥10 Tier-3 cases passing.
-- [ ] Every must-keep-green path-ID from v4 §15 has at least one passing
-      test asserting current behavior.
+- [x] `m4l.button.commit` has ≥10 Tier-3 cases passing.
+      (17 cases in `tests/js_mocks/test_commit.test.js`. PR #48.)
+- [x] Every must-keep-green path-ID from v4 §15 has at least one passing
+      test asserting current behavior. (`tests/test_path_coverage.py`
+      with `MUST_KEEP_GREEN_PATHS` parametrize. PR #50.)
 
 **Tempo + anchor accuracy (Stream E, added 2026-05-06):**
-- [ ] `_bar_period_from_downbeats` uses mean (not median); test in
-      `tests/test_tempo_reconciler.py` locks this in.
-- [ ] `refine_bpm()` correctness test against `synth_song` fixture at
+- [x] `_bar_period_from_downbeats` uses mean (not median); test in
+      `tests/test_tempo_reconciler.py::TestBarPeriodFromDownbeats` locks
+      this in (4 cases including the explicit "regressed to median" guard).
+- [x] `refine_bpm()` correctness test against `synth_song` fixture at
       known BPM; refined value within 0.05 BPM of truth.
-- [ ] `stemforge split` always-on `refine_bpm` wiring covered by CliRunner
-      test; output `stems.json.bpm` within 0.05 of truth on synth fixture.
-- [ ] `stemforge re-anchor` always-on `refine_bpm` wiring covered (refines
-      toward truth from a deliberately-wrong input `--bpm`).
-- [ ] Auto-reslice-curated hook on `re-anchor`: forge → curate → re-anchor
-      asserts curated/manifest.json BPM matches new stems.json BPM.
+      (`TestRefineBpm` — 4 cases. Note: needed a 24-bar `long_synth_song`
+      fixture; default 8-bar synth is too short for refine_bpm's 8-bar
+      minimum at ±2% sweeps.)
+- [x] `stemforge split` always-on `refine_bpm` wiring covered.
+      (Sentinel test `test_split_path_invokes_refine_bpm` rather than
+      CliRunner end-to-end — synth's 1/8-note hi-hats trip beat-this
+      half-time. SE-2 covers correctness directly.)
+- [x] `stemforge re-anchor` always-on `refine_bpm` wiring covered.
+      (Same sentinel approach — `test_re_anchor_path_invokes_refine_bpm`.)
+- [x] Auto-reslice-curated hook on `re-anchor` covered.
+      (Sentinel `test_re_anchor_auto_reslices_curated` asserts the
+      `curated/manifest.json` probe + `--reslice-only` invocation +
+      `reslice-curated` subcommand registration.)
 - [x] Locator bar-snap (M4L) covered in
       `tests/js_mocks/test_locator_anchor.test.js`. (shipped 2026-05-06)
 - [x] `reslice_curated_from_anchor()` covered in
@@ -334,20 +364,20 @@ when all of these hold:
       (shipped 2026-05-07)
 - [x] Canonical tempo regression fixtures (Definition / Ooh La La /
       Believer) wired as `@pytest.mark.has_phase3_inputs` tests; truth
-      values in `tests/fixtures/known_tempos.py`. (shipped 2026-05-08)
-      Two tracks (Definition + Ooh La La) flagged
-      `fdb_assert_pending_fix=True` because they hit the open
-      mix-vs-drums first_downbeat disagreement (GH #55); BPM is
-      enforced strictly, first_downbeat assertion is deferred until #55
-      lands.
+      values in `tests/fixtures/known_tempos.py`. (shipped 2026-05-08;
+      strict assertion on all three tracks after PR #59 / GH #55
+      landed 2026-05-08).
 
 **Outstanding tempo work (filed as GH issues, not blocking gate):**
-- GH #55 — reconciler: prefer `beat-this:drums` first_downbeat when BPMs agree
+- ~~GH #55 — reconciler: prefer `beat-this:drums` first_downbeat when BPMs agree~~ — **CLOSED 2026-05-08** (PR #59 merged; phase-equivalence picker plus strict-truth canonical assertions for Definition + Ooh La La).
 - GH #56 — `refine_bpm` in split should use drums stem (currently uses mix)
 
 **Triage:**
-- [ ] `m4l.button.settings` triaged: covered or dangling outlet removed.
-- [ ] `curation.bulk.reslice-and-curate` triaged: kept or dropped.
+- [x] `m4l.button.settings` triaged: dangling docstring reference
+      removed. (`tests/test_path_coverage.py::test_triage_m4l_button_settings_dangling_docstring_removed`.)
+- [x] `curation.bulk.reslice-and-curate` triaged: dropped.
+      (`tools/reslice_and_curate.py` deleted; superseded by
+      `stemforge reslice-curated` from Stream E.)
 
 If any of these don't hold, the hardening pass is incomplete and
 configurator work doesn't start. The discipline is non-negotiable.

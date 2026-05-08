@@ -255,3 +255,130 @@ def test_kill_pids_no_op_when_set_empty():
     with mock.patch("subprocess.run") as runner:
         lv._kill_pids(set())
         runner.assert_not_called()
+
+
+# ── .amxd → .maxpat extraction (HW-3 fix landed 2026-05-08) ─────────────────
+
+
+def test_extract_maxpat_from_amxd_against_real_artifact():
+    """The real `v0/build/StemForge.amxd` extracts cleanly to a .maxpat
+    that contains the patcher dict at the expected envelope.
+
+    Before this fix, verify_max_load against .amxd never saw the patcher
+    contents (Max bounced to Live); after, the extracted .maxpat is what
+    Max actually parses.
+    """
+    import json as _json
+
+    repo_root = Path(__file__).resolve().parent.parent
+    amxd = repo_root / "v0" / "build" / "StemForge.amxd"
+    if not amxd.exists():
+        pytest.skip(f"reference .amxd missing at {amxd}")
+
+    extracted = lv._extract_maxpat_from_amxd(amxd)
+    try:
+        assert extracted.exists()
+        assert extracted.suffix == ".maxpat"
+        data = _json.loads(extracted.read_text())
+        assert "patcher" in data
+        assert isinstance(data["patcher"], dict)
+        # Patcher should have at least a `boxes` array (every Max patcher does).
+        assert "boxes" in data["patcher"] or "rect" in data["patcher"], (
+            f"extracted patcher missing both 'boxes' and 'rect' — likely "
+            f"unpack_amxd returned an unexpected shape: "
+            f"{list(data['patcher'].keys())[:8]}"
+        )
+    finally:
+        extracted.unlink(missing_ok=True)
+
+
+def test_extract_maxpat_raises_on_non_amxd_input(tmp_path: Path):
+    """Passing a non-.amxd file should error from amxd_pack's magic check,
+    not silently succeed.
+    """
+    fake = tmp_path / "fake.amxd"
+    fake.write_bytes(b"not an ampf magic header")
+
+    with pytest.raises(ValueError, match="not an amxd file"):
+        lv._extract_maxpat_from_amxd(fake)
+
+
+def test_verify_max_load_extracts_maxpat_for_amxd_input(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """When `verify_max_load` gets a `.amxd`, it routes through the
+    extraction path and hands Max a `.maxpat`, not the original container.
+    Heavy gates are mocked away — only extension-detection is under test.
+    """
+    repo_root = Path(__file__).resolve().parent.parent
+    amxd = repo_root / "v0" / "build" / "StemForge.amxd"
+    if not amxd.exists():
+        pytest.skip(f"reference .amxd missing at {amxd}")
+
+    # Bypass all gates so we exercise the extraction + launch path.
+    monkeypatch.setattr(lv, "_skip_reason", lambda: None)
+    monkeypatch.setattr(lv, "_list_max_pids", lambda: set())
+    monkeypatch.setattr(lv, "_find_max_bin", lambda: Path("/fake/Max"))
+    monkeypatch.setattr(lv, "_max_app_bundle", lambda b: Path("/fake/Max.app"))
+    monkeypatch.setattr(lv, "_clear_crash_recovery", lambda: None)
+    monkeypatch.setattr(lv, "_kill_pids", lambda pids: None)
+
+    captured: dict[str, Path] = {}
+
+    def fake_launch(_app_bundle, launch_path):
+        captured["launch_path"] = launch_path
+
+    monkeypatch.setattr(lv, "_launch_max", fake_launch)
+
+    # Skip the wait + log read.
+    monkeypatch.setattr(lv, "_wait_for_idle", lambda **kw: 0)
+    fake_log = tmp_path / "fake_max.log"
+    fake_log.write_bytes(b"")
+    monkeypatch.setattr(lv, "MAX_LOG", fake_log)
+
+    result = lv.verify_max_load(amxd)
+
+    assert "launch_path" in captured, "_launch_max never called — extraction path broke"
+    launched = captured["launch_path"]
+    assert launched.suffix == ".maxpat", (
+        f"verify_max_load handed Max {launched} (suffix {launched.suffix}); "
+        f"expected a .maxpat after .amxd extraction"
+    )
+    assert launched != amxd
+    # Cleanup is in the finally block of verify_max_load.
+    assert not launched.exists(), "extracted .maxpat should be cleaned up after launch"
+    assert isinstance(result, lv.Result)
+
+
+def test_verify_max_load_passes_maxpat_through_unchanged(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """When `verify_max_load` gets a `.maxpat` directly (the native case),
+    no extraction — Max gets the original path.
+    """
+    fake_maxpat = tmp_path / "test.maxpat"
+    fake_maxpat.write_text('{"patcher": {"boxes": []}}')
+
+    monkeypatch.setattr(lv, "_skip_reason", lambda: None)
+    monkeypatch.setattr(lv, "_list_max_pids", lambda: set())
+    monkeypatch.setattr(lv, "_find_max_bin", lambda: Path("/fake/Max"))
+    monkeypatch.setattr(lv, "_max_app_bundle", lambda b: Path("/fake/Max.app"))
+    monkeypatch.setattr(lv, "_clear_crash_recovery", lambda: None)
+    monkeypatch.setattr(lv, "_kill_pids", lambda pids: None)
+    monkeypatch.setattr(lv, "_wait_for_idle", lambda **kw: 0)
+    fake_log = tmp_path / "fake_max.log"
+    fake_log.write_bytes(b"")
+    monkeypatch.setattr(lv, "MAX_LOG", fake_log)
+
+    captured: dict[str, Path] = {}
+
+    def fake_launch(_app_bundle, launch_path):
+        captured["launch_path"] = launch_path
+
+    monkeypatch.setattr(lv, "_launch_max", fake_launch)
+
+    lv.verify_max_load(fake_maxpat)
+
+    assert captured["launch_path"] == fake_maxpat, (
+        "Max should receive .maxpat input unchanged (no extraction needed)"
+    )

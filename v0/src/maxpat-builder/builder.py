@@ -108,6 +108,12 @@ OBJ_UMENU_SOURCE        = "obj-umenu-source"
 OBJ_ROUTE_UI_EVENTS     = "obj-route-ui-events"
 OBJ_ROUTE_NDJSON        = "obj-route-ndjson"
 
+# HW-4 (sf_remote): UDP receivers + dispatcher route. 7420 = general bus,
+# 7421 = direct dump-dict bus into sf_state_mgr. See docs/remote_debug.md.
+OBJ_UDP_GENERAL         = "obj-udp-general"
+OBJ_UDP_DUMP            = "obj-udp-dump"
+OBJ_ROUTE_UDP           = "obj-route-udp"
+
 OBJ_SHELL               = "obj-shell"
 OBJ_OPENDIALOG          = "obj-opendialog"
 OBJ_AUDIOPATH_REGEX     = "obj-audiopath-regex"
@@ -554,6 +560,81 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             outlettype=["", "", ""],
         )
     )
+
+    # ── HW-4: sf_remote UDP bus ────────────────────────────────────────────
+    # Two [udpreceive] boxes wire `tools/sf_remote.py` to the device for
+    # headless debug. See `docs/remote_debug.md` for the protocol.
+    #
+    #   [udpreceive 7420] → [route state forge preset-loader manifest-loader
+    #                        settings ui logger] → each module's inlet 0
+    #     Generic message bus: `<target> <msg...>` where target is one of
+    #     the route's tags; the rest of the atoms become the module's
+    #     incoming Max message.
+    #
+    #   [udpreceive 7421] → sf_state_mgr inlet 0
+    #     Direct dump-dict bus. Sender writes `dumpDict <name>` and
+    #     sf_state.dumpDict() prints the dict's contents to the log file
+    #     so a remote operator can inspect Max state without Max GUI.
+    #
+    # Both boxes sit far below the visible UI rectangle (y > 600) so they
+    # don't clutter the patcher view in edit mode. They have no
+    # presentation rect — invisible in the device's run-mode UI.
+    udp_y = js_row_y + 360
+    boxes.append(
+        _box(
+            OBJ_UDP_GENERAL,
+            "newobj",
+            (16.0, udp_y, 100.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "udpreceive 7420"},
+        )
+    )
+    # The route order MUST stay in sync with sf_remote's `fire <target>`
+    # documentation in tools/sf_remote.py and docs/remote_debug.md.
+    boxes.append(
+        _box(
+            OBJ_ROUTE_UDP,
+            "newobj",
+            (16.0, udp_y + 26, 520.0, 22.0),
+            numinlets=1,
+            numoutlets=8,  # 7 routed targets + 1 unmatched fallthrough
+            outlettype=["", "", "", "", "", "", "", ""],
+            extras={
+                "text": (
+                    "route state forge preset-loader manifest-loader "
+                    "settings ui logger"
+                ),
+            },
+        )
+    )
+    boxes.append(
+        _box(
+            OBJ_UDP_DUMP,
+            "newobj",
+            (550.0, udp_y, 100.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "udpreceive 7421"},
+        )
+    )
+
+    # 7420 → route input
+    lines.append(_line(OBJ_UDP_GENERAL, 0, OBJ_ROUTE_UDP, 0))
+    # route outlets → modules. Outlet order matches the route's tag order.
+    lines.append(_line(OBJ_ROUTE_UDP, 0, OBJ_SF_STATE, 0))             # state
+    lines.append(_line(OBJ_ROUTE_UDP, 1, OBJ_SF_FORGE, 0))             # forge
+    lines.append(_line(OBJ_ROUTE_UDP, 2, OBJ_SF_PRESET_LOADER, 0))     # preset-loader
+    lines.append(_line(OBJ_ROUTE_UDP, 3, OBJ_SF_MANIFEST_LOADER, 0))   # manifest-loader
+    lines.append(_line(OBJ_ROUTE_UDP, 4, OBJ_SF_SETTINGS, 0))          # settings
+    lines.append(_line(OBJ_ROUTE_UDP, 5, OBJ_V8UI, 0))                 # ui
+    lines.append(_line(OBJ_ROUTE_UDP, 6, OBJ_SF_LOGGER, 0))            # logger
+    # Outlet 7 is the unmatched fallthrough — intentionally unwired.
+
+    # 7421 → sf_state_mgr (direct, dumpDict only)
+    lines.append(_line(OBJ_UDP_DUMP, 0, OBJ_SF_STATE, 0))
 
     # ── Visible native umenus (left column, presentation mode) ──────────────
     #
