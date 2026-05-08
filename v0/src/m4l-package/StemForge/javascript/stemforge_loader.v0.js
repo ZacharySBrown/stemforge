@@ -503,72 +503,25 @@ function createAudioTrack(insertIdx) {
     return insertIdx;
 }
 
-function _loadCuratedManifest(mf) {
-    if (mf.bpm) {
-        try { new LiveAPI("live_set").set("tempo", Number(mf.bpm)); } catch (_) {}
-        status("tempo → " + mf.bpm + " BPM");
-    }
-
-    if (!mf.stems) { status("manifest has no stems object"); return; }
-
-    var loaded = 0;
-    for (var si = 0; si < BAR_TRACK_ORDER.length; si++) {
-        var stemName = BAR_TRACK_ORDER[si];
-        var bars = mf.stems[stemName];
-        if (!bars || !bars.length) {
-            status("  " + stemName + ": no bars in manifest, skipping");
-            continue;
-        }
-
-        var insertIdx = trackCount();
-        createAudioTrack(insertIdx);
-
-        var trackLabel = "[SF] " + stemName.charAt(0).toUpperCase() + stemName.slice(1) + " Bars";
-        renameTrack(insertIdx, trackLabel, BAR_TRACK_COLORS[stemName]);
-
-        var warpMode = BAR_WARP_MODES[stemName] || 0;
-
-        for (var bi = 0; bi < bars.length; bi++) {
-            var bar = bars[bi];
-            if (!bar.file) continue;
-            var clipName = stemName + " bar " + (bar.position || (bi + 1));
-            if (loadClip(insertIdx, bi, bar.file, clipName)) {
-                try {
-                    var clipApi = new LiveAPI(
-                        "live_set tracks " + insertIdx + " clip_slots " + bi + " clip"
-                    );
-                    if (clipApi.id !== "0") {
-                        // Curation v2: apply padded markers + warp markers
-                        // + offsets when present; fall back to legacy warp
-                        // mode when the entry has no clip block.
-                        if (!applyCurationV2Clip(clipApi, bar, stemName)) {
-                            clipApi.set("warp_mode", warpMode);
-                        }
-                    }
-                } catch (_) {}
-                loaded++;
-            }
-        }
-        status("  " + trackLabel + ": " + bars.length + " bars loaded");
-    }
-    status("loader: " + loaded + " curated bars across " + BAR_TRACK_ORDER.length + " tracks");
-    outlet(1, "bang");
-}
-
-function loadCuratedBars() {
-    var manifestPath = arrayfromargs(messagename, arguments).slice(1).join(" ");
-    if (!manifestPath) { status("loadCuratedBars: missing path"); return; }
-
-    var raw = readFileContents(manifestPath);
-    if (!raw) { status("cannot read manifest: " + manifestPath); return; }
-    var mf;
-    try { mf = JSON.parse(raw); }
-    catch (e) { status("manifest JSON parse: " + e); return; }
-
-    _loadCuratedManifest(mf);
-}
-
 function loadFromDict() {
+    // Production-mode loader entry. Reads a curated manifest from a Max
+    // dict (typically `sf_manifest`, populated upstream by sf_manifest_loader)
+    // and dispatches to loadSong() — the only supported layout.
+    //
+    // Removed 2026-05-06 (after the production path proved out end-to-end on
+    // believer/definition/ooh_la_la):
+    //   - v1 flat-bars loader (`_loadCuratedManifest`) — superseded by
+    //     loadSong's production-group layout. Manifests without
+    //     layout_mode='production' are now an error rather than a v1 fallback.
+    //   - v2 Drum Rack loader (`_loadCuratedV2`) — Simpler-pad-based layout
+    //     for live performance. Replaced by song loader's drum rack track
+    //     inside the production group; the standalone Drum-Rack-only path
+    //     is no longer needed.
+    //
+    // If you need the old behavior, re-curate the source with
+    // `--pipeline pipelines/production_idm.yaml` (or any pipeline that
+    // injects processing_config). The curate script auto-overrides
+    // layout_mode → production when a pipeline is supplied.
     var dictName = arrayfromargs(messagename, arguments).slice(1).join(" ") || "sf_manifest";
     var d;
     try { d = new Dict(dictName); }
@@ -580,250 +533,33 @@ function loadFromDict() {
 
     status("loaded manifest from dict: " + dictName);
 
-    // Dispatch to v2 loader if manifest has v2 markers (oneshots, quadrants, or version=2)
-    // Detect v2 format by stem DATA shape, not version number.
-    // v1: stems are flat arrays of {file, position, ...}
-    // v2: stems are dicts with {loops: [...], oneshots: [...]}
-    // quadrants field = always v2
-    var isV2 = false;
-    if (mf.quadrants) {
-        isV2 = true;
-    } else if (mf.stems) {
-        for (var key in mf.stems) {
-            var val = mf.stems[key];
-            if (val && typeof val === "object" && !Array.isArray(val) && (val.loops || val.oneshots)) {
-                isV2 = true;
-                break;
-            }
-        }
-    }
-
-    // Check for production mode (has layout_mode field)
     if (mf.layout_mode === "production") {
         status("detected production manifest → song loader");
         loadSong();
-    } else if (isV2) {
-        status("detected v2 manifest (loops+oneshots) → Drum Rack loader");
-        _loadCuratedV2(mf);
+        return;
+    }
+
+    // No legacy fallback. Surface a clear error so the user re-curates.
+    var detected;
+    if (mf.quadrants) detected = "v2 (quadrants)";
+    else if (mf.stems) {
+        var sawV2 = false;
+        for (var key in mf.stems) {
+            var val = mf.stems[key];
+            if (val && typeof val === "object" && !Array.isArray(val) &&
+                (val.loops || val.oneshots)) {
+                sawV2 = true;
+                break;
+            }
+        }
+        detected = sawV2 ? "v2 (loops+oneshots)" : "v1 (flat bars)";
     } else {
-        status("detected v1 manifest (flat bars) → clip slot loader");
-        _loadCuratedManifest(mf);
+        detected = "unrecognized";
     }
-}
-
-// ── v2 Quadrant Loader (Drum Rack mode) ──────────────────────────────────────
-// Creates 4 MIDI tracks with Drum Racks, loads samples into Simpler pads.
-// Each stem gets a 4×4 quadrant: loops on pads 8-15, one-shots on pads 0-7.
-
-var RACK_TEMPLATES = {
-    drums:  "SF | Drums Rack",
-    bass:   "SF | Bass Rack",
-    vocals: "SF | Vocals Rack",
-    other:  "SF | Other Rack"
-};
-
-function createMidiTrack(insertIdx) {
-    new LiveAPI("live_set").call("create_midi_track", insertIdx);
-    return insertIdx;
-}
-
-function loadSimplerSample(trackIdx, padIdx, wavPath, loopEnabled) {
-    // Navigate: track → Drum Rack (device 0) → chain (pad) → Simpler (device 0)
-    var chainPath = "live_set tracks " + trackIdx + " devices 0 chains " + padIdx + " devices 0";
-    try {
-        var simpler = new LiveAPI(chainPath);
-        if (simpler.id === "0") {
-            status("  pad " + padIdx + ": no Simpler found at " + chainPath);
-            return false;
-        }
-        // Load sample — Live 12 API: SimplerDevice.replace_sample(absolute_path)
-        // Uses POSIX path (NOT HFS/Max path)
-        simpler.call("replace_sample", String(wavPath));
-        // Set playback mode: 0=classic (loops), 1=one-shot (no loop)
-        try {
-            simpler.set("playback_mode", loopEnabled ? 0 : 1);
-        } catch (_) {}
-        return true;
-    } catch (e) {
-        status("  loadSimpler error pad " + padIdx + ": " + e);
-        return false;
-    }
-}
-
-function _loadCuratedV2(mf) {
-    if (mf.bpm) {
-        try { new LiveAPI("live_set").set("tempo", Number(mf.bpm)); } catch (_) {}
-        status("tempo → " + mf.bpm + " BPM");
-    }
-
-    // Check for quadrants (v2 layout manifest) or stems (v2 curated manifest)
-    var stemData = mf.quadrants || mf.stems;
-    if (!stemData) { status("v2 manifest has no stems or quadrants"); return; }
-
-    var songName = mf.track || "stemforge";
-    var loaded = 0;
-
-    // Strategy: duplicate the "SF | Templates" group (creates a new group with
-    // all children), rename it to the song name, delete the duplicated Source
-    // track, then rename the rack tracks.
-    var templateGroupIdx = findTrackByName("SF | Templates");
-    var songTrackMap = {};  // stemName → trackIdx
-
-    if (templateGroupIdx >= 0) {
-        var countBefore = trackCount();
-        var newGroupIdx = duplicateTrack(templateGroupIdx);
-        var countAfter = trackCount();
-        var addedTracks = countAfter - countBefore;
-
-        // Rename the new group to the song name
-        renameTrack(newGroupIdx, songName, null);
-        status("  created song group: " + songName + " (" + addedTracks + " tracks)");
-
-        // Scan the new tracks (newGroupIdx+1 through newGroupIdx+addedTracks-1)
-        // and map them by matching template names
-        for (var ti = newGroupIdx + 1; ti < newGroupIdx + addedTracks; ti++) {
-            var tn = String(trackName(ti));
-
-            // Delete duplicated Source track (audio track with the device)
-            if (tn === "SF | Source") {
-                try {
-                    new LiveAPI("live_set").call("delete_track", ti);
-                    addedTracks--;
-                    // Indices shift after deletion, re-scan
-                    ti--;
-                } catch (e) {
-                    status("  could not delete duplicated Source: " + e);
-                }
-                continue;
-            }
-
-            // Match rack template names
-            for (var si2 = 0; si2 < BAR_TRACK_ORDER.length; si2++) {
-                var sn = BAR_TRACK_ORDER[si2];
-                if (tn === RACK_TEMPLATES[sn] && !(sn in songTrackMap)) {
-                    var cap = sn.charAt(0).toUpperCase() + sn.slice(1);
-                    renameTrack(ti, cap + " | " + songName, BAR_TRACK_COLORS[sn]);
-                    songTrackMap[sn] = ti;
-                    break;
-                }
-            }
-        }
-    }
-
-    // Fallback for any stems not found via group duplication
-    for (var si = 0; si < BAR_TRACK_ORDER.length; si++) {
-        var stemName = BAR_TRACK_ORDER[si];
-        if (stemName in songTrackMap) continue;
-
-        var data = stemData[stemName];
-        if (!data) continue;
-
-        var stemCapitalized = stemName.charAt(0).toUpperCase() + stemName.slice(1);
-        var templateName = RACK_TEMPLATES[stemName];
-        var templateIdx = templateName ? findTrackByName(templateName) : -1;
-
-        var trackIdx;
-        if (templateIdx >= 0) {
-            trackIdx = duplicateTrack(templateIdx);
-            renameTrack(trackIdx, stemCapitalized + " | " + songName, BAR_TRACK_COLORS[stemName]);
-        } else {
-            trackIdx = trackCount();
-            createMidiTrack(trackIdx);
-            renameTrack(trackIdx, "[SF] " + stemCapitalized + " Rack", BAR_TRACK_COLORS[stemName]);
-            status("  " + stemName + ": no template — created bare MIDI track");
-        }
-        songTrackMap[stemName] = trackIdx;
-    }
-
-    // Load samples into each stem's track
-    for (var si = 0; si < BAR_TRACK_ORDER.length; si++) {
-        var stemName = BAR_TRACK_ORDER[si];
-        var data = stemData[stemName];
-        if (!data || !(stemName in songTrackMap)) continue;
-        var trackIdx = songTrackMap[stemName];
-
-        // Load pads from quadrant data (layout manifest format)
-        if (data.pads) {
-            for (var pi = 0; pi < data.pads.length; pi++) {
-                var pad = data.pads[pi];
-                if (!pad.file || pad.type === "empty") continue;
-                if (loadSimplerSample(trackIdx, pad.pad_index, pad.file, pad.loop)) {
-                    loaded++;
-                }
-            }
-        }
-        // Load from v2 curated manifest format (loops + oneshots)
-        else {
-            var loops = data.loops || data;
-            var oneshots = data.oneshots || [];
-
-            if (Array.isArray(loops) && oneshots.length === 0 && loops.length > 8) {
-                // Loops-only mode: spread all loops across all 16 pads
-                // Pad order: 0-3 (row 1), 4-7 (row 2), 8-11 (row 3), 12-15 (row 4)
-                for (var li = 0; li < loops.length && li < 16; li++) {
-                    var loop = loops[li];
-                    if (loop && loop.file) {
-                        if (loadSimplerSample(trackIdx, li, loop.file, true)) {
-                            loaded++;
-                        }
-                    }
-                }
-            } else if (Array.isArray(loops)) {
-                // Mixed mode: loops → pads 8-15 (top 2 rows)
-                for (var li = 0; li < loops.length && li < 8; li++) {
-                    var loop = loops[li];
-                    if (loop && loop.file) {
-                        var loopPad = 8 + li;
-                        if (loadSimplerSample(trackIdx, loopPad, loop.file, true)) {
-                            loaded++;
-                        }
-                    }
-                }
-            }
-
-            // One-shots → pads 0-7 (bottom 2 rows) — only when present
-            for (var oi = 0; oi < oneshots.length && oi < 8; oi++) {
-                var os = oneshots[oi];
-                if (os && os.file) {
-                    if (loadSimplerSample(trackIdx, oi, os.file, false)) {
-                        loaded++;
-                    }
-                }
-            }
-        }
-
-        status("  " + stemName + " rack: pads loaded");
-    }
-
-    status("v2 loader: " + loaded + " pads loaded across " + BAR_TRACK_ORDER.length + " racks");
+    status("manifest is " + detected + ", not production. Re-curate with " +
+           "`--pipeline pipelines/production_idm.yaml` to produce a " +
+           "production-mode manifest.");
     outlet(1, "bang");
-}
-
-function loadCuratedV2() {
-    var manifestPath = arrayfromargs(messagename, arguments).slice(1).join(" ");
-    if (!manifestPath) { status("loadCuratedV2: missing path"); return; }
-
-    var raw = readFileContents(manifestPath);
-    if (!raw) { status("cannot read v2 manifest: " + manifestPath); return; }
-    var mf;
-    try { mf = JSON.parse(raw); }
-    catch (e) { status("v2 manifest JSON parse: " + e); return; }
-
-    _loadCuratedV2(mf);
-}
-
-function loadV2FromDict() {
-    var dictName = arrayfromargs(messagename, arguments).slice(1).join(" ") || "sf_manifest";
-    var d;
-    try { d = new Dict(dictName); }
-    catch (e) { status("loadV2FromDict: cannot open dict " + dictName + ": " + e); return; }
-
-    var mf;
-    try { mf = _unwrapDictContent(JSON.parse(d.stringify())); }
-    catch (e) { status("loadV2FromDict: parse error: " + e); return; }
-
-    status("loaded v2 manifest from dict: " + dictName);
-    _loadCuratedV2(mf);
 }
 
 function ensureScenes(n) {
@@ -2016,7 +1752,6 @@ if (typeof module !== "undefined" && module.exports) {
         SIMPLER_TEMPLATE: SIMPLER_TEMPLATE,
         BAR_TRACK_ORDER: BAR_TRACK_ORDER,
         BAR_TRACK_COLORS: BAR_TRACK_COLORS,
-        RACK_TEMPLATES: RACK_TEMPLATES,
         PROCESSING_CONFIG: PROCESSING_CONFIG,
     };
 }

@@ -312,13 +312,25 @@ function _alResolveTrack(stemName) {
 // ── Clip creation on arrangement view ───────────────────────────────────────
 
 function _alFindClipAtBeat(trackIdx, beat) {
-    // Walks arrangement_clips looking for a clip whose start_time matches.
-    // Used when create_audio_clip's return value is unreliable.
+    // Find the arrangement_clip whose start_time matches `beat`. Used after
+    // create_audio_clip when its return value is unreliable.
+    //
+    // Performance: this used to walk arrangement_clips from index 0, which
+    // is O(N) per call and O(N²) over a stem's load. On a 328-clip
+    // arrangement (true_love_waits @ doubled BPM) the walk dominated cost
+    // at chunk 80 (~160 LiveAPI gets per chunk vs 7 at chunk 1, observed
+    // ~13ms per iter) and produced the exponential decay pattern in
+    // sf_debug.log. Killed by walking REVERSE: create_audio_clip appends,
+    // so the new clip is at index n-1 (and almost always the only valid
+    // candidate). Walk back only on the rare case where the last index
+    // doesn't match (e.g. another writer created a clip concurrently).
     var trackApi = new LiveAPI("live_set tracks " + trackIdx);
     var n = 0;
     try { n = trackApi.getcount("arrangement_clips") | 0; }
     catch (_) { return -1; }
-    for (var i = 0; i < n; i++) {
+    if (n === 0) return -1;
+
+    for (var i = n - 1; i >= 0; i--) {
         var clip = new LiveAPI(
             "live_set tracks " + trackIdx + " arrangement_clips " + i
         );
@@ -546,11 +558,11 @@ function runArrangementLoad(manifestPath, shiftBeats) {
     var anyOk = false;
     for (var stemName in stems) {
         if (!Object.prototype.hasOwnProperty.call(stems, stemName)) continue;
-        var res = _alLoadStem(stemName, stems[stemName], manifestDir, bpm, beatsPerBar, shift);
+        var res = _alLoadStem(stemName, stems[stemName], manifestDir, bpm,
+            beatsPerBar, shift);
         if (res.ok) anyOk = true;
         totalCreated += res.clips_created;
     }
-
     _alStatus("loaded " + totalCreated + " clips from " + path
         + " (bpm=" + bpm + ", beats_per_bar=" + beatsPerBar
         + (shift !== 0 ? ", shift=" + shift.toFixed(2) + " beats" : "") + ")");

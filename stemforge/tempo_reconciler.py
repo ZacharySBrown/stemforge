@@ -136,11 +136,25 @@ def _is_suspicious_ratio(a: float, b: float) -> tuple[bool, float | None]:
 
 
 def _bar_period_from_downbeats(downbeats: np.ndarray) -> float | None:
-    """Median bar period (seconds per bar) from downbeat IBIs.
+    """Mean bar period (seconds per bar) from downbeat IBIs.
 
     Skips the first downbeat (often a phantom intro hit), filters out IBIs
     that differ from the rough median by more than 20% (rejecting clumped
-    early-song mis-detections), then takes the median of the survivors.
+    early-song mis-detections), then takes the **mean** of the survivors.
+
+    Why mean, not median (caught 2026-05-06 on Definition):
+        beat-this's downbeat positions are quantized to the model's internal
+        frame rate, so most IBIs land on a single quantum (e.g. 2.660s exactly
+        = 90.226 BPM). The median locks onto that quantum even when the true
+        bar period sits BETWEEN quanta (here: ~2.667s = ~90.0 BPM, verified
+        by measuring drift at bar 13 — the kick lands 128ms past the grid
+        position predicted by 90.226 BPM, but only 13ms past the prediction
+        from 89.9 BPM). The mean averages across quanta and recovers a more
+        accurate true period.
+
+        Outlier filter still uses the median (it's only used as a robust
+        anchor for "20% within"); the period itself is the mean of the clean
+        survivors.
     """
     if len(downbeats) < 4:
         return None
@@ -151,7 +165,7 @@ def _bar_period_from_downbeats(downbeats: np.ndarray) -> float | None:
     clean = ibis[np.abs(ibis - rough_median) < 0.2 * rough_median]
     if len(clean) == 0:
         return None
-    period = float(np.median(clean))
+    period = float(np.mean(clean))
     return period if period > 0 else None
 
 
@@ -162,7 +176,9 @@ def _bpm_from_downbeats(downbeats: np.ndarray, beats_per_bar: int = 4) -> float 
     median(diff(beats)) runs ~0.5–1.2% high vs the truth, because the beat
     array has small jitter that biases the median toward the lower IBI
     values. The downbeat array (where the model commits to bar boundaries)
-    is much more stable.
+    is much more stable. _bar_period_from_downbeats further uses the MEAN
+    of clean IBIs (not median) to escape beat-this's per-frame quantization
+    of downbeat positions — see its docstring for details.
 
     Returns None if there aren't enough stable downbeats to compute.
     """
@@ -353,6 +369,94 @@ def refine_first_downbeat(
 
     refined = candidate_first_downbeat + best_offset
     return max(0.0, refined)
+
+
+def refine_bpm(
+    audio_path: Path,
+    candidate_bpm: float,
+    first_downbeat: float,
+    *,
+    beats_per_bar: int = 4,
+    bpm_tolerance_pct: float = 2.0,
+    bpm_step: float = 0.01,
+) -> float:
+    """Cross-correlation refinement of `candidate_bpm` against kick onsets.
+
+    Holds `first_downbeat` fixed (= the user's anchored bar 1) and searches
+    over a range of BPM values, scoring each by summing kick-band onset
+    energy at every implied bar boundary across the song. Returns the BPM
+    with the highest aligned-bar energy.
+
+    Why this matters: the reconciler's bar-period mean estimator is still
+    biased by ~0.1-0.4% on real tracks (Definition: estimator gives 89.98,
+    truth is ~89.88, accumulated drift = ~120ms by bar 12). That bias comes
+    from beat-this's per-frame quantization of downbeat positions — even
+    after rejecting outliers and taking the mean, the surviving IBIs cluster
+    around quantization peaks. This function escapes the bias by aligning a
+    full-song bar-comb against actual kick onsets.
+
+    Caveat: assumes the kick fires *on* most downbeats. Works for hip-hop /
+    electronic / pop. Tracks where many bars deliberately omit the bar-1
+    kick (sparse breakdowns, non-percussive sections) will score lower at
+    the true BPM and may lock onto a nearby drift-aligned alternative.
+    Opt-in via the same `--refine-downbeat` flag pattern.
+
+    Args:
+        audio_path: source mix or drums stem (drums stem is more reliable —
+            isolates kick energy from other transients).
+        candidate_bpm: starting estimate (e.g. from the reconciler).
+        first_downbeat: bar 1 source-time, fixed during search.
+        beats_per_bar: time signature numerator (default 4).
+        bpm_tolerance_pct: ± search range as percent of candidate_bpm
+            (default 2.0% = ±~2 BPM at 100 BPM).
+        bpm_step: BPM resolution (default 0.01 BPM).
+
+    Returns:
+        Refined BPM. Falls back to candidate_bpm if too few bars to score.
+    """
+    import librosa
+
+    y, sr = librosa.load(str(audio_path), sr=None, mono=True)
+    onset_multi = librosa.onset.onset_strength_multi(y=y, sr=sr, channels=[0, 32, 64, 96, 128])
+    kick_onset = onset_multi[0]
+    hop = 512
+    onset_times = librosa.frames_to_time(np.arange(len(kick_onset)), sr=sr, hop_length=hop)
+
+    duration = len(y) / sr
+    span = max(0.0, duration - first_downbeat)
+    if span <= 0:
+        return candidate_bpm
+
+    bpm_lo = candidate_bpm * (1.0 - bpm_tolerance_pct / 100.0)
+    bpm_hi = candidate_bpm * (1.0 + bpm_tolerance_pct / 100.0)
+    n_steps = int(round((bpm_hi - bpm_lo) / bpm_step)) + 1
+
+    best_score = -np.inf
+    best_bpm = candidate_bpm
+
+    for k in range(n_steps):
+        bpm_try = bpm_lo + k * bpm_step
+        bar_period = beats_per_bar * 60.0 / bpm_try
+        n_bars = int(span / bar_period)
+        if n_bars < 8:
+            return candidate_bpm
+        # Sum onset energy at each comb tooth: first_downbeat + i*bar_period.
+        # Late bars contribute *more* differential signal across BPM
+        # candidates because their position diverges fastest with bar_period
+        # error — that's exactly what we want to discriminate sub-percent
+        # tempo differences.
+        score = 0.0
+        for i in range(n_bars):
+            t = first_downbeat + i * bar_period
+            if t >= duration:
+                break
+            idx = min(int(np.searchsorted(onset_times, t)), len(kick_onset) - 1)
+            score += float(kick_onset[idx])
+        if score > best_score:
+            best_score = score
+            best_bpm = bpm_try
+
+    return float(best_bpm)
 
 
 def _isolate_kick(drums_path: Path, output_dir: Path, device: str) -> Path | None:
