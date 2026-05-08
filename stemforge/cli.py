@@ -562,6 +562,15 @@ def split(
     default=False,
     help="Keep the previous prechop output as `<stem>_prechop.bak/` instead of overwriting.",
 )
+@click.option(
+    "--then-curate/--no-then-curate",
+    default=False,
+    help="After re-anchoring, run a fresh curation pass at the new anchor — "
+    "picks new bars by diversity selection rather than just re-cutting the "
+    "existing picks. Replays strategy/n_bars from the existing curated/manifest.json. "
+    "Default (--no-then-curate) preserves the legacy behavior: reslice-only, "
+    "keeps user picks. Has no effect when curated/ is absent.",
+)
 @with_audit("re-anchor")
 def re_anchor(
     track_dir,
@@ -572,6 +581,7 @@ def re_anchor(
     pad_post_bars,
     emit_partial,
     keep_old,
+    then_curate,
 ):
     """
     Re-cut the prechop chunks of an already-forged track at user-supplied
@@ -779,12 +789,57 @@ def re_anchor(
     # Keep curated bars in sync with the new anchor (loops only — one-shots
     # are peak-anchored and grid-independent). Skip silently if no curated
     # output exists for this track.
+    #
+    # Two modes:
+    #   default (--no-then-curate): --reslice-only — preserves user picks,
+    #     re-cuts the existing curated/<stem>/bar_NNN.wav set at the new
+    #     grid. Cheap, fast, no LarsNet rerun.
+    #   --then-curate: full diversity-selection pass at the new anchor.
+    #     Discards existing picks and replays strategy/n_bars from the
+    #     curated manifest. Used when the user wants the configurator's
+    #     "re-anchoring auto-triggers curation re-run" workflow.
     curated_manifest_path = track_dir / "curated" / "manifest.json"
     if curated_manifest_path.exists():
         import subprocess as _sp
 
         script = Path(__file__).resolve().parents[1] / "v0/src/stemforge_curate_bars.py"
-        if script.exists():
+        if not script.exists():
+            console.print(
+                f"  [yellow]curate script not found at {script}; curated/ left untouched.[/yellow]"
+            )
+        elif then_curate:
+            existing = json.loads(curated_manifest_path.read_text())
+            replay_strategy = existing.get("strategy", "max-diversity")
+            replay_n_bars = int(existing.get("n_bars", 16))
+            replay_time_sig = int(existing.get("time_signature_numerator", 4))
+            console.print()
+            console.print(
+                "[bold]Fresh curation pass[/bold] at new anchor "
+                f"[dim](strategy={replay_strategy}, n_bars={replay_n_bars}, time_sig={replay_time_sig})[/dim]"
+            )
+            _r = _sp.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--stems-dir",
+                    str(track_dir),
+                    "--strategy",
+                    replay_strategy,
+                    "--n-bars",
+                    str(replay_n_bars),
+                    "--time-sig",
+                    str(replay_time_sig),
+                ],
+                check=False,
+            )
+            if _r.returncode != 0:
+                console.print(
+                    "  [yellow]curate exited non-zero — curated loops may be "
+                    "stale; run `stemforge forge --curation ...` to retry.[/yellow]"
+                )
+            else:
+                console.print("  curated/manifest.json + bar WAVs replaced with fresh picks.")
+        else:
             console.print()
             console.print(
                 "[bold]Re-slicing curated loops[/bold] at new anchor "
@@ -807,17 +862,16 @@ def re_anchor(
                 )
             else:
                 console.print("  curated/manifest.json + bar WAVs updated.")
-        else:
-            console.print(
-                f"  [yellow]curate script not found at {script}; curated/ left untouched.[/yellow]"
-            )
 
     console.print()
     console.print(Rule("[bold green]Re-anchored[/bold green]"))
     console.print(f"  BPM: [cyan]{bpm}[/cyan]  first_downbeat: [cyan]{first_downbeat}s[/cyan]")
     console.print("  stems.json + prechop_manifest.json updated.")
     if curated_manifest_path.exists():
-        console.print("  curated/ re-sliced at new anchor.")
+        if then_curate:
+            console.print("  curated/ rebuilt with fresh diversity picks at new anchor.")
+        else:
+            console.print("  curated/ re-sliced at new anchor.")
     if keep_old:
         console.print("  [dim]Old chunks preserved at <stem>_prechop.bak/.[/dim]")
 

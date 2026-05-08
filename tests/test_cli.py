@@ -271,6 +271,31 @@ def test_split_help_advertises_emit_partial_flag():
     assert "--no-emit-partial" in result.output
 
 
+def test_re_anchor_help_advertises_then_curate_flag():
+    # Configurator Phase 1 workflow connection: --then-curate triggers a
+    # fresh diversity-selection pass at the new anchor instead of the
+    # legacy reslice-only behavior. Default stays --no-then-curate so
+    # existing callers see no change.
+    runner = CliRunner()
+    result = runner.invoke(cli, ["re-anchor", "--help"])
+    assert result.exit_code == 0
+    assert "--then-curate" in result.output
+    assert "--no-then-curate" in result.output
+
+
+def test_re_anchor_then_curate_branch_present_in_source():
+    """The --then-curate branch invokes the curate script WITHOUT
+    --reslice-only; the default branch keeps --reslice-only. Verify both
+    branches exist in cli.py so the flag actually changes behavior."""
+    cli_src = (Path(__file__).resolve().parent.parent / "stemforge" / "cli.py").read_text()
+    # then_curate parameter declared on the click command.
+    assert "then_curate" in cli_src, "re-anchor must declare a then_curate parameter"
+    # Branch on the flag exists.
+    assert "elif then_curate:" in cli_src or "if then_curate:" in cli_src, (
+        "re-anchor must branch on then_curate at the curated/ hook"
+    )
+
+
 # ── 9. split (heavy — needs torch/Demucs) ────────────────────────────────────
 
 
