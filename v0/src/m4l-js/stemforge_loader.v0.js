@@ -1440,10 +1440,42 @@ function _commitEntryOffsets(entry, clipIndex) {
     return true;
 }
 
+// Build one session_tracks entry from a Clip-shaped LOM object. Pulls
+// start/end/length markers + warping; converts beats→sec when warped.
+// Returns null when the clip lacks a usable file_path.
+function _sessionTrackEntryFromClip(clipApi, slot, beatToSec) {
+    var fp = _getLomString(clipApi, "file_path");
+    if (!fp) return null;
+    var posix = _stripHfsPrefix(fp);
+
+    var warping = _getLomNumber(clipApi, "warping") | 0;
+    var startMarker = _getLomNumber(clipApi, "start_marker");
+    var endMarker = _getLomNumber(clipApi, "end_marker");
+    var clipLength = _getLomNumber(clipApi, "length");
+
+    var startSec = warping ? startMarker * beatToSec : startMarker;
+    var endSec = warping ? endMarker * beatToSec : endMarker;
+    var lengthSec = warping ? clipLength * beatToSec : clipLength;
+
+    // Trim vs rotate: end-marker within ~10ms of the clip's natural end
+    // → user only moved start → rotate. Otherwise trim.
+    var EPS = 0.010;
+    var mode = (Math.abs(endSec - lengthSec) < EPS) ? "rotate" : "trim";
+
+    return {
+        slot: slot,
+        file: posix,
+        start_offset_sec: startSec,
+        end_offset_sec: endSec,
+        clip_length_sec: lengthSec,
+        mode: mode,
+    };
+}
+
 function _commitSessionTracks(mf) {
-    // Walks tracks named A / B / C / D in the live set, captures every
-    // loaded clip's file path + start/end markers (converted to seconds)
-    // + a "mode" hint for the export tool.
+    // Walks tracks named A / B / C / D in BOTH session view AND arrangement
+    // view, captures every loaded clip's file path + start/end markers
+    // (converted to seconds) + a "mode" hint for the export tool.
     //
     // mode is inferred from end_marker:
     //   - "rotate"  if end_marker is at the clip's natural end (user only
@@ -1452,55 +1484,83 @@ function _commitSessionTracks(mf) {
     //   - "trim"    if end_marker has been moved inward — user picked a
     //               specific region; the export tool slices that region.
     //
+    // Session-view clips claim slots = their clip-slot index (0..30, the
+    // column row). Arrangement-only files (no matching session entry)
+    // get the next unused slot in 0..19 (EP-133 SAMPLE_SLOT_PER_GROUP cap).
+    // Dedup is by file_path: a file present in BOTH views is registered
+    // once at its session-view slot.
+    //
     // Writes into mf.session_tracks = {A: [...], B: [...], C: [...], D: [...]}.
-    // Empty arrays for letter-tracks that don't exist or have no clips.
+    // Empty arrays for letter-tracks that don't exist or have no clips
+    // anywhere on either view.
     var letters = ["A", "B", "C", "D"];
     var bpm = Number(mf.bpm) || 120.0;
     var beatToSec = 60.0 / bpm;
     var result = { A: [], B: [], C: [], D: [] };
+    var SLOTS_PER_GROUP = 20; // matches stemforge.exporters.ep133 SAMPLE_SLOT_PER_GROUP
 
     for (var li = 0; li < letters.length; li++) {
         var letter = letters[li];
         var trackIdx = findTrackByName(letter);
         if (trackIdx < 0) continue;
 
+        var seenPaths = {};   // posix path → slot
+        var usedSlots = {};   // slot → true
+        var entries = [];
+
+        // 1. Session view — preserve the historical "slot = clip-slot index"
+        //    convention, which keeps existing manifests stable.
         for (var sj = 0; sj < 31; sj++) {
             var csPath = "live_set tracks " + trackIdx + " clip_slots " + sj;
             var clipApi;
-            try {
-                clipApi = new LiveAPI(csPath + " clip");
-            } catch (_) { continue; }
+            try { clipApi = new LiveAPI(csPath + " clip"); }
+            catch (_) { continue; }
             if (!clipApi || clipApi.id === "0") continue;
 
-            var fp = _getLomString(clipApi, "file_path");
-            if (!fp) continue;
-            var posix = _stripHfsPrefix(fp);
-
-            var warping = _getLomNumber(clipApi, "warping") | 0;
-            var startMarker = _getLomNumber(clipApi, "start_marker");
-            var endMarker = _getLomNumber(clipApi, "end_marker");
-            var clipLength = _getLomNumber(clipApi, "length");
-            // For warped clips the markers + length are in beats; convert
-            // to seconds via session BPM. For non-warped they're already
-            // in seconds.
-            var startSec = warping ? startMarker * beatToSec : startMarker;
-            var endSec = warping ? endMarker * beatToSec : endMarker;
-            var lengthSec = warping ? clipLength * beatToSec : clipLength;
-
-            // Trim vs rotate: end-marker within ~10ms of the clip's natural
-            // end → user only moved start → rotate. Otherwise trim.
-            var EPS = 0.010;
-            var mode = (Math.abs(endSec - lengthSec) < EPS) ? "rotate" : "trim";
-
-            result[letter].push({
-                slot: sj,
-                file: posix,
-                start_offset_sec: startSec,
-                end_offset_sec: endSec,
-                clip_length_sec: lengthSec,
-                mode: mode,
-            });
+            var entry = _sessionTrackEntryFromClip(clipApi, sj, beatToSec);
+            if (!entry) continue;
+            if (seenPaths.hasOwnProperty(entry.file)) continue;
+            entries.push(entry);
+            seenPaths[entry.file] = entry.slot;
+            usedSlots[entry.slot] = true;
         }
+
+        // 2. Arrangement view — register any file not already seen. Slot
+        //    assignment finds the next free index in 0..SLOTS_PER_GROUP-1,
+        //    matching EP-133's per-group cap. This closes the gap caught
+        //    2026-05-08 where arrangement-only flows had empty session_tracks.
+        var trackApi = new LiveAPI("live_set tracks " + trackIdx);
+        var arrCount = 0;
+        try { arrCount = trackApi.getcount("arrangement_clips") | 0; }
+        catch (_) { arrCount = 0; }
+        for (var ai = 0; ai < arrCount; ai++) {
+            var aClipApi;
+            try { aClipApi = new LiveAPI("live_set tracks " + trackIdx + " arrangement_clips " + ai); }
+            catch (_) { continue; }
+            if (!aClipApi || aClipApi.id === "0") continue;
+
+            var afp = _getLomString(aClipApi, "file_path");
+            if (!afp) continue;
+            var aposix = _stripHfsPrefix(afp);
+            if (seenPaths.hasOwnProperty(aposix)) continue;
+
+            var nextSlot = -1;
+            for (var s = 0; s < SLOTS_PER_GROUP; s++) {
+                if (!usedSlots[s]) { nextSlot = s; break; }
+            }
+            if (nextSlot === -1) {
+                status(letter + ": skipping " + aposix + " (group full at " + SLOTS_PER_GROUP + " slots)");
+                continue;
+            }
+
+            var aEntry = _sessionTrackEntryFromClip(aClipApi, nextSlot, beatToSec);
+            if (!aEntry) continue;
+            entries.push(aEntry);
+            seenPaths[aEntry.file] = aEntry.slot;
+            usedSlots[aEntry.slot] = true;
+        }
+
+        result[letter] = entries;
     }
     mf.session_tracks = result;
     var summary = letters.map(function (l) {
