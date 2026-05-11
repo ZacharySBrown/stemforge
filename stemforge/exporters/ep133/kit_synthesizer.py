@@ -99,12 +99,12 @@ def _read_source_duration_sec(path: Path) -> float | None:
         # AIFF/AIFC: walk chunks for COMM (filed in big-endian).
         pos = 12
         while pos + 8 <= len(data):
-            cid = data[pos:pos+4]
-            csize = struct.unpack(">I", data[pos+4:pos+8])[0]
+            cid = data[pos : pos + 4]
+            csize = struct.unpack(">I", data[pos + 4 : pos + 8])[0]
             if cid == b"COMM":
                 # COMM: channels(2) + nframes(4) + bw(2) + sample_rate(10 IEEE-80)
-                nframes = struct.unpack(">I", data[pos+8+2 : pos+8+6])[0]
-                sr_bytes = data[pos+8+8 : pos+8+18]
+                nframes = struct.unpack(">I", data[pos + 8 + 2 : pos + 8 + 6])[0]
+                sr_bytes = data[pos + 8 + 8 : pos + 8 + 18]
                 # Decode 80-bit IEEE extended float (sample rate is always positive int)
                 exp = ((sr_bytes[0] & 0x7F) << 8) | sr_bytes[1]
                 mantissa = int.from_bytes(sr_bytes[2:10], "big")
@@ -129,12 +129,12 @@ def _read_source_duration_sec(path: Path) -> float | None:
             if fmt_pos < 0:
                 return None
             _, channels, sr, _, block_align, _ = struct.unpack(
-                "<HHIIHH", data[fmt_pos+8 : fmt_pos+24]
+                "<HHIIHH", data[fmt_pos + 8 : fmt_pos + 24]
             )
             data_pos = data.find(b"data")
             if data_pos < 0:
                 return None
-            data_size = struct.unpack("<I", data[data_pos+4 : data_pos+8])[0]
+            data_size = struct.unpack("<I", data[data_pos + 4 : data_pos + 8])[0]
             if not block_align:
                 return None
             return (data_size // block_align) / sr
@@ -269,6 +269,7 @@ def synthesize_kit(
             dur_sec = _read_source_duration_sec(Path(resolved.path))
             if dur_sec is not None and dur_sec > _MAX_SAMPLE_SEC:
                 import warnings
+
                 warnings.warn(
                     f"pad {group_letter}/p{pad_num:02d}: source "
                     f"{Path(resolved.path).name!r} is {dur_sec:.2f}s, "

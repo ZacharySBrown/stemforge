@@ -249,6 +249,7 @@ def test_export_song_help_advertises_write_spec_flag():
     assert "--no-write-spec" in result.output
 
 
+@pytest.mark.skipif(not REFERENCE_PPAK.exists(), reason="reference.ppak fixture missing")
 def test_export_song_writes_projectspec_json_when_flag_set(tmp_path: Path):
     """Round-trip check: when --write-spec is on, a sibling .projectspec.json
     is dumped and deserializes back into a valid Project. Default-off path is

@@ -72,9 +72,7 @@ def _read_via_soundfile(audio_bytes: bytes) -> tuple[int, int, int, bytes]:
     import soundfile as sf  # noqa: PLC0415
 
     try:
-        audio_f, rate = sf.read(
-            _io.BytesIO(audio_bytes), dtype="float32", always_2d=True
-        )
+        audio_f, rate = sf.read(_io.BytesIO(audio_bytes), dtype="float32", always_2d=True)
     except (sf.LibsndfileError, RuntimeError) as e:
         raise wave.Error(f"soundfile decode failed: {e}") from e
     channels = audio_f.shape[1]
@@ -119,6 +117,8 @@ def _build_default_metadata_json(play_mode: str) -> bytes:
         f'"sound.pan":0,"sound.amplitude":100,"envelope.attack":0,'
         f'"envelope.release":{release},"time.mode":"off"}}'
     ).encode("utf-8")
+
+
 # Factory's per-sample TNGE chunk size. Used as the floor when sizing
 # BPM-mode chunks so the WAV layout stays close to factory.
 TNGE_PAYLOAD_SIZE = 164

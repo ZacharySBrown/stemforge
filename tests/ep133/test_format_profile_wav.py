@@ -231,9 +231,7 @@ def _read_tnge_json(wav_bytes: bytes) -> dict:
             payload = wav_bytes[pos + 8 : pos + 8 + size]
             tnge_pos = payload.find(b"TNGE")
             if tnge_pos >= 0:
-                tnge_size = struct.unpack(
-                    "<I", payload[tnge_pos + 4 : tnge_pos + 8]
-                )[0]
+                tnge_size = struct.unpack("<I", payload[tnge_pos + 4 : tnge_pos + 8])[0]
                 blob = payload[tnge_pos + 8 : tnge_pos + 8 + tnge_size]
                 return json.loads(blob.split(b"\x00")[0].decode())
             break

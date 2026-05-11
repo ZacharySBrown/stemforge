@@ -174,9 +174,7 @@ def _pad_spec_from_row(
         #   3. None → kit_synthesizer infers from source duration
         # Don't fall back to resolved.bpm — that's the manifest's session
         # tempo, which is wrong per-clip.
-        chosen_bpm = (
-            _coerce_float(row.get("source_bpm")) or resolved.source_bpm
-        )
+        chosen_bpm = _coerce_float(row.get("source_bpm")) or resolved.source_bpm
         clip_ref = ClipRef(
             audio_hash=resolved.audio_hash,
             path=str(wav),
@@ -214,9 +212,7 @@ def _pad_spec_from_row(
         # 2026-05-11: BPM precedence same as path-mode branch above —
         # explicit row value beats per-clip from manifest entry, never
         # fall back to manifest-global bpm (which is the session tempo).
-        chosen_bpm = (
-            _coerce_float(row.get("source_bpm")) or resolved.source_bpm
-        )
+        chosen_bpm = _coerce_float(row.get("source_bpm")) or resolved.source_bpm
         if chosen_bpm is not None:
             clip_kwargs["source_bpm"] = chosen_bpm
         clip_ref = ClipRef(**clip_kwargs)

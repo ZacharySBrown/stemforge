@@ -62,14 +62,14 @@ META_DEFAULTS: dict = {
     "info": "teenage engineering - pak file",
     "pak_version": 1,
     "pak_type": "project",  # 2026-05-11: was "user" — Sample Tool refuses to load
-                             # a "user" pak via the project-import path. Reference
-                             # templates from real device backups carry "project"
-                             # which masked this; synthesizing without a template
-                             # (build-deck without --reference-template) left the
-                             # wrong default in place. "user" is for full-device
-                             # backup paks (settings + all 9 project tarballs +
-                             # factory samples); we always emit single-project
-                             # paks, so "project" is the right default.
+    # a "user" pak via the project-import path. Reference
+    # templates from real device backups carry "project"
+    # which masked this; synthesizing without a template
+    # (build-deck without --reference-template) left the
+    # wrong default in place. "user" is for full-device
+    # backup paks (settings + all 9 project tarballs +
+    # factory samples); we always emit single-project
+    # paks, so "project" is the right default.
     "pak_release": "1.2.0",
     "device_name": "EP-133",
     "device_sku": "TE032AS001",
@@ -484,9 +484,7 @@ def _build_inner_tar(
         # taken, the marker isn't necessary — the real pattern at d05
         # satisfies whatever side-table the device validates.
         if spec.song_positions:
-            d05_already_populated = any(
-                p.group == "d" and p.index == 5 for p in spec.patterns
-            )
+            d05_already_populated = any(p.group == "d" and p.index == 5 for p in spec.patterns)
             if not d05_already_populated:
                 _add_tar_bytes(tf, "patterns/d05", b"\x00\x02\x00\x00")
 

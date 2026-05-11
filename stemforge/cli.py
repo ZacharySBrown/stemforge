@@ -2103,6 +2103,7 @@ def build_deck(deck_plan, out_path, reference_template, project_slot_override, w
     # stderr but Click captures stderr; without this wrap, the user has
     # no visible signal that pads were dropped during the build.
     import warnings as _warnings
+
     with _warnings.catch_warnings(record=True) as build_warnings:
         _warnings.simplefilter("always")
         payload = projector.project_kit(

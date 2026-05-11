@@ -156,10 +156,7 @@ class ClipIndex:
         # source_bpm: prefer the new explicit field, fall back to legacy `bpm`
         # on the entry. Either represents a per-clip BPM (e.g. clip's warp_bpm
         # captured by M4L pre-crop).
-        source_bpm = (
-            _coerce_float(entry.get("source_bpm"))
-            or _coerce_float(entry.get("bpm"))
-        )
+        source_bpm = _coerce_float(entry.get("source_bpm")) or _coerce_float(entry.get("bpm"))
         # bpm: manifest-global fallback. Useful as a "what tempo was the
         # session?" hint but NOT meaningful per-clip.
         bpm = _coerce_float(manifest.get("bpm"))
