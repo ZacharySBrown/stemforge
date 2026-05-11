@@ -61,7 +61,15 @@ GROUPS = ("a", "b", "c", "d")
 META_DEFAULTS: dict = {
     "info": "teenage engineering - pak file",
     "pak_version": 1,
-    "pak_type": "user",
+    "pak_type": "project",  # 2026-05-11: was "user" — Sample Tool refuses to load
+                             # a "user" pak via the project-import path. Reference
+                             # templates from real device backups carry "project"
+                             # which masked this; synthesizing without a template
+                             # (build-deck without --reference-template) left the
+                             # wrong default in place. "user" is for full-device
+                             # backup paks (settings + all 9 project tarballs +
+                             # factory samples); we always emit single-project
+                             # paks, so "project" is the right default.
     "pak_release": "1.2.0",
     "device_name": "EP-133",
     "device_sku": "TE032AS001",
@@ -299,6 +307,8 @@ def build_ppak(
                 sound_bpm=sound_bpm_by_slot.get(slot),
                 start_sec=slice_range[0] if slice_range else 0.0,
                 end_sec=slice_range[1] if slice_range else None,
+                target_sample_rate=spec.slot_sample_rate.get(slot),
+                play_mode=spec.slot_play_mode.get(slot, "oneshot"),
             )
             converted_wavs[slot] = new_bytes
             converted_frames[slot] = frames
@@ -465,8 +475,20 @@ def _build_inner_tar(
         # configured. Not referenced by any scene chunk — but the
         # `settings` file teaches us the device validates side-tables
         # whether or not scene chunks reference them.
+        #
+        # 2026-05-11: only emit if patterns/d05 isn't already a real
+        # populated pattern from the deck. Kit decks with 5+ D pads
+        # produce a real patterns/d05, and a duplicate tar entry breaks
+        # Sample Tool's import (it bails partway, leaving the device
+        # with only the first batch of pads loaded). When d05 is already
+        # taken, the marker isn't necessary — the real pattern at d05
+        # satisfies whatever side-table the device validates.
         if spec.song_positions:
-            _add_tar_bytes(tf, "patterns/d05", b"\x00\x02\x00\x00")
+            d05_already_populated = any(
+                p.group == "d" and p.index == 5 for p in spec.patterns
+            )
+            if not d05_already_populated:
+                _add_tar_bytes(tf, "patterns/d05", b"\x00\x02\x00\x00")
 
         # Scenes
         scenes_blob = build_scenes(spec.scenes, spec.time_sig, spec.song_positions)

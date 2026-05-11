@@ -31,6 +31,8 @@ format for the configurator's abstract scene model:
 """
 
 from .builders import GROUPS_DEFAULT, empty_project_from_manifest
+from .format_profiles import RESOLUTIONS, AudioFormat
+from .format_profiles import resolve as resolve_format_profile
 from .helpers import (
     BARS_CANDIDATES_FALLBACK,
     BARS_CANDIDATES_SNAP,
@@ -44,6 +46,7 @@ from .helpers import (
 from .schema import (
     MAX_SONGS_V1,
     ClipRef,
+    FormatProfile,
     GroupSpec,
     PadSpec,
     PlayMode,
@@ -69,7 +72,10 @@ __all__ = [
     "MAX_EVENTS_PER_PATTERN",
     "MAX_SONGS_V1",
     "MUSICAL_TRIGGER_COUNTS",
+    "RESOLUTIONS",
+    "AudioFormat",
     "ClipRef",
+    "FormatProfile",
     "GroupSpec",
     "PadSpec",
     "PlayMode",
@@ -85,6 +91,7 @@ __all__ = [
     "project_from_path",
     "project_to_json",
     "project_to_path",
+    "resolve_format_profile",
     "scene_lengths_in_bars",
     "tile_event_positions",
 ]

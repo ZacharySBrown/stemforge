@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 PlayMode = Literal["oneshot", "key", "legato"]
 StretchMode = Literal["none", "bar", "bpm"]
 Provenance = Literal["auto", "manual", "splice", "imported"]
+FormatProfile = Literal["vocal", "drum", "texture", "preserve_source"]
 
 MAX_SONGS_V1 = 1
 
@@ -57,6 +58,7 @@ class PadSpec(BaseModel):
 class GroupSpec(BaseModel):
     group_id: str
     pads: list[PadSpec] = Field(default_factory=list)
+    format_profile: FormatProfile = "preserve_source"
 
     model_config = {"extra": "ignore"}
 
@@ -106,6 +108,7 @@ ProjectSpec = Project
 __all__ = [
     "MAX_SONGS_V1",
     "ClipRef",
+    "FormatProfile",
     "GroupSpec",
     "PadSpec",
     "PlayMode",

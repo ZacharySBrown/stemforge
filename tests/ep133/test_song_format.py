@@ -348,6 +348,17 @@ def test_build_pad_play_mode_encoding():
         assert blob[23] == code
 
 
+def test_build_pad_envelope_release_pairs_with_play_mode():
+    """Byte 20 (envelope.release) must stay paired with byte 23 (play_mode)
+    or the device silently keeps oneshot behavior. See coupled-fields memory."""
+    for mode, expected_release in (("oneshot", 0xFF), ("key", 0x0F), ("legato", 0x0F)):
+        blob = build_pad(sample_slot=1, play_mode=mode, time_stretch_bars=1, project_bpm=120.0)
+        assert blob[20] == expected_release, (
+            f"play_mode={mode!r} should produce envelope.release={expected_release:#04x}, "
+            f"got {blob[20]:#04x}"
+        )
+
+
 def test_build_pad_time_stretch_bars_encoding():
     encoding = {1: 0, 2: 1, 4: 2}
     for bars, raw in encoding.items():
@@ -371,8 +382,9 @@ def test_build_pad_preserves_template_bytes_outside_patches():
         template=template,
         project_bpm=140.0,
     )
-    # Bytes we patch: 1, 2 (sample_slot), 12..15 (bpm), 21 (mode), 23 (play_mode), 25 (bars).
-    patched = {1, 2, 12, 13, 14, 15, 21, 23, 25}
+    # Bytes we patch: 1, 2 (sample_slot), 12..15 (bpm), 20 (envelope.release —
+    # paired with play_mode), 21 (mode), 23 (play_mode), 25 (bars).
+    patched = {1, 2, 12, 13, 14, 15, 20, 21, 23, 25}
     for i in range(PAD_RECORD_SIZE):
         if i in patched:
             continue

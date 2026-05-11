@@ -519,6 +519,64 @@ test('_commitSessionTracks: session clip with no file_path is skipped', () => {
     assert.deepEqual(normalize(mf.session_tracks.A), []);
 });
 
+// ── 13.5 Per-clip BPM (deliberately NOT captured, 2026-05-10) ───────────────
+//
+// `_sessionTrackEntryFromClip` no longer reads `warp_bpm`. Rationale lives
+// in the function's docstring; the short version is that the bounce-first
+// workflow makes per-clip BPM redundant (post-crop clips are at project
+// tempo) and reading the property surfaces `'Clip' object has no attribute
+// 'warp_bpm'` errors on Live 12 Beta for cropped clips even with
+// warping=1. These tests pin the current "no per-clip bpm" behavior so
+// the noise stays away — if we ever add it back, update both code and
+// these tests.
+//
+// Add-back trigger: a workflow where the user commits clips that
+// WEREN'T cropped first (drag in from a different-tempo source, commit
+// raw). At that point EP-133 needs per-clip source tempo to stretch.
+
+test('_commitSessionTracks: no per-clip bpm captured for warped clips', () => {
+    const { commit } = loadCommit();
+    maxApi.seedLiveTree({
+        tracks: [
+            makeTrack('A', [
+                makeClipSlot({
+                    file_path: '/abs/clip.wav',
+                    start_marker: 0, end_marker: 4, length: 4, warping: 1,
+                    warp_bpm: 100,  // would be captured if we still read it
+                }),
+            ]),
+        ],
+    });
+    const mf = { bpm: 92 };
+    commit(mf);
+    const entry = mf.session_tracks.A[0];
+    assert.equal(entry.bpm, undefined,
+        "warp_bpm read removed; entry shouldn't carry a per-clip bpm field");
+});
+
+test('_commitSessionTracks: marker conversion uses project tempo (warp_bpm not consulted)', () => {
+    const { commit } = loadCommit();
+    // 4 beats at project tempo 120 BPM = 4 * 60/120 = 2.0 seconds.
+    // Regardless of what warp_bpm says — we no longer consult it.
+    maxApi.seedLiveTree({
+        tracks: [
+            makeTrack('A', [
+                makeClipSlot({
+                    file_path: '/abs/clip.wav',
+                    start_marker: 0, end_marker: 4, length: 4, warping: 1,
+                    warp_bpm: 60,  // deliberately wrong to prove we ignore it
+                }),
+            ]),
+        ],
+    });
+    const mf = { bpm: 120 };
+    commit(mf);
+    const entry = mf.session_tracks.A[0];
+    // 4 beats × 60/120 = 2.0s — uses project tempo, NOT warp_bpm=60
+    assert.ok(Math.abs(entry.end_offset_sec - 2.0) < 0.001,
+        `expected end_offset_sec ≈ 2.0 (project tempo), got ${entry.end_offset_sec}`);
+});
+
 // ── 14. Acceptance gate sentinel ───────────────────────────────────────────
 
 test('acceptance gate HIP-1: m4l.button.commit has ≥10 Tier-3 cases passing', () => {

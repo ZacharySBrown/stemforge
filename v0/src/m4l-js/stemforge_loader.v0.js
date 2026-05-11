@@ -28,7 +28,7 @@
 
 autowatch = 1;
 inlets = 1;
-outlets = 3;   // 0: status text, 1: bang on completion, 2: preset umenu control
+outlets = 4;   // 0: status text  1: bang  2: preset umenu  3: [shell] (mkdir-p)
 
 var STEM_TARGETS = {
     // From v0/interfaces/tracks.yaml — mirrored in JS because the template
@@ -1452,7 +1452,32 @@ function _commitEntryOffsets(entry, clipIndex) {
 // Build one session_tracks entry from a Clip-shaped LOM object. Pulls
 // start/end/length markers + warping; converts beats→sec when warped.
 // Returns null when the clip lacks a usable file_path.
-function _sessionTrackEntryFromClip(clipApi, slot, beatToSec) {
+//
+// `projectBeatToSec` is 60/project_bpm. Used for beats↔seconds conversion
+// in this function.
+//
+// Per-clip BPM via `warp_bpm` is deliberately NOT read here. Two reasons:
+//
+// 1. The dominant workflow is bounceTracks → COMMIT, which crops every
+//    clip first. Post-crop, clips either go warping=0 (rendered at
+//    project tempo, markers in seconds) or warping=1 with warp_bpm ==
+//    project tempo. Either way the per-clip BPM == project BPM, so
+//    reading it adds nothing.
+//
+// 2. Reading `warp_bpm` on clips where it's unavailable (Live 12 Beta
+//    raises `'Clip' object has no attribute 'warp_bpm'` on cropped
+//    clips even when warping=1) generates one error line per clip in
+//    the Max console. _getLomNumber's try/catch handles the throw
+//    functionally but doesn't suppress Max's underlying logging.
+//
+// **When to add this back:** if a workflow shows up where the user
+// commits CLIPS THAT WEREN'T BOUNCED (e.g. drags a clip in from a 100
+// BPM source song into a 90 BPM project and commits before cropping).
+// In that case the manifest needs per-clip bpm so EP-133's stretch
+// math is right (sound_bpm = source's actual tempo). Probe with
+// getinfo() first to avoid the AttributeError noise on clips where
+// the property is unexposed.
+function _sessionTrackEntryFromClip(clipApi, slot, projectBeatToSec, preCropKey) {
     var fp = _getLomString(clipApi, "file_path");
     if (!fp) return null;
     var posix = _stripHfsPrefix(fp);
@@ -1461,6 +1486,7 @@ function _sessionTrackEntryFromClip(clipApi, slot, beatToSec) {
     var startMarker = _getLomNumber(clipApi, "start_marker");
     var endMarker = _getLomNumber(clipApi, "end_marker");
     var clipLength = _getLomNumber(clipApi, "length");
+    var beatToSec = projectBeatToSec;
 
     var startSec = warping ? startMarker * beatToSec : startMarker;
     var endSec = warping ? endMarker * beatToSec : endMarker;
@@ -1471,7 +1497,7 @@ function _sessionTrackEntryFromClip(clipApi, slot, beatToSec) {
     var EPS = 0.010;
     var mode = (Math.abs(endSec - lengthSec) < EPS) ? "rotate" : "trim";
 
-    return {
+    var entry = {
         slot: slot,
         file: posix,
         start_offset_sec: startSec,
@@ -1479,6 +1505,22 @@ function _sessionTrackEntryFromClip(clipApi, slot, beatToSec) {
         clip_length_sec: lengthSec,
         mode: mode,
     };
+
+    // Per-clip source_bpm: computed pre-crop in _capturePreCropMeta from
+    // the slope between two adjacent warp_markers (Live's LOM does NOT
+    // expose `warp_bpm` directly, but `warp_markers` is exposed as a dict
+    // of beat_time/sample_time pairs; the slope IS warp_bpm). Downstream
+    // (clip_index → deck_plan → kit_synthesizer) consumes this as
+    // sound.bpm and skips duration-based inference when present.
+    var hit = preCropKey && _preCropMeta && _preCropMeta[preCropKey];
+    if (hit) {
+        var meta = _preCropMeta[preCropKey];
+        if (typeof meta.warp_bpm === "number" && meta.warp_bpm > 0) {
+            entry.source_bpm = meta.warp_bpm;
+        }
+    }
+
+    return entry;
 }
 
 function _commitSessionTracks(mf) {
@@ -1538,7 +1580,9 @@ function _commitSessionTracks(mf) {
             catch (_) { continue; }
             if (!clipApi || clipApi.id === "0") continue;
 
-            var entry = _sessionTrackEntryFromClip(clipApi, sj, beatToSec);
+            var entry = _sessionTrackEntryFromClip(
+                clipApi, sj, beatToSec, _preCropKey(letter, "session", sj)
+            );
             if (!entry) continue;
             if (seenPaths.hasOwnProperty(entry.file)) continue;
             entries.push(entry);
@@ -1574,7 +1618,9 @@ function _commitSessionTracks(mf) {
                 continue;
             }
 
-            var aEntry = _sessionTrackEntryFromClip(aClipApi, nextSlot, beatToSec);
+            var aEntry = _sessionTrackEntryFromClip(
+                aClipApi, nextSlot, beatToSec, _preCropKey(letter, "arrangement", ai)
+            );
             if (!aEntry) continue;
             entries.push(aEntry);
             seenPaths[aEntry.file] = aEntry.slot;
@@ -1615,6 +1661,397 @@ function _commitAllOffsets(mf, clipIndex) {
     }
     return committed;
 }
+
+// ── Track bounce (per-clip crop) ─────────────────────────────────────────────
+//
+// Driver for "materialize every clip on the deck tracks at project tempo,
+// then commit." Verified empirically 2026-05-10 that Live's LOM does NOT
+// expose track.freeze in this Live version — calling it surfaces
+// `'Track' object has no attribute 'freeze'`. The idm-course
+// audio_fx_render.js pattern using track.call("freeze") was apparently
+// broken in production; midi_instrument_render.js's comment "Live's LOM
+// does not expose freeze/unfreeze" is the correct read.
+//
+// What works: clip.call("crop"), exposed via LOM. For each audio clip on
+// tracks A/B/C/D, crop:
+//   - Trims the clip to its current loop region.
+//   - For warped clips, renders a new audio file at PROJECT tempo
+//     (eliminating warp-algorithm differences from EP-133's stretch).
+//   - Updates the clip's file_path to point at the freshly-rendered WAV.
+//
+// Synchronous (no async polling), per-clip (each becomes its own
+// project-tempo WAV), and matches the user's mental model: "lock these
+// in at project tempo so they line up across multi-song decks."
+//
+// Per [feedback_loop_region_canonical_for_materialize.md]: cropping
+// materializes the loop region as a real file, eliminating the
+// "which trim field is authoritative" ambiguity entirely.
+
+var _bounceState = null; // { letters: [...], idx: 0, callback: fn }
+
+// Cache of pre-crop clip metadata, keyed by "<letter>:<view>:<slot>".
+// Populated by _bounceCropTrack BEFORE calling clip.call("crop"). Currently
+// only stores the `warping` flag — see _capturePreCropMeta for why
+// warp_bpm isn't read. Reset at the start of every bounceTracks run.
+var _preCropMeta = {};
+
+function _preCropKey(letter, view, slotOrIdx) {
+    return letter + ":" + view + ":" + slotOrIdx;
+}
+
+function _capturePreCropMeta(clipApi, key) {
+    // Captures everything we need to know about a clip BEFORE clip.call("crop")
+    // mutates it. Currently:
+    //   - warping flag (1 = clip is warped, 0 = clip plays at file tempo)
+    //   - warp_bpm (computed from warp_markers slope — see _warpBpmFromMarkers)
+    //
+    // Why pre-crop: `clip.call("crop")` re-anchors warp markers to the new
+    // start/end region. The slope is preserved for autowarped clips with
+    // constant tempo, but capturing before is the safe choice.
+    //
+    // LOM context (Cycling '74 reference, verified 2026-05-11): the Clip
+    // class has NO `warp_bpm` property — but it DOES expose `warp_markers`
+    // as a dict of (sample_time, beat_time) pairs. The slope between any
+    // two adjacent markers IS the warp BPM Live shows in the UI. For
+    // autowarped clips with one detected tempo, every segment shares one
+    // slope. _warpBpmFromMarkers computes that slope.
+    var meta = { captured: true };
+    try { meta.warping = _getLomNumber(clipApi, "warping") | 0; } catch (_) {}
+    try {
+        var bpm = _warpBpmFromMarkers(clipApi);
+        if (bpm > 0) meta.warp_bpm = bpm;
+    } catch (e) {
+        status("[capture " + key + "] warp_bpm read failed: " + e);
+    }
+    _preCropMeta[key] = meta;
+}
+
+// Compute warp BPM from the slope between the first two warp_markers.
+// Returns 0 on any failure (missing markers, parse error, implausible BPM).
+//
+// LiveAPI return format (verified by existing setWarpMarkers code path
+// above): clipApi.get("warp_markers") → one-element array whose element
+// is a JSON string: ["{\"warp_markers\":[{beat_time, sample_time}, ...]}"].
+//
+// Unit ambiguity for sample_time: the LOM docs don't pin down whether
+// sample_time is in samples or seconds (the name suggests samples, but
+// existing code interchanges it with seconds). We try seconds first
+// (bpm = Δbeats / Δtime * 60); if that lands outside 30..400, retry as
+// samples (multiply by sample_rate). Pick whichever lands in 30..400.
+function _warpBpmFromMarkers(clipApi) {
+    var rawVal;
+    try { rawVal = clipApi.get("warp_markers"); } catch (e) { return 0; }
+    if (!rawVal || !rawVal.length) return 0;
+    var rawStr = (typeof rawVal[0] === "string") ? rawVal[0] : String(rawVal[0]);
+    var parsed;
+    try { parsed = JSON.parse(rawStr); } catch (e) { return 0; }
+    var markers = parsed && parsed.warp_markers;
+    if (!markers || markers.length < 2) return 0;
+
+    var m0 = markers[0], m1 = markers[1];
+    var dBeat = Number(m1.beat_time) - Number(m0.beat_time);
+    var dTime = Number(m1.sample_time) - Number(m0.sample_time);
+    if (!isFinite(dBeat) || !isFinite(dTime) || dBeat <= 0 || dTime <= 0) return 0;
+
+    // Try seconds interpretation first.
+    var bpmSec = (dBeat / dTime) * 60.0;
+    if (bpmSec >= 30 && bpmSec <= 400) return Math.round(bpmSec * 100) / 100;
+
+    // Fall back to samples interpretation (needs sample_rate).
+    var sr = 0;
+    try { sr = _getLomNumber(clipApi, "sample_rate") || 0; } catch (_) {}
+    if (sr > 0) {
+        var bpmSamp = (dBeat / dTime) * sr * 60.0;
+        if (bpmSamp >= 30 && bpmSamp <= 400) return Math.round(bpmSamp * 100) / 100;
+    }
+    return 0;
+}
+
+function _bounceCropTrack(letter, onDone) {
+    var trackIdx = findTrackByName(letter);
+    if (trackIdx < 0) { onDone(false, "no track named " + letter); return; }
+    var cropped = 0;
+    var failed = 0;
+
+    // 1. Session view — crop every populated clip slot.
+    for (var sj = 0; sj < 31; sj++) {
+        var clipApi;
+        try {
+            clipApi = new LiveAPI(
+                "live_set tracks " + trackIdx + " clip_slots " + sj + " clip"
+            );
+        } catch (_) { continue; }
+        if (!clipApi || clipApi.id === "0") continue;
+        try {
+            // CAPTURE BEFORE CROP. warp_bpm becomes unreadable post-crop.
+            _capturePreCropMeta(clipApi, _preCropKey(letter, "session", sj));
+            clipApi.call("crop");
+            cropped += 1;
+        } catch (e) {
+            failed += 1;
+            status("crop " + letter + "[session " + sj + "]: " + e);
+        }
+    }
+
+    // 2. Arrangement view — crop every arrangement clip.
+    var trackApi = new LiveAPI("live_set tracks " + trackIdx);
+    var arrCount = 0;
+    try { arrCount = trackApi.getcount("arrangement_clips") | 0; } catch (_) {}
+    for (var ai = 0; ai < arrCount; ai++) {
+        var aClipApi;
+        try {
+            aClipApi = new LiveAPI(
+                "live_set tracks " + trackIdx + " arrangement_clips " + ai
+            );
+        } catch (_) { continue; }
+        if (!aClipApi || aClipApi.id === "0") continue;
+        try {
+            _capturePreCropMeta(aClipApi, _preCropKey(letter, "arrangement", ai));
+            aClipApi.call("crop");
+            cropped += 1;
+        } catch (e) {
+            failed += 1;
+            status("crop " + letter + "[arr " + ai + "]: " + e);
+        }
+    }
+
+    onDone(true, "Bounced " + letter + ": " + cropped + " cropped, " + failed + " failed");
+}
+
+function _bounceNext() {
+    var s = _bounceState;
+    if (!s) return;
+    if (s.idx >= s.letters.length) {
+        var done = s.callback;
+        _bounceState = null;
+        status("Bounce complete (" + s.letters.length + " tracks)");
+        if (typeof done === "function") done();
+        return;
+    }
+    var letter = s.letters[s.idx];
+    s.idx += 1;
+    status("Bouncing " + letter + " ...");
+    _bounceCropTrack(letter, function (_ok, msg) {
+        if (msg) status(msg);
+        // Yield to the next event loop turn so Live's LOM mutations
+        // settle before we touch the next track.
+        var t = new Task(_bounceNext);
+        t.schedule(50);
+    });
+}
+
+// Helper: derive a per-Ableton-session deck manifest path. The bounced
+// audio has nothing to do with the originally-loaded song's stems — it's
+// fresh project-tempo renders unique to this Live session — so we write
+// to a session-named deck dir under ~/stemforge/decks/, not the source
+// song's curated dir.
+//
+// Returns "" if the .als is unsaved (no file_path on live_set) — caller
+// should surface an error and ask the user to save first.
+function _deriveDeckManifestPath() {
+    var ls = new LiveAPI("live_set");
+    var alsPath = "";
+    try { alsPath = String(_getLomString(ls, "file_path") || ""); } catch (_) {}
+    if (!alsPath) return "";
+    // Strip "Macintosh HD:" HFS prefix (Live emits these) + .als extension.
+    alsPath = alsPath.replace(/^Macintosh HD:/, "");
+    var basename = alsPath.split("/").pop() || "";
+    var sessionName = basename.replace(/\.als$/i, "");
+    if (!sessionName) return "";
+    // Normalize: lowercase, replace non-alnum with underscore, collapse.
+    sessionName = sessionName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
+    if (!sessionName) sessionName = "untitled_session";
+    var home = String((typeof env !== "undefined" && env && env.HOME) || "");
+    if (!home) {
+        // Fall back via Max's File object — its path resolution picks up
+        // ~/ via Max's path system. Use absolute-only here as a last resort.
+        // posix abs path from Live is enough; we only need home for the
+        // deck root. Hardcode the Mac convention; CI / non-Mac don't run
+        // this path.
+        home = "/Users/" + (alsPath.match(/^\/Users\/([^/]+)/) || ["", ""])[1];
+    }
+    return home + "/stemforge/decks/" + sessionName + "/curated/manifest.json";
+}
+
+// Helper: bootstrap a minimal manifest stub if the deck file doesn't
+// exist. Sets bpm (project tempo) + source_dir (so future commits
+// target the same deck dir) + an empty session_tracks block that COMMIT
+// fills in.
+//
+// Implementation: shells out to Python via outlet 3 → [shell]. Python
+// does mkdir + write atomically in one process — avoids the race
+// between Max's async [shell] and Max's [js] File API. Caught
+// 2026-05-10 when the JS-side writeFileContents was firing before the
+// mkdir-via-shell completed.
+//
+// The shell call is fire-and-forget; we add a Task-based delay before
+// the chained commitOffsets reads the file (see bounceTracks's
+// callback). 300ms is more than enough for `python3 -c 'os.makedirs;
+// open().write()'` on any modern Mac.
+function _ensureDeckManifestStub(path) {
+    // Always (re)write the stub. We don't gate on readFileContents for
+    // existence — Max's File API does fuzzy lookup via searchpath, so
+    // reading a nonexistent absolute path can return content from an
+    // unrelated manifest.json elsewhere on disk. Caught 2026-05-10 when
+    // Max returned 268 bytes of foreign JSON for a path that didn't
+    // exist on the filesystem. Cheaper than implementing an existence
+    // check: re-write each bounce — content is deterministic from
+    // (project tempo, source_dir).
+    var ls;
+    var bpm = 120.0;
+    try {
+        ls = new LiveAPI("live_set");
+        bpm = Number(_getLomNumber(ls, "tempo")) || 120.0;
+    } catch (_) { /* standalone Max test path — fall back to default */ }
+    var srcDir = path.replace(/\/curated\/manifest\.json$/, "");
+    var stub = {
+        bpm: bpm,
+        source_dir: srcDir,
+        session_tracks: { A: [], B: [], C: [], D: [] },
+        notes: "Auto-generated by bounceTracks.",
+    };
+    var stubText;
+    try { stubText = JSON.stringify(stub, null, 2); }
+    catch (e) { status("stub stringify error: " + e); return false; }
+
+    // Strategy A: shell out to Python via outlet 3 → [shell]. This
+    // does mkdir + write atomically. Requires the .amxd to have the
+    // outlet-3-to-shell wire (added 2026-05-10) — if that wire is
+    // missing (loaded device is from an older build), the outlet call
+    // goes to /dev/null silently. Strategy B below catches this.
+    var pyCode =
+        "import json, os, sys; " +
+        "path, bpm, src = sys.argv[1], float(sys.argv[2]), sys.argv[3]; " +
+        "os.makedirs(os.path.dirname(path), exist_ok=True); " +
+        "json.dump({" +
+            "'bpm': bpm, " +
+            "'source_dir': src, " +
+            "'session_tracks': {'A':[],'B':[],'C':[],'D':[]}, " +
+            "'notes': 'Auto-generated by bounceTracks.'" +
+        "}, open(path, 'w'), indent=2)";
+    try { outlet(3, "/usr/bin/env", "python3", "-c", pyCode, path, String(bpm), srcDir); }
+    catch (e) { status("shell outlet error (Strategy A): " + e); }
+
+    // Strategy B: direct File-API write as fallback. Works if the
+    // parent dir already exists (e.g. because the user pre-mkdir'd it
+    // or Strategy A's shell finished fast enough). If both A and B
+    // fail, downstream commitOffsets surfaces the real error.
+    try {
+        if (writeFileContents(path, stubText)) {
+            status("stub written via direct File API (Strategy B)");
+        }
+    } catch (e) { status("direct write error (Strategy B): " + e); }
+
+    return true;
+}
+
+// Public message: `bounceTracks` — crop every clip on the deck tracks
+// (materializes warped audio at project tempo), then commit.
+//
+// Args: any leading argument starting with `/` is treated as an absolute
+// manifest path that's forwarded to commitOffsets for the disk-backed
+// write — e.g. `bounceTracks /Users/zak/.../curated/manifest.json C D`.
+// Subsequent args (or all args if no path) are group letters.
+//
+// When no manifest path is given, derives one from the Ableton session
+// name: `~/stemforge/decks/<session>/curated/manifest.json`. Each .als
+// gets its own deck dir, untouched by the originally-loaded song.
+function bounceTracks() {
+    if (_bounceState) { status("bounceTracks: already running"); return; }
+    var args = arrayfromargs(messagename, arguments).slice(1);
+    var manifestPath = "";
+    var letterArgs = [];
+    for (var ai = 0; ai < args.length; ai++) {
+        var a = String(args[ai]);
+        if (!manifestPath && a.indexOf("/") === 0) {
+            manifestPath = a;
+        } else {
+            letterArgs.push(a);
+        }
+    }
+    var letters = letterArgs.length
+        ? letterArgs.map(function (s) { return String(s).toUpperCase(); })
+        : ["A", "B", "C", "D"];
+    // Filter to letters that actually have a track + at least one clip — no
+    // point freezing an empty track.
+    var nonEmpty = [];
+    for (var i = 0; i < letters.length; i++) {
+        var idx = findTrackByName(letters[i]);
+        if (idx < 0) continue;
+        var trk = new LiveAPI("live_set tracks " + idx);
+        var hasContent = false;
+        try {
+            // A track with any clip in session view OR arrangement view counts.
+            for (var sj = 0; sj < 31 && !hasContent; sj++) {
+                var c = new LiveAPI("live_set tracks " + idx + " clip_slots " + sj + " clip");
+                if (c && c.id !== "0") hasContent = true;
+            }
+            if (!hasContent) {
+                var arrCount = 0;
+                try { arrCount = trk.getcount("arrangement_clips") | 0; } catch (_) {}
+                if (arrCount > 0) hasContent = true;
+            }
+        } catch (_) {}
+        if (hasContent) nonEmpty.push(letters[i]);
+    }
+    if (!nonEmpty.length) { status("bounceTracks: no clips on " + letters.join("/")); return; }
+    // Derive the deck manifest path if the caller didn't supply one. This
+    // sends bounced audio to a per-Ableton-session deck dir instead of
+    // overwriting whatever song manifest happens to be loaded.
+    var pathForCommit = manifestPath;
+    if (!pathForCommit) {
+        pathForCommit = _deriveDeckManifestPath();
+        if (!pathForCommit) {
+            status(
+                "bounceTracks: cannot derive deck path — Ableton set is unsaved. " +
+                "Save the .als (Cmd+S) and re-run, or pass an explicit path."
+            );
+            return;
+        }
+    }
+    if (!_ensureDeckManifestStub(pathForCommit)) {
+        status("bounceTracks: failed to bootstrap deck manifest at " + pathForCommit);
+        return;
+    }
+    status("Bouncing tracks: " + nonEmpty.join(", ") + " → " + pathForCommit);
+    // Reset the pre-crop metadata cache so this run starts fresh. Each
+    // bounce captures warp_bpm per-clip BEFORE cropping (post-crop reads
+    // throw on Live 12 Beta), then commit looks up the cache by
+    // (letter, view, slot) when building manifest entries.
+    _preCropMeta = {};
+    _bounceState = {
+        letters: nonEmpty,
+        idx: 0,
+        callback: function () {
+            // Delay the commit briefly so the shell-spawned Python that
+            // wrote the stub manifest has time to finish (it's async).
+            // Cropping itself takes seconds, so 300ms here is just
+            // belt-and-suspenders for very small decks.
+            var t = new Task(function () { _commitOffsetsWithPath(pathForCommit); });
+            t.schedule(300);
+        },
+    };
+    _bounceNext();
+}
+
+// Helper that calls commitOffsets with a path arg by setting messagename
+// + arguments via Function.prototype.apply. Used by bounceTracks's
+// disk-backed commit chain — Max's [js] dispatch passes the path as
+// extra arguments which arrayfromargs(messagename, arguments) inside
+// commitOffsets reassembles.
+function _commitOffsetsWithPath(path) {
+    var savedName = messagename;
+    messagename = "commitOffsets";
+    try {
+        commitOffsets.apply(this, [path]);
+    } finally {
+        messagename = savedName;
+    }
+}
+
 
 function commitOffsets() {
     var args = arrayfromargs(messagename, arguments).slice(1);

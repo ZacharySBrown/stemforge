@@ -113,10 +113,18 @@ def read_project_file(
                     continue
                 if msg.type == "sysex":
                     raw = bytes([0xF0]) + bytes(msg.data) + bytes([0xF7])
+                    # 2026-05-11: was raw[9:-1] — included the status byte
+                    # at position 9 in the unpack stream, shifting the 7-bit
+                    # packing alignment by one byte. That made every ~8th
+                    # output byte wrong, which showed up as "pads/c/p01"
+                    # filenames coming back as "pa.s.c/..." in TAR parses
+                    # of the device's project file. Per parse_sysex (the
+                    # canonical reference) the status byte is consumed
+                    # separately and unpacking starts at frame[10:-1].
                     try:
-                        return unpack_in_place(raw[9:-1])
+                        return unpack_in_place(raw[10:-1])
                     except Exception:
-                        return raw[9:-1]
+                        return raw[10:-1]
             return None
 
         # FILE_INIT in read mode
@@ -133,14 +141,21 @@ def read_project_file(
                 f"device rejected open for project {project_num} (fileId {fid}): {hdr[:40]!r}"
             )
 
-        # Stream pages
+        # Stream pages. A full page unpacks to roughly PAGE_HEADER_BYTES +
+        # PAGE_DATA_BYTES bytes; the exact value depends on the 7-bit
+        # packing's group alignment. Use a generous EOF margin so a 1-2
+        # byte miss from the offset-10 unpack (vs the legacy offset-9
+        # math) doesn't false-trip on every full page. The tail page is
+        # almost always much smaller (the file size mod 324 bytes), so a
+        # threshold of "less than half a full page" reliably detects EOF.
+        EOF_THRESHOLD = (PAGE_HEADER_BYTES + PAGE_DATA_BYTES) // 2
         pages: list[bytes] = []
         for page in range(max_pages):
             p = _send(bytes([0x03, 0x01]) + struct.pack(">H", page))
             if p is None:
                 break  # timeout = treat as EOF
             pages.append(p)
-            if len(p) < PAGE_HEADER_BYTES + PAGE_DATA_BYTES:
+            if len(p) < EOF_THRESHOLD:
                 # short page = EOF
                 break
         else:

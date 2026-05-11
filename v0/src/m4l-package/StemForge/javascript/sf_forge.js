@@ -443,6 +443,33 @@ function commitOffsets() {
     }
 }
 
+// Forwarder for `reload` — sends `reload` to the loader, forcing Max [js]
+// to re-read stemforge_loader.v0.js from disk. Workaround for flaky
+// autowatch behavior in M4L. Fire via `sf-remote fire forge reload`.
+function reload() {
+    try {
+        outlet(2, "reload");
+        log("reload forwarded to loader");
+    } catch (e) {
+        log("reload outlet error: " + e);
+    }
+}
+
+// Forwarder for `bounceTracks` — drives Live's freeze+flatten on tracks
+// A/B/C/D (or a subset given as args), then chains into commitOffsets so the
+// post-bounce manifest reflects the freshly-rendered project-tempo audio.
+// Same outlet-2 channel as the other forwarders.
+function bounceTracks() {
+    var argv = arrayfromargs(arguments);
+    try {
+        if (argv.length > 0) outlet(2, "bounceTracks", argv);
+        else                 outlet(2, "bounceTracks");
+        log("bounceTracks forwarded to loader" + (argv.length ? " for " + argv.join(",") : ""));
+    } catch (e) {
+        log("bounceTracks outlet error: " + e);
+    }
+}
+
 // ── NDJSON event handlers (called from patcher [route] after parser) ─────────
 
 function onProgress() {
