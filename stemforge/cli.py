@@ -17,7 +17,6 @@ def to_snake_case(name: str) -> str:
 
 import shutil
 import subprocess
-import tempfile
 
 import click
 from rich.console import Console
@@ -563,6 +562,15 @@ def split(
     default=False,
     help="Keep the previous prechop output as `<stem>_prechop.bak/` instead of overwriting.",
 )
+@click.option(
+    "--then-curate/--no-then-curate",
+    default=False,
+    help="After re-anchoring, run a fresh curation pass at the new anchor — "
+    "picks new bars by diversity selection rather than just re-cutting the "
+    "existing picks. Replays strategy/n_bars from the existing curated/manifest.json. "
+    "Default (--no-then-curate) preserves the legacy behavior: reslice-only, "
+    "keeps user picks. Has no effect when curated/ is absent.",
+)
 @with_audit("re-anchor")
 def re_anchor(
     track_dir,
@@ -573,6 +581,7 @@ def re_anchor(
     pad_post_bars,
     emit_partial,
     keep_old,
+    then_curate,
 ):
     """
     Re-cut the prechop chunks of an already-forged track at user-supplied
@@ -780,12 +789,57 @@ def re_anchor(
     # Keep curated bars in sync with the new anchor (loops only — one-shots
     # are peak-anchored and grid-independent). Skip silently if no curated
     # output exists for this track.
+    #
+    # Two modes:
+    #   default (--no-then-curate): --reslice-only — preserves user picks,
+    #     re-cuts the existing curated/<stem>/bar_NNN.wav set at the new
+    #     grid. Cheap, fast, no LarsNet rerun.
+    #   --then-curate: full diversity-selection pass at the new anchor.
+    #     Discards existing picks and replays strategy/n_bars from the
+    #     curated manifest. Used when the user wants the configurator's
+    #     "re-anchoring auto-triggers curation re-run" workflow.
     curated_manifest_path = track_dir / "curated" / "manifest.json"
     if curated_manifest_path.exists():
         import subprocess as _sp
 
         script = Path(__file__).resolve().parents[1] / "v0/src/stemforge_curate_bars.py"
-        if script.exists():
+        if not script.exists():
+            console.print(
+                f"  [yellow]curate script not found at {script}; curated/ left untouched.[/yellow]"
+            )
+        elif then_curate:
+            existing = json.loads(curated_manifest_path.read_text())
+            replay_strategy = existing.get("strategy", "max-diversity")
+            replay_n_bars = int(existing.get("n_bars", 16))
+            replay_time_sig = int(existing.get("time_signature_numerator", 4))
+            console.print()
+            console.print(
+                "[bold]Fresh curation pass[/bold] at new anchor "
+                f"[dim](strategy={replay_strategy}, n_bars={replay_n_bars}, time_sig={replay_time_sig})[/dim]"
+            )
+            _r = _sp.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--stems-dir",
+                    str(track_dir),
+                    "--strategy",
+                    replay_strategy,
+                    "--n-bars",
+                    str(replay_n_bars),
+                    "--time-sig",
+                    str(replay_time_sig),
+                ],
+                check=False,
+            )
+            if _r.returncode != 0:
+                console.print(
+                    "  [yellow]curate exited non-zero — curated loops may be "
+                    "stale; run `stemforge forge --curation ...` to retry.[/yellow]"
+                )
+            else:
+                console.print("  curated/manifest.json + bar WAVs replaced with fresh picks.")
+        else:
             console.print()
             console.print(
                 "[bold]Re-slicing curated loops[/bold] at new anchor "
@@ -808,17 +862,16 @@ def re_anchor(
                 )
             else:
                 console.print("  curated/manifest.json + bar WAVs updated.")
-        else:
-            console.print(
-                f"  [yellow]curate script not found at {script}; curated/ left untouched.[/yellow]"
-            )
 
     console.print()
     console.print(Rule("[bold green]Re-anchored[/bold green]"))
     console.print(f"  BPM: [cyan]{bpm}[/cyan]  first_downbeat: [cyan]{first_downbeat}s[/cyan]")
     console.print("  stems.json + prechop_manifest.json updated.")
     if curated_manifest_path.exists():
-        console.print("  curated/ re-sliced at new anchor.")
+        if then_curate:
+            console.print("  curated/ rebuilt with fresh diversity picks at new anchor.")
+        else:
+            console.print("  curated/ re-sliced at new anchor.")
     if keep_old:
         console.print("  [dim]Old chunks preserved at <stem>_prechop.bak/.[/dim]")
 
@@ -1675,8 +1728,25 @@ def export(
     type=click.Choice(["locator"]),
     help="Scene-derivation mode. v1 only supports 'locator'.",
 )
+@click.option(
+    "--write-spec/--no-write-spec",
+    default=False,
+    help=(
+        "Also write the abstract ProjectSpec JSON next to the .ppak with "
+        "suffix '.projectspec.json'. Useful for the configurator popup and "
+        "for diffing arrangement → projection."
+    ),
+)
 @with_audit("export-song")
-def export_song(arrangement_path, manifest_path, reference_template, project_slot, out_path, mode):
+def export_song(
+    arrangement_path,
+    manifest_path,
+    reference_template,
+    project_slot,
+    out_path,
+    mode,
+    write_spec,
+):
     """
     Build an EP-133 K.O. II song-mode .ppak from an Ableton arrangement snapshot.
 
@@ -1694,9 +1764,7 @@ def export_song(arrangement_path, manifest_path, reference_template, project_slo
         --out song.ppak
     """
 
-    from .exporters.ep133.ppak_writer import build_ppak, build_synthetic_template_ppak
-    from .exporters.ep133.song_resolver import resolve_scenes
-    from .exporters.ep133.song_synthesizer import synthesize
+    from .exporters.ep133.projector import Ep133Projector
 
     console.print(Rule(f"[bold cyan]StemForge[/bold cyan] — export-song (mode={mode})"))
     console.print(f"  Arrangement: {arrangement_path}")
@@ -1715,6 +1783,13 @@ def export_song(arrangement_path, manifest_path, reference_template, project_slo
     arrangement = json.loads(Path(arrangement_path).read_text())
     manifest = json.loads(Path(manifest_path).read_text())
 
+    # Phase-2 schema (v2): unwrap songs[0] if the JS reader emitted the wrapped
+    # shape. Legacy flat snapshots (existing fixtures, older .als exports) pass
+    # through unchanged. Multi-song UI is v2 of the spec; v1 always reads index 0.
+    songs_field = arrangement.get("songs")
+    if isinstance(songs_field, list) and songs_field:
+        arrangement = songs_field[0]
+
     bpm = float(arrangement.get("tempo", 120.0))
     sig_raw = arrangement.get("time_sig", [4, 4])
     time_sig = (int(sig_raw[0]), int(sig_raw[1]))
@@ -1723,38 +1798,328 @@ def export_song(arrangement_path, manifest_path, reference_template, project_slo
         f"  Tempo:       [cyan]{bpm:.2f}[/cyan]  Time sig: [cyan]{time_sig[0]}/{time_sig[1]}[/cyan]"
     )
 
-    snapshots = resolve_scenes(arrangement, manifest)
-    console.print(f"  Snapshots:   [cyan]{len(snapshots)}[/cyan]")
-
     arrangement_length_sec = arrangement.get("arrangement_length_sec")
-    spec = synthesize(
-        snapshots,
+    projector = Ep133Projector()
+    for warning in projector.validate(arrangement, manifest, project_slot=int(project_slot)):
+        console.print(f"  [yellow]warn:[/yellow] {warning}")
+    spec = projector.synthesize_spec(
+        arrangement,
         manifest,
-        bpm,
-        time_sig,
-        int(project_slot),
+        project_bpm=bpm,
+        time_sig=time_sig,
+        project_slot=int(project_slot),
         arrangement_length_sec=(
             float(arrangement_length_sec) if arrangement_length_sec is not None else None
         ),
     )
 
     console.print(
-        f"  Patterns:    [cyan]{len(spec.patterns)}[/cyan]  "
-        f"Scenes: [cyan]{len(spec.scenes)}[/cyan]  "
+        f"  Scenes:      [cyan]{len(spec.scenes)}[/cyan]  "
+        f"Patterns: [cyan]{len(spec.patterns)}[/cyan]  "
         f"Pads: [cyan]{len(spec.pads)}[/cyan]  "
         f"Sounds: [cyan]{len(spec.sounds)}[/cyan]"
     )
 
-    if reference_template is None:
-        with tempfile.TemporaryDirectory() as td:
-            synth = Path(td) / "synthetic_template.ppak"
-            build_synthetic_template_ppak(synth, project_slot=int(project_slot))
-            payload = build_ppak(spec, synth)
-    else:
-        payload = build_ppak(spec, reference_template)
+    # PHASE 3 CLEANUP: this two-step (synthesize_spec → build_bytes_from_spec)
+    # is the legacy direct path. Phase 3 should:
+    #   1. Always build the Project (the --write-spec branch below).
+    #   2. Drive bytes via ``projector.project_from_spec(project, manifest, ...)``.
+    #   3. Drop the synthesize_spec + build_bytes_from_spec calls + the spec
+    #      local; --write-spec becomes default-on (or the only mode).
+    # Byte identity is pinned by tests/ep133/test_projector_spec_parity.py so
+    # the swap is mechanically safe.
+    payload = projector.build_bytes_from_spec(
+        spec,
+        reference_template=Path(reference_template) if reference_template else None,
+    )
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_bytes(payload)
+
+    if write_spec:
+        # Phase-2: dump the abstract ProjectSpec next to the .ppak. Bytes-
+        # identical to the direct path is enforced by test_projector_spec_parity.
+        from .exporters.ep133.project_translator import (
+            project_from_arrangement_and_manifest,
+        )
+        from .scene_model import project_to_path
+
+        spec_out_path = out_path.with_suffix(".projectspec.json")
+        project = project_from_arrangement_and_manifest(arrangement, manifest)
+        for warning in projector.validate_spec(project):
+            console.print(f"  [yellow]warn(spec):[/yellow] {warning}")
+        project_to_path(project, spec_out_path)
+        console.print(f"  Spec:        [green]{spec_out_path}[/green]")
+
+    kb = len(payload) / 1024.0
+    console.print(Rule("[bold green]Done![/bold green]"))
+    console.print(f"  Wrote [bold]{out_path}[/bold] ({kb:.1f} KB)")
+
+
+@cli.command("deck-from-manifest")
+@click.argument(
+    "manifest_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option(
+    "--out",
+    "out_path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Where to write the deck plan. Default: deck.yaml next to the manifest.",
+)
+@click.option(
+    "--project",
+    "project_name",
+    default=None,
+    help="Project name. Default: derived from manifest filename / directory.",
+)
+@click.option(
+    "--project-slot",
+    type=click.IntRange(1, 9),
+    default=8,
+    show_default=True,
+    help="EP-133 project slot.",
+)
+@click.option(
+    "--project-bpm",
+    type=float,
+    default=None,
+    help="Project BPM. Default: read from manifest's `bpm` field, fallback 92.",
+)
+@click.option(
+    "--format",
+    "out_format",
+    type=click.Choice(["yaml", "json"]),
+    default="yaml",
+    show_default=True,
+    help="Output format.",
+)
+@click.option(
+    "--edit-after/--no-edit-after",
+    default=False,
+    help="Open the generated deck plan in $EDITOR after writing.",
+)
+def deck_from_manifest_cmd(
+    manifest_path,
+    out_path,
+    project_name,
+    project_slot,
+    project_bpm,
+    out_format,
+    edit_after,
+):
+    """
+    Generate a starter deck plan from a curated manifest.
+
+    \b
+    Reads the manifest's `session_tracks` block and emits a deck.yaml
+    where each group's entries map to EP-133 group A/B/C/D pads 1..12.
+    Format profiles default to: A=vocal, B=vocal, C=drum, D=texture.
+    Group A overflow (>12 entries) spills forward to B (and so on).
+
+    \b
+    Workflow:
+      1. COMMIT in the forge device to write `curated/manifest.json`.
+      2. stemforge deck-from-manifest curated/manifest.json
+      3. Edit the resulting deck.yaml (project name, slot, pad swaps).
+      4. stemforge build-deck deck.yaml --out verse_swap.ppak
+    """
+    import os
+    import subprocess
+
+    from .exporters.ep133.deck_autogen import (
+        deck_from_manifest,
+        to_json_string,
+        to_yaml_string,
+    )
+
+    console.print(Rule("[bold cyan]StemForge[/bold cyan] — deck-from-manifest"))
+    console.print(f"  Manifest:    {manifest_path}")
+
+    manifest = json.loads(Path(manifest_path).read_text())
+
+    if project_name is None:
+        parent = manifest_path.parent
+        if parent.name == "curated":
+            project_name = parent.parent.name or "deck"
+        else:
+            project_name = parent.name or manifest_path.stem
+
+    plan = deck_from_manifest(
+        manifest,
+        manifest_path,
+        project_name=project_name,
+        project_slot=project_slot,
+        project_bpm=project_bpm,
+    )
+
+    # Surface the layout decisions so the user knows what to edit.
+    in_counts = {
+        g: len((manifest.get("session_tracks") or {}).get(g) or []) for g in ("A", "B", "C", "D")
+    }
+    out_counts = {g: len(plan["groups"].get(g, {}).get("pads", [])) for g in ("A", "B", "C", "D")}
+    total_in = sum(in_counts.values())
+    total_out = sum(out_counts.values())
+    console.print(f"  Input:       {total_in} clips ({in_counts})")
+    console.print(f"  Output:      {total_out} pads   ({out_counts})")
+    if total_out < total_in:
+        dropped = total_in - total_out
+        console.print(
+            f"  [yellow]Dropped {dropped} clip(s):[/yellow] no pad capacity. "
+            "Trim the manifest or accept the truncation."
+        )
+    for g in ("A", "B", "C", "D"):
+        if g in plan["groups"]:
+            profile = plan["groups"][g]["format_profile"]
+            console.print(f"  Group {g}:     {out_counts[g]} pads, format=[cyan]{profile}[/cyan]")
+
+    if out_path is None:
+        out_path = manifest_path.parent / ("deck.yaml" if out_format == "yaml" else "deck.json")
+
+    text = to_yaml_string(plan) if out_format == "yaml" else to_json_string(plan)
+    out_path.write_text(text)
+    console.print(Rule("[bold green]Done![/bold green]"))
+    console.print(f"  Wrote [bold]{out_path}[/bold]")
+    console.print(
+        f"  [dim]Next:[/dim] [bold]stemforge build-deck {out_path} --out deck.ppak[/bold]"
+    )
+
+    if edit_after:
+        editor = os.environ.get("EDITOR") or os.environ.get("VISUAL") or "vi"
+        subprocess.run([editor, str(out_path)], check=False)
+
+
+@cli.command("build-deck")
+@click.argument(
+    "deck_plan",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option(
+    "--out",
+    "out_path",
+    required=True,
+    type=click.Path(path_type=Path),
+    help="Output .ppak path.",
+)
+@click.option(
+    "--reference-template",
+    required=False,
+    type=click.Path(exists=True, path_type=Path),
+    default=None,
+    help="Captured reference .ppak for byte-template fields.",
+)
+@click.option(
+    "--project",
+    "project_slot_override",
+    type=click.IntRange(1, 9),
+    default=None,
+    help="Override the project slot from the plan (1..9).",
+)
+@click.option(
+    "--write-spec/--no-write-spec",
+    default=True,
+    show_default=True,
+    help="Also write the abstract ProjectSpec JSON next to the .ppak.",
+)
+@with_audit("build-deck")
+def build_deck(deck_plan, out_path, reference_template, project_slot_override, write_spec):
+    """
+    Build a multi-source EP-133 kit (.ppak) from a deck plan.
+
+    \b
+    Workflow B / single-scene kit (configurator spec v4 Decision 12):
+    one project, four groups × twelve pads, clips federated across N
+    forge runs. Honors per-group format_profile (Decision 16) so a
+    24-verse vocal deck fits inside the 64 MB device cap.
+
+    \b
+    Example deck plan (JSON):
+      {
+        "project": "verse_swap_deck_v1",
+        "project_slot": 8,
+        "project_bpm": 92,
+        "groups": {
+          "A": {"format_profile": "vocal", "pads": [
+            {"pad": 1, "path": "verses/v1.wav", "source_bpm": 88}
+          ]},
+          "C": {"format_profile": "drum", "pads": [
+            {"pad": 1, "source": "songs/01/curated/manifest.json", "clip": "slot:0", "group": "A"}
+          ]}
+        }
+      }
+
+    \b
+    Example:
+      stemforge build-deck deck.json \\
+        --out verse_swap.ppak \\
+        --reference-template tests/ep133/fixtures/reference.ppak
+    """
+    from .exporters.ep133.deck_plan import load_deck_plan, project_from_deck_plan
+    from .exporters.ep133.projector import (
+        EP133_MEMORY_CAP_BYTES,
+        Ep133Projector,
+    )
+    from .scene_model import project_to_path
+
+    console.print(Rule("[bold cyan]StemForge[/bold cyan] — build-deck"))
+    console.print(f"  Plan:        {deck_plan}")
+    console.print(f"  Output:      {out_path}")
+    if reference_template:
+        console.print(f"  Template:    {reference_template}")
+    else:
+        console.print("  Template:    [yellow]<none>[/yellow] — synthesizing minimal template")
+
+    plan = load_deck_plan(deck_plan)
+    plan_dir = deck_plan.parent
+    project, clip_index = project_from_deck_plan(plan, plan_dir=plan_dir)
+
+    project_slot = (
+        project_slot_override
+        if project_slot_override is not None
+        else int(plan.get("project_slot", 1))
+    )
+
+    projector = Ep133Projector()
+    warnings = projector.validate_spec(project)
+    if warnings:
+        for w in warnings:
+            console.print(f"  [yellow]warn:[/yellow] {w}")
+
+    memory_bytes = projector.estimate_memory_bytes(project)
+    used_mb = memory_bytes / (1024 * 1024)
+    cap_mb = EP133_MEMORY_CAP_BYTES / (1024 * 1024)
+    if memory_bytes > EP133_MEMORY_CAP_BYTES:
+        console.print(f"  Memory:      [red]{used_mb:.1f} / {cap_mb:.0f} MB — OVER CAP[/red]")
+    else:
+        headroom_mb = cap_mb - used_mb
+        console.print(
+            f"  Memory:      [green]{used_mb:.1f} / {cap_mb:.0f} MB[/green] "
+            f"({headroom_mb:.1f} MB headroom)"
+        )
+
+    # 2026-05-11: surface synthesizer warnings (e.g. "pad X: source > 20s,
+    # skipped") on the Rich console. Python's default handler prints to
+    # stderr but Click captures stderr; without this wrap, the user has
+    # no visible signal that pads were dropped during the build.
+    import warnings as _warnings
+
+    with _warnings.catch_warnings(record=True) as build_warnings:
+        _warnings.simplefilter("always")
+        payload = projector.project_kit(
+            project,
+            clip_index,
+            project_slot=project_slot,
+            reference_template=reference_template,
+        )
+    for w in build_warnings:
+        console.print(f"  [yellow]warn:[/yellow] {w.message}")
+    out_path.write_bytes(payload)
+
+    if write_spec:
+        spec_out_path = out_path.with_suffix(".projectspec.json")
+        project_to_path(project, spec_out_path)
+        console.print(f"  Spec:        [green]{spec_out_path}[/green]")
 
     kb = len(payload) / 1024.0
     console.print(Rule("[bold green]Done![/bold green]"))

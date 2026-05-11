@@ -523,8 +523,8 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             (16.0 + 3 * (js_w + js_gap), js_row_y + 34, js_w, 22.0),
             scripting_name="sf_lom_loader",
             numinlets=1,
-            numoutlets=3,
-            outlettype=["", "", ""],
+            numoutlets=4,
+            outlettype=["", "", "", ""],
         )
     )
 
@@ -603,8 +603,13 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             outlettype=["", "", "", "", "", "", "", ""],
             extras={
                 "text": (
-                    "route state forge preset-loader manifest-loader "
-                    "settings ui logger"
+                    # Match slash-prefixed OSC addresses. Verified empirically
+                    # 2026-05-09 via /tmp/udp_probe: Max's `udpreceive` in OSC
+                    # mode emits the address as a single symbol with leading
+                    # slash preserved (NOT tokenized on `/`). So we match
+                    # `/forge` not `forge`. sf_remote.py encodes accordingly.
+                    "route /state /forge /preset-loader /manifest-loader "
+                    "/settings /ui /logger"
                 ),
             },
         )
@@ -1202,6 +1207,9 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         )
     )
     lines.append(_line(OBJ_SF_FORGE, 1, OBJ_SHELL, 0))
+    # sf_lom_loader outlet 3 → [shell] for mkdir-p in the bounce flow
+    # (deck manifest stubs need their parent dirs to exist).
+    lines.append(_line(OBJ_SF_LOM_LOADER, 3, OBJ_SHELL, 0))
     # 2 → stemforge_loader (LOM) — passthrough list
     lines.append(_line(OBJ_SF_FORGE, 2, OBJ_SF_LOM_LOADER, 0))
 

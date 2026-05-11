@@ -122,14 +122,29 @@ def _coerce_track(raw: Any) -> list[ArrangementClip]:
     return [ArrangementClip.from_dict(c) for c in raw]
 
 
+def _unwrap_song(arrangement: dict) -> dict:
+    """Detect Phase-2 ``songs[]``-wrapped shape and unwrap to the legacy flat
+    contract. Single-song only — multi-song UI is v2 (see configurator spec).
+    """
+    songs = arrangement.get("songs")
+    if isinstance(songs, list) and songs:
+        return songs[0]
+    return arrangement
+
+
 def resolve_scenes(arrangement: dict, manifest: dict) -> list[Snapshot]:
     """Return one :class:`Snapshot` per locator (in time order).
+
+    Accepts either the legacy flat shape (``{tempo, time_sig, locators, tracks, ...}``)
+    or the Phase-2 wrapped shape (``{schema_version: 2, songs: [{...}]}``).
+    Wrapped input is unwrapped to ``songs[0]`` before processing.
 
     Validates that every clip referenced by an active snapshot is present in
     ``manifest.session_tracks`` — raises :class:`ManifestLookupError` with a
     clear message if not. Silent groups (no clip at the locator) are
     represented by ``None`` clips and produce no manifest lookup.
     """
+    arrangement = _unwrap_song(arrangement)
     locators_raw = arrangement.get("locators") or []
     if not locators_raw:
         raise ValueError(

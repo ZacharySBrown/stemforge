@@ -169,10 +169,41 @@ CANNED_STATES: dict[str, dict] = {
 # ── UDP helpers ──────────────────────────────────────────────────────────────
 
 
+def _osc_pad(data: bytes) -> bytes:
+    """Null-pad bytes to the next 4-byte boundary per the OSC spec."""
+    pad = 4 - (len(data) % 4)
+    return data + b"\x00" * pad
+
+
+def _osc_encode(payload: str) -> bytes:
+    """Encode a Max bus message as OSC with a slash-prefixed address.
+
+    Per empirical probe (2026-05-09 — see /tmp/udp_probe.maxpat results),
+    Max's `udpreceive` in OSC mode emits the address as a SINGLE symbol
+    with leading slash preserved — `/foo` stays as `/foo`, not `foo`.
+    Our patcher's dispatcher route was updated to match `/state /forge
+    /preset-loader …` accordingly, so we send single-segment addresses
+    and let the route strip them.
+
+    Format: address = "/" + first_token, args = remaining tokens (typed
+    as strings; numeric coercion happens JS-side via `Number(arg)`).
+    """
+    tokens = payload.split(" ")
+    if not tokens:
+        return b""
+    address = "/" + tokens[0]
+    args = tokens[1:]
+    address_bytes = _osc_pad(address.encode("utf-8"))
+    type_tags = "," + "s" * len(args)
+    type_tag_bytes = _osc_pad(type_tags.encode("utf-8"))
+    arg_bytes = b"".join(_osc_pad(a.encode("utf-8")) for a in args)
+    return address_bytes + type_tag_bytes + arg_bytes
+
+
 def _send_udp(port: int, payload: str) -> None:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        sock.sendto(payload.encode("utf-8"), (UDP_HOST, port))
+        sock.sendto(_osc_encode(payload), (UDP_HOST, port))
     finally:
         sock.close()
 

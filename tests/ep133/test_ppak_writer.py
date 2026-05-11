@@ -100,7 +100,9 @@ def test_synthetic_template_has_expected_shape(template_ppak: Path):
     meta, members = _open_ppak(data)
 
     assert meta["pak_version"] == 1
-    assert meta["pak_type"] == "user"
+    assert meta["pak_type"] == "project"  # 2026-05-11: was "user"; default
+    # changed because Sample Tool's project-import refuses "user" paks (those
+    # are reserved for full-device-backup Restore workflow).
     assert meta["device_name"] == "EP-133"
     assert "generated_at" in meta
 

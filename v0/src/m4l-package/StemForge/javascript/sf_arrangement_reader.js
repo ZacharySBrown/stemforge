@@ -149,10 +149,16 @@ function _arrGetLomNumber(api, prop) {
 }
 
 function _arrGetLomString(api, prop) {
+    // Returns "" for missing / null / undefined LOM properties. See
+    // stemforge_loader.v0.js:_getLomString for the rationale (literal
+    // "undefined" string was leaking through truthy checks pre-2026-05-08).
     try {
         var v = api.get(prop);
-        if (v && typeof v === "object") return String(v[0]);
-        return String(v);
+        var s = (v && typeof v === "object") ? v[0] : v;
+        if (s === undefined || s === null) return "";
+        var str = String(s);
+        if (str === "undefined") return "";
+        return str;
     } catch (_) {
         return "";
     }
@@ -293,15 +299,22 @@ function buildArrangementSnapshot() {
         D: _arrReadTrackClips("D", beatToSec)
     };
 
-    var snapshot = {
+    // Phase 2 schema (v2): Song-wrapped, multi-song-ready. v1 forces a single
+    // entry in songs[]; the Python consumer (resolve_scenes / cli.export-song)
+    // unwraps either shape transparently. The legacy flat fixture stays
+    // readable so the byte-identity bar in test_song_export_parity is unmoved.
+    var song = {
         tempo: tempo,
         time_sig: [sigNum, sigDen],
         arrangement_length_sec: 0.0,
         locators: locators,
         tracks: tracks
     };
-    snapshot.arrangement_length_sec = _arrComputeArrangementLengthSec(snapshot);
-    return snapshot;
+    song.arrangement_length_sec = _arrComputeArrangementLengthSec(song);
+    return {
+        schema_version: 2,
+        songs: [song]
+    };
 }
 
 function _arrWriteJson(outputPath, snapshot) {
@@ -367,12 +380,14 @@ function runArrangementExport(outputPath) {
     }
     var ok = _arrWriteJson(path, snapshot);
     if (ok) {
+        // Phase-2 wrapped shape: status summary reads from songs[0].
+        var song = (snapshot.songs && snapshot.songs.length) ? snapshot.songs[0] : snapshot;
         var letters = ["A", "B", "C", "D"];
         var summary = letters.map(function (l) {
-            return l + "=" + snapshot.tracks[l].length;
+            return l + "=" + song.tracks[l].length;
         }).join(" ");
         _arrStatus("snapshot written: " + path + " | locators="
-            + snapshot.locators.length + " | clips: " + summary);
+            + song.locators.length + " | clips: " + summary);
     }
     return ok;
 }

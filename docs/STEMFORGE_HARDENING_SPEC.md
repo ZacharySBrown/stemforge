@@ -195,6 +195,17 @@ formal acceptance check.
 
 ### Stream E: tempo + anchor accuracy (added 2026-05-06)
 
+> **Retroactive scope**: this stream was NOT in the original 14-checkbox
+> hardening gate. It was added 2026-05-06 mid-pass after live-audio
+> testing on Definition / Believer / Ooh La La surfaced a tempo
+> reconciler bias bug (~0.1–0.4% high BPM, ~120ms drift by bar 12) that
+> the synthetic fixture had never caught. Gated retroactively as part of
+> the acceptance gate per user sign-off in real time. The lesson — that
+> synth fixtures are necessary but not sufficient for tempo-sensitive
+> work — is documented in `HARDENING_VERIFICATION.md` for future
+> tempo-touching streams (cross-song splicing in the configurator
+> especially).
+
 This stream was carved off mid-hardening, after the live test revealed that
 real-world tempo accuracy was visibly broken on multiple tracks despite the
 existing reconciler. Three fixes landed in the same session; this stream
@@ -311,15 +322,22 @@ when all of these hold:
 - [x] `forge_device.verifiers` runs in CI as non-blocking check, passing
       on current `v0/build/StemForge.amxd`. (Vendored as
       `stemforge/verifiers.py`; CI step at `.github/workflows/ci.yml:168`.)
-- [x] `forge_device.audit.step()` wraps the CLI entry points; produces
-      NDJSON trail. (5 `@with_audit` sites in `stemforge/cli.py` — forge /
-      re-anchor / reslice-curated / export-song / split.)
+- [x] `forge_device.audit.step()` wraps the load-bearing CLI entry points;
+      produces NDJSON trail. (5 `@with_audit` sites in `stemforge/cli.py` —
+      forge / re-anchor / reslice-curated / export-song / split. Spec
+      originally said "three" — implementation grew during normal
+      development as new commands were added; all of them get audit
+      coverage.)
 - [x] `verify-load` runs on developer Mac against `v0/build/StemForge.amxd`.
-      Adaptation gap closed 2026-05-08: `_extract_maxpat_from_amxd()` in
-      `stemforge/load_verifier.py` extracts the inner patcher to a temp
-      `.maxpat` so Max loads headless without Live. Test:
-      `test_extract_maxpat_from_amxd_against_real_artifact` + 3 sibling
-      tests. 28 pass + 1 skip.
+      Adaptation gap (`.amxd` requires Live to instantiate; Max can't
+      load it headless) closed 2026-05-08: `_extract_maxpat_from_amxd()`
+      in `stemforge/load_verifier.py` extracts the inner patcher to a
+      temp `.maxpat`. Tests: `test_extract_maxpat_from_amxd_against_real_artifact`
+      + 3 sibling cases. 28 pass + 1 skip. The gap was first surfaced
+      in PR #49 review and tracked in GH (issue filed 2026-05-08 for
+      durable reference) — the spec's "or surfaced issues filed and
+      fixed" escape clause now refers to a GH issue, not just a PR
+      review thread.
 - [x] `sf_remote fire forge` triggers device action with log confirmation.
       Wiring added 2026-05-08: `[udpreceive 7420]` → `[route state forge
       preset-loader manifest-loader settings ui logger]` → module inlets,

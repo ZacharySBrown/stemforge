@@ -198,6 +198,75 @@ is enforced strictly. SE-9 is now fully clean.
   was added 2026-05-06 mid-hardening and gated retroactively per user
   sign-off.
 
+## 4. For the configurator team — lessons + caveats
+
+Three things future tempo-sensitive or M4L-device work should know
+about *before* they're rediscovered cold.
+
+### 4.1 Synth fixtures are necessary but not sufficient for tempo work
+
+This is the deepest lesson from Stream E. The `synth_song` fixture
+caught a lot of bugs in unit-level work but missed a class of failure
+that only surfaces on real audio:
+
+- **The bug**: `_bar_period_from_downbeats` median estimator locked
+  onto beat-this's per-frame downbeat quantization peak instead of the
+  true sub-quantum bar period. Definition was being detected at 90.226
+  BPM when truth was 89.88 — a 0.4% high bias, accumulating to ~120ms
+  drift by bar 12 of `drums_chunk_012.wav`.
+- **Why synth missed it**: the fixture has 1/8-note hi-hats which make
+  beat-this report half-time. The fixture's BPM is "cleanly detectable"
+  (or cleanly mis-detectable as 240); it doesn't exercise the
+  sub-quantum-bias regime where real material lives.
+- **Why real audio caught it**: the canonical tracks have organic
+  tempo characteristics — Definition's beat positions don't snap to
+  beat-this's quantization grid, so the sub-quantum bias becomes
+  visible drift over many bars.
+
+**Implication for cross-song splicing** (planned configurator feature):
+splicing is tempo-sensitive across multiple sources. Synth-only
+coverage will miss the same class of bug. Use the canonical fixtures
+(`tests/fixtures/known_tempos.py` + `@pytest.mark.has_phase3_inputs`)
+as the regression bar for any new splicing test that touches tempo.
+Add new canonical fixtures if the splicing case isn't represented.
+
+### 4.2 SE-3/SE-4/SE-5 sentinels need parallel updates with refine_bpm changes
+
+The static sentinels in `tests/test_cli.py` (`test_split_path_invokes_refine_bpm`,
+`test_re_anchor_path_invokes_refine_bpm`, `test_re_anchor_auto_reslices_curated`)
+grep `stemforge/cli.py` for specific call signatures:
+
+```python
+refine_bpm(audio_file, ...)   # split path
+refine_bpm(drums_path, ...)   # re-anchor path
+```
+
+If `refine_bpm`'s signature changes (e.g. adds a kwarg), these
+sentinels need a parallel update or they'll silently fail to detect
+that the wiring still exists. Functional correctness is covered by
+`TestRefineBpm` (SE-2) directly, but only if the unit test gets the
+refactor too. **TL;DR**: any refactor of `refine_bpm` should touch
+both layers in the same commit.
+
+### 4.3 verify-load doesn't catch LOM-binding errors
+
+`_extract_maxpat_from_amxd()` lets `verify-load` parse the actual
+patcher graph headless. But the runtime is still missing the `LiveAPI`
+host, so any JS module that does `new LiveAPI(...)` at load-time will
+throw. Those errors come back from the categoriser as `js_no_function`
+or `missing_object`.
+
+The configurator's M4L device code will lean heavily on LOM bindings
+— don't expect verify-load to be the only safety net for that class
+of bug. The complementary coverage comes from:
+- JSON-shape verifiers (`stemforge/verifiers.py`) — structural correctness
+- LiveAPI-mock JS tests (`tests/js_mocks/test_*.test.js`) — runtime
+  behavior with mocked LOM
+- Live-tier integration tests (`@pytest.mark.live`) — real Live host
+
+Use `verify-load` as a fast pre-flight for patcher-graph errors;
+layer the others above it for LOM binding correctness.
+
 ## Recommendation
 
 Hardening pass is **complete** as of 2026-05-08. All 23 acceptance-gate

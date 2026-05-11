@@ -20,6 +20,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from stemforge.scene_model import (
+    infer_bars,
+    scene_lengths_in_bars,
+    tile_event_positions,
+)
+
 from .song_format import Event, PadSpec, Pattern, PpakSpec, SceneSpec
 from .song_resolver import (
     ArrangementClip,
@@ -28,6 +34,19 @@ from .song_resolver import (
     _index_session_tracks,
     lookup_pad,
 )
+
+__all__ = [
+    "EMPTY_PATTERN_INDEX",
+    "MAX_PADS_PER_GROUP",
+    "MAX_PATTERNS_PER_GROUP",
+    "MAX_SCENES",
+    "SAMPLE_SLOT_BASE",
+    "SAMPLE_SLOT_PER_GROUP",
+    "TICKS_PER_BAR",
+    "global_sample_slot",
+    "infer_bars",
+    "synthesize",
+]
 
 
 # EP-133 limits
@@ -70,88 +89,6 @@ def global_sample_slot(group: str, manifest_slot: int) -> int:
 # Pattern timing
 TICKS_PER_BAR = 384
 
-# Bars inference. The EP-133's time-stretch bar field accepts only
-# {0.25, 0.5, 1, 2, 4} (per phones24 parsers.ts and Track A's writer
-# validation). Longer clips snap to the 4-bar maximum and let the EP's
-# stretch slow the playback to fit.
-_BARS_TOLERANCE_SEC = 0.4
-_BARS_CANDIDATES_SNAP = (1, 2, 4)
-_BARS_CANDIDATES_FALLBACK = (1, 2, 4)
-
-
-def infer_bars(clip_length_sec: float, project_bpm: float) -> int:
-    """Pick the EP-133 ``time.bars`` value for a clip.
-
-    Two-stage decision (matches the hybrid loader's ``detect_bars_value``):
-
-    1. If the clip duration is within ±400ms of an integer bar count at
-       project BPM, snap to that bar count (chosen from {1, 2, 4}).
-    2. Otherwise pick the closest of {1, 2, 4} bars and let the EP's stretch
-       absorb the difference.
-    """
-    if project_bpm <= 0:
-        raise ValueError(f"project_bpm must be positive, got {project_bpm!r}")
-    bar_dur_sec = 60.0 * 4.0 / project_bpm
-    for bars in _BARS_CANDIDATES_SNAP:
-        if abs(clip_length_sec - bars * bar_dur_sec) <= _BARS_TOLERANCE_SEC:
-            return bars
-    return min(
-        _BARS_CANDIDATES_FALLBACK,
-        key=lambda b: abs(clip_length_sec - b * bar_dur_sec),
-    )
-
-
-# Cap on multi-event tiling density so a tiny slice (e.g. a single click
-# at 1/64-bar) doesn't produce a pathological pattern. 32 events per
-# pattern is a 32nd-note grid at 4/4 — the finest density that's
-# musically useful. Beyond that the slice is shorter than typical
-# rhythmic resolution and a single trigger sounds the same.
-_MAX_EVENTS_PER_PATTERN = 32
-
-# Total trigger counts per pattern that we snap multi-event tiling to.
-# These are subdivisions of the WHOLE pattern, not per-bar — chosen so
-# spacing always lands on a familiar grid:
-#   1 = single fire, 2 = halves, 4 = quarters, 8 = eighths, 16 = sixteenths,
-#   32 = thirty-seconds (relative to pattern length).
-# A slice that lands between these snaps to the closest. Never produces
-# a 6- or 7-tuplet feel that fights the underlying tempo.
-_MUSICAL_TRIGGER_COUNTS = (1, 2, 4, 8, 16, 32)
-
-
-def _event_positions_bars(slice_bars: float, pattern_bars: int) -> list[float]:
-    """Compute event positions (in bars) for a multi-event pattern.
-
-    A clip whose slice is shorter than the pattern needs to fire multiple
-    times to mimic Ableton's loop-fill behavior. We snap the trigger
-    count to the nearest power-of-2 subdivision of the pattern length so
-    the result lands on a familiar rhythmic grid instead of an awkward
-    6- or 7-tuplet. Slices that are roughly pattern-length or longer
-    return a single trigger at position 0 (the device plays the full
-    slice in BPM mode).
-
-    Examples:
-      pattern_bars=1, slice_bars=1.0     → [0.0]                 (1× whole)
-      pattern_bars=1, slice_bars=0.5     → [0.0, 0.5]            (halves)
-      pattern_bars=1, slice_bars=0.156   → 8 events (eighth-grid)
-      pattern_bars=4, slice_bars=2.0     → [0.0, 2.0]            (every 2 bars)
-      pattern_bars=4, slice_bars=1.0     → 4 events (one per bar)
-    """
-    if slice_bars <= 0 or pattern_bars <= 0:
-        return [0.0]
-    raw_count = pattern_bars / slice_bars
-    # Clip slices that are roughly pattern-length (or longer) → single
-    # fire. Threshold at 1.5 keeps the snap from picking n=2 below it.
-    if raw_count < 1.5:
-        return [0.0]
-    candidates = [c for c in _MUSICAL_TRIGGER_COUNTS if c <= _MAX_EVENTS_PER_PATTERN]
-    # Tie-break to the smaller count when raw_count sits exactly between
-    # two subdivisions (musically the more conservative choice).
-    n = min(candidates, key=lambda c: (abs(c - raw_count), c))
-    if n == 1:
-        return [0.0]
-    spacing = pattern_bars / n
-    return [i * spacing for i in range(n)]
-
 
 def _entry_for_path(manifest: dict, group: str, file_path: str) -> dict:
     session = manifest.get("session_tracks") or {}
@@ -176,62 +113,6 @@ def _wav_path_for_pad(manifest: dict, group: str, pad: int) -> Path:
             raise KeyError(f"session_tracks[{group}] slot={target_slot} has no file path")
         return Path(path)
     raise KeyError(f"no session_tracks[{group}] entry for pad {pad} (slot {target_slot})")
-
-
-def _scene_lengths_in_bars(
-    snapshots: list[Snapshot],
-    project_bpm: float,
-    arrangement_length_sec: float | None,
-) -> list[int]:
-    """Derive each scene's length in bars from locator gaps.
-
-    Strategy (per user request 2026-04-28):
-      1. Quantize each locator's time to its nearest integer-bar
-         position (so a drag-imprecise locator at t=3.6s on a 1.765s/bar
-         project snaps to bar 2 instead of producing a fractional gap).
-      2. Scene N's length in bars = quantized_bar(N+1) - quantized_bar(N).
-      3. For the trailing scene, end at ``arrangement_length_sec``
-         (also quantized) if provided; else fall back to the median of
-         preceding gaps; else default to 2 bars.
-
-    Any positive integer bar count is allowed (1, 2, 3, 4, 5, ...) — we
-    do NOT snap to powers of 2 here. That's earmarked as future option
-    (b): a "musical conformity" mode that'd snap odd gaps (e.g. 3 bars)
-    up to the next power of 2 (4). Keep it opt-in if/when added; default
-    behavior preserves intentional 3- or 5-bar sections.
-
-    Result is clamped to 1..255 (pattern-header uint8 range).
-    """
-    if not snapshots:
-        return []
-    bar_dur_sec = 240.0 / project_bpm
-
-    def to_bars(t: float) -> int:
-        return int(round(t / bar_dur_sec))
-
-    quantized_bars = [to_bars(s.locator_time_sec) for s in snapshots]
-
-    if arrangement_length_sec is not None:
-        end_bar = to_bars(arrangement_length_sec)
-    else:
-        end_bar = None
-
-    bar_gaps: list[int] = []
-    for i in range(len(snapshots)):
-        if i + 1 < len(snapshots):
-            bar_gaps.append(quantized_bars[i + 1] - quantized_bars[i])
-        elif end_bar is not None:
-            bar_gaps.append(end_bar - quantized_bars[i])
-        else:
-            bar_gaps.append(-1)
-    # Fix non-positive trailing gap (single-locator with no length, or
-    # an end_bar that landed on/before the last locator due to rounding).
-    if bar_gaps[-1] <= 0 and len(bar_gaps) > 1:
-        prior = sorted(g for g in bar_gaps[:-1] if g > 0)
-        bar_gaps[-1] = prior[len(prior) // 2] if prior else 2
-    elif bar_gaps[-1] <= 0:
-        bar_gaps[-1] = 2  # single-locator default: 2 bars
-    return [max(1, min(255, g)) for g in bar_gaps]
 
 
 def synthesize(
@@ -327,7 +208,11 @@ def synthesize(
     # pattern is sized to the scene length and the slice fan-out tiles
     # across it. Without this, scenes truncated to the longest slice
     # (e.g. 2 bars), and the chain advanced too quickly.
-    scene_bars_list = _scene_lengths_in_bars(snapshots, project_bpm, arrangement_length_sec)
+    scene_bars_list = scene_lengths_in_bars(
+        [s.locator_time_sec for s in snapshots],
+        project_bpm,
+        arrangement_length_sec,
+    )
 
     # Per-(group, scene_bars) empty-pattern indices. Each silent group in
     # a scene needs an empty marker whose bars match the scene's length —
@@ -438,7 +323,7 @@ def synthesize(
     patterns: list[Pattern] = []
     for (group_lower, pad, bars), idx in pattern_indices.items():
         slice_bars = slice_bars_by_pad.get((group_lower, pad), float(bars))
-        positions = _event_positions_bars(slice_bars, bars)
+        positions = tile_event_positions(slice_bars, bars)
         events = [
             Event(
                 position_ticks=int(round(pos * TICKS_PER_BAR)),

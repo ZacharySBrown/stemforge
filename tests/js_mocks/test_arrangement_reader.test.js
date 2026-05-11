@@ -172,7 +172,16 @@ function freshSandbox(model, opts) {
 }
 
 function buildSnap(ctx) {
-    return ctx.buildArrangementSnapshot();
+    // Phase-2 schema: the JS reader emits {schema_version: 2, songs: [{...}]}.
+    // Tests below were written against the legacy flat shape; unwrap to that
+    // shape here so the existing assertions stay valid. Wrapper-shape itself
+    // is asserted in a dedicated test ('schema v2 wrapper shape').
+    var raw = ctx.buildArrangementSnapshot();
+    assert.equal(raw.schema_version, 2,
+        'buildArrangementSnapshot must emit schema_version: 2');
+    assert.ok(Array.isArray(raw.songs) && raw.songs.length === 1,
+        'v1 forces exactly one song in songs[]');
+    return raw.songs[0];
 }
 
 // Convenience: 4 beats @ 120 BPM = 2 sec.
@@ -224,6 +233,35 @@ test('happy_path — A clip + locator + tempo round-trip', () => {
     assert.deepEqual(plain(snap.tracks.B), []);
     assert.deepEqual(plain(snap.tracks.C), []);
     assert.deepEqual(plain(snap.tracks.D), []);
+});
+
+test('schema v2 wrapper shape — songs[] + schema_version', () => {
+    // Direct check of the wrapper that buildSnap() unwraps. Phase-2 contract:
+    // buildArrangementSnapshot returns {schema_version: 2, songs: [{...}]}
+    // even though v1 forces exactly one song.
+    var model = {
+        tempo: 100.0,
+        signature_numerator: 4,
+        signature_denominator: 4,
+        cue_points: [],
+        tracks: [
+            { name: 'A', arrangement_clips: [] },
+            { name: 'B', arrangement_clips: [] },
+            { name: 'C', arrangement_clips: [] },
+            { name: 'D', arrangement_clips: [] }
+        ]
+    };
+    var raw = freshSandbox(model).buildArrangementSnapshot();
+    assert.equal(raw.schema_version, 2);
+    assert.ok(Array.isArray(raw.songs));
+    assert.equal(raw.songs.length, 1);
+    // Inner shape carries all the legacy fields.
+    var song = raw.songs[0];
+    assert.equal(song.tempo, 100.0);
+    assert.deepEqual(plain(song.time_sig), [4, 4]);
+    assert.deepEqual(plain(song.locators), []);
+    assert.deepEqual(plain(song.tracks), { A: [], B: [], C: [], D: [] });
+    assert.equal(typeof song.arrangement_length_sec, 'number');
 });
 
 test('arrangement_length_sec — max(clip-end, locator-time, 0)', () => {
@@ -422,13 +460,18 @@ test('runArrangementExport — writes JSON to disk and returns true', () => {
     catch (e) { assert.fail('snapshot is not valid JSON: ' + e
         + '\n--- bytes ---\n' + written); }
 
-    assert.equal(parsed.tempo, 128.0);
-    assert.deepEqual(parsed.time_sig, [4, 4]);
-    assert.equal(parsed.locators.length, 1);
-    assert.equal(parsed.locators[0].name, 'Drop');
-    assert.equal(parsed.tracks.A.length, 1);
-    assert.equal(parsed.tracks.A[0].file_path, '/x/y.wav');
-    assert.equal(parsed.tracks.A[0].warping, 0);
+    // Phase-2 wrapper shape lands on disk too — Python's resolve_scenes /
+    // export-song unwrap songs[0] before reading.
+    assert.equal(parsed.schema_version, 2);
+    assert.ok(Array.isArray(parsed.songs) && parsed.songs.length === 1);
+    var song = parsed.songs[0];
+    assert.equal(song.tempo, 128.0);
+    assert.deepEqual(song.time_sig, [4, 4]);
+    assert.equal(song.locators.length, 1);
+    assert.equal(song.locators[0].name, 'Drop');
+    assert.equal(song.tracks.A.length, 1);
+    assert.equal(song.tracks.A[0].file_path, '/x/y.wav');
+    assert.equal(song.tracks.A[0].warping, 0);
 
     // Cleanup.
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}

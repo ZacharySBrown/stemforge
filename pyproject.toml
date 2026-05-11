@@ -73,10 +73,11 @@ local = [
 
 [project.scripts]
 stemforge = "stemforge.cli:cli"
+sf-remote = "tools.sf_remote:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["stemforge*"]
+include = ["stemforge*", "tools*"]
 
 [tool.ruff]
 line-length = 100

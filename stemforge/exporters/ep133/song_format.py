@@ -104,6 +104,20 @@ TIME_STRETCH_BARS_ENCODING = {1: 0, 2: 1, 4: 2, 0.5: 255, 0.25: 254}
 
 PLAY_MODE_ENCODING = {"oneshot": 0, "key": 1, "legato": 2}
 
+# The pad record's byte 20 (envelope.release) MUST stay paired with byte
+# 23 (play_mode) per the device's coupled-fields rule. Writing one
+# without the other lets the device fall back to the template default,
+# which silently keeps oneshot behavior even when byte 23 says "key".
+# Caught 2026-05-09 when key-mode pads kept playing through to end of
+# sample instead of cutting on release.
+#   - oneshot ↔ release=255 (0xFF)
+#   - key/legato ↔ release=15 (0x0F)
+PLAY_MODE_RELEASE_PAIR: dict[str, int] = {
+    "oneshot": 0xFF,
+    "key": 0x0F,
+    "legato": 0x0F,
+}
+
 
 # ----- Dataclasses -----------------------------------------------------------
 
@@ -169,6 +183,19 @@ class PpakSpec:
     # the manifest; we slice the WAV at upload time so the device
     # plays only the intended bar(s) instead of the full render.
     slot_slices: dict[int, tuple[float, float]] = field(default_factory=dict)
+    # sample_slot → target output sample rate (Hz). Per configurator spec
+    # v4 Decision 16, per-group ``format_profile`` selects a non-default
+    # rate to save device memory. Slots not present here use the
+    # device-default rate (today's behavior). Empty dict = byte-identical
+    # to the pre-Decision-16 path.
+    slot_sample_rate: dict[int, int] = field(default_factory=dict)
+    # sample_slot → play_mode for the WAV's TNGE metadata
+    # ('oneshot' | 'key' | 'legato'). Slots not present here use 'oneshot'
+    # — today's default, byte-identical to the pre-key-mode path. Pad
+    # records carry play_mode separately; this field exists so the slot's
+    # WAV metadata stays consistent with the pad record (the device
+    # couples sound.playmode + envelope.release atomically).
+    slot_play_mode: dict[int, str] = field(default_factory=dict)
 
 
 # ----- Pattern builder -------------------------------------------------------
@@ -429,6 +456,11 @@ def build_pad(
         # carries BPM=0, matching factory defaults). Clear stretch-mode bytes.
         data[21] = 0
         data[25] = 0
+
+    # Byte 20 — envelope.release. Must stay paired with byte 23
+    # (play_mode); the device silently ignores byte 23 when byte 20
+    # contradicts it.
+    data[20] = PLAY_MODE_RELEASE_PAIR[play_mode]
 
     # Byte 23 — play mode
     data[23] = PLAY_MODE_ENCODING[play_mode]
