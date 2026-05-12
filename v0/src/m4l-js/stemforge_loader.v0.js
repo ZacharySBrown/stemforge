@@ -1767,6 +1767,28 @@ function _warpBpmFromMarkers(clipApi) {
     return 0;
 }
 
+// Collapse the play region to the loop region when the clip is looping.
+// `clip.call("crop")` materializes start_marker → end_marker; this preserves
+// the loop region by writing loop_start/loop_end onto start_marker/end_marker
+// before crop, so the bounced WAV contains exactly the loop region.
+//
+// All four properties use the same unit (beats when warping=1, seconds
+// otherwise), so the swap is a 1:1 substitution. Loop bounds equal to play
+// bounds → no-op write but harmless.
+function _collapseToLoopRegion(clipApi) {
+    var looping = 0;
+    try { looping = _getLomNumber(clipApi, "looping") | 0; } catch (_) { return; }
+    if (!looping) return;
+    var ls, le;
+    try {
+        ls = _getLomNumber(clipApi, "loop_start");
+        le = _getLomNumber(clipApi, "loop_end");
+    } catch (_) { return; }
+    if (!isFinite(ls) || !isFinite(le) || le <= ls) return;
+    try { clipApi.set("start_marker", ls); } catch (_) {}
+    try { clipApi.set("end_marker", le); } catch (_) {}
+}
+
 function _bounceCropTrack(letter, onDone) {
     var trackIdx = findTrackByName(letter);
     if (trackIdx < 0) { onDone(false, "no track named " + letter); return; }
@@ -1785,6 +1807,7 @@ function _bounceCropTrack(letter, onDone) {
         try {
             // CAPTURE BEFORE CROP. warp_bpm becomes unreadable post-crop.
             _capturePreCropMeta(clipApi, _preCropKey(letter, "session", sj));
+            _collapseToLoopRegion(clipApi);
             clipApi.call("crop");
             cropped += 1;
         } catch (e) {
@@ -1807,6 +1830,7 @@ function _bounceCropTrack(letter, onDone) {
         if (!aClipApi || aClipApi.id === "0") continue;
         try {
             _capturePreCropMeta(aClipApi, _preCropKey(letter, "arrangement", ai));
+            _collapseToLoopRegion(aClipApi);
             aClipApi.call("crop");
             cropped += 1;
         } catch (e) {
