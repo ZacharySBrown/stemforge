@@ -4,7 +4,31 @@ All notable changes to StemForge. Follows [Keep a Changelog](https://keepachange
 
 ## [Unreleased]
 
-The marquee delivery in this cycle is the **EP-133 K.O. II hardware pipeline** — Ableton arrangement → bounced WAVs → multi-pad `.ppak` deck imported on-device — fully hardware-validated against real hip-hop verse-swap kits. Beneath that, substantial hardening, schema work, and beat-detection corrections shipped across ~160 commits since `v0.0.2-beta`.
+Follow-ons after v0.2.0 ship.
+
+### Added
+
+- `stemforge split --time-sig N/D` flag for parity with `forge` and `curate-bars` (PR #76, Lane 2A). Plumbs the numerator into prechop's `beats_per_bar`. Help text explicitly disclaims `beat-this` effect — librosa-fallback path only.
+- `stemforge ep133-clear-pad PROJECT_SLOT PAD [--dry-run]` (PR #76, Lane 2A). Clears a single pad's sample slot via USB-MIDI SysEx using the byte-tested `build_assign_pad` path with slot=0 sentinel. Accepts `A1`..`D12` letter form or `1`..`48` numeric. Hardware round-trip validation pending; dry-run is regression-tested.
+- `function reload()` in `stemforge_loader.v0.js` (PR #74, Lane 2B). Toggles `this.autowatch` 0→1 to re-arm Max's file-watcher so `sf-remote fire forge reload` actually reloads the JS from disk. Mirrored to deploy path. On-device validation pending. CAVEAT block in `sf_forge.js:reload()` trimmed accordingly.
+- 9 mock test cases in `tests/js_mocks/test_reload.test.js` (PR #74).
+- `stemforge deck-from-manifest` end-to-end test (PR #75, Lane 2C) with a session-mode COMMIT-flow fixture at `tests/ep133/fixtures/session_mode_manifest.json` matching `_sessionTrackEntryFromClip` exactly. 5 new pytest cases covering `--profile`, `--all-drum`, `--play-mode`, per-clip BPM preservation.
+- `CHANGELOG.md` (this file) and `docs/releases/RELEASE_RUNBOOK.md` (PR #71).
+- Tracking issues #73 (PyPI upload), #78 (notarize v0.2.0), #79 (replace heavyweight `release.yml` with `release-minimal.yml`), #80 (sf-remote round-trip test), #81 (dispatcher target audit).
+
+### Changed
+
+- `tools/sf_remote.py:_osc_encode` docstring updated — removed dead `/tmp/udp_probe.maxpat` reference; replaced with prose explaining the empirical OSC route check via `nc -u`.
+- `sf-remote dump` error messages now include a 3-step diagnostic checklist on timeout, and distinguish the empty-dict case from the not-initialized case.
+- `docs/issues/` reorganized — 8 fully-resolved issue files moved to `docs/issues/closed/` (PR #82) to keep the active list focused on actionable work.
+
+### Fixed
+
+- `tests/test_canonical_tempos.py` ruff-format compliance (PR #77 — pure formatting follow-up to PR #70).
+
+## [v0.2.0] — 2026-05-12
+
+First real StemForge release. `pyproject.toml` had been at `0.2.0` since the initial commit but was never published; this tag is the first real cut. The marquee delivery is the **EP-133 K.O. II hardware pipeline** — Ableton arrangement → bounced WAVs → multi-pad `.ppak` deck imported on-device — fully hardware-validated against real hip-hop verse-swap kits. Beneath that, substantial hardening, schema work, and beat-detection corrections shipped across ~160 commits since `v0.0.2-beta`.
 
 ### Added
 
