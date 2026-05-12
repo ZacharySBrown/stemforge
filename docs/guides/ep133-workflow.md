@@ -48,6 +48,18 @@ and the `project_ep133_*` entries in your Claude project memory.
             └────────────────────────────────────────────────────────┘
 ```
 
+Or as Mermaid (renders on GitHub):
+
+```mermaid
+flowchart TD
+    A[audio file] -->|stemforge forge --curation| B[curated/ + manifest.json]
+    B -->|Ableton: arrange clips on A/B/C/D| C[Session view]
+    C -->|COMMIT in M4L device| D[manifest.json with session_tracks]
+    D -->|stemforge deck-from-manifest| E[deck.yaml]
+    E -->|stemforge build-deck| F[kit.ppak + .projectspec.json]
+    F -->|drag into K.O. II Sample Tool| G[Project on device slot]
+```
+
 End-to-end timing for a 46-clip deck: ~12 seconds for the bounce + plan
 + build phases. Sample Tool import takes another 10–20 seconds depending
 on payload size.

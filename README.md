@@ -33,6 +33,29 @@ Three zones, one contract:
 - **M4L** (`m4l/`, `v0/`) — Max for Live devices + JS bridge. Reads `stems.json` manifests; never imports Core code.
 - **Tools** (`tools/`) — Standalone utilities and `sf-remote` (a UDP client for the M4L device). May call Core CLI; doesn't import M4L code.
 
+<details>
+<summary>Mermaid version (renders on GitHub)</summary>
+
+```mermaid
+flowchart LR
+    Audio[audio file] --> Core
+    subgraph Core["Core (stemforge/)"]
+        S[backend.separate] --> Sl[slice] --> Cu[curate] --> M[manifest]
+    end
+    Core -->|stems.json| M4L
+    Core -->|deck.yaml| Tools
+    subgraph M4L["M4L (m4l/, v0/)"]
+        D[Ableton clip auto-load + bounce + COMMIT]
+    end
+    subgraph Tools["Tools (tools/)"]
+        T[sf-remote, batch scripts, exports]
+    end
+    M4L --> Ableton[Ableton session]
+    Tools --> EP133[EP-133 .ppak]
+```
+
+</details>
+
 `stems.json` is the contract between zones. See [`CLAUDE.md`](CLAUDE.md) for the full conventions + agent-role write scopes.
 
 ## TLDR Install
