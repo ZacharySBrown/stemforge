@@ -26,6 +26,7 @@ Dual-mode audio production system: Python CLI for stem splitting + beat slicing,
 - `specs/` — Technical architecture specs
 - `tests/` — Pytest suite
 - `docs/` — Design docs, exec plans (created as needed)
+- `.local/` (gitignored) — per-user host snapshots. `.local/mus/{mus_tree.txt,mus_events.log,mus_setup.md}` is the sandbox-blocked `~/mus` library surface for agents; refresh with `tools/refresh_mus_dump.sh`.
 
 ## Key Commands
 
