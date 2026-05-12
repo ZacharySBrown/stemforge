@@ -93,8 +93,10 @@ MUST_KEEP_GREEN_PATHS: dict[str, list[str]] = {
 # land without blocking on the merge order. Once a stacked PR lands, the
 # entry is no longer needed (the file becomes extant) — pruning is hygiene.
 STACKED_PR_PENDING: set[str] = {
-    # D.1 — m4l.button.commit Tier-3 tests (PR #48)
-    "tests/js_mocks/test_commit.test.js",
+    # Empty as of 2026-05-12: ``test_commit.test.js`` (PR #48) landed long
+    # ago and the file is now wired into pytest via ``test_js_bridge.py``.
+    # Add a new entry only when introducing a path-ID whose sole coverage
+    # lives on an unmerged stacked PR; remove it once the PR lands.
 }
 
 
