@@ -1,6 +1,6 @@
 # Bounce writes empty stub manifest before populating it
 
-**Status:** Open — captured 2026-05-12.
+**Status:** Closed — captured 2026-05-12. Resolved by PR #66 (Phase 1 hardening): `bounceTracks` now writes the stub to `<manifest>.tmp` and atomically renames to the final path after `_commitSessionTracks` populates `session_tracks`. Polling `os.path.exists(manifest)` is now safe.
 
 ## Symptom
 
