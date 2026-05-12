@@ -1,0 +1,118 @@
+================================================================================
+PHASE 1: SLOT + PAD JSON METADATA (via SysEx FILE_METADATA_GET)
+================================================================================
+
+--- Pad C/p01 → slot 740  (def f2) ---
+  SLOT 740 fields:
+    !! _parse_error: Expecting ':' delimiter: line 1 column 321 (char 320)
+    !! _raw: 7b226368616e6e656c73223a312c2273616d706c6572617465223a34363837352c22666f726d6174223a22733136222c22637263223a3737303731373037332c22736f756e642e6c6f6f707374617274223a2d312c22736f756e642e6c6f6f70656e64223a2d312c226e616d65223a223734305f663220646566205b32303236222c22736f756e642e616d706c6974756465223a3130302c22736f756e642e706c61796d6f6465223a226b6579222c22736f756e642e70616e223a302c22736f756e642e70697463
+  PAD C/p01 (fileId 10401) fields:
+    envelope.attack: 0
+    envelope.release: 15
+    midi.channel: 0
+    sample.end: 114579
+    sample.start: 0
+    sound.amplitude: 100
+    sound.mutegroup: False
+    sound.pan: 0
+    sound.pitch: 0.0
+    sound.playmode: 'key'
+    sym: 740
+    time.mode: 'bar'
+
+--- Pad C/p02 → slot 741  (def d4) ---
+  SLOT 741 fields:
+    !! _parse_error: Invalid control character at: line 1 column 321 (char 320)
+    !! _raw: 7b226368616e6e656c73223a312c2273616d706c6572617465223a34363837352c22666f726d6174223a22733136222c22637263223a333636363736343835312c22736f756e642e6c6f6f707374617274223a2d312c22736f756e642e6c6f6f70656e64223a2d312c226e616d65223a223734315f643420646566205b32303236222c22736f756e642e616d706c6974756465223a3130302c22736f756e642e706c61796d6f6465223a226b6579222c22736f756e642e70616e223a302c22736f756e642e706974
+  PAD C/p02 (fileId 10402) fields:
+    envelope.attack: 0
+    envelope.release: 15
+    midi.channel: 0
+    sample.end: 114579
+    sample.start: 0
+    sound.amplitude: 100
+    sound.mutegroup: False
+    sound.pan: 0
+    sound.pitch: 0.0
+    sound.playmode: 'key'
+    sym: 741
+    time.mode: 'bar'
+
+--- Pad C/p03 → slot 744  (oll d1) ---
+  SLOT 744 fields:
+    !! _parse_error: Invalid control character at: line 1 column 321 (char 320)
+    !! _raw: 7b226368616e6e656c73223a312c2273616d706c6572617465223a34363837352c22666f726d6174223a22733136222c22637263223a343133353639303435382c22736f756e642e6c6f6f707374617274223a2d312c22736f756e642e6c6f6f70656e64223a2d312c226e616d65223a223734345f6431206f6c6c205b32303236222c22736f756e642e616d706c6974756465223a3130302c22736f756e642e706c61796d6f6465223a226b6579222c22736f756e642e70616e223a302c22736f756e642e706974
+  PAD C/p03 (fileId 10403) fields:
+    envelope.attack: 0
+    envelope.release: 15
+    midi.channel: 0
+    sample.end: 114579
+    sample.start: 0
+    sound.amplitude: 100
+    sound.mutegroup: False
+    sound.pan: 0
+    sound.pitch: 0.0
+    sound.playmode: 'key'
+    sym: 744
+    time.mode: 'bar'
+
+--- Pad C/p04 → slot 745  (qdbh d1 (control: 105 BPM)) ---
+  SLOT 745 fields:
+    !! _parse_error: Invalid control character at: line 1 column 321 (char 320)
+    !! _raw: 7b226368616e6e656c73223a312c2273616d706c6572617465223a34363837352c22666f726d6174223a22733136222c22637263223a333836363938313632372c22736f756e642e6c6f6f707374617274223a2d312c22736f756e642e6c6f6f70656e64223a2d312c226e616d65223a223734355f64312071646268205b323032222c22736f756e642e616d706c6974756465223a3130302c22736f756e642e706c61796d6f6465223a226b6579222c22736f756e642e70616e223a302c22736f756e642e706974
+  PAD C/p04 (fileId 10404) fields:
+    envelope.attack: 0
+    envelope.release: 15
+    midi.channel: 0
+    sample.end: 107182
+    sample.start: 0
+    sound.amplitude: 100
+    sound.mutegroup: False
+    sound.pan: 0
+    sound.pitch: 0.0
+    sound.playmode: 'key'
+    sym: 745
+    time.mode: 'bar'
+
+--- Pad C/p05 → slot 747  (oll d1 v2) ---
+  SLOT 747 fields:
+    !! _parse_error: Invalid control character at: line 1 column 321 (char 320)
+    !! _raw: 7b226368616e6e656c73223a312c2273616d706c6572617465223a34363837352c22666f726d6174223a22733136222c22637263223a313831363936333737302c22736f756e642e6c6f6f707374617274223a2d312c22736f756e642e6c6f6f70656e64223a2d312c226e616d65223a223734375f6431206f6c6c205b32303236222c22736f756e642e616d706c6974756465223a3130302c22736f756e642e706c61796d6f6465223a226b6579222c22736f756e642e70616e223a302c22736f756e642e706974
+  PAD C/p05 (fileId 10405) fields:
+    envelope.attack: 0
+    envelope.release: 15
+    midi.channel: 0
+    sample.end: 114579
+    sample.start: 0
+    sound.amplitude: 100
+    sound.mutegroup: False
+    sound.pan: 0
+    sound.pitch: 0.0
+    sound.playmode: 'key'
+    sym: 747
+    time.mode: 'bar'
+
+--- Pad C/p06 → slot 749  (qdbh d2 (control: 2-bar)) ---
+  SLOT 749 fields:
+    !! _parse_error: Invalid control character at: line 1 column 321 (char 320)
+    !! _raw: 7b226368616e6e656c73223a312c2273616d706c6572617465223a34363837352c22666f726d6174223a22733136222c22637263223a3438333136363539352c22736f756e642e6c6f6f707374617274223a2d312c22736f756e642e6c6f6f70656e64223a2d312c226e616d65223a223734395f64322071646268205b323032222c22736f756e642e616d706c6974756465223a3130302c22736f756e642e706c61796d6f6465223a226b6579222c22736f756e642e70616e223a302c22736f756e642e70697463
+  PAD C/p06 (fileId 10406) fields:
+    envelope.attack: 0
+    envelope.release: 15
+    midi.channel: 0
+    sample.end: 214364
+    sample.start: 0
+    sound.amplitude: 100
+    sound.mutegroup: False
+    sound.pan: 0
+    sound.pitch: 0.0
+    sound.playmode: 'key'
+    sym: 749
+    time.mode: 'bar'
+
+================================================================================
+PHASE 2: P08.tar PAD-RECORD BINARY (via FILE_GET)
+================================================================================
+
+Reading P08.tar from device ...
+  got 56832 bytes
