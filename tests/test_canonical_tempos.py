@@ -23,13 +23,40 @@ material the device actually targets.
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from click.testing import CliRunner
 
 from fixtures.known_tempos import CANONICAL_TRACKS, CanonicalTempo
-from stemforge.cli import cli
+
+
+# Subprocess isolation rationale: invoking `stemforge split` in-process via
+# Click's CliRunner triggers a torch double-init in full-suite mode
+# ("function '_has_torch_function' already has a docstring") because Demucs
+# imports torch a second time after earlier tests have already pulled it in.
+# Running each split as a fresh subprocess sidesteps the import state entirely.
+
+@dataclass
+class _SplitResult:
+    exit_code: int
+    output: str
+
+
+def _run_split(source: Path, out: Path) -> _SplitResult:
+    proc = subprocess.run(
+        [sys.executable, "-m", "stemforge.cli", "split",
+         str(source), "--output", str(out), "--pipeline", "arrangement"],
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+    return _SplitResult(
+        exit_code=proc.returncode,
+        output=proc.stdout + proc.stderr,
+    )
 
 
 @pytest.mark.has_phase3_inputs
@@ -42,12 +69,8 @@ def test_canonical_track_bpm_matches_truth(tmp_path: Path, track: CanonicalTempo
     over a 3-minute track (= ~1 beat accumulated max) but big enough to
     catch the 0.4% bias that prompted today's refine_bpm work.
     """
-    runner = CliRunner()
     out = tmp_path / "out"
-    result = runner.invoke(
-        cli,
-        ["split", str(track.source_audio), "--output", str(out), "--pipeline", "arrangement"],
-    )
+    result = _run_split(track.source_audio, out)
     assert result.exit_code == 0, result.output
 
     sj_path = out / track.name / "stems.json"
@@ -74,12 +97,8 @@ def test_canonical_track_first_downbeat_matches_truth(tmp_path: Path, track: Can
     Tracks flagged `fdb_assert_pending_fix=True` are excluded from this
     parametrize set — for those, see `test_canonical_track_first_downbeat_pending_fix`.
     """
-    runner = CliRunner()
     out = tmp_path / "out"
-    result = runner.invoke(
-        cli,
-        ["split", str(track.source_audio), "--output", str(out), "--pipeline", "arrangement"],
-    )
+    result = _run_split(track.source_audio, out)
     assert result.exit_code == 0, result.output
 
     sj = json.loads((out / track.name / "stems.json").read_text())
@@ -109,12 +128,8 @@ def test_canonical_track_first_downbeat_pending_fix(tmp_path: Path, track: Canon
     first_downbeat (sanity check that the field is populated). Real
     correctness is deferred to the linked issue.
     """
-    runner = CliRunner()
     out = tmp_path / "out"
-    result = runner.invoke(
-        cli,
-        ["split", str(track.source_audio), "--output", str(out), "--pipeline", "arrangement"],
-    )
+    result = _run_split(track.source_audio, out)
     assert result.exit_code == 0, result.output
 
     sj = json.loads((out / track.name / "stems.json").read_text())
