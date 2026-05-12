@@ -48,6 +48,16 @@ ep133 = [
     "python-rtmidi>=1.5",
     "playwright>=1.45",
 ]
+# Configurator HTTP server (Phase 3): FastAPI + uvicorn + soundfile-backed
+# preview/hash helpers. Local-only bind; auth-free; the M4L strip + popup
+# both talk to this surface. Optional so headless-CI installs don't pull
+# the web stack.
+configurator = [
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+    "soundfile>=0.12",
+    "httpx>=0.27",
+]
 # ONNX Runtime + conversion tooling (required for native M4L binary per PIVOT).
 onnx = [
     "onnx>=1.16",
@@ -74,6 +84,7 @@ local = [
 [project.scripts]
 stemforge = "stemforge.cli:cli"
 sf-remote = "tools.sf_remote:main"
+stemforge-configurator = "stemforge.configurator.server:run"
 
 [tool.setuptools.packages.find]
 where = ["."]
