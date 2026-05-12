@@ -1,0 +1,127 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * StemForge configurator palette.
+ *
+ * Dark default; orange accent matches StemForge's preset color identity.
+ * Values are HSL triplets so Tailwind's `hsl(var(--token))` works.
+ */
+@layer base {
+  :root,
+  .dark {
+    --background: 0 0% 4%;            /* #0a0a0a */
+    --foreground: 0 0% 98%;           /* #fafafa */
+    --elevated: 0 0% 8%;              /* #141414 */
+    --overlay: 0 0% 8% / 0.78;        /* rgba(20,20,20,0.78) */
+
+    --muted: 0 0% 10%;                /* #1a1a1a */
+    --muted-foreground: 240 5% 65%;   /* #a1a1aa */
+
+    --border: 0 0% 12%;               /* #1f1f1f */
+    --input: 0 0% 12%;
+    --ring: 24 95% 53%;               /* #f97316 */
+
+    --accent: 24 95% 53%;             /* #f97316 */
+    --accent-muted: 24 95% 53% / 0.15;
+    --accent-foreground: 0 0% 4%;
+
+    --success: 142 71% 45%;           /* #22c55e */
+    --warning: 48 96% 53%;            /* #eab308 */
+    --destructive: 0 84% 60%;         /* #ef4444 */
+    --destructive-foreground: 0 0% 98%;
+
+    --group-a: 200 90% 60%;           /* cyan-blue   — vocals A */
+    --group-b: 280 80% 65%;           /* violet      — vocals B */
+    --group-c: 0 75% 60%;             /* warm red    — drums */
+    --group-d: 150 70% 55%;           /* teal-green  — texture */
+
+    --radius: 0.6rem;
+  }
+
+  *,
+  *::before,
+  *::after {
+    border-color: hsl(var(--border));
+  }
+
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    font-family: theme("fontFamily.sans");
+    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overscroll-behavior: none;
+  }
+
+  /* Numeric/technical fields render with tabular numbers so column-aligned
+     readouts (BPM, memory MB, slot indices) don't jitter. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* A subtle gradient breathes life into the otherwise-flat #0a0a0a base. */
+  #root {
+    min-height: 100vh;
+    background:
+      radial-gradient(
+        1200px 600px at 8% -10%,
+        hsl(24 95% 53% / 0.05),
+        transparent 60%
+      ),
+      radial-gradient(
+        900px 500px at 110% 20%,
+        hsl(200 90% 60% / 0.04),
+        transparent 60%
+      ),
+      hsl(var(--background));
+  }
+
+  ::selection {
+    background: hsl(var(--accent) / 0.35);
+    color: hsl(var(--foreground));
+  }
+
+  /* Thin scrollbars to match the polished aesthetic */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(0 0% 25%);
+  }
+}
+
+@layer components {
+  /* Glassmorphism panel — used by toolbar/sidebar/status bar */
+  .glass {
+    background: hsla(var(--overlay));
+    backdrop-filter: blur(12px) saturate(140%);
+    -webkit-backdrop-filter: blur(12px) saturate(140%);
+    border: 1px solid hsl(0 0% 100% / 0.06);
+  }
+
+  /* Skeleton shimmer used by Skeleton component */
+  .skeleton-shimmer {
+    background: linear-gradient(
+      90deg,
+      hsl(var(--muted)) 0%,
+      hsl(0 0% 15%) 50%,
+      hsl(var(--muted)) 100%
+    );
+    background-size: 1000px 100%;
+    animation: shimmer 2.2s linear infinite;
+  }
+}
