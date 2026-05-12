@@ -62,3 +62,8 @@ tests/ep133/fixtures/reference.ppak
 # Per-user host snapshots (mus library tree/events/setup docs). See
 # tools/refresh_mus_dump.sh. Never committed.
 /.local/
+
+# Ableton analysis cache files. Live writes these next to audio sources;
+# they're regenerable on first open and have caused accidental commits
+# (e.g. grooves/*.wav.asd, root the_champ_30s.wav.asd).
+*.asd
