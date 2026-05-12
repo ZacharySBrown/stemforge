@@ -39,6 +39,7 @@ from fixtures.known_tempos import CANONICAL_TRACKS, CanonicalTempo
 # imports torch a second time after earlier tests have already pulled it in.
 # Running each split as a fresh subprocess sidesteps the import state entirely.
 
+
 @dataclass
 class _SplitResult:
     exit_code: int
@@ -47,8 +48,17 @@ class _SplitResult:
 
 def _run_split(source: Path, out: Path) -> _SplitResult:
     proc = subprocess.run(
-        [sys.executable, "-m", "stemforge.cli", "split",
-         str(source), "--output", str(out), "--pipeline", "arrangement"],
+        [
+            sys.executable,
+            "-m",
+            "stemforge.cli",
+            "split",
+            str(source),
+            "--output",
+            str(out),
+            "--pipeline",
+            "arrangement",
+        ],
         capture_output=True,
         text=True,
         timeout=600,
