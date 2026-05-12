@@ -9,7 +9,7 @@ Two commits ship the underlying machinery:
 1. **PR #62 (merged)** — `feat(ep133): deck-from-manifest + build-deck pipeline w/ per-clip warp_bpm` — the bulk of the EP-133 deck pipeline + five bug fixes + initial per-clip BPM capture.
 2. **Pending commit on `main`** — `_collapseToLoopRegion` helper in the bounce flow + 6 JS mock tests + pytest bridge.
 
-This doc covers what was learned *across both commits and the hardware-validation pass*. It supersedes the in-tree [`EP133_DEBRIEF.md`](../../EP133_DEBRIEF.md) (which is now redundant — disposition tracked in [`docs/issues/ep133-debrief-disposition.md`](../issues/ep133-debrief-disposition.md)).
+This doc covers what was learned *across both commits and the hardware-validation pass*. It supersedes the prior in-tree `EP133_DEBRIEF.md` (now removed; disposition tracked in [`docs/issues/ep133-debrief-disposition.md`](../issues/ep133-debrief-disposition.md)).
 
 ## What works end-to-end
 
