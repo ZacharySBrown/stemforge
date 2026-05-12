@@ -195,11 +195,19 @@ function File(hfsPath, mode) {
     this._path = _hfsToPosix(hfsPath);
     this._mode = String(mode || 'read');
     const entry = state.fs[this._path];
+    const isWrite = this._mode === 'write' || this._mode === 'readwrite';
     if (entry && !entry.isDir) {
         this._contents = String(entry.contents);
         this.isopen = 1;
         this.position = 0;
         this.eof = this._contents.length;
+    } else if (isWrite) {
+        // Opening a missing file in write mode creates it (mirrors Max File).
+        state.fs[this._path] = { isDir: false, contents: '' };
+        this._contents = '';
+        this.isopen = 1;
+        this.position = 0;
+        this.eof = 0;
     } else {
         this._contents = '';
         this.isopen = 0;
@@ -215,8 +223,26 @@ File.prototype.readstring = function (n) {
     return out;
 };
 
+File.prototype.writestring = function (s) {
+    // Persist into the mock fs so subsequent readers see the write. The
+    // real Max File appends at the current position and grows ``eof``;
+    // ``writeFileContents`` first resets ``position = 0`` + ``eof = 0``
+    // to truncate, so a simple "overwrite from position" model matches.
+    const text = String(s == null ? '' : s);
+    const before = this._contents.substr(0, this.position);
+    const after = this._contents.substr(this.position + text.length);
+    this._contents = before + text + after;
+    this.position += text.length;
+    if (this.position > this.eof) this.eof = this.position;
+    // Sync back to the shared fs immediately so the next File(..., 'read')
+    // sees the write — readFileContents/writeFileContents are independent
+    // File instances pointing at the same path.
+    state.fs[this._path] = { isDir: false, contents: this._contents };
+};
+
 File.prototype.close = function () {
     this.isopen = 0;
+    state.fs[this._path] = { isDir: false, contents: this._contents };
 };
 
 File.prototype.write = function (/* data */) {
