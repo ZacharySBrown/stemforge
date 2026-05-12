@@ -15,6 +15,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 JS_TEST = REPO_ROOT / "tests" / "js_mocks" / "test_preset_resolution.test.js"
 JS_ARRANGEMENT_LOADER_TEST = REPO_ROOT / "tests" / "js_mocks" / "test_arrangement_loader.test.js"
+JS_BOUNCE_TEST = REPO_ROOT / "tests" / "js_mocks" / "test_bounce.test.js"
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not on PATH")
@@ -62,6 +63,28 @@ def test_js_arrangement_loader_suite() -> None:
     if result.returncode != 0:
         pytest.fail(
             "JS arrangement-loader test suite failed\n"
+            f"exit code: {result.returncode}\n"
+            f"stdout:\n{result.stdout}\n"
+            f"stderr:\n{result.stderr}"
+        )
+    assert "pass " in result.stdout, "expected test summary in stdout; got:\n" + result.stdout
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not on PATH")
+def test_js_bounce_suite() -> None:
+    """Run the _bounceCropTrack / _collapseToLoopRegion suite and assert exit 0."""
+    assert JS_BOUNCE_TEST.is_file(), f"missing JS test file: {JS_BOUNCE_TEST}"
+
+    result = subprocess.run(
+        ["node", str(JS_BOUNCE_TEST)],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        pytest.fail(
+            "JS bounce test suite failed\n"
             f"exit code: {result.returncode}\n"
             f"stdout:\n{result.stdout}\n"
             f"stderr:\n{result.stderr}"
