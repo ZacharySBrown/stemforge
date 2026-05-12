@@ -1,6 +1,14 @@
 # `sf-remote fire forge reload` doesn't actually reload Max [js]
 
-**Status:** Open — captured 2026-05-12.
+**Status:** Documented (not fixed) — 2026-05-12.
+
+Phase 1 hardening dropped the optimistic "reload forwarded to loader"
+log line in favor of an honest "reload forwarded to loader (no-op
+without loader-side handler)" and added a CAVEAT block to
+``sf_forge.js:reload()`` describing the three manual workarounds. The
+real fix (Option 1 below — add ``function reload()`` to the loader)
+remains TODO; deferred because we can't verify autowatch-toggle
+behavior triggers re-eval without on-device testing.
 
 ## Symptom
 

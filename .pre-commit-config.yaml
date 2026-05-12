@@ -1,8 +1,11 @@
 # Pre-commit hooks — installed locally with `pre-commit install`.
 #
 # What this enforces on every commit:
-#   - ruff check (linting)         on stemforge/ + tests/
-#   - ruff format (auto-format)    on stemforge/ + tests/
+#   - ruff check --fix      (linting + autofix)        on stemforge/ + tests/
+#   - ruff format --check   (format guard, FAIL only)  repo-wide
+#     ↑ CI runs the same `--check` form. PR #62 shipped formatting drift
+#       that only surfaced after the push round-trip; arming this locally
+#       catches it pre-push. See docs/issues/hardening-test-coverage-gaps.md.
 #   - whitespace + EOL hygiene
 #   - YAML / JSON / TOML well-formedness
 #
@@ -12,8 +15,8 @@
 #   - pytest: full suite is too slow for every commit. Run `pytest` locally
 #     before pushing or rely on CI. The `Unit tests` CI job is the gate.
 #
-# Setup:
-#   pip install pre-commit
+# Setup (REQUIRED on a fresh clone — hooks live in .git/hooks, untracked):
+#   pip install pre-commit            # or `uv add --dev pre-commit`
 #   pre-commit install                # arms the git hook
 #   pre-commit run --all-files        # one-time run across the whole repo
 
@@ -25,7 +28,16 @@ repos:
         args: [--fix]
         files: ^(stemforge|tests)/
       - id: ruff-format
+        # Autoformat on staged files (writes back). Convenience.
         files: ^(stemforge|tests)/
+      - id: ruff-format
+        # Hard --check gate that mirrors CI. Catches drift the autoformat
+        # above can't reach (e.g. unstaged hunks, formatter version skew).
+        # Distinct hook id via alias so pre-commit doesn't dedupe.
+        alias: ruff-format-check
+        args: [--check]
+        files: ^(stemforge|tests)/
+        stages: [pre-commit, manual]
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0

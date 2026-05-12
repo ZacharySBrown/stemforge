@@ -49,6 +49,15 @@ DEFAULT_PLAY_MODE: dict[str, str] = {
 PADS_PER_GROUP = 12
 
 
+#: Valid format-profile names accepted by the ``--profile`` / ``--all-drum``
+#: CLI flags. Kept in sync with the keys of :data:`DEFAULT_PLAY_MODE` so the
+#: caller can't pick a profile we don't know how to map to a play_mode.
+ALLOWED_FORMAT_PROFILES: tuple[str, ...] = ("vocal", "drum", "texture", "preserve_source")
+
+#: Valid play-mode names accepted by the ``--play-mode`` CLI flag.
+ALLOWED_PLAY_MODES: tuple[str, ...] = ("oneshot", "key", "loop")
+
+
 def deck_from_manifest(
     manifest: dict,
     manifest_path: Path,
@@ -57,13 +66,36 @@ def deck_from_manifest(
     project_slot: int = 1,
     project_bpm: float | None = None,
     time_sig: tuple[int, int] = (4, 4),
+    force_format_profile: str | None = None,
+    force_play_mode: str | None = None,
 ) -> dict[str, Any]:
     """Build a deck-plan dict from a curated manifest.
 
     Returns a dict suitable for serializing to YAML or JSON and feeding
     back into ``stemforge build-deck``. The CLI wraps this with file I/O
     + Rich console output.
+
+    Parameters
+    ----------
+    force_format_profile :
+        If set, override the per-group default in
+        :data:`DEFAULT_FORMAT_PROFILE` with this value for every group.
+        Must be one of :data:`ALLOWED_FORMAT_PROFILES`. Use case:
+        the breaks-n-beats build wanted ``drum`` everywhere instead of
+        the default vocal/drum/texture mix — historically a regex patch.
+    force_play_mode :
+        If set, override the per-profile play_mode default
+        (:data:`DEFAULT_PLAY_MODE`) with this value on every pad row.
+        Must be one of :data:`ALLOWED_PLAY_MODES`. Independent of
+        ``force_format_profile`` so a caller can keep heterogeneous
+        format profiles but uniformly switch e.g. all-key playback.
     """
+    if force_format_profile is not None and force_format_profile not in ALLOWED_FORMAT_PROFILES:
+        raise ValueError(
+            f"force_format_profile={force_format_profile!r} not in {ALLOWED_FORMAT_PROFILES!r}"
+        )
+    if force_play_mode is not None and force_play_mode not in ALLOWED_PLAY_MODES:
+        raise ValueError(f"force_play_mode={force_play_mode!r} not in {ALLOWED_PLAY_MODES!r}")
     if project_bpm is None:
         raw = manifest.get("bpm")
         try:
@@ -89,8 +121,8 @@ def deck_from_manifest(
             # Skip empty groups in the output — keeps the deck.yaml
             # tight and the user can add the group back if they want.
             continue
-        profile = DEFAULT_FORMAT_PROFILE[g]
-        play_mode = DEFAULT_PLAY_MODE[profile]
+        profile = force_format_profile or DEFAULT_FORMAT_PROFILE[g]
+        play_mode = force_play_mode or DEFAULT_PLAY_MODE[profile]
         pads = []
         for pad_idx, item in enumerate(entries[:PADS_PER_GROUP], start=1):
             entry = item["entry"]
@@ -176,7 +208,10 @@ def to_json_string(plan: dict) -> str:
 
 
 __all__ = [
+    "ALLOWED_FORMAT_PROFILES",
+    "ALLOWED_PLAY_MODES",
     "DEFAULT_FORMAT_PROFILE",
+    "DEFAULT_PLAY_MODE",
     "GROUPS_ORDER",
     "PADS_PER_GROUP",
     "deck_from_manifest",
