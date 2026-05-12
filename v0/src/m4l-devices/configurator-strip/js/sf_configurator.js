@@ -243,15 +243,17 @@ function openEditor() {
         _footer("open-editor: server down");
         return;
     }
-    // Open in the system browser (Chrome/Safari) rather than M4L's
-    // embedded [jweb]. [jweb] inside an M4L device is constrained to the
-    // device's UI area (which is tiny for this strip) and doesn't
-    // recognize the `openurl` message anyway — its real verb is `url`.
-    // System browser gives a real window the user can position freely.
-    // The [jweb] object remains in the patcher as a no-op vestige for
-    // now; Phase 4 may revisit if a true float-window embed is wanted.
     var url = _serverBase + "/";
-    messnamed("max", "launchbrowser", url);
+    // Open Chrome in app-mode: a chromeless dedicated window with no
+    // tabs/URL bar/bookmarks. Looks native, lives separately from the
+    // user's existing Chrome session. `messnamed("max", "launchbrowser")`
+    // would just spawn a tab in an existing Chrome window — not what
+    // we want for the popup. Fallback to launchbrowser if Chrome isn't
+    // installed is documented in the issue file; for the user's machine
+    // Chrome is the working browser.
+    var cmd = 'open -na "Google Chrome" --args --new-window --app=' +
+              _shellQuote(url);
+    outlet(4, "exec", cmd);
     // Also fire outlet 3 with the proper [jweb] verb in case anyone has
     // patched the strip to route outlet 3 into a custom embed.
     outlet(3, "url", url);

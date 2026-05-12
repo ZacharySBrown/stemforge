@@ -154,27 +154,30 @@ test('recompute / slice / curate / reAnchor each fire their verb', () => {
     assert.ok(cmds.some(c => /intent\/re-anchor/.test(c)), 're-anchor missing');
 });
 
-// ── openEditor → launchbrowser via messnamed (system browser) ────────────────
+// ── openEditor → Chrome app-mode via shell exec ──────────────────────────────
 //
-// Phase 3 ships the popup via the system browser rather than M4L's embedded
-// [jweb] — see openEditor() in sf_configurator.js for rationale. The legacy
-// outlet-3 path still fires `url <addr>` for any custom patcher that routes
-// outlet 3 into a [jweb], but the load-bearing call is messnamed.
+// Phase 3 ships the popup via a Chrome app-mode window: a chromeless dedicated
+// window (no tabs/URL bar/bookmarks) rather than M4L's embedded [jweb] (too
+// small) or messnamed launchbrowser (lands as a tab in an existing Chrome
+// session, which is exactly what Zak hit on the first on-device test).
+// The exec command is `open -na "Google Chrome" --args --new-window --app=<url>`.
 
-test('openEditor: messnamed launchbrowser with serverBase, plus outlet-3 fallback', () => {
+test('openEditor: shell exec launches Chrome in app mode with serverBase', () => {
     const ctx = loadConf();
     maxApi.seedFile(PORT_FILE_KEY, '7421');
     ctx._discoverPort();
 
-    // Clear any messnamed calls emitted during discover (none expected, but
-    // be explicit so this test pins the openEditor call specifically).
-    maxApi.state.messnamed = [];
-
     ctx.openEditor();
 
-    const calls = maxApi.state.messnamed;
-    assert.equal(calls.length, 1, 'exactly one messnamed call');
-    assert.deepEqual(calls[0], ['max', 'launchbrowser', 'http://127.0.0.1:7421/']);
+    const sh = outletOn(4);
+    const exec = sh.find(a => a[0] === 'exec' &&
+        typeof a[1] === 'string' &&
+        a[1].indexOf('Google Chrome') >= 0);
+    assert.ok(exec, 'expected shell exec with Google Chrome target');
+    assert.ok(exec[1].indexOf('--app=') >= 0, 'expected --app= flag');
+    assert.ok(exec[1].indexOf('--new-window') >= 0, 'expected --new-window flag');
+    assert.ok(exec[1].indexOf('http://127.0.0.1:7421/') >= 0,
+        'expected serverBase URL in command');
 
     // Legacy outlet-3 path emits `url <addr>` (NOT openurl — [jweb] doesn't
     // recognize openurl).
@@ -183,15 +186,17 @@ test('openEditor: messnamed launchbrowser with serverBase, plus outlet-3 fallbac
     assert.deepEqual(last, ['url', 'http://127.0.0.1:7421/']);
 });
 
-test('openEditor: with no server, fires neither messnamed nor outlet-3', () => {
+test('openEditor: with no server, fires neither shell exec nor outlet-3', () => {
     const ctx = loadConf();
     // no seed
-    maxApi.state.messnamed = [];
 
     ctx.openEditor();
 
-    const calls = maxApi.state.messnamed || [];
-    assert.equal(calls.length, 0, 'messnamed should not fire without a server');
+    const sh = outletOn(4);
+    const browserExecs = sh.filter(a => a[0] === 'exec' &&
+        typeof a[1] === 'string' &&
+        a[1].indexOf('Google Chrome') >= 0);
+    assert.equal(browserExecs.length, 0, 'no browser exec without a server');
 
     const j = outletOn(3);
     const urls = j.filter(a => a[0] === 'url' || a[0] === 'openurl');

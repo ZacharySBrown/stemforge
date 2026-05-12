@@ -242,23 +242,88 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
                 extras={"text": "t b"},
             )
         )
-
-        # Message box that names the JS handler — bang fires it, then the
-        # [js] runs the corresponding function.
-        boxes.append(
-            _box(
-                _btn_msg_id(btn_id),
-                "message",
-                (x_cursor, btn_y + btn_h + 30.0, 96.0, 22.0),
-                numinlets=2,
-                numoutlets=1,
-                outlettype=[""],
-                extras={"text": handler},
-            )
-        )
-
         lines.append(_line(_btn_box_id(btn_id), 0, _btn_tb_id(btn_id), 0))
-        lines.append(_line(_btn_tb_id(btn_id), 0, _btn_msg_id(btn_id), 0))
+
+        # File-picker insertion for verbs that need a path argument.
+        #
+        #   load-manifest → [opendialog] → [prepend loadManifest] → js
+        #   export        → [savedialog] → [prepend exportPpak]   → js
+        #
+        # Other verbs go directly via a [message <handler>] that calls the
+        # JS function with no args.
+        if verb == "load-manifest":
+            dlg_id = f"{_btn_msg_id(btn_id)}-opendialog"
+            prep_id = f"{_btn_msg_id(btn_id)}-prep"
+            boxes.append(
+                _box(
+                    dlg_id,
+                    "newobj",
+                    (x_cursor, btn_y + btn_h + 30.0, 96.0, 22.0),
+                    numinlets=1,
+                    numoutlets=1,
+                    outlettype=[""],
+                    # No filter — accept any file the user picks (manifests
+                    # are .json today but we don't constrain).
+                    extras={"text": "opendialog"},
+                )
+            )
+            boxes.append(
+                _box(
+                    prep_id,
+                    "newobj",
+                    (x_cursor, btn_y + btn_h + 56.0, 120.0, 22.0),
+                    numinlets=1,
+                    numoutlets=1,
+                    outlettype=[""],
+                    extras={"text": "prepend loadManifest"},
+                )
+            )
+            lines.append(_line(_btn_tb_id(btn_id), 0, dlg_id, 0))
+            lines.append(_line(dlg_id, 0, prep_id, 0))
+            lines.append(_line(prep_id, 0, OBJ_JS, 0))
+        elif verb == "export":
+            dlg_id = f"{_btn_msg_id(btn_id)}-savedialog"
+            prep_id = f"{_btn_msg_id(btn_id)}-prep"
+            boxes.append(
+                _box(
+                    dlg_id,
+                    "newobj",
+                    (x_cursor, btn_y + btn_h + 30.0, 96.0, 22.0),
+                    numinlets=1,
+                    numoutlets=1,
+                    outlettype=[""],
+                    # Default filename suggestion for the save dialog.
+                    extras={"text": "savedialog configurator-export.ppak"},
+                )
+            )
+            boxes.append(
+                _box(
+                    prep_id,
+                    "newobj",
+                    (x_cursor, btn_y + btn_h + 56.0, 120.0, 22.0),
+                    numinlets=1,
+                    numoutlets=1,
+                    outlettype=[""],
+                    extras={"text": "prepend exportPpak"},
+                )
+            )
+            lines.append(_line(_btn_tb_id(btn_id), 0, dlg_id, 0))
+            lines.append(_line(dlg_id, 0, prep_id, 0))
+            lines.append(_line(prep_id, 0, OBJ_JS, 0))
+        else:
+            # Standard path: bang → [message <handler>] → JS.
+            boxes.append(
+                _box(
+                    _btn_msg_id(btn_id),
+                    "message",
+                    (x_cursor, btn_y + btn_h + 30.0, 96.0, 22.0),
+                    numinlets=2,
+                    numoutlets=1,
+                    outlettype=[""],
+                    extras={"text": handler},
+                )
+            )
+            lines.append(_line(_btn_tb_id(btn_id), 0, _btn_msg_id(btn_id), 0))
 
         x_cursor += btn_w + btn_gap
 
@@ -401,8 +466,14 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         )
     )
 
-    # Wire each button's message → JS inlet 0.
+    # Wire each standard button's message → JS inlet 0.
+    # Dialog-bearing verbs (load-manifest, export) wire directly inside the
+    # per-button loop above via [opendialog]/[savedialog] → [prepend H] → JS;
+    # those do not have a [message H] object to connect here.
+    DIALOG_VERBS = {"load-manifest", "export"}
     for btn in btn_items:
+        if btn["verb"] in DIALOG_VERBS:
+            continue
         lines.append(_line(_btn_msg_id(btn["id"]), 0, OBJ_JS, 0))
 
     # ── Loadbang → JS (boot-time port discovery) ────────────────────────────

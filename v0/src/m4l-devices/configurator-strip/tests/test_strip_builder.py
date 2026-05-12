@@ -131,27 +131,75 @@ def test_every_button_is_live_text_with_label_and_accent(spec, box_by_id):
         assert b["parameter_enable"] == 0
 
 
+DIALOG_VERBS = {"load-manifest", "export"}
+
+
 def test_every_button_has_tb_and_message_handler(spec, box_by_id, line_pairs):
     """Pitfall #17 — buttons need [t b] to convert label-symbol into a bang
-    before firing the JS handler-name message."""
+    before firing the JS handler.
+
+    Dialog-bearing verbs (load-manifest, export) route the bang through a
+    file picker first; see `test_dialog_bearing_buttons_have_file_picker`.
+    """
     for btn in spec["ui"]["buttons"]["items"]:
         verb = btn["verb"]
         handler = VERB_TO_HANDLER[verb]
 
         btn_box = _btn_box_id(btn["id"])
         tb_box = _btn_tb_id(btn["id"])
-        msg_box = _btn_msg_id(btn["id"])
 
         assert tb_box in box_by_id
         assert box_by_id[tb_box]["text"] == "t b"
+        # button → t b is shared by all verbs.
+        assert (btn_box, tb_box) in line_pairs
 
+        if verb in DIALOG_VERBS:
+            # Picker variants have no [message handler] box; their wiring is
+            # asserted in test_dialog_bearing_buttons_have_file_picker.
+            continue
+
+        msg_box = _btn_msg_id(btn["id"])
         assert msg_box in box_by_id
         assert box_by_id[msg_box]["text"] == handler
-
-        # Wiring: button → t b → message → JS.
-        assert (btn_box, tb_box) in line_pairs
+        # t b → message → JS for the standard path.
         assert (tb_box, msg_box) in line_pairs
         assert (msg_box, OBJ_JS) in line_pairs
+
+
+def test_dialog_bearing_buttons_have_file_picker(spec, box_by_id, line_pairs):
+    """Load Manifest and Export pop native file dialogs ([opendialog] /
+    [savedialog]) and pipe the chosen path into the JS via [prepend H].
+    Without the picker the user has to type an absolute path by hand.
+    """
+    items = {b["verb"]: b for b in spec["ui"]["buttons"]["items"]}
+
+    # ── load-manifest → [opendialog] → [prepend loadManifest] → JS ──────────
+    if "load-manifest" in items:
+        btn = items["load-manifest"]
+        tb_box = _btn_tb_id(btn["id"])
+        dlg_id = f"{_btn_msg_id(btn['id'])}-opendialog"
+        prep_id = f"{_btn_msg_id(btn['id'])}-prep"
+        assert dlg_id in box_by_id, "load-manifest missing [opendialog]"
+        assert box_by_id[dlg_id]["text"] == "opendialog"
+        assert prep_id in box_by_id, "load-manifest missing [prepend loadManifest]"
+        assert box_by_id[prep_id]["text"] == "prepend loadManifest"
+        assert (tb_box, dlg_id) in line_pairs
+        assert (dlg_id, prep_id) in line_pairs
+        assert (prep_id, OBJ_JS) in line_pairs
+
+    # ── export → [savedialog] → [prepend exportPpak] → JS ───────────────────
+    if "export" in items:
+        btn = items["export"]
+        tb_box = _btn_tb_id(btn["id"])
+        dlg_id = f"{_btn_msg_id(btn['id'])}-savedialog"
+        prep_id = f"{_btn_msg_id(btn['id'])}-prep"
+        assert dlg_id in box_by_id, "export missing [savedialog]"
+        assert box_by_id[dlg_id]["text"].startswith("savedialog")
+        assert prep_id in box_by_id, "export missing [prepend exportPpak]"
+        assert box_by_id[prep_id]["text"] == "prepend exportPpak"
+        assert (tb_box, dlg_id) in line_pairs
+        assert (dlg_id, prep_id) in line_pairs
+        assert (prep_id, OBJ_JS) in line_pairs
 
 
 # ── JS dispatcher object ────────────────────────────────────────────────────
