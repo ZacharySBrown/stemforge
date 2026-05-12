@@ -178,12 +178,20 @@ def _osc_pad(data: bytes) -> bytes:
 def _osc_encode(payload: str) -> bytes:
     """Encode a Max bus message as OSC with a slash-prefixed address.
 
-    Per empirical probe (2026-05-09 — see /tmp/udp_probe.maxpat results),
-    Max's `udpreceive` in OSC mode emits the address as a SINGLE symbol
-    with leading slash preserved — `/foo` stays as `/foo`, not `foo`.
-    Our patcher's dispatcher route was updated to match `/state /forge
-    /preset-loader …` accordingly, so we send single-segment addresses
-    and let the route strip them.
+    Empirically: Max's `udpreceive` in OSC mode emits the address as a
+    SINGLE symbol with leading slash preserved — `/foo` stays as `/foo`,
+    not `foo`. The patcher's dispatcher route was updated to match
+    `/state /forge /preset-loader /manifest-loader /settings /ui /logger`
+    accordingly, so we send single-segment addresses and let `route`
+    strip the leading slash before forwarding to the named module.
+
+    To reproduce the empirical check if the OSC behavior ever changes:
+    create a Max patch with `[udpreceive 7420 OSC]` → `[print]`; send
+    `/test foo bar` via `nc -u localhost 7420 < /tmp/osc_payload` (where
+    the payload bytes match this function's output) and verify Max
+    prints `/test foo bar`. The slash-preservation behavior dates to
+    Max 8.x; if a future Max version normalizes addresses, every
+    `route /target` in the patcher would need to drop its slash.
 
     Format: address = "/" + first_token, args = remaining tokens (typed
     as strings; numeric coercion happens JS-side via `Number(arg)`).
@@ -257,9 +265,7 @@ def _tail(path: Path, *, follow: bool, initial_lines: int = 200) -> None:
             sys.stdout.flush()
 
 
-def _tail_until_marker(
-    path: Path, marker: str, *, timeout: float = 5.0
-) -> list[str]:
+def _tail_until_marker(path: Path, marker: str, *, timeout: float = 5.0) -> list[str]:
     """Follow `path` from its end until we see a line containing `marker`.
 
     Returns all lines from the starting position up to and including the
@@ -306,8 +312,13 @@ def cmd_log(args: argparse.Namespace) -> int:
 def cmd_fire(args: argparse.Namespace) -> int:
     target = args.target
     allowed = {
-        "state", "forge", "preset-loader", "manifest-loader",
-        "settings", "ui", "logger",
+        "state",
+        "forge",
+        "preset-loader",
+        "manifest-loader",
+        "settings",
+        "ui",
+        "logger",
     }
     if target not in allowed:
         print(
@@ -339,15 +350,28 @@ def cmd_dump(args: argparse.Namespace) -> int:
     )
     if not lines:
         print(
-            f"timed out after {args.timeout}s waiting for '{end_marker}' — "
-            f"is Max running the debug patch?",
+            f"timed out after {args.timeout}s waiting for '{end_marker}'.\n"
+            f"  Checklist:\n"
+            f"    1. Is Live + the StemForge M4L device loaded?\n"
+            f"    2. Is the sf_logger.js module running? (it tails to "
+            f"{LOG_PATH})\n"
+            f"    3. Try `sf-remote log -f` in another shell to confirm "
+            f"the log is live.\n"
+            f"  Override the timeout with `--timeout SEC` if "
+            f"{args.timeout}s is genuinely too tight.",
             file=sys.stderr,
         )
         return 1
     relevant = [ln for ln in lines if marker_tag in ln]
     if not relevant:
         print(
-            f"saw '{end_marker}' but no lines tagged '{marker_tag}'",
+            f"saw '{end_marker}' in the log but no lines tagged "
+            f"'{marker_tag}'.\n"
+            f"  This typically means `{name}` is empty on the device side "
+            f"(no entries to dump),\n"
+            f"  OR the dump-handler module hasn't initialized that dict "
+            f"yet. Confirm with `sf-remote fire {name.replace('sf_', '')} "
+            f"status` (or equivalent state probe for {name}).",
             file=sys.stderr,
         )
         return 1
@@ -422,11 +446,14 @@ def build_parser() -> argparse.ArgumentParser:
     # log
     p_log = sub.add_parser("log", help="Tail or clear the debug log.")
     p_log.add_argument(
-        "--follow", "-f", action="store_true",
+        "--follow",
+        "-f",
+        action="store_true",
         help="Follow new log lines (like tail -f).",
     )
     p_log.add_argument(
-        "--clear", action="store_true",
+        "--clear",
+        action="store_true",
         help="Truncate the log locally AND send 'clear' via UDP to sf_logger.",
     )
     p_log.set_defaults(func=cmd_log)
@@ -444,7 +471,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Module target (state / forge / preset-loader / manifest-loader / settings / ui / logger).",
     )
     p_fire.add_argument(
-        "message", nargs=argparse.REMAINDER,
+        "message",
+        nargs=argparse.REMAINDER,
         help="Message body (one or more atoms). E.g. markStemDone bass",
     )
     p_fire.set_defaults(func=cmd_fire)
@@ -459,7 +487,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Dict name (sf_state | sf_preset | sf_manifest | sf_settings).",
     )
     p_dump.add_argument(
-        "--timeout", type=float, default=3.0,
+        "--timeout",
+        type=float,
+        default=3.0,
         help="Seconds to wait for DUMP END marker (default 3).",
     )
     p_dump.set_defaults(func=cmd_dump)
@@ -484,7 +514,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print last N log lines + dump sf_state.",
     )
     p_status.add_argument(
-        "--lines", "-n", type=int, default=60,
+        "--lines",
+        "-n",
+        type=int,
+        default=60,
         help="How many log lines to print (default 60).",
     )
     p_status.set_defaults(func=cmd_status)
