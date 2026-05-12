@@ -1,8 +1,39 @@
 # StemForge
 
-Stem splitting + beat slicing pipeline for Ableton Live IDM production.
+**StemForge is a stem-split + bar-curate + EP-133 K.O. II kit-builder for Ableton workflows.** Drop in a track, get loop-bank-ready stems and a hardware-ready `.ppak` in one pipeline.
 
-Drop a track in, get stems + beat-sliced WAVs out, auto-loaded into Ableton via Max for Live.
+Two surfaces share one core:
+
+- A Python CLI (`stemforge`) that separates stems via Demucs, slices at beat or bar boundaries, curates diverse loops, and synthesizes EP-133 `.ppak` kits.
+- A Max for Live device that watches Core's manifests and auto-loads clips onto template tracks in Ableton.
+
+## Architecture
+
+```
+              ┌─────────────────────────────────────────────────┐
+   audio →    │  Core (stemforge/)                              │
+              │    backend.separate → slice → curate → manifest │
+              └────────────────┬────────────────────┬───────────┘
+                               │                    │
+                  stems.json   │                    │  deck.yaml
+                               ▼                    ▼
+              ┌──────────────────────────┐  ┌──────────────────┐
+              │ M4L (m4l/)               │  │ Tools (tools/)   │
+              │ Ableton clip auto-load   │  │ sf-remote, batch │
+              │ + bounce + COMMIT        │  │ scripts, exports │
+              └──────────────────────────┘  └──────────────────┘
+                               │                    │
+                               ▼                    ▼
+                         Ableton session       EP-133 .ppak
+```
+
+Three zones, one contract:
+
+- **Core** (`stemforge/`) — CLI, backends, slicer, analyzer, curator, manifest. Zero M4L dependencies.
+- **M4L** (`m4l/`, `v0/`) — Max for Live devices + JS bridge. Reads `stems.json` manifests; never imports Core code.
+- **Tools** (`tools/`) — Standalone utilities and `sf-remote` (a UDP client for the M4L device). May call Core CLI; doesn't import M4L code.
+
+`stems.json` is the contract between zones. See [`CLAUDE.md`](CLAUDE.md) for the full conventions + agent-role write scopes.
 
 ## TLDR Install
 
@@ -70,7 +101,9 @@ stemforge list
 
 ## Pipelines
 
-Pipelines are in `pipelines/default.yaml` — edit to taste. Four presets included:
+Pipelines live in `pipelines/` as YAML, compiled to JSON for the M4L device. Two kinds:
+
+**Processing pipelines** (`pipelines/default.yaml`) — how stems get mixed/effected on auto-load. Four presets:
 
 | Pipeline | Vibe |
 |----------|------|
@@ -79,7 +112,15 @@ Pipelines are in `pipelines/default.yaml` — edit to taste. Four presets includ
 | `glitch` | Granular reverse textures — Four Tet / BoC |
 | `ambient` | Long reverbs, slow modulation — textural IDM |
 
-After editing the YAML, regenerate JSON for the M4L device:
+**Canonical pipelines** — top-level YAMLs that drive the major workflows:
+
+| Pipeline | Use this when... |
+|----------|------------------|
+| `arrangement.yaml` | You're stem-splitting a full song for Ableton arrangement view (drag-in N-bar chunks with padding bars for crossfading). |
+| `curation.yaml` / `curation_nopad*.yaml` | You want exact-bar loop banks (e.g. for EP-133, Launchpad, Push). `_nopad` variants are required for EP-133 export. |
+| `production_idm.yaml` | You want clips auto-loaded onto the 7 StemForge IDM template tracks (drums raw/crushed, bass, textures, vocals, beat-chop). |
+
+After editing any YAML, regenerate JSON for the M4L device:
 ```bash
 stemforge generate-pipeline-json
 ```
@@ -96,6 +137,32 @@ See [setup.md](setup.md) for template track recipes. You build 7 tracks once:
 - SF | Beat Chop Simpler
 
 The M4L device duplicates these per stem and loads audio automatically.
+
+## EP-133 K.O. II Workflow
+
+You can ship a curated multi-source kit straight to an EP-133 K.O. II. The headline flow:
+
+```bash
+# 1. Forge each source track (split + curate bar loops).
+stemforge forge ~/Music/track_01.wav --curation pipelines/curation.yaml
+
+# 2. In Ableton, arrange clips on session tracks A/B/C/D, then hit COMMIT
+#    in the M4L device (or sf-remote fire forge bounceTracks <manifest>).
+#    This bounces + writes curated/manifest.json with a session_tracks block.
+
+# 3. Generate the deck plan from the manifest.
+stemforge deck-from-manifest ~/stemforge/decks/my_kit/curated/manifest.json \
+  --project my_kit --project-slot 8
+
+# 4. (Optional) Override format profile — useful for single-source decks.
+stemforge deck-from-manifest ... --all-drum    # everything as drum pads
+stemforge deck-from-manifest ... --profile vocal   # everything as vocal
+
+# 5. Build the .ppak and drag into K.O. II Sample Tool → import as project.
+stemforge build-deck deck.yaml --out ~/Desktop/my_kit.ppak
+```
+
+End-to-end: ~12 seconds for a 46-clip deck. See [`docs/guides/ep133-workflow.md`](docs/guides/ep133-workflow.md) for the full walkthrough (caveats, format profiles, the 20s per-sample cap, warp-BPM capture).
 
 ## Contributing
 
@@ -131,3 +198,13 @@ For full pre-commit configuration see [`.pre-commit-config.yaml`](.pre-commit-co
 3. **VST param indices** — pipeline YAML uses descriptive names but M4L sets by index. Verify with the Inspect workflow in setup.md.
 4. **Beat slicing is grid-quantized** — uses musical beat positions, not transient onsets. Adjust silence threshold for complex polyrhythms.
 5. **Demucs first run** — downloads ~80MB model to `~/.cache/torch/hub/`. Cached after that.
+6. **EP-133 per-sample 20s cap** — clips longer than 20s are skipped (with warning) by the kit synthesizer. Force a shorter loop region in Ableton before COMMIT.
+
+## Pointers
+
+- **CLI reference** — every `stemforge` and `sf-remote` flag with examples: [`docs/guides/cli-reference.md`](docs/guides/cli-reference.md).
+- **EP-133 workflow guide** — full walkthrough from forge to `.ppak`: [`docs/guides/ep133-workflow.md`](docs/guides/ep133-workflow.md).
+- **M4L device development** — battle-tested pitfalls, container format, deploy pipeline: `memory/m4l_device_development_guide.md` (in your Claude project memory).
+- **EP-133 protocol findings** — `memory/project_ep133_*` entries cover SysEx, coupled fields, binary pad records.
+- **Conventions + agent roles** (for contributors) — [`CLAUDE.md`](CLAUDE.md).
+- **Latest session debrief** — what shipped and why: [`docs/sessions/2026-05-12_breaks_n_beats_complete.md`](docs/sessions/2026-05-12_breaks_n_beats_complete.md).
