@@ -63,10 +63,10 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Install (core + dev, no ML extras)
+      - name: Install (core + dev + configurator, no ML extras)
         run: |
           pip install uv
-          uv pip install --system -e '.[dev]'
+          uv pip install --system -e '.[dev,configurator]'
 
       - name: Assert no heavy deps imported at import time
         # Track B acceptance: importing stemforge.cli must NOT pull torch.
