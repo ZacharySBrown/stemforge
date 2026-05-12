@@ -1,6 +1,12 @@
 # Loop-region collapse: second-bounce behavior unverified
 
-**Status:** Open — captured 2026-05-12.
+**Status:** Mitigated by defensive guard (2026-05-12 — `fix/loop-region-second-bounce-guard`).
+`_collapseToLoopRegion` now refuses to write markers when loop bounds already match
+the play region (Mode 2 no-op) or fall outside the play region (Mode 3 stale
+coordinates); the latter case also emits a `post()` warning. The helper is
+safe-by-construction in all three failure modes; pending optional on-device
+confirmation of which mode Live actually exhibits, but code correctness no
+longer depends on the answer.
 
 ## Background
 
@@ -20,17 +26,27 @@ If Live preserves the loop region after crop (now relative to the new extent), a
 
 If Live preserves `loop_start`/`loop_end` at OLD coordinates (sample positions that no longer match the cropped audio), we could write garbage to the markers. **This is the failure mode to verify.**
 
-## How to test
+## How to confirm which mode Live exhibits
+
+The guard makes the code safe regardless of Live's actual behavior, but
+understanding which mode is in play is still useful context for future LOM
+work. To confirm on-device (requires `.pkg` rebuild + reinstall first):
 
 1. In Live, load a clip with a loop region inside the play region (e.g. play 0..8 bars, loop 2..6 bars).
 2. Bounce via `sf-remote fire forge bounceTracks <path>`. Verify the bounced WAV is the loop region.
 3. **Without reloading the original**, bounce again with the same command.
-4. Inspect the second-bounce output: same audio? Truncated? Errors in Max console?
+4. Inspect the Max console:
+   - No `[StemForge] _collapseToLoopRegion: loop bounds ... outside play region` warning → Mode 1 or Mode 2 (safe).
+   - That warning appears → Mode 3 (helper correctly refused to corrupt; bounce 2 falls through to a plain `crop` of the current play region).
+5. Inspect the second-bounce WAV: should match the first-bounce WAV in all modes.
 
 ## Done when
 
-Either:
-- We confirm Live resets loop bounds on crop (then the helper is safe on second bounce — no action needed).
-- We find a failure mode and add an early-return when post-crop loop bounds match play bounds.
+Mitigation has landed. Optional follow-up: confirm Mode on-device and record
+the answer in `memory/feedback_loop_region_canonical_for_materialize.md`.
 
-Also: add a JS mock test that exercises this case once we know what to assert.
+The JS mock tests added alongside the guard live in `tests/js_mocks/test_bounce.test.js`:
+
+- `_collapseToLoopRegion: skips when already collapsed (loop bounds == play bounds)`
+- `_collapseToLoopRegion: skips + warns when loop_end > end_marker (stale Mode 3)`
+- `_collapseToLoopRegion: skips when loop_start < 0 (defensive)`
