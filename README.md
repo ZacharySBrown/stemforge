@@ -97,6 +97,33 @@ See [setup.md](setup.md) for template track recipes. You build 7 tracks once:
 
 The M4L device duplicates these per stem and loads audio automatically.
 
+## Contributing
+
+If you're working on the codebase (not just running it), arm the
+pre-commit hooks once after cloning:
+
+```bash
+# One-time per clone — hooks live in .git/hooks/ (untracked).
+uv pip install pre-commit
+pre-commit install
+
+# Sanity: run all hooks across the whole tree.
+pre-commit run --all-files
+```
+
+What that enforces on every commit:
+
+- `ruff check --fix` (lint + autofix) on `stemforge/` and `tests/`
+- `ruff format` (autoformat) on `stemforge/` and `tests/`
+- `ruff format --check` (hard gate, mirrors CI — catches drift the
+  autoformat can't reach)
+- whitespace / EOL hygiene; YAML / JSON / TOML well-formedness
+
+CI runs the same `ruff format --check` and a `ruff check` so installing
+the hook saves a round-trip when local + CI fall out of sync.
+
+For full pre-commit configuration see [`.pre-commit-config.yaml`](.pre-commit-config.yaml).
+
 ## Known Limitations
 
 1. **M4L track positioning** — duplicated tracks appear at source+1, not grouped. Group manually after loading.

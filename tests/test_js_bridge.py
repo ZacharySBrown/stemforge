@@ -79,6 +79,5 @@ def test_js_suite_discovery_nonempty() -> None:
     and JS coverage would be invisible.
     """
     assert len(_SUITES) >= 1, (
-        f"no JS test suites discovered under {JS_MOCKS_DIR}; "
-        "expected at least one *.test.js file"
+        f"no JS test suites discovered under {JS_MOCKS_DIR}; expected at least one *.test.js file"
     )

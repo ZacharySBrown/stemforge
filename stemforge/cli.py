@@ -1991,8 +1991,7 @@ def deck_from_manifest_cmd(
         )
     if force_play_mode:
         console.print(
-            f"  [yellow]Forcing play_mode=[/yellow][cyan]{force_play_mode}[/cyan]"
-            " on every pad"
+            f"  [yellow]Forcing play_mode=[/yellow][cyan]{force_play_mode}[/cyan] on every pad"
         )
 
     plan = deck_from_manifest(

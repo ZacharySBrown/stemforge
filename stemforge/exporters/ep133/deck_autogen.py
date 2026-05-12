@@ -92,13 +92,10 @@ def deck_from_manifest(
     """
     if force_format_profile is not None and force_format_profile not in ALLOWED_FORMAT_PROFILES:
         raise ValueError(
-            f"force_format_profile={force_format_profile!r} not in "
-            f"{ALLOWED_FORMAT_PROFILES!r}"
+            f"force_format_profile={force_format_profile!r} not in {ALLOWED_FORMAT_PROFILES!r}"
         )
     if force_play_mode is not None and force_play_mode not in ALLOWED_PLAY_MODES:
-        raise ValueError(
-            f"force_play_mode={force_play_mode!r} not in {ALLOWED_PLAY_MODES!r}"
-        )
+        raise ValueError(f"force_play_mode={force_play_mode!r} not in {ALLOWED_PLAY_MODES!r}")
     if project_bpm is None:
         raw = manifest.get("bpm")
         try:
