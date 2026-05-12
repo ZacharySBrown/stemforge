@@ -1,0 +1,88 @@
+{
+  "_comment": "Session-mode manifest fixture: mirrors what _commitSessionTracks (v0/src/m4l-js/stemforge_loader.v0.js:1526) writes after the user clicks COMMIT in the forge device. Each session_tracks[L][i] entry matches the dict built by _sessionTrackEntryFromClip (slot/file/start_offset_sec/end_offset_sec/clip_length_sec/mode + optional source_bpm captured pre-crop from warp_markers slope). Used by tests/ep133/test_deck_from_manifest_e2e.py. File paths are intentionally fictional — deck-from-manifest is pure-Python dict transform and never reads the WAVs.",
+  "track": "breaks_n_beats_fixture",
+  "source_audio": "/tmp/nonexistent/breaks_n_beats/source.wav",
+  "bpm": 92.0,
+  "session_tracks": {
+    "A": [
+      {
+        "slot": 0,
+        "file": "/tmp/nonexistent/breaks_n_beats/A/clip_000.wav",
+        "start_offset_sec": 0.0,
+        "end_offset_sec": 2.608695652173913,
+        "clip_length_sec": 2.608695652173913,
+        "mode": "rotate",
+        "source_bpm": 92.0
+      },
+      {
+        "slot": 1,
+        "file": "/tmp/nonexistent/breaks_n_beats/A/clip_001.wav",
+        "start_offset_sec": 0.0,
+        "end_offset_sec": 5.217391304347826,
+        "clip_length_sec": 5.217391304347826,
+        "mode": "trim",
+        "source_bpm": 88.5
+      },
+      {
+        "slot": 2,
+        "file": "/tmp/nonexistent/breaks_n_beats/A/clip_002.wav",
+        "start_offset_sec": 0.0,
+        "end_offset_sec": 2.608695652173913,
+        "clip_length_sec": 2.608695652173913,
+        "mode": "rotate",
+        "source_bpm": 141.27
+      }
+    ],
+    "B": [
+      {
+        "slot": 0,
+        "file": "/tmp/nonexistent/breaks_n_beats/B/clip_000.wav",
+        "start_offset_sec": 0.0,
+        "end_offset_sec": 5.217391304347826,
+        "clip_length_sec": 5.217391304347826,
+        "mode": "trim",
+        "source_bpm": 92.0
+      },
+      {
+        "slot": 1,
+        "file": "/tmp/nonexistent/breaks_n_beats/B/clip_001.wav",
+        "start_offset_sec": 0.0,
+        "end_offset_sec": 2.608695652173913,
+        "clip_length_sec": 2.608695652173913,
+        "mode": "rotate",
+        "source_bpm": 92.0
+      }
+    ],
+    "C": [
+      {
+        "slot": 0,
+        "file": "/tmp/nonexistent/breaks_n_beats/C/clip_000.wav",
+        "start_offset_sec": 0.0,
+        "end_offset_sec": 2.608695652173913,
+        "clip_length_sec": 2.608695652173913,
+        "mode": "rotate",
+        "source_bpm": 92.0
+      },
+      {
+        "slot": 1,
+        "file": "/tmp/nonexistent/breaks_n_beats/C/clip_001.wav",
+        "start_offset_sec": 0.0,
+        "end_offset_sec": 2.608695652173913,
+        "clip_length_sec": 2.608695652173913,
+        "mode": "rotate",
+        "source_bpm": 184.0
+      }
+    ],
+    "D": [
+      {
+        "slot": 0,
+        "file": "/tmp/nonexistent/breaks_n_beats/D/clip_000.wav",
+        "start_offset_sec": 0.0,
+        "end_offset_sec": 10.434782608695652,
+        "clip_length_sec": 10.434782608695652,
+        "mode": "trim",
+        "source_bpm": 92.0
+      }
+    ]
+  }
+}
