@@ -1,6 +1,23 @@
 # EP-133: delete tracks/pads from a project via CLI
 
-**Status:** Open — captured 2026-05-12. User-flagged.
+**Status:** Implemented — needs hardware validation (2026-05-12). Branch `feat/cli-time-sig-and-ep133-clear-pad`.
+
+A new `stemforge ep133-clear-pad PROJECT_SLOT PAD [--dry-run]` CLI command clears a single pad's sample assignment over USB-MIDI SysEx, without touching the rest of the project. PAD accepts both `A1`..`D12` letter form and numeric `1`..`48`.
+
+**Strategy that worked:** reuse the existing, byte-tested pad-assign primitive (`build_assign_pad`) with `slot=0` — the device's unassigned-sample sentinel. On the wire this is `FILE_METADATA_SET` of `{"sym":0}` to the pad's fileId. No new SysEx opcode, no probing of unmapped fileIds (avoiding the wedge risk documented in agent memory `feedback_ep133_probing_safety`).
+
+**What was NOT tried** (deferred):
+- Writing an empty WAV buffer to the underlying slot (the brief's plan-C fallback). Skipped because plan A above is sufficient for the "remove pad from project" use case and is built on a well-tested wire path.
+- Clearing the pad's playback parameters (envelope, time mode, amplitude, etc.). The clear today removes only the slot binding — those fields stay at whatever the pad was previously configured with. Could be added later if needed.
+
+**Hardware validation pending:** dry-run byte structure is regression-tested (payload + frame hex). What needs checking on a connected EP-133:
+1. Send `stemforge ep133-clear-pad <slot> A1` against a project where pad A1 currently has an assigned sample. Confirm the pad goes silent / shows as unassigned in the device UI.
+2. Confirm the rest of the project (other pads, songs, patterns) is untouched.
+3. Confirm the device's project archive round-trip (read back via SysEx) shows `{"sym":0}` at the pad's fileId.
+
+Out of scope (still TODO):
+- `--all-slots` / multi-pad clear (deferred behind the future-flag note in the CLI docstring).
+- In-place `.ppak` editing on disk — separate longstanding round-trip TODO.
 
 ## Why
 

@@ -173,6 +173,16 @@ def cli():
     help="Emit a leading partial chunk_001 when the user-supplied / detected "
     "downbeat leaves a sub-chunk-period intro before bar 1. Default: True.",
 )
+@click.option(
+    "--time-sig",
+    "time_sig",
+    default="4/4",
+    help="Time signature N/D — parity flag with `stemforge forge`. Affects the "
+    "downstream bar-grid (prechop's beats_per_bar) so 7/4 / 3/4 / 6/8 chunks "
+    "are bar-sized correctly. Does NOT influence beat-this neural detection "
+    "(beat-this returns BPM independent of meter); the bar-grid hint is "
+    "applied to the librosa fallback path and to the prechop step.",
+)
 def split(
     audio_file,
     model,
@@ -188,6 +198,7 @@ def split(
     pad_pre_bars,
     pad_post_bars,
     emit_partial,
+    time_sig,
 ):
     """
     Split an audio file into stems and slice at beat boundaries.
@@ -203,6 +214,24 @@ def split(
     """
     # ── Auto-convert to WAV if needed ────────────────────────────────────────
     audio_file, _ = ensure_wav(audio_file, console)
+
+    # ── Parse --time-sig (N/D) ────────────────────────────────────────────────
+    # Affects prechop's bar-grid (beats_per_bar = numerator) so non-4/4 content
+    # (7/4, 3/4, 6/8) chunks at the right bar length. beat-this is unaffected —
+    # the neural detector returns BPM independent of meter. The numerator is
+    # what we plumb downstream; the denominator is parsed for validation only
+    # (Live's clock is quarter-note based, prechop has no use for it today).
+    try:
+        num_str, den_str = time_sig.split("/")
+        fallback_numerator = int(num_str)
+        _fallback_denominator = int(den_str)  # parsed for validation only
+        if fallback_numerator < 1 or _fallback_denominator < 1:
+            raise ValueError
+    except (ValueError, AttributeError):
+        raise click.BadParameter(
+            f"--time-sig must be N/D with positive ints (e.g. 7/4), got {time_sig!r}",
+            param_hint="--time-sig",
+        ) from None
 
     # ── Backend (Demucs only) ────────────────────────────────────────────────
     backend = "demucs"
@@ -449,6 +478,13 @@ def split(
         pipeline_cfg = None
 
     if pipeline_cfg is not None and pipeline_cfg.prechop is not None:
+        # When the user supplied an explicit --time-sig (non-default), let the
+        # numerator override the pipeline's prechop.beats_per_bar so 7/4, 3/4,
+        # 6/8 chunks land on real musical-bar boundaries instead of 4-beat
+        # grids. Default 4/4 leaves the pipeline config untouched.
+        if fallback_numerator != 4:
+            pipeline_cfg.prechop.beats_per_bar = fallback_numerator
+
         # Resolve pre_bars: explicit value, or auto-fill the intro to keep
         # all preceding bars as chunks on the same bar grid (the user almost
         # never wants to silently drop 22 seconds of intro audio).
@@ -2174,6 +2210,139 @@ def build_deck(deck_plan, out_path, reference_template, project_slot_override, w
     kb = len(payload) / 1024.0
     console.print(Rule("[bold green]Done![/bold green]"))
     console.print(f"  Wrote [bold]{out_path}[/bold] ({kb:.1f} KB)")
+
+
+# ── EP-133 live-device pad clear ──────────────────────────────────────────────
+
+
+_EP133_GROUPS = ("A", "B", "C", "D")
+
+
+def _parse_pad_coord(pad: str) -> tuple[str, int]:
+    """Parse a pad coordinate string into (group, pad_num).
+
+    Accepts two equivalent forms:
+
+      - Letter+visual-position (recommended): ``A1`` .. ``D12``.
+        Group = A/B/C/D, pad_num = 1..12 in visual top-to-bottom,
+        left-to-right order (pad_num=10 is the bottom-left "." key).
+      - Numeric 1..48: groups concatenated A=1..12, B=13..24, C=25..36, D=37..48.
+
+    Returns ``(group, pad_num)`` where group ∈ {A,B,C,D} and pad_num ∈ 1..12.
+    """
+    if not pad:
+        raise click.BadParameter("PAD must be a non-empty coordinate like A1 or 1..48")
+    s = pad.strip().upper()
+
+    # Numeric form: 1..48
+    if s.isdigit():
+        n = int(s)
+        if not (1 <= n <= 48):
+            raise click.BadParameter(
+                f"numeric PAD must be 1..48 (groups A=1..12, B=13..24, C=25..36, D=37..48); got {n}"
+            )
+        group_idx = (n - 1) // 12
+        pad_num = ((n - 1) % 12) + 1
+        return _EP133_GROUPS[group_idx], pad_num
+
+    # Letter+number form: A1..D12
+    group_letter = s[0]
+    if group_letter not in _EP133_GROUPS:
+        raise click.BadParameter(
+            f"PAD group must be one of A/B/C/D, got {group_letter!r} (from {pad!r})"
+        )
+    rest = s[1:]
+    if not rest.isdigit():
+        raise click.BadParameter(f"PAD pad number must be 1..12, got {rest!r} (from {pad!r})")
+    pad_num = int(rest)
+    if not (1 <= pad_num <= 12):
+        raise click.BadParameter(f"PAD pad number must be 1..12, got {pad_num}")
+    return group_letter, pad_num
+
+
+@cli.command("ep133-clear-pad")
+@click.argument("project_slot", type=click.IntRange(1, 9))
+@click.argument("pad", type=str)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Build and print the SysEx frame in hex without opening the MIDI device. "
+    "Use this to verify byte structure when no EP-133 is plugged in.",
+)
+def ep133_clear_pad(project_slot: int, pad: str, dry_run: bool) -> None:
+    """
+    Clear a single pad's sample slot on a connected EP-133 K.O. II.
+
+    \b
+    PROJECT_SLOT is the 1-based project number on the device (1..9).
+    PAD coordinate accepts two equivalent forms:
+      - Letter+visual-position (recommended): A1 .. D12. Pad numbers are
+        visual top-to-bottom, left-to-right (pad_num=10 = bottom-left ".").
+      - Numeric 1..48: A=1..12, B=13..24, C=25..36, D=37..48.
+
+    \b
+    Examples:
+      stemforge ep133-clear-pad 8 A1            # group A, top-left pad
+      stemforge ep133-clear-pad 8 D12 --dry-run # print SysEx hex, no MIDI I/O
+      stemforge ep133-clear-pad 3 25            # numeric form: C1
+
+    \b
+    Implementation note (needs hardware validation):
+      The clear is performed by writing {"sym":0} to the pad's fileId via the
+      already-tested FILE_METADATA_SET path — the same primitive `build-deck`
+      uses for pad assignments. Slot 0 is the device's unassigned sentinel.
+      The pad's playback parameters (envelope, time mode, etc.) are NOT
+      touched — only the slot binding is removed. Byte structure is
+      regression-tested; behavior on a live device against a populated pad
+      was not re-validated as part of this change.
+    """
+    from .exporters.ep133.payloads import build_assign_pad
+    from .exporters.ep133.sysex import RequestIdAllocator, build_sysex
+
+    group, pad_num = _parse_pad_coord(pad)
+
+    console.print(Rule("[bold cyan]StemForge[/bold cyan] — ep133-clear-pad"))
+    console.print(f"  Project: [cyan]{project_slot}[/cyan]")
+    console.print(f"  Pad:     [cyan]{group}{pad_num}[/cyan]  (group={group}, pad_num={pad_num})")
+    console.print('  Action:  write {"sym":0} to pad fileId (unassign)')
+
+    payload = build_assign_pad(project_slot, group, pad_num, slot=0)
+
+    if dry_run:
+        # Synthesize a frame with a deterministic request_id so the hex
+        # output is reproducible — handy for diffing against device captures.
+        # Real sends will allocate a fresh random request_id.
+        from .exporters.ep133.commands import TE_SYSEX_FILE
+
+        frame = build_sysex(TE_SYSEX_FILE, payload, request_id=1)
+        console.print()
+        console.print("[bold]Dry-run SysEx frame[/bold] (request_id=1):")
+        console.print(f"  payload (raw): {payload.hex()}")
+        console.print(f"  frame  (wire): {frame.hex()}")
+        console.print(f"  byte length:   payload={len(payload)}  frame={len(frame)}")
+        console.print()
+        console.print("[yellow]--dry-run set: no MIDI I/O.[/yellow]")
+        return
+
+    # Live send. Open the device, run the same assign_pad path build-deck uses.
+    from .exporters.ep133.client import EP133Client, EP133UploadError
+    from .exporters.ep133.transport import EP133PortNotFound
+
+    # request_id allocator is constructed inside the client; reference it here
+    # only to silence lint about the import. (left unused intentionally)
+    _ = RequestIdAllocator
+
+    try:
+        with EP133Client.open() as client:
+            client.clear_pad(project_slot, group, pad_num)
+    except EP133PortNotFound as e:
+        raise click.ClickException(f"EP-133 not found: {e}") from e
+    except EP133UploadError as e:
+        raise click.ClickException(f"EP-133 rejected clear-pad: {e}") from e
+
+    console.print(Rule("[bold green]Done![/bold green]"))
+    console.print(f"  Cleared pad {group}{pad_num} on project {project_slot}.")
 
 
 if __name__ == "__main__":

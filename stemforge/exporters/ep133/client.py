@@ -130,6 +130,29 @@ class EP133Client:
         request_id = self._send(TE_SYSEX_FILE, payload)
         self._await_response(request_id, timeout=timeout)
 
+    def clear_pad(
+        self,
+        project: int,
+        group: str,
+        pad_num: int,
+        timeout: float = 5.0,
+    ) -> None:
+        """Clear a pad's sample assignment without touching the rest of the project.
+
+        Reuses the pad-assign write path with ``slot=0`` (the device's
+        unassigned-sample sentinel). On the wire this is exactly
+        ``{"sym":0}`` written to the pad's fileId — no new SysEx opcode,
+        no probing of unmapped fileIds (see ``feedback_ep133_probing_safety``
+        in agent memory). The pad's playback parameters (envelope, time mode,
+        amplitude, etc.) are NOT cleared — only the slot binding goes away.
+
+        Marked needs-hardware-validation: dry-run byte structure and the
+        underlying ``build_assign_pad`` byte path are both tested, but the
+        device's behavior on receiving ``{"sym":0}`` for a populated pad
+        was not exercised on real hardware as part of this change.
+        """
+        self.assign_pad(project, group, pad_num, slot=0, params=None, timeout=timeout)
+
     def upload_sample(
         self,
         wav_path: Path,
