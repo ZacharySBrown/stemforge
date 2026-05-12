@@ -445,24 +445,16 @@ function commitOffsets() {
 
 // Forwarder for `reload` — fires `reload` at the loader's [js] inlet.
 //
-// CAVEAT — this DOES NOT currently cause the loader to re-evaluate its
-// source file. ``stemforge_loader.v0.js`` does not define a top-level
-// ``function reload()``, so Max [js] silently drops the inbound symbol.
-// The forwarder is wired but the loader-side handler is missing.
-// Tracked in docs/issues/js-reload-forwarder-broken.md.
-//
-// The loader is declared with ``autowatch = 1`` so Max is *supposed* to
-// re-eval on disk change, but this is unreliable in M4L embeds.
-//
-// Workarounds today (until a real fix lands):
-//   1. Right-click ``[js stemforge_loader.v0.js]`` → ``Edit Script`` →
-//      Cmd+S — Max auto-reloads on save.
-//   2. Reinstall the .pkg (heavy: includes a Live restart).
-//   3. Restart Live (heaviest).
+// Implemented in ``stemforge_loader.v0.js:reload()`` — it re-arms the [js]
+// object's autowatch (0 → 1 toggle), which causes Max to re-stat + re-eval
+// the script file. Verified offline via tests/js_mocks/test_reload.test.js;
+// on-device validation pending — see docs/issues/js-reload-forwarder-broken.md
+// for the history. Heavy escape hatch if this regresses: right-click the
+// ``[js stemforge_loader.v0.js]`` object → Edit Script → Cmd+S.
 function reload() {
     try {
         outlet(2, "reload");
-        log("reload forwarded to loader (no-op without loader-side handler)");
+        log("reload forwarded to loader");
     } catch (e) {
         log("reload outlet error: " + e);
     }
