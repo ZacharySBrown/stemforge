@@ -77,7 +77,15 @@ sf-remote = "tools.sf_remote:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["stemforge*", "tools*"]
+# Keep `tools` as a top-level package (so the `sf-remote` console-script
+# entry point — `tools.sf_remote:main` in [project.scripts] — resolves),
+# but do NOT use the `tools*` glob: that vacuums up future sub-packages
+# we may not want to redistribute. Today `tools/` only has a single
+# `__init__.py`-level package + flat .py modules, so this is equivalent
+# in scope; the difference is forward-protection. See
+# docs/cleanup/2026-05-12_root_inventory.md for the audit + the deeper
+# split (`tools/cli/` packaged vs. `tools/scripts/` not) as a followup.
+include = ["stemforge*", "tools"]
 
 [tool.ruff]
 line-length = 100
