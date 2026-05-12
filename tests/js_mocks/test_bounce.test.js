@@ -225,6 +225,138 @@ test('_collapseToLoopRegion: unit — looping=0 leaves markers alone', () => {
     assert.equal(props.end_marker, 9, 'untouched when looping=0');
 });
 
+// ── 6. 2nd-bounce defensive guards on _collapseToLoopRegion ─────────────────
+//
+// docs/issues/loop-region-collapse-second-bounce.md: when a clip is bounced a
+// 2nd time without reloading, Live's loop_start/loop_end behavior is unverified.
+// The guards in _collapseToLoopRegion make the helper safe-by-construction:
+//
+//   (a) skip when loop bounds == play bounds (Mode 2 no-op — avoids any LOM
+//       side effect from a same-value write).
+//   (b) skip when loop bounds fall outside the play region (Mode 3 stale-
+//       coordinate garbage), and emit a `post()` warning.
+//   (c) skip when loop_start < 0 (defensive — impossible in practice).
+//
+// These tests assert each guard fires by verifying the markers are not
+// rewritten when the guard should apply.
+//
+// Strategy: wrap LiveAPI.prototype.set to count set() calls against the clip
+// path, so we can assert "no write happened" rather than just "value
+// happened to equal the pre-state".
+
+function instrumentSetSpy(ctx) {
+    var spy = { calls: [] };
+    var origSet = ctx.LiveAPI.prototype.set;
+    ctx.LiveAPI.prototype.set = function (prop, value) {
+        spy.calls.push({ path: this._path, prop: prop, value: value });
+        return origSet.call(this, prop, value);
+    };
+    spy.restore = function () { ctx.LiveAPI.prototype.set = origSet; };
+    return spy;
+}
+
+test('_collapseToLoopRegion: skips when already collapsed (loop bounds == play bounds)', () => {
+    const { ctx, collapseToLoopRegion } = loadBounce();
+
+    // Non-trivial bounds — loop region exactly matches play region.
+    // Simulates Mode 1 after one crop (or Mode 2 reset).
+    maxApi.seedLiveTree({
+        tracks: [makeTrack('A', [makeClipSlot({
+            warping: 1,
+            start_marker: 2, end_marker: 6,
+            looping: 1, loop_start: 2, loop_end: 6,
+        })])],
+    });
+
+    const spy = instrumentSetSpy(ctx);
+    const clipApi = new ctx.LiveAPI('live_set tracks 0 clip_slots 0 clip');
+    collapseToLoopRegion(clipApi);
+    spy.restore();
+
+    // The guard must skip ENTIRELY — no set() against start_marker or
+    // end_marker, not even a same-value no-op write.
+    const markerWrites = spy.calls.filter(c =>
+        c.prop === 'start_marker' || c.prop === 'end_marker'
+    );
+    assert.equal(markerWrites.length, 0,
+        'no marker writes when loop bounds already match play bounds; ' +
+        'got ' + JSON.stringify(markerWrites));
+
+    // And of course the seeded values stay put.
+    const props = getClipProps(0, 0);
+    assert.equal(props.start_marker, 2);
+    assert.equal(props.end_marker, 6);
+});
+
+test('_collapseToLoopRegion: skips + warns when loop_end > end_marker (stale Mode 3)', () => {
+    const { ctx, collapseToLoopRegion } = loadBounce();
+
+    // Simulates Mode 3: clip was cropped once (extent now 0..4) but Live
+    // preserved the pre-crop loop region at OLD coordinates (2..6). Writing
+    // loop_end=6 to end_marker would corrupt the 2nd bounce.
+    maxApi.seedLiveTree({
+        tracks: [makeTrack('A', [makeClipSlot({
+            warping: 1,
+            start_marker: 0, end_marker: 4,
+            looping: 1, loop_start: 2, loop_end: 6,
+        })])],
+    });
+
+    const spy = instrumentSetSpy(ctx);
+    const clipApi = new ctx.LiveAPI('live_set tracks 0 clip_slots 0 clip');
+    collapseToLoopRegion(clipApi);
+    spy.restore();
+
+    const markerWrites = spy.calls.filter(c =>
+        c.prop === 'start_marker' || c.prop === 'end_marker'
+    );
+    assert.equal(markerWrites.length, 0,
+        'markers must NOT be touched when loop bounds exceed play region');
+
+    // Markers must still be at the seeded values.
+    const props = getClipProps(0, 0);
+    assert.equal(props.start_marker, 0);
+    assert.equal(props.end_marker, 4);
+
+    // Warning must appear on the Max console (state.logs is the post()
+    // capture buffer).
+    const warning = maxApi.state.logs.find(s =>
+        s.indexOf('outside play region') >= 0
+    );
+    assert.ok(warning,
+        'expected a post() warning about loop bounds outside play region; ' +
+        'logs were: ' + JSON.stringify(maxApi.state.logs));
+});
+
+test('_collapseToLoopRegion: skips when loop_start < 0 (defensive)', () => {
+    const { ctx, collapseToLoopRegion } = loadBounce();
+
+    // loop_start < 0 is impossible in real Live usage but the guard exists
+    // to make the function safe-by-construction against any corrupted state.
+    maxApi.seedLiveTree({
+        tracks: [makeTrack('A', [makeClipSlot({
+            warping: 1,
+            start_marker: 0, end_marker: 8,
+            looping: 1, loop_start: -1, loop_end: 4,
+        })])],
+    });
+
+    const spy = instrumentSetSpy(ctx);
+    const clipApi = new ctx.LiveAPI('live_set tracks 0 clip_slots 0 clip');
+    collapseToLoopRegion(clipApi);
+    spy.restore();
+
+    const markerWrites = spy.calls.filter(c =>
+        c.prop === 'start_marker' || c.prop === 'end_marker'
+    );
+    assert.equal(markerWrites.length, 0,
+        'markers must NOT be touched when loop_start is negative');
+
+    const props = getClipProps(0, 0);
+    assert.equal(props.start_marker, 0);
+    assert.equal(props.end_marker, 8);
+});
+
 // ── 7. Atomic-rename stub flow ──────────────────────────────────────────────
 // docs/issues/bounce-stub-race.md: _ensureDeckManifestStub writes to
 // ``<path>.tmp`` (NOT the final path), and commitOffsets renames .tmp →

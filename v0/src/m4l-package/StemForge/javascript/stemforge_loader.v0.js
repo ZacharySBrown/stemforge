@@ -1804,6 +1804,21 @@ function _warpBpmFromMarkers(clipApi) {
 // All four properties use the same unit (beats when warping=1, seconds
 // otherwise), so the swap is a 1:1 substitution. Loop bounds equal to play
 // bounds → no-op write but harmless.
+//
+// 2nd-bounce safety (see docs/issues/loop-region-collapse-second-bounce.md):
+// after a clip has been cropped once, Live's behavior for `loop_start`/
+// `loop_end` on a re-bounced clip is unverified. We can't drive Live from a
+// worktree to confirm which of three modes applies, so this helper is made
+// safe-by-construction:
+//
+//   Mode 1 — loop bounds preserved relative to new extent → re-collapse is
+//     idempotent. Safe (the guard below skips a no-op write).
+//   Mode 2 — loop bounds reset to match play bounds → guard skips entirely.
+//   Mode 3 — loop bounds preserved at OLD coordinates that no longer map to
+//     the cropped audio (e.g. loop_end past the new end_marker). DANGEROUS:
+//     writing those stale coordinates onto start_marker/end_marker would
+//     corrupt the 2nd bounce. Guard refuses to write and emits a `post()`
+//     warning so the operator sees what happened in the Max console.
 function _collapseToLoopRegion(clipApi) {
     var looping = 0;
     try { looping = _getLomNumber(clipApi, "looping") | 0; } catch (_) { return; }
@@ -1814,6 +1829,37 @@ function _collapseToLoopRegion(clipApi) {
         le = _getLomNumber(clipApi, "loop_end");
     } catch (_) { return; }
     if (!isFinite(ls) || !isFinite(le) || le <= ls) return;
+
+    // 2nd-bounce safety guards. Read the current play region so we can
+    // compare loop bounds against it.
+    var sm = 0, em = 0;
+    try {
+        sm = _getLomNumber(clipApi, "start_marker");
+        em = _getLomNumber(clipApi, "end_marker");
+    } catch (_) { return; }
+    if (!isFinite(sm) || !isFinite(em)) return;
+
+    // Guard 1: loop bounds already match play bounds. This is Mode 2 (or
+    // Mode 1 with bounds that happen to equal play bounds). Either way the
+    // write would be a no-op; skip to avoid emitting any LOM side effect.
+    if (ls === sm && le === em) return;
+
+    // Guard 2: loop bounds fall outside the current play region. This is
+    // either Mode 3 stale-coordinate garbage from a prior crop, or a
+    // negative loop_start (impossible in practice but defensive). Refuse
+    // to write — silently corrupting the 2nd-bounce WAV is the worst
+    // possible outcome.
+    var EPS = 1e-6;
+    if (ls < 0 || le > em + EPS) {
+        post(
+            "[StemForge] _collapseToLoopRegion: loop bounds (" +
+            ls + ".." + le + ") outside play region (" +
+            sm + ".." + em + "), skipping collapse — " +
+            "clip may be a re-bounce of an already-cropped clip.\n"
+        );
+        return;
+    }
+
     try { clipApi.set("start_marker", ls); } catch (_) {}
     try { clipApi.set("end_marker", le); } catch (_) {}
 }
