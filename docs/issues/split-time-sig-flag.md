@@ -1,6 +1,10 @@
 # `stemforge split` missing `--time-sig` flag
 
-**Status:** Open — captured 2026-05-12.
+**Status:** Closed (2026-05-12). Implemented on branch `feat/cli-time-sig-and-ep133-clear-pad`.
+
+`--time-sig N/D` is accepted by `stemforge split` and threaded into prechop's `beats_per_bar` so non-4/4 chunks land on real musical-bar boundaries. Help text explicitly notes that the hint does NOT influence beat-this (which returns BPM independent of meter) — only the librosa fallback path and the prechop step honor the numerator. Invalid forms (`7`, `abc`) are rejected at parse time with a clear message. See `tests/cli_features/test_cli_time_sig_and_ep133_clear_pad.py` for parser-acceptance + rejection tests.
+
+The downstream "this is a 4-bar loop" assumption in `kit_synthesizer._infer_source_bpm` (item 4 below) is unchanged — that's `bar-inference-canopy.md`'s territory.
 
 ## Symptom
 

@@ -173,6 +173,16 @@ def cli():
     help="Emit a leading partial chunk_001 when the user-supplied / detected "
     "downbeat leaves a sub-chunk-period intro before bar 1. Default: True.",
 )
+@click.option(
+    "--time-sig",
+    "time_sig",
+    default="4/4",
+    help="Time signature N/D — parity flag with `stemforge forge`. Affects the "
+    "downstream bar-grid (prechop's beats_per_bar) so 7/4 / 3/4 / 6/8 chunks "
+    "are bar-sized correctly. Does NOT influence beat-this neural detection "
+    "(beat-this returns BPM independent of meter); the bar-grid hint is "
+    "applied to the librosa fallback path and to the prechop step.",
+)
 def split(
     audio_file,
     model,
@@ -188,6 +198,7 @@ def split(
     pad_pre_bars,
     pad_post_bars,
     emit_partial,
+    time_sig,
 ):
     """
     Split an audio file into stems and slice at beat boundaries.
@@ -203,6 +214,24 @@ def split(
     """
     # ── Auto-convert to WAV if needed ────────────────────────────────────────
     audio_file, _ = ensure_wav(audio_file, console)
+
+    # ── Parse --time-sig (N/D) ────────────────────────────────────────────────
+    # Affects prechop's bar-grid (beats_per_bar = numerator) so non-4/4 content
+    # (7/4, 3/4, 6/8) chunks at the right bar length. beat-this is unaffected —
+    # the neural detector returns BPM independent of meter. The numerator is
+    # what we plumb downstream; the denominator is parsed for validation only
+    # (Live's clock is quarter-note based, prechop has no use for it today).
+    try:
+        num_str, den_str = time_sig.split("/")
+        fallback_numerator = int(num_str)
+        _fallback_denominator = int(den_str)  # parsed for validation only
+        if fallback_numerator < 1 or _fallback_denominator < 1:
+            raise ValueError
+    except (ValueError, AttributeError):
+        raise click.BadParameter(
+            f"--time-sig must be N/D with positive ints (e.g. 7/4), got {time_sig!r}",
+            param_hint="--time-sig",
+        ) from None
 
     # ── Backend (Demucs only) ────────────────────────────────────────────────
     backend = "demucs"
@@ -449,6 +478,13 @@ def split(
         pipeline_cfg = None
 
     if pipeline_cfg is not None and pipeline_cfg.prechop is not None:
+        # When the user supplied an explicit --time-sig (non-default), let the
+        # numerator override the pipeline's prechop.beats_per_bar so 7/4, 3/4,
+        # 6/8 chunks land on real musical-bar boundaries instead of 4-beat
+        # grids. Default 4/4 leaves the pipeline config untouched.
+        if fallback_numerator != 4:
+            pipeline_cfg.prechop.beats_per_bar = fallback_numerator
+
         # Resolve pre_bars: explicit value, or auto-fill the intro to keep
         # all preceding bars as chunks on the same bar grid (the user almost
         # never wants to silently drop 22 seconds of intro audio).
