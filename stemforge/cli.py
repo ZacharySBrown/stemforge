@@ -1900,6 +1900,34 @@ def export_song(
     default=False,
     help="Open the generated deck plan in $EDITOR after writing.",
 )
+@click.option(
+    "--profile",
+    "force_profile",
+    type=click.Choice(["vocal", "drum", "texture", "preserve_source"]),
+    default=None,
+    help=(
+        "Override format_profile on every group (replaces the default "
+        "vocal/vocal/drum/texture layout). Useful for single-source decks "
+        "like an all-drum breakbeats kit."
+    ),
+)
+@click.option(
+    "--all-drum",
+    "all_drum",
+    is_flag=True,
+    default=False,
+    help="Shortcut for `--profile drum`. Mutually exclusive with --profile.",
+)
+@click.option(
+    "--play-mode",
+    "force_play_mode",
+    type=click.Choice(["oneshot", "key", "loop"]),
+    default=None,
+    help=(
+        "Override play_mode on every pad row (replaces the per-profile "
+        "default — oneshot for vocal/texture, key for drum)."
+    ),
+)
 def deck_from_manifest_cmd(
     manifest_path,
     out_path,
@@ -1908,6 +1936,9 @@ def deck_from_manifest_cmd(
     project_bpm,
     out_format,
     edit_after,
+    force_profile,
+    all_drum,
+    force_play_mode,
 ):
     """
     Generate a starter deck plan from a curated manifest.
@@ -1946,12 +1977,32 @@ def deck_from_manifest_cmd(
         else:
             project_name = parent.name or manifest_path.stem
 
+    # Resolve --profile / --all-drum (mutually exclusive).
+    if all_drum and force_profile and force_profile != "drum":
+        raise click.BadParameter(
+            "--all-drum and --profile are mutually exclusive (and --all-drum "
+            f"implies drum; got --profile={force_profile})."
+        )
+    effective_profile = force_profile or ("drum" if all_drum else None)
+    if effective_profile:
+        console.print(
+            f"  [yellow]Forcing format_profile=[/yellow][cyan]{effective_profile}[/cyan]"
+            " on every group"
+        )
+    if force_play_mode:
+        console.print(
+            f"  [yellow]Forcing play_mode=[/yellow][cyan]{force_play_mode}[/cyan]"
+            " on every pad"
+        )
+
     plan = deck_from_manifest(
         manifest,
         manifest_path,
         project_name=project_name,
         project_slot=project_slot,
         project_bpm=project_bpm,
+        force_format_profile=effective_profile,
+        force_play_mode=force_play_mode,
     )
 
     # Surface the layout decisions so the user knows what to edit.

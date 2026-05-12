@@ -286,6 +286,161 @@ def test_cli_overflow_past_48_warns(tmp_path: Path) -> None:
     assert "Dropped" in result.output
 
 
+def test_force_format_profile_overrides_every_group(tmp_path: Path) -> None:
+    """force_format_profile='drum' replaces vocal/vocal/drum/texture
+    defaults on every populated group; play_mode follows via DEFAULT_PLAY_MODE.
+    Encodes the breaks-n-beats workflow where every group is a drum kit.
+    """
+    manifest_path = _build_manifest(tmp_path, counts_per_group={"A": 2, "B": 2, "D": 2})
+    manifest = json.loads(manifest_path.read_text())
+    plan = deck_from_manifest(
+        manifest,
+        manifest_path,
+        project_name="drumsville",
+        force_format_profile="drum",
+    )
+    for group in ("A", "B", "D"):
+        assert plan["groups"][group]["format_profile"] == "drum"
+        # All pads in the group inherit drum's default play_mode = "key".
+        for pad in plan["groups"][group]["pads"]:
+            assert pad["play_mode"] == "key"
+
+
+def test_no_flag_preserves_default_profile_layout(tmp_path: Path) -> None:
+    """Without the override, group A stays vocal, group D stays texture.
+    Acts as the negative-control for ``--profile`` / ``--all-drum``.
+    """
+    manifest_path = _build_manifest(tmp_path, counts_per_group={"A": 2, "D": 2})
+    manifest = json.loads(manifest_path.read_text())
+    plan = deck_from_manifest(manifest, manifest_path)
+    assert plan["groups"]["A"]["format_profile"] == "vocal"
+    assert plan["groups"]["D"]["format_profile"] == "texture"
+
+
+def test_force_format_profile_rejects_unknown_value(tmp_path: Path) -> None:
+    manifest_path = _build_manifest(tmp_path, counts_per_group={"A": 1})
+    manifest = json.loads(manifest_path.read_text())
+    import pytest as _pytest
+
+    with _pytest.raises(ValueError, match="force_format_profile"):
+        deck_from_manifest(manifest, manifest_path, force_format_profile="garbage")
+
+
+def test_force_play_mode_overrides_every_pad(tmp_path: Path) -> None:
+    """force_play_mode='oneshot' sticks even on a drum group whose
+    DEFAULT_PLAY_MODE would be 'key'. Lets callers keep heterogeneous
+    format profiles but uniformly switch playback gating.
+    """
+    manifest_path = _build_manifest(tmp_path, counts_per_group={"A": 2, "C": 2})
+    manifest = json.loads(manifest_path.read_text())
+    plan = deck_from_manifest(
+        manifest,
+        manifest_path,
+        force_play_mode="oneshot",
+    )
+    assert plan["groups"]["A"]["format_profile"] == "vocal"
+    assert plan["groups"]["C"]["format_profile"] == "drum"
+    for group in ("A", "C"):
+        for pad in plan["groups"][group]["pads"]:
+            assert pad["play_mode"] == "oneshot"
+
+
+def test_force_play_mode_rejects_unknown_value(tmp_path: Path) -> None:
+    manifest_path = _build_manifest(tmp_path, counts_per_group={"A": 1})
+    manifest = json.loads(manifest_path.read_text())
+    import pytest as _pytest
+
+    with _pytest.raises(ValueError, match="force_play_mode"):
+        deck_from_manifest(manifest, manifest_path, force_play_mode="freeform")
+
+
+def test_cli_profile_drum_flag(tmp_path: Path) -> None:
+    """``--profile drum`` swaps every group's format_profile + play_mode."""
+    manifest_path = _build_manifest(tmp_path, counts_per_group={"A": 2, "B": 2})
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["deck-from-manifest", str(manifest_path), "--profile", "drum", "--project", "d"],
+    )
+    assert result.exit_code == 0, result.output
+    parsed = yaml.safe_load((manifest_path.parent / "deck.yaml").read_text())
+    for group in ("A", "B"):
+        assert parsed["groups"][group]["format_profile"] == "drum"
+        for pad in parsed["groups"][group]["pads"]:
+            assert pad["play_mode"] == "key"
+
+
+def test_cli_all_drum_alias(tmp_path: Path) -> None:
+    """``--all-drum`` is a shortcut for ``--profile drum``."""
+    manifest_path = _build_manifest(tmp_path, counts_per_group={"A": 1, "D": 1})
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["deck-from-manifest", str(manifest_path), "--all-drum", "--project", "d"],
+    )
+    assert result.exit_code == 0, result.output
+    parsed = yaml.safe_load((manifest_path.parent / "deck.yaml").read_text())
+    for group in ("A", "D"):
+        assert parsed["groups"][group]["format_profile"] == "drum"
+
+
+def test_cli_profile_and_all_drum_conflict(tmp_path: Path) -> None:
+    """``--all-drum`` + ``--profile vocal`` should be rejected — internally
+    inconsistent. Combining ``--all-drum`` with ``--profile drum`` is
+    harmless and permitted.
+    """
+    manifest_path = _build_manifest(tmp_path, counts_per_group={"A": 1})
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            "deck-from-manifest",
+            str(manifest_path),
+            "--all-drum",
+            "--profile",
+            "vocal",
+        ],
+    )
+    assert result.exit_code != 0
+    assert "mutually exclusive" in result.output
+
+
+def test_cli_no_profile_flag_keeps_defaults(tmp_path: Path) -> None:
+    """Negative-control: no flag → A stays vocal, D stays texture."""
+    manifest_path = _build_manifest(tmp_path, counts_per_group={"A": 1, "D": 1})
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["deck-from-manifest", str(manifest_path), "--project", "d"],
+    )
+    assert result.exit_code == 0, result.output
+    parsed = yaml.safe_load((manifest_path.parent / "deck.yaml").read_text())
+    assert parsed["groups"]["A"]["format_profile"] == "vocal"
+    assert parsed["groups"]["D"]["format_profile"] == "texture"
+
+
+def test_cli_play_mode_flag(tmp_path: Path) -> None:
+    """``--play-mode oneshot`` forces oneshot even on drum-profile pads."""
+    manifest_path = _build_manifest(tmp_path, counts_per_group={"A": 1, "C": 1})
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            "deck-from-manifest",
+            str(manifest_path),
+            "--play-mode",
+            "oneshot",
+            "--project",
+            "d",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    parsed = yaml.safe_load((manifest_path.parent / "deck.yaml").read_text())
+    for group in ("A", "C"):
+        for pad in parsed["groups"][group]["pads"]:
+            assert pad["play_mode"] == "oneshot"
+
+
 def test_default_project_name_from_curated_parent(tmp_path: Path) -> None:
     """`02_benjamins/curated/manifest.json` → project name `02_benjamins`."""
     manifest_dir = tmp_path / "02_benjamins" / "curated"
