@@ -415,6 +415,35 @@ function setBpm() {
     }
 }
 
+// ── reload: force Max [js] to re-evaluate this file from disk ────────────────
+// Fires when sf_forge.js:reload() outlets "reload" → [js stemforge_loader.v0.js]
+// inlet. Without this top-level function, Max silently drops the inbound
+// symbol and the file stays stale; see docs/issues/js-reload-forwarder-broken.md
+// for context.
+//
+// Mechanism: Max's [js] object re-reads the script when `autowatch` flips from
+// 0 → 1 (the watcher arms by stat-ing the file). Toggling here triggers that
+// re-arm path. This is the same mechanism the documented Cmd+S workaround
+// hits — saving the source file invalidates the watch + Max re-evals.
+//
+// Verified offline via the JS mock test in tests/js_mocks/test_reload.test.js
+// (autowatch ends at 1 after the toggle, function is dispatch-callable). On-
+// device verification still pending — confirm with `uv run sf-remote fire forge
+// reload` on a running patch and check that an edit to this file takes effect
+// without a manual Cmd+S in the [js] script editor.
+function reload() {
+    try {
+        // Re-arm the autowatch file-watcher. Setting to 0 first guarantees the
+        // 0 → 1 transition fires even when autowatch was already 1.
+        this.autowatch = 0;
+        this.autowatch = 1;
+        status("reload requested via sf-remote");
+        post("stemforge_loader: reload requested via sf-remote\n");
+    } catch (e) {
+        status("reload error: " + e);
+    }
+}
+
 function loadManifest() {
     var manifestPath = arrayfromargs(messagename, arguments).slice(1).join(" ");
     if (!manifestPath) { status("loadManifest: missing path"); return; }
