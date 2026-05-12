@@ -58,3 +58,7 @@ tests/ep133/fixtures/reference.ppak
 /tbstemmed/
 /log/
 .vscode/
+
+# Per-user host snapshots (mus library tree/events/setup docs). See
+# tools/refresh_mus_dump.sh. Never committed.
+/.local/
