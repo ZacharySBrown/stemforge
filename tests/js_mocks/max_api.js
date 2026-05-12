@@ -59,6 +59,7 @@ const state = {
     fs: Object.create(null),           // hfs path -> { contents, isDir, entries? }
     logs: [],                          // post() captures
     outlets: Object.create(null),      // outletNum (number) -> list of arg-arrays
+    messnamed: [],                     // [[receiver, ...args], ...] — messnamed() captures
     liveApiCalls: [],                  // for optional inspection
     liveTree: null,                    // root LOM mock; null = unseeded → no-op
     liveCallHandlers: Object.create(null), // verb -> (lomPath, args) => result
@@ -70,6 +71,7 @@ function resetState() {
     state.fs = Object.create(null);
     state.logs.length = 0;
     state.outlets = Object.create(null);
+    state.messnamed.length = 0;
     state.liveApiCalls.length = 0;
     state.liveTree = null;
     state.liveCallHandlers = Object.create(null);
@@ -299,6 +301,16 @@ function outlet(n /* , ...args */) {
     state.outlets[n].push(args);
 }
 
+// Max's `messnamed` sends a message to a named receiver/object globally.
+// We record it as `state.messnamed = [[receiver, message, ...args], ...]`
+// so tests can assert what was fired. Used by sf_configurator.js for the
+// `max launchbrowser <url>` system-browser open path.
+function messnamed(receiver /* , message, ...args */) {
+    const args = Array.prototype.slice.call(arguments, 1);
+    if (!state.messnamed) state.messnamed = [];
+    state.messnamed.push([receiver].concat(args));
+}
+
 function arrayfromargs(/* ...args */) {
     // Classic Max signature: `arrayfromargs(messagename, arguments)` returns
     // [messagename, ...arguments]. BUT most usages in StemForge call it as
@@ -523,6 +535,7 @@ module.exports = {
     LOM_MARKER_PROPS,
     post,
     outlet,
+    messnamed,
     arrayfromargs,
     state,
     resetState,

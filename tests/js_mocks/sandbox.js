@@ -22,6 +22,7 @@ function createSandbox(options) {
         LiveAPI:        maxApi.LiveAPI,
         post:           maxApi.post,
         outlet:         maxApi.outlet,
+        messnamed:      maxApi.messnamed,
         arrayfromargs:  maxApi.arrayfromargs,
         autowatch:      0,
         inlets:         1,

@@ -154,30 +154,48 @@ test('recompute / slice / curate / reAnchor each fire their verb', () => {
     assert.ok(cmds.some(c => /intent\/re-anchor/.test(c)), 're-anchor missing');
 });
 
-// ── openEditor → jweb openurl ────────────────────────────────────────────────
+// ── openEditor → launchbrowser via messnamed (system browser) ────────────────
+//
+// Phase 3 ships the popup via the system browser rather than M4L's embedded
+// [jweb] — see openEditor() in sf_configurator.js for rationale. The legacy
+// outlet-3 path still fires `url <addr>` for any custom patcher that routes
+// outlet 3 into a [jweb], but the load-bearing call is messnamed.
 
-test('openEditor: emits openurl onto outlet 3 with serverBase', () => {
+test('openEditor: messnamed launchbrowser with serverBase, plus outlet-3 fallback', () => {
     const ctx = loadConf();
     maxApi.seedFile(PORT_FILE_KEY, '7421');
     ctx._discoverPort();
 
+    // Clear any messnamed calls emitted during discover (none expected, but
+    // be explicit so this test pins the openEditor call specifically).
+    maxApi.state.messnamed = [];
+
     ctx.openEditor();
 
+    const calls = maxApi.state.messnamed;
+    assert.equal(calls.length, 1, 'exactly one messnamed call');
+    assert.deepEqual(calls[0], ['max', 'launchbrowser', 'http://127.0.0.1:7421/']);
+
+    // Legacy outlet-3 path emits `url <addr>` (NOT openurl — [jweb] doesn't
+    // recognize openurl).
     const j = outletOn(3);
     const last = j[j.length - 1];
-    assert.deepEqual(last, ['openurl', 'http://127.0.0.1:7421/']);
+    assert.deepEqual(last, ['url', 'http://127.0.0.1:7421/']);
 });
 
-test('openEditor: with no server, refuses to emit openurl', () => {
+test('openEditor: with no server, fires neither messnamed nor outlet-3', () => {
     const ctx = loadConf();
     // no seed
+    maxApi.state.messnamed = [];
 
     ctx.openEditor();
 
+    const calls = maxApi.state.messnamed || [];
+    assert.equal(calls.length, 0, 'messnamed should not fire without a server');
+
     const j = outletOn(3);
-    // Should not have emitted any openurl.
-    const urls = j.filter(a => a[0] === 'openurl');
-    assert.equal(urls.length, 0, 'openurl should not fire without a server');
+    const urls = j.filter(a => a[0] === 'url' || a[0] === 'openurl');
+    assert.equal(urls.length, 0, 'no url emission without a server');
 });
 
 // ── startServer → shell exec ─────────────────────────────────────────────────

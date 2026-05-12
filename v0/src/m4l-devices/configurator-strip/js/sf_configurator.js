@@ -243,9 +243,20 @@ function openEditor() {
         _footer("open-editor: server down");
         return;
     }
-    outlet(3, "openurl", _serverBase + "/");
+    // Open in the system browser (Chrome/Safari) rather than M4L's
+    // embedded [jweb]. [jweb] inside an M4L device is constrained to the
+    // device's UI area (which is tiny for this strip) and doesn't
+    // recognize the `openurl` message anyway — its real verb is `url`.
+    // System browser gives a real window the user can position freely.
+    // The [jweb] object remains in the patcher as a no-op vestige for
+    // now; Phase 4 may revisit if a true float-window embed is wanted.
+    var url = _serverBase + "/";
+    messnamed("max", "launchbrowser", url);
+    // Also fire outlet 3 with the proper [jweb] verb in case anyone has
+    // patched the strip to route outlet 3 into a custom embed.
+    outlet(3, "url", url);
     _status("editor opened");
-    _footer("editor → " + _serverBase + "/");
+    _footer("editor → " + url);
 }
 
 // "Start server" CTA fired when port-file is missing.
