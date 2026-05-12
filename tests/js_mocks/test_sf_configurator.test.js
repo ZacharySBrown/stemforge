@@ -32,11 +32,12 @@ const SF_CONF = path.join(
     'js', 'sf_configurator.js',
 );
 
-// Path the script will read at boot — the script expands `~` to `$HOME`
-// literally, so we seed that key. The real Max [js] File object resolves ~
-// against the running user's home; the mock has no such logic, so we seed
-// the literal post-expansion path.
-const PORT_FILE_KEY = '$HOME/stemforge/.configurator_port';
+// Path the script will read at boot. The script now passes `~` through
+// to Max's File API (which expands it against the running user's home
+// on macOS); the broken `$HOME`-substitution that motivated the original
+// seed has been removed. Mock has no expansion logic, so we seed the
+// literal `~`-prefixed key the script will look up.
+const PORT_FILE_KEY = '~/stemforge/.configurator_port';
 
 function loadConf() {
     maxApi.resetState();
