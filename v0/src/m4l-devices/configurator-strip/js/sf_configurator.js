@@ -82,20 +82,12 @@ function _post(msg) {
 // ── Port discovery ───────────────────────────────────────────────────────────
 
 function _expandTilde(p) {
-    if (typeof p !== "string") return p;
-    if (p.length === 0 || p.charAt(0) !== "~") return p;
-    // In Max [js] the `Folder` global doesn't expose $HOME, but `File` resolves
-    // ~ when given the path. We do the substitution defensively in case
-    // the runtime doesn't expand for us. Fall back to $HOME via env if needed.
-    var home = "";
-    try {
-        // Max 8+ exposes process.env via "max" module on Node — not here in
-        // classic [js]. We hardcode the convention from Live: the user
-        // running Live owns ~. Build the absolute path via shell substitution
-        // when the path is finally consumed by curl/shell.
-        home = "$HOME";
-    } catch (_) {}
-    return home + p.substring(1);
+    // Max [js] File API accepts ~ directly on macOS. An earlier "defensive"
+    // substitution to the literal string "$HOME" broke port discovery —
+    // Max's File constructor doesn't expand shell variables, so the
+    // substituted path was meaningless. Pass through as-is; the File
+    // constructor handles ~ resolution.
+    return p;
 }
 
 function discoverPort() {
