@@ -297,3 +297,34 @@ def test_no_old_forge_textbutton(boxes):
     for b in boxes:
         if b.get("maxclass") == "textbutton" and b.get("text") == "FORGE":
             pytest.fail("stray FORGE textbutton — should be drawn by v8ui")
+
+
+def test_all_live_widgets_opt_out_of_parameter_enrollment(boxes):
+    """Every `live.*` widget in the device must either declare
+    `parameter_enable: 0` OR carry a full `saved_attribute_attributes.valueof`
+    block.
+
+    Background: M4L's host (Live) probes every `live.*` widget at device
+    load to build the parameter inventory. Widgets lacking BOTH a
+    `parameter_enable: 0` opt-out AND a `saved_attribute_attributes.valueof`
+    table emit one `SendMessage error 2: Bad parameter value` to the Max
+    console each — the cosmetic boot-noise tracked in
+    `docs/issues/max-startup-sendmessage-errors.md`.
+
+    See builder.py inline comments on `obj-sf-status-text` /
+    `obj-sf-version-text` for the fix rationale.
+    """
+    live_widgets = [b for b in boxes if b.get("maxclass", "").startswith("live.")]
+    assert live_widgets, "expected at least one live.* widget in the device"
+    offenders: list[str] = []
+    for b in live_widgets:
+        if b.get("parameter_enable") == 0:
+            continue
+        saa = b.get("saved_attribute_attributes") or {}
+        if "valueof" in saa:
+            continue
+        offenders.append(f"{b.get('id')} ({b.get('maxclass')})")
+    assert not offenders, (
+        "live.* widgets without parameter_enable:0 or saved_attribute_attributes.valueof "
+        f"(each emits one SendMessage error 2 at boot): {offenders}"
+    )

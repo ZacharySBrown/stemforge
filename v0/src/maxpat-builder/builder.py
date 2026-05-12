@@ -362,6 +362,11 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
                 "text": "waiting — pick a preset and source",
                 "fontsize": 9.0,
                 "textcolor": COLORS["dim"],
+                # Display-only — opt out of M4L parameter enrollment so Live's
+                # host doesn't probe a missing saved_attribute_attributes table
+                # at device load (each unprobed live.* widget emits one
+                # `SendMessage error 2: Bad parameter value` at startup).
+                "parameter_enable": 0,
             },
         )
     )
@@ -387,6 +392,9 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
                 "text": f"v{device_version}",
                 "fontsize": 9.0,
                 "textcolor": COLORS["dim"],
+                # Display-only — opt out of M4L parameter enrollment. See
+                # status_text comment above for the SendMessage-at-boot rationale.
+                "parameter_enable": 0,
             },
         )
     )
