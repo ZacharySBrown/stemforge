@@ -1,6 +1,6 @@
 # Hardening: JS mock test coverage gaps + CLI integration gaps
 
-**Status:** Open — captured 2026-05-12.
+**Status:** Closed 2026-05-12 — all sub-tasks done. See per-section markers.
 
 ## JS mock suites NOT run by pytest
 
@@ -37,12 +37,13 @@ tests/js_mocks/
 `stemforge deck-from-manifest` and `stemforge build-deck` are covered by:
 - `tests/test_build_deck_cli.py` (8 cases) — argument parsing + smoke run.
 
-But NOT covered:
-- `deck-from-manifest` end-to-end CLI test against a fixture manifest. Currently the production-mode manifests from `curate-bars` produce empty `session_tracks`, so the only deck-from-manifest test inputs are hand-rolled fixtures. We need a session-mode fixture (the COMMIT-flow output shape).
-- The format_profile patch step (regex swap of vocal/texture/preserve_source → drum) we did inline at the CLI — that's not in code, it's an ad-hoc step in the breaks-n-beats1 build. Should be a flag on deck-from-manifest (`--all-drum`, `--profile <preset>`, etc).
+But NOT covered (status as of 2026-05-12):
+- ✅ DONE — `deck-from-manifest` end-to-end CLI test against a session-mode fixture manifest. Landed via `test/deck-from-manifest-e2e`: `tests/ep133/test_deck_from_manifest_e2e.py` (5 cases) + `tests/ep133/fixtures/session_mode_manifest.json` (mirrors `_commitSessionTracks` output). Uses subprocess pattern matching `tests/test_canonical_tempos.py::_run_split`.
+- ✅ DONE (prior commit, Phase 1) — The format_profile patch step is now a first-class flag (`--profile`, `--all-drum`, `--play-mode`) on `deck-from-manifest`. Library-level coverage in `tests/ep133/test_deck_autogen.py`; end-to-end CLI coverage in `tests/ep133/test_deck_from_manifest_e2e.py`. No more regex sed step needed.
 
 ## Done when
 
-- Every `js_mocks/*.test.js` is exercised by pytest.
-- `STACKED_PR_PENDING` is empty.
-- `deck-from-manifest --profile drum` (or equivalent) is a first-class option, not an inline sed.
+- ✅ Every `js_mocks/*.test.js` is exercised by pytest.
+- ✅ `STACKED_PR_PENDING` is empty.
+- ✅ `deck-from-manifest --profile drum` (or equivalent) is a first-class option, not an inline sed.
+- ✅ `deck-from-manifest` end-to-end CLI test landed against a session-mode fixture.
