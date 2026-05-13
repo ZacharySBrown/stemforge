@@ -341,10 +341,7 @@ def _legacy_extract(
     """
     forge_slug = data.get("forge_slug") or data.get("track") or slug
     source_audio = (
-        data.get("source_audio")
-        or data.get("source_file")
-        or data.get("source_dir")
-        or ""
+        data.get("source_audio") or data.get("source_file") or data.get("source_dir") or ""
     )
     bpm = data.get("bpm")
     if bpm is None or float(bpm) <= 0:
@@ -370,7 +367,7 @@ def _legacy_extract(
         for entry in entries:
             if not isinstance(entry, dict) or "file" not in entry:
                 continue
-            position = int(entry.get("position", entry.get("rank", len(clips) + 1)))
+            position = int(entry.get("position") or entry.get("rank") or (len(clips) + 1))
             duration_bars = int(entry.get("duration_bars", n_bars))
             start_bar = (position - 1) * duration_bars
             end_bar = start_bar + duration_bars
@@ -384,9 +381,7 @@ def _legacy_extract(
                 # by clip_id below. Preserve the original path on disk;
                 # we only rewrite when there's a deterministic mapping.
                 audio_path = f"curated_audio/{Path(audio_path).name}"
-            clip_id = entry.get("clip_id") or _legacy_clip_id(
-                stem_label, position, duration_bars
-            )
+            clip_id = entry.get("clip_id") or _legacy_clip_id(stem_label, position, duration_bars)
             try:
                 clips.append(
                     ForgeClip(
