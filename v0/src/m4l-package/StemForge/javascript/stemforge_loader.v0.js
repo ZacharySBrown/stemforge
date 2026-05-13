@@ -2433,6 +2433,758 @@ function loadArrangementFromManifest() {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Configurator v1 Phase 1C — Unified picker, sniffer, and LOAD curation.
+//
+// Goal: replace the legacy PRESET/SOURCE/LOAD/ANCH controls with a single
+// `Pick source…` element + one primary button whose label flips with the
+// sniffer result. See specs/CONSOLIDATED_DESIGN.md §3.1, §3.3, §6.4.
+//
+// All new status text uses structured prefixes (`sniffer:`, `staging:`,
+// `loadCuration:`) so L3 tests in stemforge_loader.v0.test.js can grep for
+// them and assert behaviour without a running Live.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Module-scope sniffer result. Set by pickSource() and consumed by primary().
+// Shape: { path: string, type: SnifferType, validated: boolean }
+//   - path:   the absolute (or HFS) path the user picked.
+//   - type:   "audio" | "forge_manifest" | "arrangement_manifest" | "curation"
+//             | "unknown".
+//   - validated: true when a duck-typed peek succeeded; false on unknown type.
+var pickedSource = null;
+
+// Receive port names. Wired into the patcher as [r primary-btn-label] /
+// [r primary-btn-enabled]; the loader publishes to them via messnamed() so
+// the UI doesn't have to know any of our internal state.
+var PRIMARY_LABEL_RECV = "primary-btn-label";
+var PRIMARY_ENABLED_RECV = "primary-btn-enabled";
+
+// Maps sniffer-result.type → primary-button label. Falls through to a
+// "pick first" affordance when nothing has been picked yet.
+var PRIMARY_LABEL_BY_TYPE = {
+    audio: "FORGE",
+    forge_manifest: "LOAD FORGE",
+    arrangement_manifest: "LOAD FORGE",
+    curation: "LOAD CURATION"
+};
+
+// Default staging-track prefix when the curation file omits a `label` field.
+// Per spec §3.1: STG-A..STG-D for a 4-group target.
+var STG_PREFIX_DEFAULT = "STG";
+
+// Audio extensions accepted by the sniffer. Anything else falls to JSON/YAML
+// peek logic.
+var SNIFFER_AUDIO_EXTS = [".wav", ".aif", ".aiff", ".mp3", ".flac"];
+
+function _sfLower(s) {
+    return String(s == null ? "" : s).toLowerCase();
+}
+
+function _sfExtOf(p) {
+    var s = _sfLower(p);
+    var i = s.lastIndexOf(".");
+    return i < 0 ? "" : s.substring(i);
+}
+
+// Strip an HFS-style "Macintosh HD:" prefix and any trailing whitespace so
+// downstream callers see canonical POSIX-style paths. Idempotent.
+function _sfNormalizePath(p) {
+    var s = String(p == null ? "" : p);
+    // Max gives us "Macintosh HD:/Users/zak/..." when dragging from a file
+    // dialog; the rest of the code expects POSIX paths.
+    var marker = "Macintosh HD:";
+    if (s.indexOf(marker) === 0) s = s.substring(marker.length);
+    return s.replace(/^\s+|\s+$/g, "");
+}
+
+// ── Tiny YAML reader for the curation subset (spec §2.3) ─────────────────────
+// Curation YAMLs are regular: top-level scalar fields, a small set of
+// nested mappings (target, groups.<letter>.pads[]), and short scalar leaves.
+// Full-spec YAML is far too heavy for Max's classic JS engine, so we hand-
+// roll a subset parser. Supports:
+//   - Block mappings keyed by bare identifiers.
+//   - Block sequences whose items are either inline-flow (`{ pad_id: X }`)
+//     or block mappings (`- pad_id: A01\n  source:\n    forge: ...`).
+//   - Scalar values: bare numbers, bare booleans, `null`, double-quoted
+//     strings, single-quoted strings, ISO datestamps (treated as strings),
+//     and plain strings (everything else).
+// Returns {ok: true, data: …} or {ok: false, error: "msg at line N"}.
+
+function _yamlIsBlank(line) {
+    return /^\s*$/.test(line) || /^\s*#/.test(line);
+}
+
+function _yamlIndent(line) {
+    var i = 0;
+    while (i < line.length && line.charAt(i) === " ") i += 1;
+    return i;
+}
+
+function _yamlScalar(rawValue) {
+    if (rawValue == null) return null;
+    var v = String(rawValue).replace(/^\s+|\s+$/g, "");
+    if (v === "" || v === "null" || v === "~") return null;
+    if (v === "true") return true;
+    if (v === "false") return false;
+    // Strip surrounding quotes; preserve content as-is (no escape unrolling
+    // beyond \" / \\ which the curation schema never emits).
+    if (v.length >= 2) {
+        var first = v.charAt(0), last = v.charAt(v.length - 1);
+        if ((first === "\"" && last === "\"") || (first === "'" && last === "'")) {
+            return v.substring(1, v.length - 1);
+        }
+    }
+    // Numeric (int / float). Reject obvious non-numeric leaders to avoid
+    // mangling identifiers that happen to start with a digit.
+    if (/^-?\d+(\.\d+)?$/.test(v)) {
+        var n = Number(v);
+        if (isFinite(n)) return n;
+    }
+    return v;
+}
+
+// Parse an inline-flow mapping like `{ pad_id: A03 }` or `{}`.
+// Keys are bare identifiers; values are scalars only. No nested flows.
+function _yamlParseInlineMap(body) {
+    var out = {};
+    var inner = String(body).replace(/^\s*\{/, "").replace(/\}\s*$/, "");
+    if (!inner.replace(/\s+/g, "").length) return out;
+    var parts = inner.split(",");
+    for (var i = 0; i < parts.length; i += 1) {
+        var kv = parts[i];
+        var colon = kv.indexOf(":");
+        if (colon < 0) continue;
+        var k = kv.substring(0, colon).replace(/^\s+|\s+$/g, "");
+        var v = kv.substring(colon + 1);
+        out[k] = _yamlScalar(v);
+    }
+    return out;
+}
+
+/**
+ * Parse a YAML string into a JS object using the curation-subset grammar.
+ * Returns {ok, data, error}. `error` includes the 1-based offending line.
+ */
+function _yamlParseCuration(text) {
+    if (text == null) return { ok: false, error: "loadCuration: empty input at line 1" };
+    var raw = String(text).replace(/\r\n?/g, "\n").split("\n");
+
+    // Token model: each non-blank line becomes
+    //   { indent, kind: "kv"|"item", key, value, lineno }
+    // where `value` is the raw post-colon string (possibly empty if the
+    // mapping value is on subsequent indented lines).
+    var tokens = [];
+    for (var li = 0; li < raw.length; li += 1) {
+        var line = raw[li];
+        if (_yamlIsBlank(line)) continue;
+        var indent = _yamlIndent(line);
+        var body = line.substring(indent);
+        var token = { indent: indent, lineno: li + 1 };
+        if (body.charAt(0) === "-") {
+            // Sequence item. Two shapes are common in our schema:
+            //   - pad_id: A01             ← bare-key entry with inline kv
+            //   - { pad_id: A03 }         ← inline-flow mapping
+            //   -                         ← block item, mapping follows
+            //     pad_id: A02
+            token.kind = "item";
+            var afterDash = body.substring(1).replace(/^\s+/, "");
+            token.value = afterDash;
+            tokens.push(token);
+            continue;
+        }
+        var colon = body.indexOf(":");
+        if (colon < 0) {
+            return {
+                ok: false,
+                error: "loadCuration: malformed YAML at line " + (li + 1)
+            };
+        }
+        token.kind = "kv";
+        token.key = body.substring(0, colon).replace(/^\s+|\s+$/g, "");
+        token.value = body.substring(colon + 1).replace(/^\s+/, "");
+        tokens.push(token);
+    }
+
+    // Recursive-descent. `cursor` is a shared {i} closure-substitute so the
+    // helpers can advance the index in lockstep.
+    var cursor = { i: 0 };
+
+    function parseMapping(myIndent) {
+        var node = {};
+        while (cursor.i < tokens.length) {
+            var t = tokens[cursor.i];
+            if (t.indent < myIndent) break;
+            if (t.indent > myIndent) {
+                return { __error: "loadCuration: malformed YAML at line " + t.lineno };
+            }
+            if (t.kind !== "kv") break;
+            cursor.i += 1;
+            var key = t.key, val = t.value;
+            if (val && val !== "") {
+                // Inline value: scalar, or inline-flow map.
+                if (val.charAt(0) === "{") {
+                    node[key] = _yamlParseInlineMap(val);
+                } else if (val.charAt(0) === "[") {
+                    // Only `referenced_forges: []` is observed in fixtures.
+                    var inner = val.replace(/^\s*\[/, "").replace(/\]\s*$/, "");
+                    node[key] = inner.replace(/\s+/g, "").length ? [_yamlScalar(inner)] : [];
+                } else {
+                    node[key] = _yamlScalar(val);
+                }
+                continue;
+            }
+            // Child node lives on subsequent more-indented lines.
+            var nextChild = tokens[cursor.i];
+            if (!nextChild || nextChild.indent <= myIndent) {
+                node[key] = null;
+                continue;
+            }
+            var childIndent = nextChild.indent;
+            if (nextChild.kind === "item") {
+                node[key] = parseSequence(childIndent);
+            } else {
+                node[key] = parseMapping(childIndent);
+            }
+            if (node[key] && node[key].__error) return node[key];
+        }
+        return node;
+    }
+
+    function parseSequence(myIndent) {
+        var arr = [];
+        while (cursor.i < tokens.length) {
+            var t = tokens[cursor.i];
+            if (t.indent < myIndent) break;
+            if (t.kind !== "item") break;
+            cursor.i += 1;
+            var itemBody = t.value;
+            if (itemBody && itemBody.charAt(0) === "{") {
+                arr.push(_yamlParseInlineMap(itemBody));
+                continue;
+            }
+            // Block item. The first key/value pair may share the dash's
+            // line; subsequent keys live on further-indented siblings.
+            var entry = {};
+            if (itemBody && itemBody.length) {
+                var colon = itemBody.indexOf(":");
+                if (colon < 0) {
+                    return { __error: "loadCuration: malformed YAML at line " + t.lineno };
+                }
+                var k = itemBody.substring(0, colon).replace(/^\s+|\s+$/g, "");
+                var v = itemBody.substring(colon + 1).replace(/^\s+/, "");
+                if (v && v !== "") {
+                    if (v.charAt(0) === "{") entry[k] = _yamlParseInlineMap(v);
+                    else entry[k] = _yamlScalar(v);
+                } else {
+                    // Inline key with no value: child mapping follows.
+                    var peek = tokens[cursor.i];
+                    if (peek && peek.indent > myIndent && peek.kind === "kv") {
+                        entry[k] = parseMapping(peek.indent);
+                    } else if (peek && peek.indent > myIndent && peek.kind === "item") {
+                        entry[k] = parseSequence(peek.indent);
+                    } else {
+                        entry[k] = null;
+                    }
+                }
+            }
+            // Pull in any further keys belonging to this block item: they
+            // appear at indent > myIndent and as "kv" tokens until we hit
+            // a sibling item or shallower indent.
+            while (cursor.i < tokens.length) {
+                var peek2 = tokens[cursor.i];
+                if (peek2.indent <= myIndent) break;
+                if (peek2.kind !== "kv") break;
+                cursor.i += 1;
+                if (peek2.value && peek2.value !== "") {
+                    if (peek2.value.charAt(0) === "{") {
+                        entry[peek2.key] = _yamlParseInlineMap(peek2.value);
+                    } else {
+                        entry[peek2.key] = _yamlScalar(peek2.value);
+                    }
+                } else {
+                    var next3 = tokens[cursor.i];
+                    if (next3 && next3.indent > peek2.indent && next3.kind === "kv") {
+                        entry[peek2.key] = parseMapping(next3.indent);
+                    } else if (next3 && next3.indent > peek2.indent && next3.kind === "item") {
+                        entry[peek2.key] = parseSequence(next3.indent);
+                    } else {
+                        entry[peek2.key] = null;
+                    }
+                }
+                if (entry[peek2.key] && entry[peek2.key].__error) {
+                    return entry[peek2.key];
+                }
+            }
+            arr.push(entry);
+        }
+        return arr;
+    }
+
+    if (tokens.length === 0) {
+        return { ok: false, error: "loadCuration: empty input at line 1" };
+    }
+    var topIndent = tokens[0].indent;
+    var data = parseMapping(topIndent);
+    if (data && data.__error) return { ok: false, error: data.__error };
+    return { ok: true, data: data };
+}
+
+// ── Sniffer ──────────────────────────────────────────────────────────────────
+
+/**
+ * Inspect a picked file and return a sniffer-result object.
+ *
+ * Resolution order (cheapest first):
+ *   1. Extension → audio / json / yaml.
+ *   2. JSON: parse + peek for `schema_version` + (`pads` | `chunks`).
+ *   3. YAML: parse-light, look for top-level `curation_version`.
+ *
+ * Returns:
+ *   { path, type, validated, detail }
+ *
+ * The caller is responsible for setting module-scope `pickedSource` and
+ * emitting `sniffer:` status lines so test harness can assert.
+ */
+function _snifferInspect(picked) {
+    var path = _sfNormalizePath(picked);
+    var ext = _sfExtOf(path);
+    var result = { path: path, type: "unknown", validated: false, detail: "" };
+
+    // Audio short-circuit. Don't bother opening the file — extension is
+    // sufficient and the file might be many GB.
+    for (var i = 0; i < SNIFFER_AUDIO_EXTS.length; i += 1) {
+        if (ext === SNIFFER_AUDIO_EXTS[i]) {
+            result.type = "audio";
+            result.validated = true;
+            // Detail is purely cosmetic — surface the extension uppercased.
+            result.detail = ext.substring(1).toUpperCase();
+            return result;
+        }
+    }
+
+    var raw = readFileContents(path);
+    if (raw == null || !raw.length) {
+        result.detail = "could not read file";
+        return result;
+    }
+
+    if (ext === ".json") {
+        var parsed = null;
+        try { parsed = JSON.parse(raw); } catch (_) {
+            result.detail = "invalid JSON";
+            return result;
+        }
+        if (!parsed || typeof parsed !== "object") {
+            result.detail = "JSON is not an object";
+            return result;
+        }
+        if (parsed.schema_version === undefined) {
+            result.detail = "missing schema_version";
+            return result;
+        }
+        if (parsed.pads !== undefined) {
+            result.type = "forge_manifest";
+            result.validated = true;
+            result.detail = "schema_version=" + parsed.schema_version;
+            return result;
+        }
+        if (parsed.chunks !== undefined) {
+            result.type = "arrangement_manifest";
+            result.validated = true;
+            result.detail = "schema_version=" + parsed.schema_version;
+            return result;
+        }
+        result.detail = "no pads or chunks key";
+        return result;
+    }
+
+    if (ext === ".yaml" || ext === ".yml") {
+        var peek = _yamlParseCuration(raw);
+        if (!peek.ok) {
+            result.detail = peek.error || "YAML parse error";
+            return result;
+        }
+        if (peek.data && peek.data.curation_version !== undefined) {
+            result.type = "curation";
+            result.validated = true;
+            result.detail = "curation_version=" + peek.data.curation_version;
+            return result;
+        }
+        result.detail = "missing curation_version";
+        return result;
+    }
+
+    result.detail = "unsupported extension";
+    return result;
+}
+
+// ── Primary-button label / enabled state ─────────────────────────────────────
+
+function _primaryLabelFor(type) {
+    if (type && PRIMARY_LABEL_BY_TYPE[type]) return PRIMARY_LABEL_BY_TYPE[type];
+    return "Pick a source…";
+}
+
+function _emitPrimaryButtonState(type, enabled) {
+    var label = _primaryLabelFor(type);
+    try { messnamed(PRIMARY_LABEL_RECV, label); } catch (_) {}
+    try { messnamed(PRIMARY_ENABLED_RECV, enabled ? 1 : 0); } catch (_) {}
+}
+
+// Public message: `applyPickedSource <path>` — invoked by the patcher when
+// [opendialog] emits its result. Sniffs, stashes, and updates the primary
+// button.
+function applyPickedSource() {
+    var argList = arrayfromargs(messagename, arguments);
+    var args = argList.slice(1);
+    if (!args.length) {
+        status("sniffer: rejected — no path");
+        pickedSource = null;
+        _emitPrimaryButtonState(null, false);
+        return;
+    }
+    var pickPath = args.join(" ");
+    var inspected = _snifferInspect(pickPath);
+    pickedSource = {
+        path: inspected.path,
+        type: inspected.type,
+        validated: !!inspected.validated
+    };
+    if (!inspected.validated) {
+        status("sniffer: rejected — unknown type");
+        _emitPrimaryButtonState(null, false);
+        return;
+    }
+    if (inspected.type === "audio") {
+        status("sniffer: detected audio (" + inspected.detail + ")");
+    } else if (inspected.type === "curation") {
+        status("sniffer: detected curation v1");
+    } else if (inspected.type === "forge_manifest") {
+        status("sniffer: detected forge manifest (" + inspected.detail + ")");
+    } else if (inspected.type === "arrangement_manifest") {
+        status("sniffer: detected arrangement manifest (" + inspected.detail + ")");
+    } else {
+        status("sniffer: detected " + inspected.type);
+    }
+    _emitPrimaryButtonState(inspected.type, true);
+}
+
+// Public message: `pickSource` — bangs the [opendialog]. The patcher wires
+// [opendialog]'s outlet back to `applyPickedSource` so the result roundtrip
+// is sandbox-friendly (per CLAUDE.md, `[shell]` is unavailable in M4L).
+function pickSource() {
+    // The actual dialog is owned by the patcher's [opendialog]; we just bang
+    // it. Tests skip this step and call applyPickedSource() directly.
+    outlet(0, "set", "Pick a source…");
+    try { messnamed("sf-open-source-dialog", "bang"); } catch (_) {}
+}
+
+// Reset the picker state. Test-only convenience and used after a successful
+// FORGE/LOAD to require the user to repick before the next action.
+function resetPickedSource() {
+    pickedSource = null;
+    _emitPrimaryButtonState(null, false);
+}
+
+// ── loadCuration() ───────────────────────────────────────────────────────────
+// Spec §3.3, §2.3. Walk LOM, ensure STG-A..STG-N exist, populate clip slots.
+// Idempotent: pre-existing STG-<LETTER> tracks are deleted first.
+
+var STG_TRACK_REGEX = /^STG-[A-Z]$/;
+
+// Letter ↔ index helpers. `letterFromIndex(0) === "A"`.
+function _stgLetterFromIndex(i) {
+    return String.fromCharCode(65 + i);
+}
+
+function _stgIndexFromLetter(letter) {
+    return String(letter).charCodeAt(0) - 65;
+}
+
+// Pad ID parser. Accepts "A01" and "A·01" (interpunct, per spec) and a
+// rare "A-01" hyphen form. Returns {letter, slot} (slot is 0-based) or null.
+function _parsePadId(padId) {
+    if (!padId) return null;
+    var s = String(padId).replace(/\s+/g, "");
+    var m = s.match(/^([A-Z])[·\-_]?(\d+)$/i);
+    if (!m) return null;
+    return { letter: m[1].toUpperCase(), slot: parseInt(m[2], 10) - 1 };
+}
+
+// Find indices of every track whose name matches STG-<letter>. We have to
+// walk in reverse-deletion order because Live re-indexes tracks on delete.
+function _findStagingTrackIndices() {
+    var out = [];
+    var n = trackCount();
+    for (var i = 0; i < n; i += 1) {
+        if (STG_TRACK_REGEX.test(trackName(i))) out.push(i);
+    }
+    return out;
+}
+
+function _deleteStagingTracks() {
+    var idxs = _findStagingTrackIndices();
+    if (!idxs.length) return 0;
+    idxs.sort(function (a, b) { return b - a; }); // descending
+    var liveSet = new LiveAPI("live_set");
+    for (var k = 0; k < idxs.length; k += 1) {
+        liveSet.call("delete_track", idxs[k]);
+    }
+    return idxs.length;
+}
+
+function _createStagingTracks(letters) {
+    var liveSet = new LiveAPI("live_set");
+    var startCount = trackCount();
+    for (var i = 0; i < letters.length; i += 1) {
+        liveSet.call("create_audio_track", -1);
+    }
+    // The new tracks are appended; rename in order.
+    for (var j = 0; j < letters.length; j += 1) {
+        var newIdx = startCount + j;
+        var trackApi = new LiveAPI("live_set tracks " + newIdx);
+        trackApi.set("name", "STG-" + letters[j]);
+    }
+    return letters.length;
+}
+
+// Resolve a pad's audio_path. Relative paths are taken to be relative to
+// the directory the curation YAML lives in (the popup writes paths that way).
+function _resolvePadAudioPath(audioPath, curationFilePath) {
+    var p = String(audioPath || "");
+    if (!p) return p;
+    if (p.charAt(0) === "/") return p;
+    // Strip Max HFS prefix from curation path if present.
+    var base = _sfNormalizePath(curationFilePath || "");
+    var slash = base.lastIndexOf("/");
+    var baseDir = slash < 0 ? "" : base.substring(0, slash);
+    if (!baseDir) return p;
+    return baseDir + "/" + p;
+}
+
+// Apply curation clip_settings (warp_bpm, loop_start, loop_end, looping) to
+// a freshly-created clip. Tolerant of missing fields — every key is optional.
+function _applyCurationClipSettings(clipApi, padEntry) {
+    if (!clipApi || clipApi.id === "0") return;
+    var s = padEntry && padEntry.clip_settings;
+    if (!s) return;
+    try {
+        if (typeof s.warp_bpm === "number") clipApi.set("warp_bpm", s.warp_bpm);
+    } catch (_) {}
+    // Schema uses *_bar (musical bars); LOM expects beats. For 4/4 (the
+    // device-spec's working assumption — EP-133 deck targets are 4/4),
+    // beats = bars * 4. If the user is on a non-4/4 signature, the device
+    // still loads and the user re-warps; we don't ship time-signature math
+    // here because COMMIT/BOUNCE round-trips this faithfully.
+    try {
+        if (typeof s.loop_start_bar === "number") clipApi.set("loop_start", s.loop_start_bar * 4);
+        else if (typeof s.loop_start === "number") clipApi.set("loop_start", s.loop_start);
+    } catch (_) {}
+    try {
+        if (typeof s.loop_end_bar === "number") clipApi.set("loop_end", s.loop_end_bar * 4);
+        else if (typeof s.loop_end === "number") clipApi.set("loop_end", s.loop_end);
+    } catch (_) {}
+    try {
+        if (s.looping !== undefined) clipApi.set("looping", s.looping ? 1 : 0);
+    } catch (_) {}
+}
+
+// Compute a sensible default clip-length (in beats) for create_clip. The
+// curation spec carries `clip_settings.loop_end_bar` — if present we use that
+// (in beats), else 4 beats (one bar 4/4). This is just the placeholder
+// length; the subsequent set("file_path") + clip_settings overrides.
+function _curationClipLengthBeats(padEntry) {
+    var s = padEntry && padEntry.clip_settings;
+    if (s && typeof s.loop_end_bar === "number") return s.loop_end_bar * 4;
+    if (s && typeof s.loop_end === "number" && s.loop_end > 0) return s.loop_end;
+    return 4;
+}
+
+/**
+ * loadCuration(yamlText [, curationFilePath]) — entry point.
+ *
+ * yamlText: YAML body (string). Tests pass it directly; the device passes
+ *           the contents of the picked file.
+ * curationFilePath: optional, used to resolve relative `audio_path` entries.
+ *
+ * Side effects (per spec §3.3):
+ *   1. Parse + duck-type validate.
+ *   2. Delete pre-existing STG-* tracks.
+ *   3. Create STG-A..STG-<N> tracks.
+ *   4. For each pad with `source`, create_clip in the right slot, set file_path
+ *      + clip_settings.
+ *   5. Emit structured status events for L3 tests:
+ *        "loadCuration: malformed YAML at line N" (rejection path)
+ *        "staging: created STG-A through STG-D"
+ *        "staging: populated A·01 (vocal-bar4-8)"   (per populated pad)
+ *        "staging: skipped A·02 (no source)"        (per empty pad)
+ *        "staging: stale reference noted <slug>"    (referenced_forges hint)
+ *        "loadCuration: complete (4 groups, 12/64 pads populated)"
+ *
+ * Returns the parsed curation object on success, or null on parse failure.
+ * (The boolean-y caller in the patcher pipeline only consumes the status
+ * stream, so the return value is purely a test affordance.)
+ */
+function loadCuration(yamlText, curationFilePath) {
+    var parsed = _yamlParseCuration(String(yamlText == null ? "" : yamlText));
+    if (!parsed.ok) {
+        status(parsed.error);
+        return null;
+    }
+    var curation = parsed.data || {};
+    if (curation.curation_version === undefined) {
+        status("loadCuration: malformed YAML at line 1");
+        return null;
+    }
+
+    // Reconcile group ordering. Prefer the curation's own group keys (sorted
+    // alphabetically — A, B, C…) so labels survive round-trip. Fall back to
+    // target.groups (an integer count) only when groups is missing/empty.
+    var groupLetters = [];
+    if (curation.groups && typeof curation.groups === "object") {
+        var keys = [];
+        for (var k in curation.groups) {
+            if (Object.prototype.hasOwnProperty.call(curation.groups, k)) keys.push(k);
+        }
+        keys.sort();
+        for (var ki = 0; ki < keys.length; ki += 1) groupLetters.push(keys[ki]);
+    }
+    if (!groupLetters.length) {
+        var n = (curation.target && curation.target.groups) || 0;
+        for (var gi = 0; gi < n; gi += 1) groupLetters.push(_stgLetterFromIndex(gi));
+    }
+    if (!groupLetters.length) {
+        status("loadCuration: malformed YAML at line 1");
+        return null;
+    }
+
+    // Stale-reference surface. The actual stale-detection logic is Phase 4B;
+    // here we just emit a status line per referenced forge so downstream
+    // tooling (popup, server) can decide whether to escalate.
+    var refs = curation.referenced_forges;
+    if (refs && refs.length) {
+        for (var ri = 0; ri < refs.length; ri += 1) {
+            var ref = refs[ri];
+            var hash = ref && ref.manifest_hash;
+            // The Phase 4B detector compares against the live forge hash;
+            // we emit unconditionally so tests can grep for the prefix and
+            // verify the line was written when a referenced_forges block
+            // exists.
+            if (ref && ref.slug) {
+                status("staging: stale reference noted " + ref.slug
+                    + " (hash " + String(hash || "?").substring(0, 8) + ")");
+            }
+        }
+    }
+
+    // Idempotent reset.
+    _deleteStagingTracks();
+    _createStagingTracks(groupLetters);
+    var first = groupLetters[0];
+    var last = groupLetters[groupLetters.length - 1];
+    status("staging: created STG-" + first + " through STG-" + last);
+
+    var totalPads = 0;
+    var populated = 0;
+    for (var li = 0; li < groupLetters.length; li += 1) {
+        var letter = groupLetters[li];
+        var groupBlock = (curation.groups && curation.groups[letter]) || {};
+        var pads = groupBlock.pads || [];
+        var trackIdx = _findTrackIndexByName("STG-" + letter);
+        for (var pi = 0; pi < pads.length; pi += 1) {
+            totalPads += 1;
+            var pad = pads[pi];
+            var padId = pad && pad.pad_id;
+            var parsedPad = _parsePadId(padId);
+            // Use canonical interpunct form for status emissions to match the
+            // user-facing display in the popup.
+            var displayId = parsedPad
+                ? (parsedPad.letter + "·"
+                    + (parsedPad.slot < 9 ? "0" : "") + (parsedPad.slot + 1))
+                : String(padId || "?");
+            if (!pad || !pad.source) {
+                status("staging: skipped " + displayId + " (no source)");
+                continue;
+            }
+            if (!parsedPad) {
+                status("staging: skipped " + displayId + " (unparsable pad_id)");
+                continue;
+            }
+            if (trackIdx < 0) {
+                status("staging: skipped " + displayId + " (track STG-" + letter + " not found)");
+                continue;
+            }
+            var slotIdx = parsedPad.slot;
+            var clipLength = _curationClipLengthBeats(pad);
+            var slotPath = "live_set tracks " + trackIdx + " clip_slots " + slotIdx;
+            var slotApi = new LiveAPI(slotPath);
+            slotApi.call("create_clip", clipLength);
+            var clipApi = new LiveAPI(slotPath + " clip");
+            // Resolve audio_path (may be relative to curation YAML dir).
+            var audioPath = _resolvePadAudioPath(pad.source.audio_path, curationFilePath);
+            if (audioPath) {
+                try { clipApi.set("file_path", audioPath); } catch (_) {}
+            }
+            // Clip name = source.clip_id when present, else the pad id.
+            var clipName = pad.source.clip_id || padId;
+            try { clipApi.set("name", String(clipName)); } catch (_) {}
+            _applyCurationClipSettings(clipApi, pad);
+            populated += 1;
+            status("staging: populated " + displayId + " (" + clipName + ")");
+        }
+    }
+
+    status("loadCuration: complete (" + groupLetters.length + " groups, "
+        + populated + "/" + totalPads + " pads populated)");
+    return curation;
+}
+
+// Find a track by exact name. Local helper for loadCuration so we don't
+// disturb the legacy findTrackByName (case-insensitive) behaviour.
+function _findTrackIndexByName(name) {
+    var target = String(name);
+    var n = trackCount();
+    for (var i = 0; i < n; i += 1) {
+        if (trackName(i) === target) return i;
+    }
+    return -1;
+}
+
+// `primary` — fired by the patcher's single primary button. Dispatches to
+// the right verb based on pickedSource.type. Status emissions cover the
+// "nothing picked" path so the user sees feedback even when the button is
+// click-throughable.
+function primary() {
+    if (!pickedSource || !pickedSource.validated) {
+        status("primary: no source picked");
+        return;
+    }
+    if (pickedSource.type === "audio") {
+        status("primary: dispatching FORGE on " + pickedSource.path);
+        // FORGE pipeline lives in the bridge / native binary; the patcher
+        // routes this through the standard NDJSON pipeline (existing wire).
+        try { messnamed("sf-run-forge", pickedSource.path); } catch (_) {}
+        return;
+    }
+    if (pickedSource.type === "forge_manifest"
+            || pickedSource.type === "arrangement_manifest") {
+        status("primary: dispatching LOAD FORGE on " + pickedSource.path);
+        loadManifest("loadManifest", pickedSource.path);
+        return;
+    }
+    if (pickedSource.type === "curation") {
+        status("primary: dispatching LOAD CURATION on " + pickedSource.path);
+        var text = readFileContents(pickedSource.path);
+        if (text == null) {
+            status("loadCuration: could not read " + pickedSource.path);
+            return;
+        }
+        loadCuration(text, pickedSource.path);
+        return;
+    }
+    status("primary: unknown type " + pickedSource.type);
+}
+
 // ── Entry points from Max ─────────────────────────────────────────────────────
 // These aren't stored on `globalThis`; Max's classic [js] object scans for
 // top-level functions automatically.
@@ -2445,5 +3197,18 @@ if (typeof module !== "undefined" && module.exports) {
         BAR_TRACK_ORDER: BAR_TRACK_ORDER,
         BAR_TRACK_COLORS: BAR_TRACK_COLORS,
         PROCESSING_CONFIG: PROCESSING_CONFIG,
+        // Configurator v1 Phase 1C — picker + sniffer + LOAD curation.
+        _yamlParseCuration: _yamlParseCuration,
+        _snifferInspect: _snifferInspect,
+        _primaryLabelFor: _primaryLabelFor,
+        _parsePadId: _parsePadId,
+        _findStagingTrackIndices: _findStagingTrackIndices,
+        _resolvePadAudioPath: _resolvePadAudioPath,
+        applyPickedSource: applyPickedSource,
+        pickSource: pickSource,
+        resetPickedSource: resetPickedSource,
+        loadCuration: loadCuration,
+        primary: primary,
+        getPickedSource: function () { return pickedSource; }
     };
 }
