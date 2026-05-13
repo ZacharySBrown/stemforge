@@ -601,14 +601,19 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     )
     # The route order MUST stay in sync with sf_remote's `fire <target>`
     # documentation in tools/sf_remote.py and docs/remote_debug.md.
+    #
+    # Phase 3A added `/template-changed` for server→device hot-apply (the
+    # configurator HTTP server's PATCH /curations/{name}/template fires this
+    # datagram). Args: `<letter> <template-or-dash>`; routed into
+    # sf_lom_loader's `templateChanged(letter, name)` via a [prepend].
     boxes.append(
         _box(
             OBJ_ROUTE_UDP,
             "newobj",
-            (16.0, udp_y + 26, 520.0, 22.0),
+            (16.0, udp_y + 26, 600.0, 22.0),
             numinlets=1,
-            numoutlets=8,  # 7 routed targets + 1 unmatched fallthrough
-            outlettype=["", "", "", "", "", "", "", ""],
+            numoutlets=9,  # 8 routed targets + 1 unmatched fallthrough
+            outlettype=["", "", "", "", "", "", "", "", ""],
             extras={
                 "text": (
                     # Match slash-prefixed OSC addresses. Verified empirically
@@ -617,7 +622,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
                     # slash preserved (NOT tokenized on `/`). So we match
                     # `/forge` not `forge`. sf_remote.py encodes accordingly.
                     "route /state /forge /preset-loader /manifest-loader "
-                    "/settings /ui /logger"
+                    "/settings /ui /logger /template-changed"
                 ),
             },
         )
@@ -644,7 +649,24 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     lines.append(_line(OBJ_ROUTE_UDP, 4, OBJ_SF_SETTINGS, 0))          # settings
     lines.append(_line(OBJ_ROUTE_UDP, 5, OBJ_V8UI, 0))                 # ui
     lines.append(_line(OBJ_ROUTE_UDP, 6, OBJ_SF_LOGGER, 0))            # logger
-    # Outlet 7 is the unmatched fallthrough — intentionally unwired.
+    # Phase 3A: outlet 7 = `/template-changed <letter> <name>`. Prepend the
+    # message name `templateChanged` so the classic [js] loader dispatches
+    # to its top-level `templateChanged(letter, name)` function (which then
+    # calls `applyGroupTemplate` to hit the LOM `load_browser_item` verb).
+    boxes.append(
+        _box(
+            "obj-prepend-template-changed",
+            "newobj",
+            (16.0, udp_y + 54, 200.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "prepend templateChanged"},
+        )
+    )
+    lines.append(_line(OBJ_ROUTE_UDP, 7, "obj-prepend-template-changed", 0))
+    lines.append(_line("obj-prepend-template-changed", 0, OBJ_SF_LOM_LOADER, 0))
+    # Outlet 8 is the unmatched fallthrough — intentionally unwired.
 
     # 7421 → sf_state_mgr (direct, dumpDict only)
     lines.append(_line(OBJ_UDP_DUMP, 0, OBJ_SF_STATE, 0))

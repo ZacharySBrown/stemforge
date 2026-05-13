@@ -3442,6 +3442,134 @@ function primary() {
     status("primary: unknown type " + pickedSource.type);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Configurator v1 Phase 3A — Templates (.adg per-group).
+//
+// The popup edits `curation.groups[<letter>].template = <name>` via
+//   PATCH /curations/{name}/template
+// The server validates the template exists, writes the YAML, and fires a UDP
+// datagram at the device:
+//   udpsend localhost 7420 template-changed <letter> <template-or-dash>
+//
+// The patcher's `[udpreceive 7420]` already exists (Phase 2's commit shim
+// listens on it). A new `[route template-changed]` table dispatches the
+// arguments into `templateChanged(letter, name)` on the loader JS — see
+// the test below for the message-handler contract.
+//
+// `templateChanged()` calls `applyGroupTemplate()` which resolves the
+// `STG-<letter>` staging track and invokes `load_browser_item` on the
+// device-0 slot of that track. The path is resolved from
+//   ~/stemforge/templates/<name>.adg
+//
+// Wire-protocol decision (matches Phase 2's spirit): Phase 2 used HTTP via
+// `messnamed` because the device needed the response payload back. Phase 3A
+// is fire-and-forget — the server writes the YAML and the device hot-
+// applies; no return value is needed. UDP is the simpler fit.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Path templates resolve against (mirrors `default_templates_dir()` in
+// stemforge.configurator.template_io). The trailing slash is intentional —
+// concatenated with the template name + ".adg".
+var TEMPLATE_DIR_REL = "/stemforge/templates/";
+// Sentinel emitted by the server when clearing a template assignment.
+var TEMPLATE_CLEAR_SENTINEL = "-";
+
+// Test-only override for the absolute templates dir. Tests set this so they
+// don't depend on `_getHomePath()`'s `/Users/` walk (which doesn't work in
+// the Node test env). Always "" in production.
+var _templateDirOverride = "";
+
+// Resolve the on-disk path of a template by name. Returns "" if Max's
+// home-dir resolver couldn't pin down a user.
+function _templatePathFor(name) {
+    if (!name || name === TEMPLATE_CLEAR_SENTINEL) return "";
+    if (_templateDirOverride) {
+        var tail = _templateDirOverride.charAt(_templateDirOverride.length - 1) === "/"
+            ? "" : "/";
+        return _templateDirOverride + tail + String(name) + ".adg";
+    }
+    var home = "";
+    try {
+        home = _getHomePath();
+    } catch (e) {
+        return "";
+    }
+    if (!home) return "";
+    return home + TEMPLATE_DIR_REL + String(name) + ".adg";
+}
+
+/**
+ * applyGroupTemplate(groupLetter, templateName) — load <templateName>.adg
+ * onto the STG-<letter> staging track.
+ *
+ * Behaviour:
+ *   - templateName == null/"-": clear path — the server's convention for
+ *     "remove the template assignment". v1 does NOT delete the loaded rack
+ *     (that would risk losing dry signal); it just records the new state
+ *     and emits a status line. A future Phase 4 will sweep stale racks.
+ *   - templateName non-null: walks track names looking for STG-<letter>,
+ *     then calls `load_browser_item` on the track's device-0 slot.
+ *
+ * The exact LOM verb is `load_browser_item` per Live's LOM reference; it
+ * accepts an absolute path to a `.adg` file. If your Live version's LOM
+ * uses a different verb (older builds shipped `load_device_from_path`),
+ * the [udpsend] receive-side wrapper in the patcher can translate.
+ *
+ * Status emissions (greppable by L3 tests):
+ *   "template: applied <name> to STG-<letter>"
+ *   "template: cleared on STG-<letter>"
+ *   "template: STG-<letter> not found"
+ *   "template: home resolution failed"
+ */
+function applyGroupTemplate(groupLetter, templateName) {
+    var letter = String(groupLetter || "").toUpperCase();
+    if (!letter) {
+        status("template: missing group letter");
+        return false;
+    }
+    var trackIdx = _findTrackIndexByName("STG-" + letter);
+    if (trackIdx < 0) {
+        status("template: STG-" + letter + " not found");
+        return false;
+    }
+    var isClear = (templateName == null
+        || templateName === TEMPLATE_CLEAR_SENTINEL
+        || templateName === "");
+    if (isClear) {
+        status("template: cleared on STG-" + letter);
+        return true;
+    }
+    var path = _templatePathFor(templateName);
+    if (!path) {
+        status("template: home resolution failed");
+        return false;
+    }
+    var trackApi = new LiveAPI("live_set tracks " + trackIdx);
+    try {
+        trackApi.call("load_browser_item", path);
+    } catch (e) {
+        status("template: load failed: " + e);
+        return false;
+    }
+    status("template: applied " + templateName + " to STG-" + letter);
+    return true;
+}
+
+/**
+ * templateChanged(letter, name) — message entry point bound to the
+ * patcher's `[route template-changed]` table. The patcher's
+ * `[udpreceive 7420]` decomposes the incoming datagram into the route
+ * keyword + positional args; `template-changed` lands here as two
+ * strings.
+ *
+ * Idempotent: calling twice with the same args results in two calls to
+ * `load_browser_item` but no error path — Live treats the second call
+ * as a no-op (rack already there) modulo the file mtime.
+ */
+function templateChanged(letter, name) {
+    applyGroupTemplate(letter, name);
+}
+
 // ── Entry points from Max ─────────────────────────────────────────────────────
 // These aren't stored on `globalThis`; Max's classic [js] object scans for
 // top-level functions automatically.
@@ -3474,6 +3602,14 @@ if (typeof module !== "undefined" && module.exports) {
         _commitWalkGroup: _commitWalkGroup,
         _commitReadClipSettings: _commitReadClipSettings,
         _commitReadAudioPath: _commitReadAudioPath,
+        // Configurator v1 Phase 3A — template hot-apply (server→device).
+        applyGroupTemplate: applyGroupTemplate,
+        templateChanged: templateChanged,
+        _templatePathFor: _templatePathFor,
+        TEMPLATE_CLEAR_SENTINEL: TEMPLATE_CLEAR_SENTINEL,
+        setTemplateDirForTest: function (dir) {
+            _templateDirOverride = String(dir || "");
+        },
         getActiveCuration: function () { return activeCuration; },
         setActiveCurationForTest: function (name, letters) {
             activeCuration = {
