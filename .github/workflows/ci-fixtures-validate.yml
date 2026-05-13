@@ -1,0 +1,80 @@
+name: CI — fixtures validate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-fixtures-validate-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Load every fixture through Pydantic
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install uv + project (dev + configurator extras)
+        run: |
+          pip install uv
+          uv pip install --system -e '.[dev,configurator]'
+
+      - name: Validate every fixture
+        run: |
+          python - <<'PY'
+          """Round-trip every fixture curation/manifest through Pydantic.
+
+          Catches schema drift between the on-disk files and the models
+          before any downstream agent (Phase 1A/B/C/D) consumes them.
+          """
+          import json
+          import sys
+          from pathlib import Path
+          import yaml
+
+          from stemforge.configurator.schemas import (
+              ArrangementManifest,
+              Curation,
+              ForgeManifest,
+          )
+
+          ok = True
+
+          for f in sorted(Path("tests/fixtures/curations").glob("*.yaml")):
+              try:
+                  Curation(**yaml.safe_load(f.read_text()))
+                  print(f"OK Curation: {f}")
+              except Exception as exc:
+                  print(f"FAIL Curation: {f}: {exc}")
+                  ok = False
+
+          for f in sorted(Path("tests/fixtures/forges").glob("*/auto_curation_manifest.json")):
+              try:
+                  ForgeManifest(**json.loads(f.read_text()))
+                  print(f"OK ForgeManifest: {f}")
+              except Exception as exc:
+                  print(f"FAIL ForgeManifest: {f}: {exc}")
+                  ok = False
+
+          for f in sorted(Path("tests/fixtures/forges").glob("*/arrangement_manifest.json")):
+              try:
+                  ArrangementManifest(**json.loads(f.read_text()))
+                  print(f"OK ArrangementManifest: {f}")
+              except Exception as exc:
+                  print(f"FAIL ArrangementManifest: {f}: {exc}")
+                  ok = False
+
+          sys.exit(0 if ok else 1)
+          PY
