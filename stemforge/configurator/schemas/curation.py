@@ -180,6 +180,14 @@ class LastExport(BaseModel):
     exported_at: datetime
     target_format: Literal["ppak"] = "ppak"
     output_path: str = Field(..., description="Absolute or relative path to exported artifact")
+    manifest_hash: str | None = Field(
+        default=None,
+        description=(
+            "SHA-256 of the exported artifact bytes at write time. Mirrors "
+            "LastBounce.pad_audio_hashes shape — used for diff detection so "
+            "the popup can warn when a curation has changed since last export."
+        ),
+    )
 
 
 class Curation(BaseModel):

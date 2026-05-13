@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/tooltip";
 import {
   useExportCuration,
+  usePickSavePath,
   useSetGroupLabel,
   useSetGroupTemplate,
   useTriggerBounce,
@@ -277,6 +278,7 @@ export function ActiveCuration({ curation }: ActiveCurationProps) {
   const forges = useForges();
   const triggerBounce = useTriggerBounce();
   const exportCuration = useExportCuration();
+  const pickSavePath = usePickSavePath();
 
   const forgeStaleSet = useMemo(() => {
     if (!curation || !forges.data) return new Set<string>();
@@ -368,21 +370,25 @@ export function ActiveCuration({ curation }: ActiveCurationProps) {
           <Button
             size="sm"
             variant="default"
-            onClick={() => {
-              const out =
-                window.prompt(
-                  "output .ppak path",
-                  `~/Desktop/${curation.name}.ppak`,
-                ) ?? "";
-              if (out) {
-                exportCuration.mutate({
-                  name: curation.name,
-                  out_path: out,
-                  target_format: "ppak",
-                });
-              }
+            onClick={async () => {
+              // Step 1: ask the server for a native save dialog. The
+              // popup runs inside Live's [jweb] host without filesystem
+              // access, so the dialog lives server-side (osascript).
+              const pick = await pickSavePath
+                .mutateAsync({
+                  default_name: `${curation.name}.ppak`,
+                  prompt: `Export ${curation.name}`,
+                })
+                .catch(() => null);
+              if (!pick || !pick.path) return;
+              // Step 2: fire the export with whatever path the user picked.
+              exportCuration.mutate({
+                name: curation.name,
+                out_path: pick.path,
+                target_format: "ppak",
+              });
             }}
-            disabled={!hasBounce || exportCuration.isPending}
+            disabled={exportCuration.isPending || pickSavePath.isPending}
             data-testid="export-curation"
           >
             <Download className="h-3.5 w-3.5" />

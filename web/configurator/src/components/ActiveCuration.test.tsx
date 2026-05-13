@@ -1,7 +1,11 @@
 import { screen, waitFor } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { http, HttpResponse } from "msw";
+import { toast } from "sonner";
+import { describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "@/test/render";
 import { CURATION_FRESH, CURATION_STALE } from "@/test/fixtures";
+import { server } from "@/test/server";
 import { ActiveCuration } from "./ActiveCuration";
 
 describe("ActiveCuration", () => {
@@ -53,5 +57,110 @@ describe("ActiveCuration", () => {
     });
     // After resolution there should be no stale markers.
     expect(screen.queryAllByTestId("stale-badge-pad")).toHaveLength(0);
+  });
+});
+
+describe("ActiveCuration — EXPORT button (Phase 3C)", () => {
+  it("clicking export calls pick-save-path then exportCuration", async () => {
+    const pickCalls: Array<Record<string, unknown>> = [];
+    const exportCalls: Array<Record<string, unknown>> = [];
+    server.use(
+      http.post("/intent/pick-save-path", async ({ request }) => {
+        pickCalls.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({
+          ok: true,
+          path: "/Users/test/Desktop/verse_swap_v1.ppak",
+        });
+      }),
+      http.post("/curations/:name/export", async ({ request, params }) => {
+        exportCalls.push({
+          name: params.name as string,
+          ...((await request.json()) as Record<string, unknown>),
+        });
+        return HttpResponse.json({
+          ok: true,
+          name: params.name,
+          stdout: "wrote 1024 bytes",
+          stderr: "",
+          last_export: {
+            exported_at: "2026-05-13T17:00:00Z",
+            target_format: "ppak",
+            output_path: "/Users/test/Desktop/verse_swap_v1.ppak",
+          },
+        });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<ActiveCuration curation={CURATION_FRESH} />);
+
+    const exportBtn = screen.getByTestId("export-curation");
+    await user.click(exportBtn);
+
+    // The picker fired with a default filename derived from curation.name.
+    await waitFor(() => expect(pickCalls.length).toBe(1));
+    expect(pickCalls[0]).toMatchObject({ default_name: "verse_swap_v1.ppak" });
+
+    // The export call followed with the path the picker returned.
+    await waitFor(() => expect(exportCalls.length).toBe(1));
+    expect(exportCalls[0]).toMatchObject({
+      name: "verse_swap_v1",
+      out_path: "/Users/test/Desktop/verse_swap_v1.ppak",
+      target_format: "ppak",
+    });
+  });
+
+  it("skips the export call when the save dialog is cancelled", async () => {
+    let exportFired = false;
+    let pickFired = false;
+    server.use(
+      http.post("/intent/pick-save-path", () => {
+        pickFired = true;
+        return HttpResponse.json({ ok: true, path: null });
+      }),
+      http.post("/curations/:name/export", () => {
+        exportFired = true;
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<ActiveCuration curation={CURATION_FRESH} />);
+
+    await user.click(screen.getByTestId("export-curation"));
+    await waitFor(() => expect(pickFired).toBe(true));
+    // Give the (non-firing) export call a chance to be issued — it must not.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(exportFired).toBe(false);
+  });
+
+  it("surfaces server stderr in a toast on subprocess failure", async () => {
+    server.use(
+      http.post("/intent/pick-save-path", () =>
+        HttpResponse.json({ ok: true, path: "/tmp/x.ppak" }),
+      ),
+      http.post("/curations/:name/export", () =>
+        HttpResponse.json({
+          ok: false,
+          stdout: "",
+          stderr: "exporter crashed: missing fixture",
+          error: "subprocess",
+        }),
+      ),
+    );
+    const toastErrorSpy = vi.spyOn(toast, "error");
+
+    const user = userEvent.setup();
+    renderWithProviders(<ActiveCuration curation={CURATION_FRESH} />);
+    await user.click(screen.getByTestId("export-curation"));
+
+    // The mutation hook calls toast.error("export failed", { description: stderr }).
+    await waitFor(() => expect(toastErrorSpy).toHaveBeenCalled());
+    const lastCall = toastErrorSpy.mock.calls.at(-1);
+    expect(lastCall?.[0]).toMatch(/export failed/i);
+    expect((lastCall?.[1] as { description?: string } | undefined)?.description).toMatch(
+      /exporter crashed/i,
+    );
+    toastErrorSpy.mockRestore();
   });
 });

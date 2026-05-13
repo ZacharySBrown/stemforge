@@ -43,6 +43,11 @@ Routes (Phase 1.5 — forge endpoints + curation rename/close bridge):
 - ``POST /curations/{name}/rename``
 - ``POST /curations/active/close``
 
+Routes (Phase 3C — EXPORT via server):
+
+- ``POST /curations/{name}/export``
+- ``POST /intent/pick-save-path``
+
 Plus a static-files mount on ``/`` (configurable static dir; defaults to
 the package's ``static/`` directory). Lane B's frontend build output
 lands there.
@@ -67,6 +72,11 @@ from pydantic import BaseModel, Field
 from stemforge.scene_model import Project
 
 from . import intents
+from .export_handler import (
+    DEFAULT_TARGET_FORMAT,
+    ExportValidationError,
+    perform_export,
+)
 from .forge_io import default_processed_dir, list_forges, resolve_forge_dir
 from .intents import (
     CloseActiveCurationBody,
@@ -243,6 +253,51 @@ class ReCurateBody(BaseModel):
     """
 
     params: dict[str, Any] | None = None
+
+    model_config = {"extra": "forbid"}
+
+
+# ── Phase 3C — EXPORT bodies ────────────────────────────────────────────────
+
+
+class ExportCurationBody(BaseModel):
+    """Body of ``POST /curations/{name}/export`` (Phase 3C).
+
+    Matches the popup-side :class:`ExportCurationRequest` shim shipped by
+    Lane 1D. ``target_format`` defaults to ``"ppak"`` and is validated
+    server-side against :data:`export_handler.KNOWN_TARGET_FORMATS`.
+    """
+
+    out_path: str = Field(..., min_length=1)
+    target_format: str = Field(default=DEFAULT_TARGET_FORMAT)
+
+    model_config = {"extra": "forbid"}
+
+
+class PickSavePathBody(BaseModel):
+    """Body of ``POST /intent/pick-save-path`` (Phase 3C).
+
+    Optional ``default_name`` + ``default_dir`` seed the osascript
+    "choose file name" dialog. Both are advisory — the OS may ignore
+    them on minimal Apple installs.
+    """
+
+    default_name: str | None = Field(
+        default=None,
+        description="Suggested filename for the save dialog (e.g. 'my_kit.ppak').",
+    )
+    default_dir: str | None = Field(
+        default=None,
+        description=(
+            "Suggested directory to open the dialog in. Defaults to the user's "
+            "Desktop — matches the EP-133 .ppak output convention "
+            "(memory feedback_ep133_ppak_output_path.md)."
+        ),
+    )
+    prompt: str | None = Field(
+        default=None,
+        description="Optional title text for the macOS save dialog.",
+    )
 
     model_config = {"extra": "forbid"}
 
@@ -463,6 +518,76 @@ def _register_routes(app: FastAPI, state: AppState) -> None:
             await state.error("re_anchor_failed", stderr.strip() or "re-anchor failed")
         return {"ok": ok, "slug": slug, "stdout": stdout, "stderr": stderr}
 
+    # ── Phase 3C — EXPORT ──────────────────────────────────────────────────
+
+    @app.post("/curations/{name}/export")
+    async def export_curation_route(
+        name: str,
+        body: ExportCurationBody,
+    ) -> dict[str, Any]:
+        """Export the named curation to a hardware target's bundle format.
+
+        Shells out to ``uv run stemforge export <name> --target <fmt>
+        --out <path>``. On success, updates ``curation.last_export`` and
+        broadcasts a state SSE event. On subprocess failure, returns 200
+        with ``{ok: false, stderr, stdout}`` so the popup popup can
+        render the diagnostics inline (mirrors the re-anchor pattern).
+
+        4xx codes are reserved for input validation failures:
+
+        * 400 — invalid name, traversal in out_path, unknown target_format,
+          missing parent dir.
+        * 404 — curation not found on disk.
+        """
+        runner = app.state.subprocess_runner
+        async with state.mutation_lock:
+            try:
+                result = perform_export(
+                    curations_dir=state.curations_dir,
+                    name=name,
+                    out_path_raw=body.out_path,
+                    target_format_raw=body.target_format,
+                    subprocess_runner=runner,
+                )
+            except ExportValidationError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            except FileNotFoundError as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        if result.ok:
+            await state.log(
+                f"exported curation {name} → {body.out_path}",
+                "info",
+            )
+            await state.broadcast_curations_state()
+        else:
+            await state.error(
+                "export_failed",
+                (result.stderr.strip() or result.error or "export failed"),
+            )
+
+        body_out = result.to_dict()
+        body_out["name"] = name
+        return body_out
+
+    @app.post("/intent/pick-save-path")
+    async def pick_save_path_route(body: PickSavePathBody) -> dict[str, Any]:
+        """Server-side osascript "save as" dialog → returns ``{path: str|null}``.
+
+        Lives server-side because the popup runs inside Live's [jweb]
+        host without filesystem access. Mirrors the v0.2 ``pick-manifest``
+        helper but defaults the dialog at ``~/Desktop`` to match the
+        EP-133 .ppak output convention.
+        """
+        runner = app.state.subprocess_runner
+        chosen = _osascript_pick_save_path(
+            runner=runner,
+            default_name=body.default_name,
+            default_dir=body.default_dir,
+            prompt=body.prompt,
+        )
+        return {"ok": True, "path": chosen}
+
     @app.post("/forges/{slug}/re-curate")
     async def re_curate_forge_route(slug: str, body: ReCurateBody) -> dict[str, Any]:
         # ``params`` is currently advisory only; the CLI subcommand takes
@@ -481,6 +606,55 @@ def _register_routes(app: FastAPI, state: AppState) -> None:
         else:
             await state.error("re_curate_failed", stderr.strip() or "re-curate failed")
         return {"ok": ok, "slug": slug, "stdout": stdout, "stderr": stderr}
+
+
+def _osascript_pick_save_path(
+    *,
+    runner: Any,
+    default_name: str | None = None,
+    default_dir: str | None = None,
+    prompt: str | None = None,
+) -> str | None:
+    """Drive an ``osascript`` "choose file name" dialog → POSIX path or None.
+
+    Uses the standard AppleScript ``choose file name`` verb so we get a
+    real save-as dialog (vs. ``choose file`` which is open-only). The
+    result POSIX path is captured from stdout. User-cancel surfaces as
+    an empty string / non-zero exit ⇒ we return ``None``.
+
+    The subprocess invocation flows through ``runner`` (defaults to
+    :func:`subprocess.run`) so tests stub it cleanly.
+    """
+    default_name = (default_name or "untitled.ppak").strip()
+    default_dir_path = Path(default_dir).expanduser() if default_dir else (Path.home() / "Desktop")
+    prompt_text = prompt or "Save export bundle"
+
+    # AppleScript: choose file name returns the chosen file alias; we
+    # coerce to POSIX path text and print it on stdout. ``default location``
+    # accepts an alias; we build one via ``POSIX file``. If the user
+    # cancels, the script errors (-128); we treat any non-zero exit as
+    # "no selection".
+    script = (
+        "set theFile to (choose file name "
+        f'with prompt "{_applescript_escape(prompt_text)}" '
+        f'default name "{_applescript_escape(default_name)}" '
+        f'default location (POSIX file "{_applescript_escape(str(default_dir_path))}"))\n'
+        "POSIX path of theFile"
+    )
+    cmd = ["osascript", "-e", script]
+    try:
+        proc = runner(cmd, capture_output=True, text=True, timeout=120, check=False)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    if getattr(proc, "returncode", 1) != 0:
+        return None
+    chosen = (getattr(proc, "stdout", "") or "").strip()
+    return chosen or None
+
+
+def _applescript_escape(value: str) -> str:
+    """Quote-escape a string for inline embedding in AppleScript source."""
+    return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
 async def _broadcast_forge_state(state: AppState, loaded: set[str]) -> None:

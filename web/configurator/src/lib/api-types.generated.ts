@@ -133,6 +133,8 @@ export interface LastBounce {
  */
 export interface LastExport {
   exported_at: string;
+  /** SHA-256 of the exported artifact bytes at write time. Mirrors LastBounce.pad_audio_hashes shape — used for diff detection so the popup can warn when a curation has changed since last export. */
+  manifest_hash?: string | null;
   /** Absolute or relative path to exported artifact */
   output_path: string;
   target_format?: "ppak";

@@ -179,15 +179,57 @@ export function useTriggerBounce() {
   });
 }
 
+/**
+ * Server-side export envelope. The server returns 200 even on subprocess
+ * failure (mirrors the re-anchor pattern) — `ok: false` plus `stderr` /
+ * `stdout` / `error` carry the diagnostics. The hook surfaces stderr in
+ * a toast banner so the user sees the failure without diving into devtools.
+ */
+export interface ExportCurationEnvelope extends ApiResult {
+  stdout?: string;
+  stderr?: string;
+  error?: string;
+  name?: string;
+  last_export?: {
+    exported_at: string;
+    target_format: "ppak";
+    output_path: string;
+    manifest_hash?: string | null;
+  } | null;
+}
+
 export function useExportCuration() {
   return useMutation<
-    ApiResult,
+    ExportCurationEnvelope,
     Error,
     { name: string; out_path: string; target_format?: "ppak" }
   >({
     mutationFn: ({ name, out_path, target_format }) =>
-      api.exportCuration(name, { out_path, target_format }),
-    ...buildOptions({ label: "export" }),
+      api.exportCuration(name, {
+        out_path,
+        target_format,
+      }) as Promise<ExportCurationEnvelope>,
+    onSuccess: (resp) => {
+      if (resp?.warnings?.length) {
+        for (const w of resp.warnings) toast.warning(w);
+      }
+      if (resp.ok) {
+        toast.success("export ok", {
+          description: resp.last_export?.output_path,
+        });
+      } else {
+        // Subprocess failure: surface stderr in the toast description.
+        const detail =
+          (resp.stderr || "").trim() ||
+          resp.error ||
+          (resp.errors ?? []).join("; ") ||
+          "subprocess failed";
+        toast.error("export failed", { description: detail });
+      }
+    },
+    onError: (err) => {
+      toast.error("export failed", { description: err.message });
+    },
   });
 }
 
@@ -195,5 +237,19 @@ export function usePickManifest() {
   return useMutation<ApiResult, Error, void>({
     mutationFn: () => api.pickManifest(),
     ...buildOptions({ label: "load manifest" }),
+  });
+}
+
+export function usePickSavePath() {
+  return useMutation<
+    { ok: boolean; path: string | null },
+    Error,
+    { default_name?: string; default_dir?: string; prompt?: string } | void
+  >({
+    mutationFn: (body) => api.pickSavePath(body ?? {}),
+    // No toast: the dialog itself is the UX. Caller handles cancel.
+    onError: (err) => {
+      toast.error("save dialog failed", { description: err.message });
+    },
   });
 }
