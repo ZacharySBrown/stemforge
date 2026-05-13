@@ -32,7 +32,8 @@ jobs:
         run: npm ci
 
       - name: Run vitest against the harness config
-        # Reuses web/configurator/node_modules for vitest binary, but runs
-        # against the harness-specific config that scopes test discovery to
-        # tools/test-harness/ and v0/src/m4l-js/.
-        run: npx --prefix web/configurator vitest run --config tools/test-harness/vitest.config.js
+        # Reuses web/configurator/node_modules for vitest binary, but the
+        # config under web/configurator/vitest.harness.config.ts overrides
+        # root + include so test discovery picks up tools/test-harness/ and
+        # v0/src/m4l-js/.
+        run: npx --prefix web/configurator vitest run --config web/configurator/vitest.harness.config.ts
