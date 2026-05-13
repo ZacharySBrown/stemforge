@@ -119,6 +119,12 @@ markers = [
     # are missing. See tests/fixtures/known_tempos.py and
     # tests/test_canonical_tempos.py.
     "has_phase3_inputs: requires /private/tmp/phase3_inputs/*.wav; auto-skip",
+    # Phase 2 keystone — L3 device-JS walker → server end-to-end gate.
+    # Runs in default CI (no Live needed) but spawns Node as a subprocess;
+    # the marker is here so the keystone test can be selectively run via
+    #   uv run pytest -m integration
+    # without scanning the whole tree.
+    "integration: end-to-end device-JS → server tests (Node subprocess required)",
 ]
 
 [tool.mypy]

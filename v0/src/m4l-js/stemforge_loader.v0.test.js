@@ -368,3 +368,213 @@ function resetMaxStubCallLog() {
   while (outletEmissions.length) outletEmissions.pop();
   while (messnamedCalls.length) messnamedCalls.pop();
 }
+
+// ─── Phase 2 — COMMIT walker tests ───────────────────────────────────────────
+//
+// The walker runs against an LOM snapshot pre-loaded into max-stub. It reads
+// each STG-<letter> track's clip slots and emits a DeviceCommitBody-shaped
+// payload via `messnamed("sf-commit-send", curationName, jsonPayload)`. The
+// L3 contract these tests enforce is the wire contract Phase 2's server
+// expects.
+
+function captureCommitSends() {
+  return messnamedCalls.filter((c) => c.name === "sf-commit-send");
+}
+
+function activate(name, letters) {
+  T.setActiveCurationForTest(name, letters);
+}
+
+describe("commit() walker", () => {
+  test("4-pads-stg-a snapshot → 4 audio_path entries in group A", () => {
+    loadLomSnapshot(LOM_SNAPSHOT("staging-4-pads-stg-a.json"));
+    activate("verse_swap_v1", ["A", "B", "C", "D"]);
+
+    const payload = T.commit();
+    expect(payload).not.toBeNull();
+    expect(payload.groups.A).toBeDefined();
+    expect(payload.groups.B).toBeDefined();
+    expect(payload.groups.C).toBeDefined();
+    expect(payload.groups.D).toBeDefined();
+
+    const aPads = payload.groups.A.pads;
+    expect(aPads.length).toBe(12);
+    // First 4 pads have audio_path; remaining 8 are empty placeholders.
+    expect(aPads[0].pad_id).toBe("A01");
+    expect(aPads[0].audio_path).toMatch(/vocal-bar12-16\.wav$/);
+    expect(aPads[0].clip_settings).toBeDefined();
+    expect(aPads[0].clip_settings.warp_bpm).toBe(138.0);
+    // 4 beats / 4 beats-per-bar = 1 bar → loop_end_bar = 1.0
+    expect(aPads[0].clip_settings.loop_end_bar).toBe(1);
+    expect(aPads[0].clip_settings.looping).toBe(true);
+
+    expect(aPads[1].audio_path).toMatch(/vocal-bar0-4\.wav$/);
+    expect(aPads[2].audio_path).toMatch(/vocal-bar4-8\.wav$/);
+    expect(aPads[3].audio_path).toMatch(/vocal-bar20-24\.wav$/);
+
+    // Empty pads carry only pad_id (no audio_path key).
+    expect(aPads[4].audio_path).toBeUndefined();
+    expect(aPads[11].pad_id).toBe("A12");
+
+    // Other groups carry 12 empty placeholders each (track present in
+    // snapshot but no clips).
+    for (const letter of ["B", "C", "D"]) {
+      const pads = payload.groups[letter].pads;
+      expect(pads.length).toBe(12);
+      for (const p of pads) expect(p.audio_path).toBeUndefined();
+    }
+
+    // messnamed send: curation name + JSON payload.
+    const sends = captureCommitSends();
+    expect(sends.length).toBe(1);
+    expect(sends[0].args[0]).toBe("verse_swap_v1");
+    const parsed = JSON.parse(sends[0].args[1]);
+    expect(parsed.groups.A.pads[0].audio_path).toMatch(/vocal-bar12-16/);
+
+    // Status emissions match the documented contract.
+    const lines = statusLines();
+    expect(lines).toContain("commit: walked 4 pads");
+    expect(lines.some((l) => l.indexOf("commit: sent verse_swap_v1") === 0)).toBe(true);
+  });
+
+  test("empty-set snapshot → no STG tracks → emits empty group placeholders", () => {
+    loadLomSnapshot(LOM_SNAPSHOT("empty-set.json"));
+    activate("k", ["A", "B", "C", "D"]);
+    const payload = T.commit();
+    expect(payload).not.toBeNull();
+    // No staging tracks present → every group has 12 placeholders with no
+    // audio_path; server's merge preserves prior label/template on these.
+    for (const letter of ["A", "B", "C", "D"]) {
+      const pads = payload.groups[letter].pads;
+      expect(pads.length).toBe(12);
+      for (const p of pads) expect(p.audio_path).toBeUndefined();
+    }
+    const lines = statusLines();
+    expect(lines).toContain("commit: walked 0 pads");
+  });
+
+  test("staging-empty snapshot → empty group payloads", () => {
+    loadLomSnapshot(LOM_SNAPSHOT("staging-empty.json"));
+    activate("k", ["A", "B", "C", "D"]);
+    const payload = T.commit();
+    expect(payload).not.toBeNull();
+    // 4 tracks exist with 12 empty clip_slots each.
+    let populated = 0;
+    let total = 0;
+    for (const letter of ["A", "B", "C", "D"]) {
+      const pads = payload.groups[letter].pads;
+      expect(pads.length).toBe(12);
+      for (const p of pads) {
+        total += 1;
+        if (p.audio_path) populated += 1;
+      }
+    }
+    expect(total).toBe(48);
+    expect(populated).toBe(0);
+  });
+
+  test("staging-full-46-pads snapshot → 46 audio_path entries spread across groups", () => {
+    loadLomSnapshot(LOM_SNAPSHOT("staging-full-46-pads.json"));
+    activate("verse_swap_v1", ["A", "B", "C", "D"]);
+    const payload = T.commit();
+    expect(payload).not.toBeNull();
+    let populated = 0;
+    for (const letter of ["A", "B", "C", "D"]) {
+      for (const p of payload.groups[letter].pads) {
+        if (p.audio_path) populated += 1;
+      }
+    }
+    expect(populated).toBe(46);
+    // The send went out as one messnamed call.
+    const sends = captureCommitSends();
+    expect(sends.length).toBe(1);
+    // Status emission reflects the populated count.
+    expect(statusLines()).toContain("commit: walked 46 pads");
+  });
+
+  test("no active curation → emits status, no send, returns null", () => {
+    loadLomSnapshot(LOM_SNAPSHOT("staging-4-pads-stg-a.json"));
+    T.setActiveCurationForTest("", []);  // no active curation
+    const payload = T.commit();
+    expect(payload).toBeNull();
+    expect(statusLines()).toContain(
+      "commit: no active curation — load one first"
+    );
+    expect(captureCommitSends().length).toBe(0);
+  });
+
+  test("loadCuration sets active curation so commit can run", () => {
+    loadLomSnapshot(LOM_SNAPSHOT("empty-set.json"));
+    const yaml = readCuration("partial.yaml");
+    T.loadCuration(yaml, CURATION("partial.yaml"));
+    const ac = T.getActiveCuration();
+    expect(ac.name).toBe("partial");
+    expect(ac.groupLetters).toEqual(["A", "B", "C", "D"]);
+  });
+
+  test("commitAck() emits the canonical 'server ack received' status", () => {
+    T.commitAck();
+    const lines = statusLines();
+    expect(lines).toContain("commit: server ack received");
+    expect(lines).toContain("commit: complete");
+    // Re-enables the primary button after a successful round-trip.
+    const enabledCalls = messnamedCalls.filter(
+      (c) => c.name === "primary-btn-enabled"
+    );
+    expect(enabledCalls[enabledCalls.length - 1].args).toEqual([1]);
+  });
+});
+
+describe("commit() payload shape contract", () => {
+  test("emits DeviceCommitBody-compatible JSON (groups, als_path, pads)", () => {
+    loadLomSnapshot(LOM_SNAPSHOT("staging-4-pads-stg-a.json"));
+    activate("verse_swap_v1", ["A", "B", "C", "D"]);
+    const payload = T.commit();
+    expect(payload).toMatchObject({
+      als_path: null,
+      groups: expect.any(Object),
+    });
+    // Every group dict has pads[].
+    for (const letter of Object.keys(payload.groups)) {
+      const g = payload.groups[letter];
+      expect(g).toMatchObject({ label: null, template: null, pads: expect.any(Array) });
+    }
+    // Each pad has pad_id; populated pads also have audio_path + clip_settings.
+    const aFirst = payload.groups.A.pads[0];
+    expect(aFirst.pad_id).toBe("A01");
+    expect(typeof aFirst.audio_path).toBe("string");
+    expect(typeof aFirst.clip_settings.warp_bpm).toBe("number");
+  });
+
+  test("strips HFS prefix from Live's file_path values", () => {
+    // Inject an HFS-style file_path; the walker normalises before emitting.
+    loadLomSnapshotObject({
+      live_set: {
+        tracks: [
+          {
+            name: "STG-A",
+            clip_slots: [
+              {
+                clip: {
+                  name: "A01-hfs",
+                  file_path:
+                    "Macintosh HD:/Users/zak/stemforge/processed/x/curated_audio/y.wav",
+                  warp_bpm: 120,
+                  loop_start: 0,
+                  loop_end: 4,
+                  looping: 1,
+                },
+              },
+              ...Array.from({ length: 11 }, () => ({ clip: null })),
+            ],
+          },
+        ],
+      },
+    });
+    activate("hfs_test", ["A"]);
+    const payload = T.commit();
+    expect(payload.groups.A.pads[0].audio_path).toBe(
+      "/Users/zak/stemforge/processed/x/curated_audio/y.wav"
+    );
+  });
+});

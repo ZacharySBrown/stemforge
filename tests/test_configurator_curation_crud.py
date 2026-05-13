@@ -351,6 +351,11 @@ def test_patch_target_label_lands_on_first_group(
 def test_commit_curation_persists_snapshot(
     client: TestClient, configurator_paths: dict[str, Path]
 ) -> None:
+    """Phase 2 wire shape: device sends ``audio_path``; server reverse-looks-up.
+
+    The audio path doesn't match any forge in the test's empty processed_dir,
+    so the server records it as ``external_path`` per spec §2.3.
+    """
     _seed_curation(configurator_paths["curations_dir"], "commit_me")
     snapshot = {
         "groups": {
@@ -360,11 +365,7 @@ def test_commit_curation_persists_snapshot(
                 "pads": [
                     {
                         "pad_id": "A01",
-                        "source": {
-                            "forge": "breaks-1",
-                            "clip_id": "vocal-bar0",
-                            "audio_path": "curated_audio/vocal-bar0.wav",
-                        },
+                        "audio_path": "/tmp/somebodys-vocal-bar0.wav",
                         "clip_settings": {
                             "warp_bpm": 138.0,
                             "loop_start_bar": 0.0,
@@ -375,32 +376,26 @@ def test_commit_curation_persists_snapshot(
                     {"pad_id": "A02"},
                 ],
             }
-        },
-        "forge_manifest_hashes": {"breaks-1": "abc123"},
+        }
     }
     r = client.post("/curations/commit_me/commit", json=snapshot)
     assert r.status_code == 200, r.text
     body = r.json()
-    # Pad persisted.
+    # Pad persisted with external_path fallback (no forge owned this path).
     a_pads = body["groups"]["A"]["pads"]
-    assert a_pads[0]["source"]["forge"] == "breaks-1"
+    assert a_pads[0]["source"]["external_path"] == "/tmp/somebodys-vocal-bar0.wav"
     assert a_pads[0]["clip_settings"]["warp_bpm"] == 138.0
     assert a_pads[1]["source"] is None
-    # referenced_forges collapsed from pad sources + manifest hash.
-    refs = body["referenced_forges"]
-    assert len(refs) == 1
-    assert refs[0]["slug"] == "breaks-1"
-    assert refs[0]["manifest_hash"] == "abc123"
     # File round-trips through read_curation.
     on_disk = read_curation(curation_path(configurator_paths["curations_dir"], "commit_me"))
     assert on_disk.groups["A"].pads[0].source is not None
-    assert on_disk.groups["A"].pads[0].source.forge == "breaks-1"
+    assert on_disk.groups["A"].pads[0].source.external_path == "/tmp/somebodys-vocal-bar0.wav"
 
 
 def test_commit_curation_unknown_returns_404(client: TestClient) -> None:
     r = client.post(
         "/curations/missing/commit",
-        json={"groups": {}, "forge_manifest_hashes": {}},
+        json={"groups": {}},
     )
     assert r.status_code == 404
 
@@ -415,6 +410,7 @@ def test_commit_curation_bad_clip_settings_returns_422(
                 "pads": [
                     {
                         "pad_id": "A01",
+                        "audio_path": "/tmp/some-clip.wav",
                         "clip_settings": {
                             # Missing required warp_bpm + loop_end_bar.
                             "looping": True
@@ -499,8 +495,15 @@ def test_concurrent_commits_serialize_and_file_is_well_formed(
     # state + adds B; OR B then A.
     a_pad = on_disk.groups["A"].pads[0]
     b_pad = on_disk.groups["B"].pads[0]
-    assert (a_pad.source is not None and a_pad.source.forge == "forgeA") or (
-        b_pad.source is not None and b_pad.source.forge == "forgeB"
+    # External-path fallback path (no fixture forges in race tmp dir).
+    assert (
+        a_pad.source is not None
+        and a_pad.source.external_path
+        and a_pad.source.external_path.endswith("race-forgeA.wav")
+    ) or (
+        b_pad.source is not None
+        and b_pad.source.external_path
+        and b_pad.source.external_path.endswith("race-forgeB.wav")
     ), (
         "expected at least one commit's data to survive; "
         f"got A.pads[0].source={a_pad.source}, B.pads[0].source={b_pad.source}"
@@ -529,17 +532,17 @@ def _run_commit_subprocess(
         curations_dir=Path(curations_dir),
         state_path=Path(state_path),
     )
+    # Phase 2 wire shape: audio_path is keyed; server reverse-lookup
+    # falls back to external_path when no forge owns the path (none does
+    # in this test — the worker uses tagged sentinel paths so each
+    # subprocess writes a distinguishable pad).
     body = {
         "groups": {
             letter: {
                 "pads": [
                     {
                         "pad_id": f"{letter}01",
-                        "source": {
-                            "forge": forge,
-                            "clip_id": "clipX",
-                            "audio_path": f"a/{forge}.wav",
-                        },
+                        "audio_path": f"/tmp/race-{forge}.wav",
                         "clip_settings": {
                             "warp_bpm": 120.0,
                             "loop_end_bar": 4.0,
@@ -547,8 +550,7 @@ def _run_commit_subprocess(
                     }
                 ]
             }
-        },
-        "forge_manifest_hashes": {forge: f"hash-{forge}"},
+        }
     }
     with _TC(app) as c:
         resp = c.post(f"/curations/{name}/commit", json=body)
