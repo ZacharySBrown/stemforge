@@ -1,47 +1,115 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { renderWithProviders } from "@/test/render";
+import { CURATION_FRESH } from "@/test/fixtures";
 import { TopBar } from "./TopBar";
 
-function renderTopBar(props: Parameters<typeof TopBar>[0]) {
-  return render(
-    <TooltipProvider>
-      <TopBar {...props} />
-    </TooltipProvider>,
-  );
-}
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("TopBar", () => {
-  it("renders the no-project placeholder when state is null", () => {
-    renderTopBar({ state: null, status: "connected", error: null });
+  it("renders the no-curation placeholder when curation is null", () => {
+    renderWithProviders(
+      <TopBar
+        curation={null}
+        activeCurationName={null}
+        status="connected"
+        error={null}
+      />,
+    );
 
-    expect(screen.getByText(/no project loaded/i)).toBeInTheDocument();
-    // Default target chip
+    expect(screen.getByTestId("top-bar-no-curation")).toBeInTheDocument();
     expect(screen.getByText(/ep133/i)).toBeInTheDocument();
-    // Connection status copy
     expect(screen.getByText(/live/i)).toBeInTheDocument();
   });
 
-  it("renders project metadata when state is loaded", () => {
-    renderTopBar({
-      state: {
-        schema_version: 2,
-        project_name: "verse_swap_v1",
-        manifest_path: "/path/to/curated/manifest.json",
-        clip_count: 46,
-        songs: [],
-        target: "ep133",
-      },
-      status: "connected",
-      error: null,
-    });
+  it("renders the active curation name + target chip", () => {
+    renderWithProviders(
+      <TopBar
+        curation={CURATION_FRESH}
+        activeCurationName="verse_swap_v1"
+        status="connected"
+        error={null}
+      />,
+    );
 
-    expect(screen.getByText("verse_swap_v1")).toBeInTheDocument();
-    expect(screen.getByText(/46 clips/)).toBeInTheDocument();
+    expect(screen.getByTestId("top-bar-curation-name").textContent).toBe(
+      "verse_swap_v1",
+    );
+    // `<group count> groups · ep133` — group count is computed from the
+    // curation fixture's groups dict (2 groups: A and B).
+    expect(screen.getByText(/2 groups · ep133/i)).toBeInTheDocument();
   });
 
   it("shows a connecting indicator when stream is establishing", () => {
-    renderTopBar({ state: null, status: "connecting", error: null });
+    renderWithProviders(
+      <TopBar
+        curation={null}
+        activeCurationName={null}
+        status="connecting"
+        error={null}
+      />,
+    );
     expect(screen.getByText(/connecting/i)).toBeInTheDocument();
+  });
+
+  it("Pop out button calls window.open with the spec §6.8 args", async () => {
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
+    renderWithProviders(
+      <TopBar
+        curation={null}
+        activeCurationName={null}
+        status="connected"
+        error={null}
+      />,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId("top-bar-popout"));
+
+    await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
+    expect(openSpy).toHaveBeenCalledWith(
+      window.location.href,
+      "stemforge",
+      "popup,width=1200,height=800",
+    );
+  });
+
+  it("Save as fires save-as endpoint with a new name", async () => {
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("verse_swap_v2");
+
+    renderWithProviders(
+      <TopBar
+        curation={CURATION_FRESH}
+        activeCurationName="verse_swap_v1"
+        status="connected"
+        error={null}
+      />,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId("top-bar-save-as"));
+
+    expect(promptSpy).toHaveBeenCalled();
+    // Underlying save-as mutation hits msw — assert no errors via toast (not
+    // visible here without a Toaster), but await one tick for mutation to
+    // settle without throwing.
+    await waitFor(() =>
+      expect(screen.getByTestId("top-bar-save-as")).not.toBeDisabled(),
+    );
+  });
+
+  it("Save/Save-as/Close are disabled when no curation is active", () => {
+    renderWithProviders(
+      <TopBar
+        curation={null}
+        activeCurationName={null}
+        status="connected"
+        error={null}
+      />,
+    );
+    expect(screen.getByTestId("top-bar-save")).toBeDisabled();
+    expect(screen.getByTestId("top-bar-save-as")).toBeDisabled();
+    expect(screen.getByTestId("top-bar-close")).toBeDisabled();
   });
 });

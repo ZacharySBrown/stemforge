@@ -2,11 +2,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { useProjectState } from "./useProjectState";
 import { MockEventSource } from "../test/mockEventSource";
-import type {
-  SseLogEvent,
-  SseProgressEvent,
-  SseStateEvent,
-} from "../lib/types";
+import type { Curation } from "../lib/api-types.generated";
 
 describe("useProjectState", () => {
   beforeEach(() => {
@@ -31,41 +27,51 @@ describe("useProjectState", () => {
     await waitFor(() => expect(result.current.status).toBe("connected"));
   });
 
-  it("applies a `state` event to result.state", async () => {
+  it("routes a typed `state` event to result.curation", async () => {
     const { result } = renderWithMock();
     await waitFor(() => expect(result.current.status).toBe("connected"));
 
-    const evt: SseStateEvent = {
-      type: "state",
-      payload: {
-        schema_version: 2,
-        project_name: "test",
-        songs: [],
-      },
+    const curation: Curation = {
+      name: "verse_swap_v1",
+      created_at: "2026-05-13T00:00:00Z",
+      modified_at: "2026-05-13T00:00:00Z",
+      target: { device: "ep133", groups: 4, pads_per_group: 12 },
     };
-    act(() => MockEventSource.instances[0].emit(evt));
+    act(() =>
+      MockEventSource.instances[0].emit("state", {
+        curation,
+        active_curation_name: "verse_swap_v1",
+      }),
+    );
 
-    await waitFor(() => expect(result.current.state?.project_name).toBe("test"));
+    await waitFor(() =>
+      expect(result.current.curation?.name).toBe("verse_swap_v1"),
+    );
+    expect(result.current.activeCurationName).toBe("verse_swap_v1");
   });
 
   it("tracks progress events and clears on done", async () => {
     const { result } = renderWithMock();
     await waitFor(() => expect(result.current.status).toBe("connected"));
 
-    const start: SseProgressEvent = {
-      type: "progress",
-      payload: { operation: "export", fraction: 0.5, message: "rendering" },
-    };
-    act(() => MockEventSource.instances[0].emit(start));
+    act(() =>
+      MockEventSource.instances[0].emit("progress", {
+        operation: "export",
+        fraction: 0.5,
+        message: "rendering",
+      }),
+    );
     await waitFor(() =>
       expect(result.current.progress?.fraction).toBeCloseTo(0.5),
     );
 
-    const done: SseProgressEvent = {
-      type: "progress",
-      payload: { operation: "export", fraction: 1, done: true },
-    };
-    act(() => MockEventSource.instances[0].emit(done));
+    act(() =>
+      MockEventSource.instances[0].emit("progress", {
+        operation: "export",
+        fraction: 1,
+        done: true,
+      }),
+    );
     await waitFor(() => expect(result.current.progress).toBeNull());
   });
 
@@ -73,11 +79,12 @@ describe("useProjectState", () => {
     const { result } = renderWithMock();
     await waitFor(() => expect(result.current.status).toBe("connected"));
 
-    const log: SseLogEvent = {
-      type: "log",
-      payload: { level: "warn", message: "memory over budget" },
-    };
-    act(() => MockEventSource.instances[0].emit(log));
+    act(() =>
+      MockEventSource.instances[0].emit("log", {
+        level: "warn",
+        message: "memory over budget",
+      }),
+    );
 
     await waitFor(() => expect(result.current.logs).toHaveLength(1));
     expect(result.current.logs[0].level).toBe("warn");
@@ -89,5 +96,22 @@ describe("useProjectState", () => {
 
     act(() => MockEventSource.instances[0].fail());
     await waitFor(() => expect(result.current.status).toBe("disconnected"));
+  });
+
+  it("ignores `message`-typed payloads (no onmessage fallback)", async () => {
+    const { result } = renderWithMock();
+    await waitFor(() => expect(result.current.status).toBe("connected"));
+
+    // Server should NEVER emit unnamed events; if it does, the hook stays
+    // unchanged. This test guards against accidentally re-introducing the
+    // `onmessage` swallow-everything fallback.
+    act(() =>
+      MockEventSource.instances[0].emit("message", {
+        type: "state",
+        payload: { curation: null },
+      }),
+    );
+
+    expect(result.current.curation).toBeNull();
   });
 });

@@ -1,76 +1,116 @@
 import { renderHook, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useCommit, useExport } from "./useIntent";
+import { http, HttpResponse } from "msw";
+import { describe, expect, it } from "vitest";
+import { server } from "@/test/server";
+import { buildClient } from "@/test/render";
+import { QueryClientProvider } from "@tanstack/react-query";
+import {
+  useDeleteCuration,
+  useLoadForge,
+  useOpenCuration,
+  useSetGroupTemplate,
+  useTriggerBounce,
+} from "./useIntent";
 
 function wrapper() {
-  const client = new QueryClient({
-    defaultOptions: { mutations: { retry: 0 } },
-  });
+  const client = buildClient();
   return ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
   );
 }
 
 describe("useIntent", () => {
-  beforeEach(() => {
-    vi.spyOn(global, "fetch").mockImplementation(async (input, init) => {
-      const url = typeof input === "string" ? input : (input as Request).url;
-      const body = init?.body ? JSON.parse(init.body as string) : null;
-      // Stash for assertions.
-      (globalThis as Record<string, unknown>).__lastFetch = { url, body };
-      return new Response(
-        JSON.stringify({ ok: true, state: null, warnings: [], errors: [] }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      );
+  it("useLoadForge POSTs to /forges/{slug}/load", async () => {
+    let lastUrl = "";
+    server.use(
+      http.post("/forges/:slug/load", ({ request, params }) => {
+        lastUrl = new URL(request.url).pathname;
+        return HttpResponse.json({ ok: true, slug: params.slug });
+      }),
+    );
+
+    const { result } = renderHook(() => useLoadForge(), { wrapper: wrapper() });
+    result.current.mutate("definition-of-sound");
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(lastUrl).toBe("/forges/definition-of-sound/load");
+  });
+
+  it("useOpenCuration POSTs to /curations/{name}/open", async () => {
+    let lastUrl = "";
+    server.use(
+      http.post("/curations/:name/open", ({ request }) => {
+        lastUrl = new URL(request.url).pathname;
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+
+    const { result } = renderHook(() => useOpenCuration(), {
+      wrapper: wrapper(),
+    });
+    result.current.mutate("verse_swap_v1");
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(lastUrl).toBe("/curations/verse_swap_v1/open");
+  });
+
+  it("useSetGroupTemplate PATCHes /curations/{name}/template", async () => {
+    let lastBody: unknown = null;
+    server.use(
+      http.patch("/curations/:name/template", async ({ request }) => {
+        lastBody = await request.json();
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+
+    const { result } = renderHook(() => useSetGroupTemplate(), {
+      wrapper: wrapper(),
+    });
+    result.current.mutate({
+      name: "verse_swap_v1",
+      group: "A",
+      template_name: "VOCAL_HI_KEY",
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(lastBody).toEqual({
+      group: "A",
+      template_name: "VOCAL_HI_KEY",
     });
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
+  it("useTriggerBounce POSTs to /curations/{name}/trigger-bounce", async () => {
+    let lastUrl = "";
+    server.use(
+      http.post("/curations/:name/trigger-bounce", ({ request }) => {
+        lastUrl = new URL(request.url).pathname;
+        return HttpResponse.json({ ok: true });
+      }),
+    );
 
-  it("useCommit posts to /intent/commit with empty body", async () => {
-    const { result } = renderHook(() => useCommit(), { wrapper: wrapper() });
-
-    result.current.mutate();
-
+    const { result } = renderHook(() => useTriggerBounce(), {
+      wrapper: wrapper(),
+    });
+    result.current.mutate("verse_swap_v1");
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-
-    const last = (globalThis as Record<string, unknown>).__lastFetch as {
-      url: string;
-      body: unknown;
-    };
-    expect(last.url).toContain("/intent/commit");
-    expect(last.body).toEqual({});
-  });
-
-  it("useExport posts to /intent/export with the body shape", async () => {
-    const { result } = renderHook(() => useExport(), { wrapper: wrapper() });
-
-    result.current.mutate({ target: "ep133", out_path: "/tmp/out.ppak" });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-
-    const last = (globalThis as Record<string, unknown>).__lastFetch as {
-      url: string;
-      body: unknown;
-    };
-    expect(last.url).toContain("/intent/export");
-    expect(last.body).toEqual({ target: "ep133", out_path: "/tmp/out.ppak" });
+    expect(lastUrl).toBe("/curations/verse_swap_v1/trigger-bounce");
   });
 
   it("propagates server errors as mutation errors", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({ errors: ["bad path"] }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
+    server.use(
+      http.delete("/curations/:name", () =>
+        HttpResponse.json(
+          { errors: ["cannot delete active curation"] },
+          { status: 400 },
+        ),
       ),
     );
 
-    const { result } = renderHook(() => useCommit(), { wrapper: wrapper() });
-    result.current.mutate();
+    const { result } = renderHook(() => useDeleteCuration(), {
+      wrapper: wrapper(),
+    });
+    result.current.mutate("verse_swap_v1");
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(result.current.error?.message).toContain("bad path");
+    expect(result.current.error?.message).toContain(
+      "cannot delete active curation",
+    );
   });
 });
