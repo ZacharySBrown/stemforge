@@ -258,6 +258,30 @@ export function pickManifest(): Promise<ApiResult> {
   });
 }
 
+/** Response shape for `POST /intent/pick-save-path`. */
+export interface PickSavePathResponse {
+  ok: boolean;
+  /** Chosen POSIX path, or null when the user cancelled the dialog. */
+  path: string | null;
+}
+
+/** Body for `POST /intent/pick-save-path`. */
+export interface PickSavePathRequest {
+  default_name?: string;
+  default_dir?: string;
+  prompt?: string;
+}
+
+/** Trigger the server-side osascript save-as dialog and return the chosen path. */
+export function pickSavePath(
+  body: PickSavePathRequest = {},
+): Promise<PickSavePathResponse> {
+  return jsonRequest<PickSavePathResponse>("/intent/pick-save-path", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 // Convenience namespace for the legacy import-shape callers expect.
 export const api = {
   fetchHealth,
@@ -282,4 +306,5 @@ export const api = {
   triggerBounce,
   closeActiveCuration,
   pickManifest,
+  pickSavePath,
 };

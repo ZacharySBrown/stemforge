@@ -46,8 +46,11 @@ export const okHandlers = [
   http.post("/curations/:name/trigger-bounce", () => HttpResponse.json(OK)),
   http.post("/curations/active/close", () => HttpResponse.json(OK)),
 
-  // Server-side native picker
+  // Server-side native pickers
   http.post("/intent/pick-manifest", () => HttpResponse.json(OK)),
+  http.post("/intent/pick-save-path", () =>
+    HttpResponse.json({ ok: true, path: "/Users/test/Desktop/picked.ppak" }),
+  ),
 
   http.get("/healthz", () => HttpResponse.json({ ok: true, version: "0.1.0" })),
 ];
