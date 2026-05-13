@@ -11,6 +11,11 @@ build/
 .DS_Store
 test_musicai_output/
 
+# Configurator static placeholder — auto-generated on first ``create_app``
+# call when no real build output is mounted. The popup (Lane 1D / 3B) lays
+# down a real build here at deploy time.
+stemforge/configurator/static/
+
 # Configurator v1 fixture forges — synthetic 1-second silent WAVs that
 # exist only for path-resolution tests. Tracked so CI can validate the
 # manifests against the schemas without re-generating audio every run.

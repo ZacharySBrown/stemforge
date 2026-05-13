@@ -6,7 +6,7 @@ can construct fresh instances. :func:`run` is the console-script /
 ``~/stemforge/.configurator_port`` for the strip device to discover, and
 boots uvicorn on ``127.0.0.1``.
 
-Routes:
+Routes (legacy):
 
 - ``GET  /healthz``
 - ``GET  /state``
@@ -19,6 +19,18 @@ Routes:
 - ``POST /intent/set-group-format``
 - ``POST /intent/recompute``
 - ``POST /intent/export``
+
+Routes (Phase 1B — curation CRUD, spec §4.3):
+
+- ``GET    /curations``
+- ``POST   /curations``
+- ``GET    /curations/{name}``
+- ``POST   /curations/{name}/open``
+- ``POST   /curations/{name}/save-as``
+- ``DELETE /curations/{name}``
+- ``PATCH  /curations/{name}/template``
+- ``PATCH  /curations/{name}/target``
+- ``POST   /curations/{name}/commit``
 
 Plus a static-files mount on ``/`` (configurable static dir; defaults to
 the package's ``static/`` directory). Lane B's frontend build output
@@ -33,7 +45,7 @@ import os
 import socket
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -42,11 +54,20 @@ from fastapi.staticfiles import StaticFiles
 from stemforge.scene_model import Project
 
 from . import intents
+from .intents import (
+    CommitCurationBody,
+    CreateCurationBody,
+    OpenCurationBody,
+    PatchTargetBody,
+    PatchTemplateBody,
+    SaveAsBody,
+)
 from .preview import build_audio_response
 from .schemas import (
     AssignPadRequest,
     ClearPadRequest,
     CommitRequest,
+    Curation,
     ExportRequest,
     IntentResponse,
     LoadManifestRequest,
@@ -61,6 +82,8 @@ PORT_RANGE = range(7430, 7441)  # inclusive on 7440
 PORT_FILE = Path.home() / "stemforge" / ".configurator_port"
 STATIC_DIR_ENV = "STEMFORGE_CONFIGURATOR_STATIC"
 DEFAULT_STATIC_DIR = Path(__file__).parent / "static"
+CURATIONS_DIR_ENV = "STEMFORGE_CURATIONS_DIR"
+STATE_FILE_ENV = "STEMFORGE_STATE_FILE"
 PLACEHOLDER_HTML = (
     '<!doctype html><html><head><meta charset="utf-8">'
     "<title>StemForge Configurator</title></head><body>"
@@ -73,14 +96,43 @@ PLACEHOLDER_HTML = (
 # ── App factory ──────────────────────────────────────────────────────────────
 
 
-def create_app(*, static_dir: Path | None = None) -> FastAPI:
+def create_app(
+    *,
+    static_dir: Path | None = None,
+    curations_dir: Path | None = None,
+    state_path: Path | None = None,
+) -> FastAPI:
     """Construct a fresh :class:`FastAPI` app and bind an :class:`AppState`.
 
     Each call returns an independent app — tests use this to avoid
     state leakage between cases. Production callers should use the
     module-level :data:`app` built lazily by :func:`run`.
+
+    ``curations_dir`` and ``state_path`` override the on-disk locations
+    used by the new Phase 1B curation CRUD endpoints; tests point them
+    at ``tmp_path`` to keep the user's real ``~/stemforge`` untouched.
     """
     state = AppState()
+    resolved_curations = (
+        Path(curations_dir).expanduser().resolve()
+        if curations_dir is not None
+        else (
+            Path(os.environ[CURATIONS_DIR_ENV]).expanduser().resolve()
+            if os.environ.get(CURATIONS_DIR_ENV)
+            else state.curations_dir
+        )
+    )
+    resolved_state_path = (
+        Path(state_path).expanduser().resolve()
+        if state_path is not None
+        else (
+            Path(os.environ[STATE_FILE_ENV]).expanduser().resolve()
+            if os.environ.get(STATE_FILE_ENV)
+            else state.state_path
+        )
+    )
+    state.curations_dir = resolved_curations
+    state.state_path = resolved_state_path
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -197,6 +249,44 @@ def _register_routes(app: FastAPI, state: AppState) -> None:
     @app.post("/intent/export", response_model=IntentResponse)
     async def post_export(req: ExportRequest) -> IntentResponse:
         return await intents.handle_export(state, req)
+
+    # ── Curation CRUD (Phase 1B, spec §4.3) ───────────────────────────────
+
+    @app.get("/curations")
+    async def list_curations_route() -> dict[str, Any]:
+        return await intents.handle_list_curations(state)
+
+    @app.post("/curations", response_model=Curation, status_code=201)
+    async def create_curation_route(body: CreateCurationBody) -> Curation:
+        return await intents.handle_create_curation(state, body)
+
+    @app.get("/curations/{name}", response_model=Curation)
+    async def get_curation_route(name: str) -> Curation:
+        return await intents.handle_get_curation(state, name)
+
+    @app.post("/curations/{name}/open")
+    async def open_curation_route(name: str, body: OpenCurationBody) -> dict[str, Any]:
+        return await intents.handle_open_curation(state, name, body)
+
+    @app.post("/curations/{name}/save-as", response_model=Curation)
+    async def save_as_route(name: str, body: SaveAsBody) -> Curation:
+        return await intents.handle_save_as(state, name, body)
+
+    @app.delete("/curations/{name}")
+    async def delete_curation_route(name: str) -> dict[str, Any]:
+        return await intents.handle_delete_curation(state, name)
+
+    @app.patch("/curations/{name}/template", response_model=Curation)
+    async def patch_template_route(name: str, body: PatchTemplateBody) -> Curation:
+        return await intents.handle_patch_template(state, name, body)
+
+    @app.patch("/curations/{name}/target", response_model=Curation)
+    async def patch_target_route(name: str, body: PatchTargetBody) -> Curation:
+        return await intents.handle_patch_target(state, name, body)
+
+    @app.post("/curations/{name}/commit", response_model=Curation)
+    async def commit_curation_route(name: str, body: CommitCurationBody) -> Curation:
+        return await intents.handle_curation_commit(state, name, body)
 
 
 def _resolve_clip_path(project: Project, clip_id: str) -> Path | None:
