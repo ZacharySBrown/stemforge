@@ -1,7 +1,12 @@
 /**
  * MockEventSource — minimal stand-in for the platform EventSource so hook
- * tests can deterministically push events.
+ * tests can deterministically push typed events.
+ *
+ * Supports `addEventListener("state", ...)` semantics — the server emits
+ * `event: state\ndata: <json>` SSE frames and the client subscribes by name.
  */
+
+type Listener = (ev: MessageEvent) => unknown;
 
 export class MockEventSource {
   static instances: MockEventSource[] = [];
@@ -13,6 +18,8 @@ export class MockEventSource {
   onmessage: ((this: EventSource, ev: MessageEvent) => unknown) | null = null;
   onerror: ((this: EventSource, ev: Event) => unknown) | null = null;
   closed = false;
+
+  private listeners: Map<string, Set<Listener>> = new Map();
 
   static CONNECTING = 0;
   static OPEN = 1;
@@ -31,11 +38,26 @@ export class MockEventSource {
     this.onopen?.call(this as unknown as EventSource, new Event("open"));
   }
 
-  /** Push a JSON-stringified payload as a message event. */
-  emit(data: unknown) {
+  addEventListener(type: string, cb: EventListener): void {
+    if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+    this.listeners.get(type)!.add(cb as Listener);
+  }
+
+  removeEventListener(type: string, cb: EventListener): void {
+    this.listeners.get(type)?.delete(cb as Listener);
+  }
+
+  /** Push a JSON-stringified payload as a TYPED event (event: <type>). */
+  emit(type: string, data: unknown) {
     if (this.closed) return;
-    const evt = new MessageEvent("message", { data: JSON.stringify(data) });
-    this.onmessage?.call(this as unknown as EventSource, evt);
+    const evt = new MessageEvent(type, { data: JSON.stringify(data) });
+    // Typed listeners — the real path popup code uses now.
+    const set = this.listeners.get(type);
+    if (set) for (const cb of set) cb(evt);
+    // Backwards-compat: still drive `onmessage` for type="message".
+    if (type === "message" && this.onmessage) {
+      this.onmessage.call(this as unknown as EventSource, evt);
+    }
   }
 
   /** Simulate a transport error (auto-reconnect semantics handled by hook). */

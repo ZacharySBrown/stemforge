@@ -10,7 +10,10 @@ export default defineConfig({
     },
   },
   test: {
-    environment: "happy-dom",
+    // jsdom rather than happy-dom because msw v2 + happy-dom fetch has a
+    // ReadableStream double-consume bug (2026-05-13). jsdom defers fetch
+    // to node's native fetch, which msw can intercept cleanly.
+    environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
     css: false,
