@@ -70,8 +70,8 @@ from . import intents
 from .forge_io import default_processed_dir, list_forges, resolve_forge_dir
 from .intents import (
     CloseActiveCurationBody,
-    CommitCurationBody,
     CreateCurationBody,
+    DeviceCommitBody,
     OpenCurationBody,
     PatchTargetBody,
     PatchTemplateBody,
@@ -363,8 +363,16 @@ def _register_routes(app: FastAPI, state: AppState) -> None:
         return await intents.handle_patch_target(state, name, body)
 
     @app.post("/curations/{name}/commit", response_model=Curation)
-    async def commit_curation_route(name: str, body: CommitCurationBody) -> Curation:
-        return await intents.handle_curation_commit(state, name, body)
+    async def commit_curation_route(name: str, body: DeviceCommitBody) -> Curation:
+        # Pass app.state.processed_dir explicitly so the reverse-lookup
+        # honours per-test ``processed_dir`` overrides (the integration
+        # test points this at a tmp_path with fixture forges).
+        return await intents.handle_curation_commit(
+            state,
+            name,
+            body,
+            processed_dir=app.state.processed_dir,
+        )
 
     # ── Phase 1.5 — curation rename / active close ─────────────────────────
 

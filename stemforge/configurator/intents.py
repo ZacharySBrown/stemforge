@@ -45,6 +45,12 @@ from stemforge.scene_model import (
 )
 
 from .audio_hash import audio_hash
+from .commit_handler import (
+    DeviceCommitBody,
+    DeviceGroupSnapshot,
+    DevicePadSnapshot,
+    merge_device_snapshot,
+)
 from .curation_io import (
     curation_path,
     is_valid_curation_name,
@@ -64,7 +70,6 @@ from .schemas import (
     IntentResponse,
     LoadManifestRequest,
     Pad,
-    PadSource,
     RecomputeRequest,
     SetGroupFormatRequest,
     Target,
@@ -503,55 +508,13 @@ class PatchTargetBody(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-class CommitPadSnapshot(BaseModel):
-    """One pad's worth of device-side snapshot data on COMMIT.
-
-    Loose-typed on purpose: Phase 2's device walker will fill these in
-    from the LOM. ``audio_path`` is resolved against the
-    ``referenced_forges`` map in :func:`handle_curation_commit`.
-    """
-
-    pad_id: str
-    source: PadSource | None = None
-    clip_settings: dict[str, Any] | None = None
-
-    model_config = {"extra": "forbid"}
-
-
-class CommitGroupSnapshot(BaseModel):
-    """One group's worth of device-side snapshot data."""
-
-    label: str | None = None
-    template: str | None = None
-    pads: list[CommitPadSnapshot] = Field(default_factory=list)
-
-    model_config = {"extra": "forbid"}
-
-
-class CommitCurationBody(BaseModel):
-    """Body of ``POST /curations/{name}/commit``.
-
-    The device walks its staging tracks, builds one
-    :class:`CommitGroupSnapshot` per group, and POSTs the bundle. The
-    server validates the resulting :class:`Curation`, writes it
-    atomically, and broadcasts state. ``referenced_forges`` is collapsed
-    from the union of pad sources.
-
-    Phase 1B note: per the execution plan this endpoint is intentionally
-    partial; Phase 2 wires the device-side walker. The shape we accept
-    here is the shape Phase 2 will emit.
-    """
-
-    groups: dict[str, CommitGroupSnapshot] = Field(default_factory=dict)
-    forge_manifest_hashes: dict[str, str] = Field(
-        default_factory=dict,
-        description=(
-            "Map of forge slug → manifest_hash recorded at commit time. "
-            "Phase 4B uses this for stale-detection."
-        ),
-    )
-
-    model_config = {"extra": "forbid"}
+# NOTE (Phase 2): the legacy ``CommitCurationBody`` / ``CommitGroupSnapshot``
+# / ``CommitPadSnapshot`` shape — which carried the fully-resolved
+# ``PadSource`` from a placeholder device — has been superseded by
+# :class:`stemforge.configurator.commit_handler.DeviceCommitBody`. The new
+# wire shape carries the raw ``audio_path`` Live's LOM reports; the
+# server does the forge reverse-lookup. See spec §6.6 + execution plan
+# Phase 2 for the keystone justification.
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -957,89 +920,81 @@ async def handle_patch_target(
 async def handle_curation_commit(
     state: AppState,
     name: str,
-    body: CommitCurationBody,
+    body: DeviceCommitBody,
+    *,
+    processed_dir: Path | None = None,
 ) -> Curation:
-    """``POST /curations/{name}/commit`` — accept a device snapshot.
+    """``POST /curations/{name}/commit`` — Phase 2 keystone.
 
-    Phase 1B: validates the shape, merges the snapshot into the curation,
-    collapses ``referenced_forges`` from pad sources, persists atomically.
-    Phase 2 will produce the body from the device-side LOM walker.
+    Accepts the device walker's audio-path-keyed snapshot, reverse-looks
+    up each path against the forge index to produce a fully-typed
+    :class:`Curation`, persists atomically + broadcasts state.
+
+    The hard work — reverse-lookup, ClipSettings normalization,
+    referenced_forges rebuild — lives in
+    :func:`stemforge.configurator.commit_handler.merge_device_snapshot`.
+    Keeping it there means the merge is unit-testable without spinning
+    up the FastAPI app / asyncio lock / SSE broker.
+
+    Args:
+        state: The :class:`AppState` (per-process).
+        name: Curation name (path-segment).
+        body: Device snapshot per :class:`DeviceCommitBody`.
+        processed_dir: Override for the forge scan root. Defaults to
+            ``app.state.processed_dir`` when called from the route,
+            falls back to ``~/stemforge/processed`` for direct callers.
+
+    Returns:
+        The newly-persisted :class:`Curation`.
+
+    Raises:
+        HTTPException(404): curation not found.
+        HTTPException(422): malformed pad shape (e.g. non-numeric
+            warp_bpm, unknown clip_settings keys).
     """
     path = curation_path(state.curations_dir, name)
     async with state.mutation_lock:
-        curation = _load_curation_or_404(state, name)
-        # Build replacement groups dict. Snapshot wins for any group it
-        # contains; groups absent from the snapshot are left as-is.
-        for raw_letter, group_snap in body.groups.items():
-            letter = raw_letter.upper()
-            new_pads: list[Pad] = []
-            for pad_snap in group_snap.pads:
-                # Build the Pad through model_validate so the loose-typed
-                # ``clip_settings`` dict from the device is funneled through
-                # the Phase 0 Pydantic validator instead of trusting blind.
-                pad_dict: dict[str, Any] = {"pad_id": pad_snap.pad_id}
-                if pad_snap.source is not None:
-                    pad_dict["source"] = pad_snap.source.model_dump()
-                if pad_snap.clip_settings is not None:
-                    pad_dict["clip_settings"] = pad_snap.clip_settings
-                try:
-                    new_pads.append(Pad.model_validate(pad_dict))
-                except ValidationError as exc:
-                    raise HTTPException(
-                        status_code=422,
-                        detail={
-                            "pad_id": pad_snap.pad_id,
-                            "errors": exc.errors(),
-                        },
-                    ) from exc
-            existing = curation.groups.get(letter)
-            label = (
-                group_snap.label
-                if group_snap.label is not None
-                else (existing.label if existing else "")
+        existing = _load_curation_or_404(state, name)
+        try:
+            merged = merge_device_snapshot(
+                existing=existing,
+                body=body,
+                processed_dir=processed_dir,
             )
-            template = (
-                group_snap.template
-                if group_snap.template is not None
-                else (existing.template if existing else None)
-            )
-            curation.groups[letter] = Group(label=label, template=template, pads=new_pads)
-
-        # Collapse referenced_forges from union of pad sources.
-        referenced: dict[str, str] = {}
-        for group in curation.groups.values():
-            for pad in group.pads:
-                if pad.source is None:
-                    continue
-                slug = pad.source.forge
-                if slug in body.forge_manifest_hashes:
-                    referenced[slug] = body.forge_manifest_hashes[slug]
-                elif slug not in referenced:
-                    # Preserve any previously-recorded hash for this slug.
-                    prior = next(
-                        (f.manifest_hash for f in curation.referenced_forges if f.slug == slug),
-                        "",
-                    )
-                    referenced[slug] = prior
-        from .schemas import ReferencedForge
-
-        curation.referenced_forges = [
-            ReferencedForge(slug=slug, manifest_hash=h) for slug, h in sorted(referenced.items())
-        ]
-
-        curation.modified_at = datetime.now(UTC)
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={"errors": exc.errors()},
+            ) from exc
+        except (ValueError, TypeError) as exc:
+            # ClipSettings normalisation raises ValueError on non-numeric
+            # warp_bpm/loop_* coercion. Surface as 422 so the device sees
+            # "your payload was malformed" rather than 500.
+            raise HTTPException(
+                status_code=422,
+                detail={"error": str(exc)},
+            ) from exc
         with lock_curation(path):
-            write_curation_atomic(path, curation)
+            write_curation_atomic(path, merged)
 
-    await state.log(f"committed curation {name}", "info")
+    await state.log(f"committed curation {name} ({_commit_summary(body)})", "info")
     await state.broadcast_curations_state()
-    return curation
+    return merged
+
+
+def _commit_summary(body: DeviceCommitBody) -> str:
+    """Compact log-line summary for COMMIT — group/pad counts."""
+    n_groups = len(body.groups)
+    n_pads = sum(sum(1 for p in g.pads if p.audio_path) for g in body.groups.values())
+    return f"{n_groups} groups, {n_pads} populated pads"
 
 
 __all__ = [
     "CloseActiveCurationBody",
-    "CommitCurationBody",
     "CreateCurationBody",
+    "DeviceCommitBody",
+    "DeviceGroupSnapshot",
+    "DevicePadSnapshot",
     "OpenCurationBody",
     "PatchTargetBody",
     "PatchTemplateBody",
