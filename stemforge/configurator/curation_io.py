@@ -154,6 +154,39 @@ def write_curation_atomic(path: Path, curation: Curation) -> None:
         raise
 
 
+def rename_curation_atomic(src: Path, dst: Path) -> None:
+    """Rename ``src`` → ``dst`` atomically on the same filesystem.
+
+    Used by ``POST /curations/{name}/rename``. The caller is expected to
+    hold both files' :func:`lock_curation` advisory locks for the
+    duration so concurrent writers don't clobber either side. The rename
+    itself is :func:`os.replace`, which is atomic on POSIX same-volume
+    moves.
+
+    Raises :class:`FileNotFoundError` when ``src`` is missing and
+    :class:`FileExistsError` when ``dst`` already exists. The latter is
+    deliberate — overwriting an existing curation in a rename would lose
+    data; the caller surfaces this as 409.
+    """
+    if not src.is_file():
+        raise FileNotFoundError(f"source curation missing: {src}")
+    if dst.exists():
+        raise FileExistsError(f"destination curation exists: {dst}")
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    os.replace(src, dst)
+    # Best-effort: rename the lock sidecar too so future ``lock_curation``
+    # calls on the new path find the same flock target. Missing sidecar
+    # is fine — :func:`lock_curation` creates one on demand.
+    src_sidecar = src.with_suffix(src.suffix + ".lock")
+    dst_sidecar = dst.with_suffix(dst.suffix + ".lock")
+    if src_sidecar.exists() and not dst_sidecar.exists():
+        try:
+            os.replace(src_sidecar, dst_sidecar)
+        except OSError:
+            # Lock sidecar move is non-critical; flock() will recreate.
+            pass
+
+
 # ── File lock ────────────────────────────────────────────────────────────────
 
 
@@ -211,5 +244,6 @@ __all__ = [
     "list_curations",
     "lock_curation",
     "read_curation",
+    "rename_curation_atomic",
     "write_curation_atomic",
 ]
