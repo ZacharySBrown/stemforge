@@ -134,6 +134,43 @@ Trade-offs:
   hidden in `[shell]` stdout). Phase 3.1 may parse `curl --write-out` and
   surface non-200s on the footer line.
 
+## First-run gotchas (on-device)
+
+### macOS "Allow Chrome to open" permission
+
+The first time you click **OPEN EDITOR**, macOS may pop a dialog asking
+permission for Max/Live to control "Google Chrome" (or whatever your
+default browser is). It's a small system-style alert that's easy to
+miss behind Live's window — caught Zak on the first smoke test.
+
+**If OPEN EDITOR seems to do nothing**:
+
+1. Bring focus away from Live (Cmd-Tab to Finder).
+2. Look for a `"Live" would like to control "Google Chrome"` dialog.
+3. Click **Allow**.
+4. Re-click OPEN EDITOR. The popup should now open.
+
+You'll only need to grant this once per app.
+
+### Status dot stays yellow (cosmetic)
+
+The connection indicator dot stays amber/yellow even after the strip
+shows `connected` status text. The functional state (`_serverBase` set,
+intents fire correctly) is fine — only the visual dot is stuck on the
+warning color. Known M4L `live.text` `bgcolor`-message quirk; a Phase
+4 follow-up will switch to `presentation_color` or a different widget.
+
+### "Open Editor" opens in a tab, not a new window
+
+This is intentional for Phase 3. macOS + Chrome resists every attempt
+to spawn a new chromeless window from outside the browser (open -na,
+AppleScript, direct binary launch — all fail when Chrome is running).
+**Workaround**: drag the tab out into its own window once.
+
+Phase 4 will add an in-popup "Pop out" button that uses `window.open()`
+from inside the browser — the only cross-permission path that
+reliably spawns a popup window without OS automation grants.
+
 ## [jweb] embedding choice
 
 Phase 3 uses a **float-window** `[jweb]` (separate window, openurl-driven),
