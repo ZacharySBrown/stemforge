@@ -32,6 +32,17 @@ Routes (Phase 1B — curation CRUD, spec §4.3):
 - ``PATCH  /curations/{name}/target``
 - ``POST   /curations/{name}/commit``
 
+Routes (Phase 1.5 — forge endpoints + curation rename/close bridge):
+
+- ``GET  /forges``
+- ``POST /forges/{slug}/load``
+- ``POST /forges/{slug}/unload``
+- ``POST /forges/{slug}/re-anchor``
+- ``POST /forges/{slug}/re-curate``
+- ``POST /forges/{slug}/reveal``
+- ``POST /curations/{name}/rename``
+- ``POST /curations/active/close``
+
 Plus a static-files mount on ``/`` (configurable static dir; defaults to
 the package's ``static/`` directory). Lane B's frontend build output
 lands there.
@@ -43,6 +54,7 @@ import asyncio
 import json
 import os
 import socket
+import subprocess
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator
@@ -50,16 +62,20 @@ from typing import Any, AsyncIterator
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
 from stemforge.scene_model import Project
 
 from . import intents
+from .forge_io import default_processed_dir, list_forges, resolve_forge_dir
 from .intents import (
+    CloseActiveCurationBody,
     CommitCurationBody,
     CreateCurationBody,
     OpenCurationBody,
     PatchTargetBody,
     PatchTemplateBody,
+    RenameCurationBody,
     SaveAsBody,
 )
 from .preview import build_audio_response
@@ -84,6 +100,7 @@ STATIC_DIR_ENV = "STEMFORGE_CONFIGURATOR_STATIC"
 DEFAULT_STATIC_DIR = Path(__file__).parent / "static"
 CURATIONS_DIR_ENV = "STEMFORGE_CURATIONS_DIR"
 STATE_FILE_ENV = "STEMFORGE_STATE_FILE"
+PROCESSED_DIR_ENV = "STEMFORGE_PROCESSED_DIR"
 PLACEHOLDER_HTML = (
     '<!doctype html><html><head><meta charset="utf-8">'
     "<title>StemForge Configurator</title></head><body>"
@@ -101,6 +118,8 @@ def create_app(
     static_dir: Path | None = None,
     curations_dir: Path | None = None,
     state_path: Path | None = None,
+    processed_dir: Path | None = None,
+    subprocess_runner: Any | None = None,
 ) -> FastAPI:
     """Construct a fresh :class:`FastAPI` app and bind an :class:`AppState`.
 
@@ -111,6 +130,12 @@ def create_app(
     ``curations_dir`` and ``state_path`` override the on-disk locations
     used by the new Phase 1B curation CRUD endpoints; tests point them
     at ``tmp_path`` to keep the user's real ``~/stemforge`` untouched.
+
+    ``processed_dir`` overrides the forge-scan root for the Phase 1.5
+    ``/forges`` endpoints (defaults to ``~/stemforge/processed``).
+    ``subprocess_runner`` is an injection seam for tests — defaults to
+    :func:`subprocess.run`. Production code never overrides it; the test
+    suite stubs it to avoid spawning real ``stemforge`` invocations.
     """
     state = AppState()
     resolved_curations = (
@@ -131,6 +156,15 @@ def create_app(
             else state.state_path
         )
     )
+    resolved_processed = (
+        Path(processed_dir).expanduser().resolve()
+        if processed_dir is not None
+        else (
+            Path(os.environ[PROCESSED_DIR_ENV]).expanduser().resolve()
+            if os.environ.get(PROCESSED_DIR_ENV)
+            else default_processed_dir()
+        )
+    )
     state.curations_dir = resolved_curations
     state.state_path = resolved_state_path
 
@@ -146,6 +180,9 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.configurator = state
+    app.state.processed_dir = resolved_processed
+    app.state.loaded_forges = set()
+    app.state.subprocess_runner = subprocess_runner or subprocess.run
 
     _register_routes(app, state)
 
@@ -167,6 +204,47 @@ def _resolve_static_dir(override: Path | None) -> Path:
     if env:
         return Path(env).expanduser().resolve()
     return DEFAULT_STATIC_DIR.resolve()
+
+
+# ── Phase 1.5 forge endpoint bodies ──────────────────────────────────────────
+
+
+class ReAnchorBody(BaseModel):
+    """Body of ``POST /forges/{slug}/re-anchor`` (Phase 1.5).
+
+    Accepts both the spec's ``downbeat_sec`` and the task brief's
+    ``first_downbeat_seconds`` for the same field. The CLI ultimately
+    receives ``--first-downbeat <float>``. ``source_bpm`` (when non-null)
+    maps to the CLI's ``--bpm`` flag; the CLI command requires both.
+    """
+
+    downbeat_sec: float | None = Field(default=None, ge=0.0)
+    first_downbeat_seconds: float | None = Field(default=None, ge=0.0)
+    source_bpm: float | None = Field(default=None, gt=0.0)
+
+    model_config = {"extra": "forbid"}
+
+    @property
+    def downbeat(self) -> float:
+        """Effective downbeat value (in seconds), preferring whichever was set."""
+        if self.downbeat_sec is not None:
+            return self.downbeat_sec
+        if self.first_downbeat_seconds is not None:
+            return self.first_downbeat_seconds
+        raise ValueError("re-anchor requires downbeat_sec or first_downbeat_seconds")
+
+
+class ReCurateBody(BaseModel):
+    """Body of ``POST /forges/{slug}/re-curate`` (Phase 1.5).
+
+    The underlying ``stemforge re-curate`` command takes no positional
+    args beyond the slug; ``params`` is accepted for forward-compat with
+    the popup's :class:`ReCurateRequest` but unused in v1.
+    """
+
+    params: dict[str, Any] | None = None
+
+    model_config = {"extra": "forbid"}
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
@@ -287,6 +365,138 @@ def _register_routes(app: FastAPI, state: AppState) -> None:
     @app.post("/curations/{name}/commit", response_model=Curation)
     async def commit_curation_route(name: str, body: CommitCurationBody) -> Curation:
         return await intents.handle_curation_commit(state, name, body)
+
+    # ── Phase 1.5 — curation rename / active close ─────────────────────────
+
+    @app.post("/curations/{name}/rename", response_model=Curation)
+    async def rename_curation_route(name: str, body: RenameCurationBody) -> Curation:
+        return await intents.handle_rename_curation(state, name, body)
+
+    @app.post("/curations/active/close")
+    async def close_active_curation_route(body: CloseActiveCurationBody) -> dict[str, Any]:
+        return await intents.handle_close_active_curation(state, body)
+
+    # ── Phase 1.5 — forge endpoints ────────────────────────────────────────
+
+    @app.get("/forges")
+    async def list_forges_route() -> dict[str, Any]:
+        entries = list_forges(app.state.processed_dir)
+        return {"forges": [e.to_dict() for e in entries]}
+
+    @app.post("/forges/{slug}/load")
+    async def load_forge_route(slug: str) -> dict[str, Any]:
+        forge_dir = resolve_forge_dir(app.state.processed_dir, slug)
+        async with state.mutation_lock:
+            app.state.loaded_forges.add(slug)
+        await state.log(f"loaded forge {slug}", "info")
+        await _broadcast_forge_state(state, app.state.loaded_forges)
+        return {"ok": True, "slug": slug, "path": str(forge_dir)}
+
+    @app.post("/forges/{slug}/unload")
+    async def unload_forge_route(slug: str) -> dict[str, Any]:
+        # Slug validity check; unload of an unknown slug is still a 404
+        # so the popup can surface "nothing to unload" cleanly.
+        resolve_forge_dir(app.state.processed_dir, slug)
+        async with state.mutation_lock:
+            app.state.loaded_forges.discard(slug)
+        await state.log(f"unloaded forge {slug}", "info")
+        await _broadcast_forge_state(state, app.state.loaded_forges)
+        return {"ok": True, "slug": slug}
+
+    @app.post("/forges/{slug}/reveal")
+    async def reveal_forge_route(slug: str) -> dict[str, Any]:
+        forge_dir = resolve_forge_dir(app.state.processed_dir, slug)
+        runner = app.state.subprocess_runner
+        try:
+            runner(["open", str(forge_dir)], check=False)
+        except FileNotFoundError as exc:
+            # ``open`` is missing — likely a non-macOS CI runner. Surface
+            # the failure plainly rather than masking with a 500.
+            raise HTTPException(
+                status_code=500,
+                detail=f"unable to invoke 'open': {exc}",
+            ) from exc
+        return {"ok": True, "path": str(forge_dir)}
+
+    @app.post("/forges/{slug}/re-anchor")
+    async def re_anchor_forge_route(slug: str, body: ReAnchorBody) -> dict[str, Any]:
+        forge_dir = resolve_forge_dir(app.state.processed_dir, slug)
+        try:
+            downbeat = body.downbeat
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if body.source_bpm is None:
+            # ``stemforge re-anchor`` requires --bpm. Bubble that
+            # constraint up as a 422 so the popup can prompt for it.
+            raise HTTPException(
+                status_code=422,
+                detail="re-anchor requires source_bpm (the CLI's --bpm flag)",
+            )
+        cmd = [
+            "uv",
+            "run",
+            "stemforge",
+            "re-anchor",
+            str(forge_dir),
+            "--bpm",
+            str(body.source_bpm),
+            "--first-downbeat",
+            str(downbeat),
+        ]
+        runner = app.state.subprocess_runner
+        proc = runner(cmd, capture_output=True, text=True, check=False)
+        ok = getattr(proc, "returncode", 1) == 0
+        stdout = getattr(proc, "stdout", "") or ""
+        stderr = getattr(proc, "stderr", "") or ""
+        if ok:
+            await state.log(f"re-anchored forge {slug}", "info")
+            await _broadcast_forge_state(state, app.state.loaded_forges)
+        else:
+            await state.error("re_anchor_failed", stderr.strip() or "re-anchor failed")
+        return {"ok": ok, "slug": slug, "stdout": stdout, "stderr": stderr}
+
+    @app.post("/forges/{slug}/re-curate")
+    async def re_curate_forge_route(slug: str, body: ReCurateBody) -> dict[str, Any]:
+        # ``params`` is currently advisory only; the CLI subcommand takes
+        # no extra positional args beyond the slug.
+        _ = body
+        resolve_forge_dir(app.state.processed_dir, slug)
+        cmd = ["uv", "run", "stemforge", "re-curate", slug]
+        runner = app.state.subprocess_runner
+        proc = runner(cmd, capture_output=True, text=True, check=False)
+        ok = getattr(proc, "returncode", 1) == 0
+        stdout = getattr(proc, "stdout", "") or ""
+        stderr = getattr(proc, "stderr", "") or ""
+        if ok:
+            await state.log(f"re-curated forge {slug}", "info")
+            await _broadcast_forge_state(state, app.state.loaded_forges)
+        else:
+            await state.error("re_curate_failed", stderr.strip() or "re-curate failed")
+        return {"ok": ok, "slug": slug, "stdout": stdout, "stderr": stderr}
+
+
+async def _broadcast_forge_state(state: AppState, loaded: set[str]) -> None:
+    """Push a ``state`` SSE event carrying the loaded-forge set.
+
+    Distinct ``kind`` field so the popup can dispatch on it. We surface
+    ``loaded_forge`` (singular) as the last-loaded slug — matches the
+    task brief's wire shape — and ``loaded_forges`` (plural) as the full
+    set so future multi-load UIs keep working.
+    """
+    import time as _time
+
+    last = sorted(loaded)[-1] if loaded else None
+    await state.broadcast(
+        SseEvent(
+            event="state",
+            data={
+                "kind": "forges",
+                "loaded_forge": last,
+                "loaded_forges": sorted(loaded),
+                "ts": _time.time(),
+            },
+        )
+    )
 
 
 def _resolve_clip_path(project: Project, clip_id: str) -> Path | None:
