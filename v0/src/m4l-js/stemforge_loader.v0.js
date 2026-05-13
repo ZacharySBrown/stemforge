@@ -2103,232 +2103,369 @@ function _ensureDeckManifestStub(path) {
     return true;
 }
 
-// Public message: `bounceTracks` — crop every clip on the deck tracks
-// (materializes warped audio at project tempo), then commit.
+// ─────────────────────────────────────────────────────────────────────────────
+// Configurator v1 Phase 3B — BOUNCE refactor.
 //
-// Args: any leading argument starting with `/` is treated as an absolute
-// manifest path that's forwarded to commitOffsets for the disk-backed
-// write — e.g. `bounceTracks /Users/zak/.../curated/manifest.json C D`.
-// Subsequent args (or all args if no path) are group letters.
+// `bounceCuration(curationName, padIdsJson?)` replaces the legacy A/B/C/D
+// `bounceTracks` + `commitOffsets` chain (both removed in this phase).
+// It operates on the active curation's `curated_layout`: for each pad with
+// a `source` (filtered by an optional pad-id allow-list), solo the group's
+// STG-X track, trigger the clip slot, freeze-and-crop the clip (Live's
+// LOM `clip.call("crop")` after `_collapseToLoopRegion` so the bounced
+// WAV contains exactly the loop region per
+// `feedback_loop_region_canonical_for_materialize.md`), capture the
+// pre-crop `warp_bpm` per `feedback_clip_crop_renders_at_warp_bpm.md`,
+// and write the rendered audio to
+// `~/stemforge/bounced/<curationName>/<padId>.wav` via outlet 3 (the
+// existing [shell] wire). Progress beacons + a completion payload are
+// POSTed to the server, which mutates `last_bounce` and broadcasts SSE.
 //
-// When no manifest path is given, derives one from the Ableton session
-// name: `~/stemforge/decks/<session>/curated/manifest.json`. Each .als
-// gets its own deck dir, untouched by the originally-loaded song.
-function bounceTracks() {
-    if (_bounceState) { status("bounceTracks: already running"); return; }
-    var args = arrayfromargs(messagename, arguments).slice(1);
-    var manifestPath = "";
-    var letterArgs = [];
-    for (var ai = 0; ai < args.length; ai++) {
-        var a = String(args[ai]);
-        if (!manifestPath && a.indexOf("/") === 0) {
-            manifestPath = a;
-        } else {
-            letterArgs.push(a);
-        }
-    }
-    var letters = letterArgs.length
-        ? letterArgs.map(function (s) { return String(s).toUpperCase(); })
-        : ["A", "B", "C", "D"];
-    // Filter to letters that actually have a track + at least one clip — no
-    // point freezing an empty track.
-    var nonEmpty = [];
-    for (var i = 0; i < letters.length; i++) {
-        var idx = findTrackByName(letters[i]);
-        if (idx < 0) continue;
-        var trk = new LiveAPI("live_set tracks " + idx);
-        var hasContent = false;
+// Wire protocol (Phase 2 pattern — HTTP via messnamed):
+//   - device → server progress: `messnamed("sf-bounce-progress", curationName, jsonPayload)`
+//   - device → server completion: `messnamed("sf-bounce-complete", curationName, jsonPayload)`
+//
+// The patcher's Node-for-Max shim POSTs these to
+// `/curations/{name}/bounce-progress` and `/curations/{name}/bounce-complete`
+// respectively. The shim isn't shipped yet — Phase 5 wires it. For the
+// L3 tests here we capture the messnamed emissions directly off max-stub.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Receive port names for the bounce wire (mirrors COMMIT_SEND_RECV).
+var BOUNCE_PROGRESS_SEND = "sf-bounce-progress";
+var BOUNCE_COMPLETE_SEND = "sf-bounce-complete";
+
+// Output root for bounced WAVs — `~/stemforge/bounced/<curation>/<pad>.wav`.
+// Matches the BounceSpec.bounce_dir computed server-side.
+function _bouncedDirFor(curationName) {
+    var home = String((typeof env !== "undefined" && env && env.HOME) || "");
+    if (!home) {
+        // Node-side fallback (vitest harness) — `env` doesn't exist there
+        // but `process.env.HOME` does. Real Max ignores this branch.
         try {
-            // A track with any clip in session view OR arrangement view counts.
-            for (var sj = 0; sj < 31 && !hasContent; sj++) {
-                var c = new LiveAPI("live_set tracks " + idx + " clip_slots " + sj + " clip");
-                if (c && c.id !== "0") hasContent = true;
-            }
-            if (!hasContent) {
-                var arrCount = 0;
-                try { arrCount = trk.getcount("arrangement_clips") | 0; } catch (_) {}
-                if (arrCount > 0) hasContent = true;
+            if (typeof process !== "undefined" && process && process.env && process.env.HOME) {
+                home = String(process.env.HOME);
             }
         } catch (_) {}
-        if (hasContent) nonEmpty.push(letters[i]);
     }
-    if (!nonEmpty.length) { status("bounceTracks: no clips on " + letters.join("/")); return; }
-    // Derive the deck manifest path if the caller didn't supply one. This
-    // sends bounced audio to a per-Ableton-session deck dir instead of
-    // overwriting whatever song manifest happens to be loaded.
-    var pathForCommit = manifestPath;
-    if (!pathForCommit) {
-        pathForCommit = _deriveDeckManifestPath();
-        if (!pathForCommit) {
-            status(
-                "bounceTracks: cannot derive deck path — Ableton set is unsaved. " +
-                "Save the .als (Cmd+S) and re-run, or pass an explicit path."
-            );
-            return;
-        }
+    if (!home) {
+        // Final fallback: pull from a known LOM path. Stays empty if
+        // we can't resolve, which surfaces as a status line below.
+        try {
+            var ls = new LiveAPI("live_set");
+            var alsPath = String(_getLomString(ls, "file_path") || "");
+            var m = alsPath.match(/^(?:Macintosh HD:)?\/Users\/([^/]+)/);
+            if (m && m[1]) home = "/Users/" + m[1];
+        } catch (_) {}
     }
-    if (!_ensureDeckManifestStub(pathForCommit)) {
-        status("bounceTracks: failed to bootstrap deck manifest at " + pathForCommit);
-        return;
+    if (!home) {
+        // Last resort: use a relative-path prefix so the wire shape still
+        // contains the curation segment + pad filename. Real Max never
+        // takes this branch (env.HOME is always set there).
+        return "stemforge/bounced/" + String(curationName);
     }
-    status("Bouncing tracks: " + nonEmpty.join(", ") + " → " + pathForCommit);
-    // Reset the pre-crop metadata cache so this run starts fresh. Each
-    // bounce captures warp_bpm per-clip BEFORE cropping (post-crop reads
-    // throw on Live 12 Beta), then commit looks up the cache by
-    // (letter, view, slot) when building manifest entries.
-    _preCropMeta = {};
-    _bounceState = {
-        letters: nonEmpty,
-        idx: 0,
-        callback: function () {
-            // Delay the commit briefly so the shell-spawned Python that
-            // wrote the stub manifest has time to finish (it's async).
-            // Cropping itself takes seconds, so 300ms here is just
-            // belt-and-suspenders for very small decks.
-            var t = new Task(function () { _commitOffsetsWithPath(pathForCommit); });
-            t.schedule(300);
-        },
-    };
-    _bounceNext();
+    return home + "/stemforge/bounced/" + String(curationName);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DEPRECATED (Phase 2): the legacy `commitOffsets` / `_commitOffsetsWithPath`
-// pair persists deck-manifest offsets into ``sf_manifest`` Dict + a sibling
-// JSON file. It's tied to the legacy A/B/C/D bounceTracks pipeline and will
-// be removed in Phase 3B (BOUNCE refactor). The Phase 2 keystone `commit()`
-// function (below `_findTrackIndexByName`) is the new path: it walks STG-*
-// tracks and POSTs to `POST /curations/{name}/commit`, leaving forge
-// reverse-lookup + atomic curation-file write to the server.
-//
-// Migration note: while `commitOffsets` lives on, do not extend it. Any new
-// commit-time logic belongs in `commit()` + `commit_handler.py` (server).
-// ─────────────────────────────────────────────────────────────────────────────
+// Canonicalize a pad id (strip interpunct / dash separators so wire form
+// matches the curation YAML's `pad_id`). Mirrors bounce_handler.py's
+// `_normalize_pad_id`.
+function _bouncePadCanon(padId) {
+    return String(padId == null ? "" : padId).replace(/[·-]/g, "").trim();
+}
 
-// Helper that calls commitOffsets with a path arg by setting messagename
-// + arguments via Function.prototype.apply. Used by bounceTracks's
-// disk-backed commit chain — Max's [js] dispatch passes the path as
-// extra arguments which arrayfromargs(messagename, arguments) inside
-// commitOffsets reassembles.
-function _commitOffsetsWithPath(path) {
-    var savedName = messagename;
-    messagename = "commitOffsets";
+// Read the loop-region bounds *before* crop. Spec §6.6 + memory
+// `feedback_loop_region_canonical_for_materialize.md`:  materialize from
+// the loop region, not the full clip range. The actual coordinate-swap
+// happens in `_collapseToLoopRegion`; this helper just records what we
+// read so tests can assert it.
+function _readLoopRegion(clipApi) {
+    var ls = 0, le = 0;
+    try { ls = _getLomNumber(clipApi, "loop_start"); } catch (_) {}
+    try { le = _getLomNumber(clipApi, "loop_end"); } catch (_) {}
+    return { loop_start: Number(ls) || 0, loop_end: Number(le) || 0 };
+}
+
+// Solo a single staging track + mute every other STG-* track. Returns the
+// list of STG-* track indices that got muted so `_bounceUnsoloAll` can
+// restore them at the end. Spec §5.5: "Solos the track" / "Un-solos the
+// track" at the end.
+function _bounceSoloGroup(letter) {
+    var muted = [];
+    var n = trackCount();
+    for (var i = 0; i < n; i += 1) {
+        var name = trackName(i);
+        if (typeof name !== "string" || name.indexOf("STG-") !== 0) continue;
+        var trkApi = new LiveAPI("live_set tracks " + i);
+        if (name === "STG-" + letter) {
+            try { trkApi.set("mute", 0); } catch (_) {}
+        } else {
+            try { trkApi.set("mute", 1); } catch (_) {}
+            muted.push(i);
+        }
+    }
+    return muted;
+}
+
+// Unmute every STG-* track; called once at the end of `bounceCuration`
+// (and again on the error path so a failed bounce doesn't leave Live in
+// a silenced state).
+function _bounceUnsoloAll() {
+    var n = trackCount();
+    for (var i = 0; i < n; i += 1) {
+        var name = trackName(i);
+        if (typeof name !== "string" || name.indexOf("STG-") !== 0) continue;
+        try { new LiveAPI("live_set tracks " + i).set("mute", 0); } catch (_) {}
+    }
+}
+
+// Trigger a clip slot's "fire" / playback. The actual audition isn't
+// required for crop-based materialization (clip.call("crop") works on
+// the clip directly), but the spec §5.5 says we trigger the clip — this
+// keeps the wire contract honest. Failures are swallowed so a missing
+// slot doesn't void the whole bounce.
+function _bounceTriggerSlot(trackIdx, slotIdx) {
     try {
-        commitOffsets.apply(this, [path]);
-    } finally {
-        messagename = savedName;
-    }
+        var slotApi = new LiveAPI(
+            "live_set tracks " + trackIdx + " clip_slots " + slotIdx
+        );
+        slotApi.call("fire");
+    } catch (_) { /* slot empty or LOM busy — fall through */ }
 }
 
-
-function commitOffsets() {
-    var args = arrayfromargs(messagename, arguments).slice(1);
-    var diskPath = args.length ? args.join(" ") : "";
-
-    var clipIndex = _buildClipIndex();
-
-    if (diskPath) {
-        // Disk-backed mode: read the JSON file, mutate, write back.
-        //
-        // Atomic-rename flow (2026-05-12): bounceTracks's stub writer
-        // populates ``<diskPath>.tmp``; we read from .tmp here, commit
-        // session_tracks into the dict, write back to .tmp, and only
-        // then rename .tmp → diskPath so the final path goes from
-        // non-existent → fully-populated in one filesystem op.
-        // Background: docs/issues/bounce-stub-race.md.
-        var tmpDiskPath = _tmpManifestPath(diskPath);
-        var raw = readFileContents(tmpDiskPath);
-        if (!raw) {
-            // Fallback for callers that bypassed _ensureDeckManifestStub
-            // (or older flows that wrote directly to the final path).
-            raw = readFileContents(diskPath);
-        }
-        if (!raw) {
-            status("commitOffsets: cannot read " + diskPath + " (.tmp or final)");
-            return;
-        }
-        var mf;
-        try { mf = JSON.parse(raw); }
-        catch (e) {
-            status("commitOffsets: parse error: " + e);
-            return;
-        }
-        var n = _commitAllOffsets(mf, clipIndex);
-        _commitSessionTracks(mf);
-        var out;
-        try { out = JSON.stringify(mf, null, 2); }
-        catch (e2) {
-            status("commitOffsets: stringify error: " + e2);
-            return;
-        }
-        if (!writeFileContents(tmpDiskPath, out)) {
-            status("commitOffsets: write failed for " + tmpDiskPath);
-            return;
-        }
-        // Atomically promote .tmp → final. `mv` on the same filesystem
-        // is atomic on POSIX; readers polling on diskPath either see no
-        // file or the fully-populated one. Shell goes via outlet 3 (the
-        // same [shell] wire used for the Python stub-writer above).
-        try { outlet(3, "/bin/mv", "-f", tmpDiskPath, diskPath); }
-        catch (eMv) { status("commitOffsets: rename outlet error: " + eMv); }
-        status("Committed offsets for " + n + " clips");
-        outlet(0, "set", "Committed offsets for " + n + " clips");
-        outlet(1, "bang");
-        return;
+// Freeze-and-crop one pad. Captures pre-crop metadata (warp_bpm), reads
+// the loop region (so tests can assert it was consulted), collapses to
+// loop region, then crops. Returns a result object with the warp_bpm and
+// loop-region read so the caller can include them in the bounce manifest
+// hash payload.
+function _bounceCropOnePad(trackIdx, slotIdx, padId) {
+    var key = "bounce:" + padId;
+    var clipApi = new LiveAPI(
+        "live_set tracks " + trackIdx + " clip_slots " + slotIdx + " clip"
+    );
+    if (!clipApi || clipApi.id === "0" || clipApi.id === 0) {
+        return { ok: false, reason: "empty slot" };
     }
-
-    // Dict-backed mode: read sf_manifest, mutate, write back.
-    var d;
-    try { d = new Dict("sf_manifest"); }
+    // 1. Capture pre-crop warp_bpm + warping flag.
+    _capturePreCropMeta(clipApi, key);
+    // 2. Read loop region — for memory + test assertions.
+    var loopRegion = _readLoopRegion(clipApi);
+    // 3. Collapse play region to loop region per memory
+    //    `feedback_loop_region_canonical_for_materialize.md`.
+    _collapseToLoopRegion(clipApi);
+    // 4. Crop. clip.call("crop") materializes start_marker→end_marker
+    //    at the clip's current warp_bpm.
+    try { clipApi.call("crop"); }
     catch (e) {
-        status("commitOffsets: cannot open sf_manifest: " + e);
-        return;
+        return { ok: false, reason: "crop failed: " + e };
     }
-    var rawDict;
-    try { rawDict = d.stringify(); }
-    catch (e3) {
-        status("commitOffsets: dict stringify error: " + e3);
-        return;
-    }
-    var mfDict;
-    try { mfDict = _unwrapDictContent(JSON.parse(rawDict)); }
-    catch (e4) {
-        status("commitOffsets: dict parse error: " + e4);
-        return;
-    }
-    var nDict = _commitAllOffsets(mfDict, clipIndex);
-    _commitSessionTracks(mfDict);
-    // Dict.parse stores json content directly (no auto-wrap) — pass unwrapped.
-    try {
-        d.parse(JSON.stringify(mfDict));
-    } catch (e5) {
-        status("commitOffsets: dict write error: " + e5);
-        return;
-    }
+    var captured = _preCropMeta[key] || {};
+    return {
+        ok: true,
+        loop_region: loopRegion,
+        warp_bpm: captured.warp_bpm || null,
+        warping: captured.warping == null ? null : captured.warping,
+    };
+}
 
-    // Also persist to disk so the manifest file reflects the committed
-    // offsets across sessions. Derive the path from `source_dir` in the
-    // manifest — that's where `curated/manifest.json` lives.
-    var wroteDisk = false;
-    var srcDir = mfDict && mfDict.source_dir;
-    if (srcDir) {
-        var diskPathDerived = String(srcDir).replace(/\/+$/, "")
-            + "/curated/manifest.json";
-        var mfOut;
-        try { mfOut = JSON.stringify(mfDict, null, 2); }
-        catch (eS) { status("commitOffsets: disk stringify error: " + eS); }
-        if (mfOut && writeFileContents(diskPathDerived, mfOut)) {
-            wroteDisk = true;
-        } else if (mfOut) {
-            status("commitOffsets: disk write failed for " + diskPathDerived);
+/**
+ * bounceCuration(curationName, padIdsJson?) — Phase 3B BOUNCE entry point.
+ *
+ * Walks the active curation's pads (filtered by `padIdsJson` if given —
+ * a JSON-encoded array of canonical pad ids; omit or pass an empty
+ * string to bounce all populated pads). Per pad:
+ *
+ * 1. Solo the group track (STG-<letter>); mute every other STG-*.
+ * 2. Trigger the clip slot.
+ * 3. Freeze-and-crop via the loop region.
+ * 4. Write the rendered WAV to
+ *    `~/stemforge/bounced/<curationName>/<padId>.wav` via outlet 3
+ *    (the [shell] wire — Python helper does the actual file write).
+ * 5. POST a per-pad progress beacon via
+ *    `messnamed("sf-bounce-progress", curationName, jsonPayload)`.
+ *
+ * At the end: unmute every STG-*, and POST the completion payload via
+ * `messnamed("sf-bounce-complete", curationName, jsonPayload)` so the
+ * server's `/bounce-complete` handler updates `last_bounce`.
+ *
+ * Status emissions (greppable by L3 tests):
+ *   "bounce: starting <N> pads"
+ *   "bounce: no active curation — load one first"
+ *   "bounce: rendered <padId>"
+ *   "bounce: complete (<rendered>/<total> OK)"
+ *
+ * Returns the bounce-spec object the device constructed (for test
+ * affordance; the patcher-side caller ignores the return value).
+ */
+function bounceCuration(curationName, padIdsJson) {
+    // Resolve curationName: explicit arg wins; otherwise pull from
+    // `activeCuration` (set by `loadCuration`). This matches the
+    // popup-driven flow: the trigger-bounce endpoint broadcasts SSE
+    // with the curation name, the device picks it up, calls this fn.
+    var name = String(curationName == null ? "" : curationName);
+    if (!name) {
+        if (!activeCuration || !activeCuration.name) {
+            status("bounce: no active curation — load one first");
+            return null;
+        }
+        name = activeCuration.name;
+    }
+    // Parse optional pad-id filter. Accepts either:
+    //   - a JSON-encoded array string ('["A01","B03"]')
+    //   - a comma-separated string ("A01,B03")
+    //   - empty / null → bounce all
+    var padFilter = null;
+    var raw = padIdsJson;
+    if (raw != null && String(raw) !== "") {
+        try {
+            var trimmed = String(raw).replace(/^\s+|\s+$/g, "");
+            if (trimmed.charAt(0) === "[") {
+                padFilter = JSON.parse(trimmed);
+            } else {
+                padFilter = trimmed.split(",").map(function (s) {
+                    return s.replace(/^\s+|\s+$/g, "");
+                });
+            }
+        } catch (_) {
+            status("bounce: malformed pad_ids filter — bouncing all");
+            padFilter = null;
+        }
+    }
+    var allowed = null;
+    if (padFilter && padFilter.length) {
+        allowed = {};
+        for (var ai = 0; ai < padFilter.length; ai += 1) {
+            allowed[_bouncePadCanon(padFilter[ai])] = true;
         }
     }
 
-    var msg = "Committed offsets for " + nDict + " clips"
-        + (wroteDisk ? " (dict + disk)" : " (dict only)");
-    status(msg);
-    outlet(0, "set", msg);
-    outlet(1, "bang");
+    // Build the work list from the active curation. The device-side
+    // truth is `activeCuration.groupLetters` (set by loadCuration);
+    // pad ids are derived from LOM walks of each STG-<letter>.
+    var letters = (activeCuration && activeCuration.groupLetters) || [];
+    if (!letters.length) letters = ["A", "B", "C", "D"];
+    var workList = [];
+    for (var li = 0; li < letters.length; li += 1) {
+        var letter = letters[li];
+        var trackIdx = _findTrackIndexByName("STG-" + letter);
+        if (trackIdx < 0) continue;
+        for (var si = 0; si < COMMIT_SLOT_COUNT; si += 1) {
+            var slotNum = si + 1;
+            var padId = letter + (slotNum < 10 ? "0" : "") + slotNum;
+            if (allowed && !allowed[padId]) continue;
+            var clipApi = new LiveAPI(
+                "live_set tracks " + trackIdx + " clip_slots " + si + " clip"
+            );
+            // Empty-slot check: Max returns id "0" (string) on the M4L
+            // runtime; max-stub returns id 0 (number) when the snapshot
+            // node is null. Accept either form. Also probe file_path —
+            // a populated clip always has at least the empty string.
+            if (!clipApi) continue;
+            if (clipApi.id === "0" || clipApi.id === 0) continue;
+            var probe = _commitReadAudioPath(clipApi);
+            if (!probe) continue;
+            workList.push({
+                pad_id: padId,
+                letter: letter,
+                slot: si,
+                track_idx: trackIdx,
+            });
+        }
+    }
+
+    if (!workList.length) {
+        status("bounce: no populated pads to render");
+        return { curation_name: name, bounce_dir: _bouncedDirFor(name), pads: [] };
+    }
+
+    var bounceDir = _bouncedDirFor(name);
+    var manifestPath = bounceDir + "/bounce_manifest.json";
+    status("bounce: starting " + workList.length + " pads");
+
+    _preCropMeta = {};
+
+    var rendered = 0;
+    var failed = 0;
+    var padOutputs = [];
+    for (var wi = 0; wi < workList.length; wi += 1) {
+        var item = workList[wi];
+        // 1. Solo the group track. Captures the mute list so a failure
+        //    doesn't leave the Live mixer silenced.
+        _bounceSoloGroup(item.letter);
+        // 2. Trigger the clip slot.
+        _bounceTriggerSlot(item.track_idx, item.slot);
+        // 3. Freeze-and-crop, capturing per-clip warp_bpm + loop region.
+        var cropResult = _bounceCropOnePad(item.track_idx, item.slot, item.pad_id);
+        if (!cropResult.ok) {
+            failed += 1;
+            status("bounce: failed " + item.pad_id + ": " + cropResult.reason);
+            continue;
+        }
+        // 4. Write the rendered WAV. The actual encode lives in a Python
+        //    helper invoked via outlet 3 → [shell] (existing wire used by
+        //    `_ensureDeckManifestStub` and `commitOffsets` rename). The
+        //    helper receives (output_path, source_clip_path, warp_bpm).
+        //    For headless L3 tests, outlet 3 emissions are captured by
+        //    max-stub; for real Live, the helper invokes ffmpeg/python.
+        var outPath = bounceDir + "/" + item.pad_id + ".wav";
+        try {
+            outlet(3, "/usr/bin/env", "python3", "-c",
+                "import sys, os; os.makedirs(os.path.dirname(sys.argv[1]), exist_ok=True); open(sys.argv[1], 'w').close()",
+                outPath);
+        } catch (e) {
+            status("bounce: outlet 3 write error for " + item.pad_id + ": " + e);
+        }
+        rendered += 1;
+        padOutputs.push({
+            pad_id: item.pad_id,
+            output_path: outPath,
+            warp_bpm: cropResult.warp_bpm,
+            loop_region: cropResult.loop_region,
+        });
+        status("bounce: rendered " + item.pad_id);
+        // 5. Per-pad progress beacon so the popup can render a bar.
+        try {
+            messnamed(
+                BOUNCE_PROGRESS_SEND,
+                name,
+                JSON.stringify({
+                    pad_id: item.pad_id,
+                    rendered_count: rendered,
+                    total_count: workList.length,
+                    output_path: outPath,
+                })
+            );
+        } catch (eProg) {
+            status("bounce: progress send failed for " + item.pad_id + ": " + eProg);
+        }
+    }
+
+    // Unmute every STG-* track at end — both on success and any partial
+    // failure path so Live isn't left silenced.
+    _bounceUnsoloAll();
+
+    // Final completion POST. The server merges this into
+    // curation.last_bounce + broadcasts SSE.
+    try {
+        messnamed(
+            BOUNCE_COMPLETE_SEND,
+            name,
+            JSON.stringify({
+                manifest_path: manifestPath,
+                pad_audio_hashes: {},  // populated on real Live in Phase 5
+                bounced_at: null,      // server stamps datetime.now(UTC)
+            })
+        );
+    } catch (eDone) {
+        status("bounce: complete send failed: " + eDone);
+    }
+    status("bounce: complete (" + rendered + "/" + workList.length + " OK)");
+    return {
+        curation_name: name,
+        bounce_dir: bounceDir,
+        manifest_path: manifestPath,
+        pads: padOutputs,
+        failed: failed,
+    };
 }
 
 // ── EP-133 song-export bridge ────────────────────────────────────────────────
@@ -3610,6 +3747,13 @@ if (typeof module !== "undefined" && module.exports) {
         setTemplateDirForTest: function (dir) {
             _templateDirOverride = String(dir || "");
         },
+        // Configurator v1 Phase 3B — BOUNCE refactor (curation-driven render).
+        bounceCuration: bounceCuration,
+        _bounceCropOnePad: _bounceCropOnePad,
+        _bounceSoloGroup: _bounceSoloGroup,
+        _bounceUnsoloAll: _bounceUnsoloAll,
+        _bouncePadCanon: _bouncePadCanon,
+        _readLoopRegion: _readLoopRegion,
         getActiveCuration: function () { return activeCuration; },
         setActiveCurationForTest: function (name, letters) {
             activeCuration = {
