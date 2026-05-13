@@ -27,6 +27,7 @@ import type {
   SaveAsRequest,
   SetCurationTargetRequest,
   SetGroupTemplateRequest,
+  TemplateIndexResponse,
 } from "./popup-types";
 
 declare global {
@@ -105,6 +106,13 @@ export function streamUrl(): string {
 /** Audio preview URL — fed directly to `<audio src=...>`. */
 export function previewUrl(clipId: string): string {
   return url(`/preview/${encodeURIComponent(clipId)}`);
+}
+
+// ── /templates (Phase 3A) ───────────────────────────────────────────────────
+
+/** Scan `~/stemforge/templates/*.adg` and return one row per template. */
+export function fetchTemplates(): Promise<TemplateIndexResponse> {
+  return jsonRequest<TemplateIndexResponse>("/templates");
 }
 
 // ── /forges ─────────────────────────────────────────────────────────────────
@@ -288,6 +296,7 @@ export const api = {
   streamUrl,
   previewUrl,
   fetchForges,
+  fetchTemplates,
   loadForge,
   unloadForge,
   reAnchorForge,

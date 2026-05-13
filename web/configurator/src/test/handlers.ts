@@ -15,6 +15,7 @@ import {
   CURATION_STALE,
   FORGE_INDEX_EMPTY,
   FORGE_INDEX_OK,
+  TEMPLATE_INDEX_OK,
 } from "./fixtures";
 import type { ApiResult } from "@/lib/popup-types";
 
@@ -23,6 +24,7 @@ const OK: ApiResult = { ok: true, warnings: [], errors: [] };
 /** "Happy path" handlers — populated fixtures, all writes succeed. */
 export const okHandlers = [
   http.get("/forges", () => HttpResponse.json(FORGE_INDEX_OK)),
+  http.get("/templates", () => HttpResponse.json(TEMPLATE_INDEX_OK)),
   http.get("/curations", () => HttpResponse.json(CURATION_INDEX_OK)),
   http.get("/curations/verse_swap_v1", () => HttpResponse.json(CURATION_FRESH)),
   http.get("/curations/stale_curation", () => HttpResponse.json(CURATION_STALE)),

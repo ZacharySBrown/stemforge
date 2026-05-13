@@ -4,8 +4,8 @@ import { http, HttpResponse } from "msw";
 import { toast } from "sonner";
 import { describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "@/test/render";
-import { CURATION_FRESH, CURATION_STALE } from "@/test/fixtures";
 import { server } from "@/test/server";
+import { CURATION_FRESH, CURATION_STALE } from "@/test/fixtures";
 import { ActiveCuration } from "./ActiveCuration";
 
 describe("ActiveCuration", () => {
@@ -57,6 +57,88 @@ describe("ActiveCuration", () => {
     });
     // After resolution there should be no stale markers.
     expect(screen.queryAllByTestId("stale-badge-pad")).toHaveLength(0);
+  });
+
+  // ── Phase 3A: template selector wired to GET /templates + PATCH ──────────
+
+  it("template selector populates options from GET /templates", async () => {
+    renderWithProviders(<ActiveCuration curation={CURATION_FRESH} />);
+    const aTemplate = (await screen.findByTestId(
+      "group-A-template",
+    )) as HTMLSelectElement;
+    // The msw-mocked TEMPLATE_INDEX_OK has three entries; we surface each
+    // as an <option>. The "VOCAL_HI_KEY" option lets the fixture's saved
+    // template render without falling into the "(missing)" branch.
+    await waitFor(() => {
+      const optionValues = Array.from(aTemplate.options).map((o) => o.value);
+      expect(optionValues).toContain("drum-rack-classic");
+      expect(optionValues).toContain("vocal-bloom");
+      expect(optionValues).toContain("VOCAL_HI_KEY");
+    });
+    // The empty "no template" option is always first.
+    expect(aTemplate.options[0].value).toBe("");
+  });
+
+  it("selecting a template fires PATCH /curations/{name}/template with group_letter", async () => {
+    const calls: Array<{ name: string; body: unknown }> = [];
+    server.use(
+      http.patch("/curations/:name/template", async ({ params, request }) => {
+        const body = await request.json();
+        calls.push({ name: String(params.name), body });
+        return HttpResponse.json({ ok: true, warnings: [], errors: [] });
+      }),
+    );
+
+    renderWithProviders(<ActiveCuration curation={CURATION_FRESH} />);
+    const aTemplate = (await screen.findByTestId(
+      "group-A-template",
+    )) as HTMLSelectElement;
+    // Wait until the populated options have hydrated.
+    await waitFor(() => {
+      expect(
+        Array.from(aTemplate.options).some(
+          (o) => o.value === "drum-rack-classic",
+        ),
+      ).toBe(true);
+    });
+
+    const user = userEvent.setup();
+    await user.selectOptions(aTemplate, "drum-rack-classic");
+
+    await waitFor(() => expect(calls.length).toBeGreaterThan(0));
+    expect(calls[calls.length - 1].name).toBe("verse_swap_v1");
+    expect(calls[calls.length - 1].body).toEqual({
+      group_letter: "A",
+      template_name: "drum-rack-classic",
+    });
+  });
+
+  it("selecting '— no template —' clears via template_name: null", async () => {
+    const calls: Array<{ body: unknown }> = [];
+    server.use(
+      http.patch("/curations/:name/template", async ({ request }) => {
+        calls.push({ body: await request.json() });
+        return HttpResponse.json({ ok: true, warnings: [], errors: [] });
+      }),
+    );
+
+    renderWithProviders(<ActiveCuration curation={CURATION_FRESH} />);
+    const aTemplate = (await screen.findByTestId(
+      "group-A-template",
+    )) as HTMLSelectElement;
+    // CURATION_FRESH has group A → "VOCAL_HI_KEY"; wait for that to be the
+    // dropdown's current value before clearing, so the selectOptions
+    // genuinely produces a change event.
+    await waitFor(() => expect(aTemplate.value).toBe("VOCAL_HI_KEY"));
+
+    const user = userEvent.setup();
+    await user.selectOptions(aTemplate, "");
+
+    await waitFor(() => expect(calls.length).toBeGreaterThan(0));
+    expect(calls[calls.length - 1].body).toMatchObject({
+      group_letter: "A",
+      template_name: null,
+    });
   });
 });
 

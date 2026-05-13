@@ -10,6 +10,7 @@ import type { Curation } from "@/lib/api-types.generated";
 import type {
   CurationIndexResponse,
   ForgeIndexResponse,
+  TemplateIndexResponse,
 } from "@/lib/popup-types";
 
 export const FORGE_INDEX_OK: ForgeIndexResponse = {
@@ -46,6 +47,32 @@ export const FORGE_INDEX_OK: ForgeIndexResponse = {
 };
 
 export const FORGE_INDEX_EMPTY: ForgeIndexResponse = { forges: [] };
+
+export const TEMPLATE_INDEX_OK: TemplateIndexResponse = {
+  templates: [
+    {
+      name: "drum-rack-classic",
+      path: "/Users/zak/stemforge/templates/drum-rack-classic.adg",
+      modified_at: "2026-05-12T08:00:00Z",
+      size_bytes: 24576,
+      description: "Tight-comp drum rack",
+    },
+    {
+      name: "VOCAL_HI_KEY",
+      path: "/Users/zak/stemforge/templates/VOCAL_HI_KEY.adg",
+      modified_at: "2026-05-11T12:00:00Z",
+      size_bytes: 12288,
+    },
+    {
+      name: "vocal-bloom",
+      path: "/Users/zak/stemforge/templates/vocal-bloom.adg",
+      modified_at: "2026-05-10T10:00:00Z",
+      size_bytes: 18432,
+    },
+  ],
+};
+
+export const TEMPLATE_INDEX_EMPTY: TemplateIndexResponse = { templates: [] };
 
 export const CURATION_INDEX_OK: CurationIndexResponse = {
   curations: [

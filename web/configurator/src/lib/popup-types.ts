@@ -95,10 +95,37 @@ export interface ApiResult {
 
 // ── PATCH bodies ─────────────────────────────────────────────────────────────
 
-/** Body for `PATCH /curations/{name}/template`. */
+/** Body for `PATCH /curations/{name}/template`.
+ *
+ * Wire-shape note: the server's :class:`PatchTemplateBody` expects
+ * ``group_letter`` (matches the Pydantic schema in
+ * ``stemforge/configurator/intents.py``). Phase 3A renames this from
+ * the previous ``group`` field so the popup talks to the live endpoint.
+ */
 export interface SetGroupTemplateRequest {
-  group: string; // "A" | "B" | ...
+  group_letter: string; // "A" | "B" | ...
   template_name: string | null;
+}
+
+// ── /templates (Phase 3A) ────────────────────────────────────────────────────
+
+/** One row in `GET /templates` — projection over a single .adg file. */
+export interface TemplateIndexEntry {
+  /** Template name (filename without the .adg suffix) */
+  name: string;
+  /** Absolute path of the .adg on disk */
+  path: string;
+  /** ISO-8601 mtime (UTC) */
+  modified_at: string;
+  /** File size in bytes */
+  size_bytes: number;
+  /** Optional plain-text description from a sibling .description file */
+  description?: string;
+}
+
+/** Response shape for `GET /templates`. */
+export interface TemplateIndexResponse {
+  templates: TemplateIndexEntry[];
 }
 
 /** Body for `PATCH /curations/{name}/target`. */

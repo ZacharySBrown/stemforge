@@ -23,31 +23,19 @@ import {
   useTriggerBounce,
 } from "@/hooks/useIntent";
 import { useForges } from "@/hooks/useForges";
+import { useTemplates } from "@/hooks/useTemplates";
 import type {
   Curation,
   Group as CurationGroup,
   Pad,
 } from "@/lib/api-types.generated";
 import { isForgeStale } from "@/lib/popup-types";
+import type { TemplateIndexEntry } from "@/lib/popup-types";
 import { cn } from "@/lib/utils";
 
 interface ActiveCurationProps {
   curation: Curation | null;
 }
-
-// Common per-group templates surfaced as a dropdown. The server is the
-// authority but we don't have a /templates endpoint in spec §4.3 yet; we
-// fall back to a known-good shortlist plus a free-text "custom" option
-// when Lane 1B publishes one.
-const COMMON_TEMPLATES: string[] = [
-  "VOCAL_LO_KEY",
-  "VOCAL_HI_KEY",
-  "DRUM_PUNCH",
-  "DRUM_ONESHOT",
-  "TEXTURE_BLOOM",
-  "TEXTURE_GRAIN",
-  "BASS_TIGHT",
-];
 
 interface PadCellProps {
   group: string;
@@ -144,6 +132,8 @@ interface GroupBlockProps {
   groupKey: string;
   group: CurationGroup;
   forgeStaleSet: Set<string>;
+  templates: TemplateIndexEntry[];
+  templatesLoading: boolean;
 }
 
 function GroupBlock({
@@ -151,6 +141,8 @@ function GroupBlock({
   groupKey,
   group,
   forgeStaleSet,
+  templates,
+  templatesLoading,
 }: GroupBlockProps) {
   const setTemplate = useSetGroupTemplate();
   const setLabel = useSetGroupLabel();
@@ -159,6 +151,15 @@ function GroupBlock({
   useEffect(() => {
     setLabelDraft(group.label ?? "");
   }, [group.label]);
+
+  // Phase 3A: optimistic pending state — selecting a template flips the
+  // local pending flag and reverts on mutation error so the dropdown
+  // doesn't lie about the persisted state.
+  const [pendingTemplate, setPendingTemplate] = useState<string | null | "">("");
+  const effectiveValue =
+    pendingTemplate === ""
+      ? (group.template ?? "")
+      : (pendingTemplate ?? "");
 
   const filled = (group.pads ?? []).filter((p) => p.source).length;
   const padsPerGroup = group.pads?.length ?? 12;
@@ -201,27 +202,50 @@ function GroupBlock({
             {filled}/{padsPerGroup}
           </Badge>
           <select
-            value={group.template ?? ""}
-            onChange={(e) =>
-              setTemplate.mutate({
-                name: curationName,
-                group: groupKey,
-                template_name: e.target.value || null,
-              })
-            }
+            value={effectiveValue}
+            disabled={setTemplate.isPending || templatesLoading}
+            onChange={(e) => {
+              const next = e.target.value || null;
+              setPendingTemplate(next);
+              setTemplate.mutate(
+                {
+                  name: curationName,
+                  group: groupKey,
+                  template_name: next,
+                },
+                {
+                  onSettled: (_data, error) => {
+                    if (error) {
+                      // Server rejected — drop optimistic state so the
+                      // dropdown re-renders the persisted value.
+                      setPendingTemplate("");
+                    } else {
+                      // Success: let the next /curations fetch hydrate
+                      // the real value; clear pending so we don't pin
+                      // the stale optimistic.
+                      setPendingTemplate("");
+                    }
+                  },
+                },
+              );
+            }}
             aria-label={`Template for group ${groupKey}`}
             data-testid={`group-${groupKey}-template`}
-            className="rounded-md border border-border bg-elevated px-2 py-1 text-[11px] text-foreground outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--accent)/0.4)]"
+            className="rounded-md border border-border bg-elevated px-2 py-1 text-[11px] text-foreground outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--accent)/0.4)] disabled:opacity-60"
           >
             <option value="">— no template (dry) —</option>
-            {COMMON_TEMPLATES.map((t) => (
-              <option key={t} value={t}>
-                {t}
+            {templates.map((t) => (
+              <option key={t.name} value={t.name}>
+                {t.name}
               </option>
             ))}
-            {group.template && !COMMON_TEMPLATES.includes(group.template) && (
-              <option value={group.template}>{group.template}</option>
-            )}
+            {/* Surface a previously-saved template even if the server
+                no longer lists it (e.g. .adg was renamed on disk) so
+                the user sees what's actually persisted. */}
+            {group.template &&
+              !templates.some((t) => t.name === group.template) && (
+                <option value={group.template}>{group.template} (missing)</option>
+              )}
           </select>
         </div>
       </div>
@@ -276,6 +300,7 @@ function ActiveCurationEmpty() {
  */
 export function ActiveCuration({ curation }: ActiveCurationProps) {
   const forges = useForges();
+  const templates = useTemplates();
   const triggerBounce = useTriggerBounce();
   const exportCuration = useExportCuration();
   const pickSavePath = usePickSavePath();
@@ -337,6 +362,8 @@ export function ActiveCuration({ curation }: ActiveCurationProps) {
               groupKey={g}
               group={groups[g]}
               forgeStaleSet={forgeStaleSet}
+              templates={templates.data?.templates ?? []}
+              templatesLoading={templates.isLoading}
             />
           ))
         )}
