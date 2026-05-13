@@ -2192,6 +2192,19 @@ function bounceTracks() {
     _bounceNext();
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// DEPRECATED (Phase 2): the legacy `commitOffsets` / `_commitOffsetsWithPath`
+// pair persists deck-manifest offsets into ``sf_manifest`` Dict + a sibling
+// JSON file. It's tied to the legacy A/B/C/D bounceTracks pipeline and will
+// be removed in Phase 3B (BOUNCE refactor). The Phase 2 keystone `commit()`
+// function (below `_findTrackIndexByName`) is the new path: it walks STG-*
+// tracks and POSTs to `POST /curations/{name}/commit`, leaving forge
+// reverse-lookup + atomic curation-file write to the server.
+//
+// Migration note: while `commitOffsets` lives on, do not extend it. Any new
+// commit-time logic belongs in `commit()` + `commit_handler.py` (server).
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Helper that calls commitOffsets with a path arg by setting messagename
 // + arguments via Function.prototype.apply. Used by bounceTracks's
 // disk-backed commit chain — Max's [js] dispatch passes the path as
@@ -2452,6 +2465,17 @@ function loadArrangementFromManifest() {
 //             | "unknown".
 //   - validated: true when a duck-typed peek succeeded; false on unknown type.
 var pickedSource = null;
+
+// Module-scope active-curation cache. Phase 2 keystone — `commit()` reads
+// these to know which curation name to address the server with and which
+// group letters to walk on STG-*. Set by `loadCuration()` (curation just
+// became active). Cleared by `_clearActiveCuration()`.
+//   - name:        curation name (matches the YAML filename without .yaml).
+//                  Empty string ⇒ no active curation.
+//   - groupLetters: array of single-letter group keys ("A".."D"), in the
+//                  same order the curation file enumerated them. Determines
+//                  the STG-* tracks the COMMIT walker visits.
+var activeCuration = { name: "", groupLetters: [] };
 
 // Receive port names. Wired into the patcher as [r primary-btn-label] /
 // [r primary-btn-enabled]; the loader publishes to them via messnamed() so
@@ -3134,6 +3158,13 @@ function loadCuration(yamlText, curationFilePath) {
         }
     }
 
+    // Phase 2 keystone: record the active curation so `commit()` knows
+    // which name to address the server with and which letters to walk.
+    activeCuration = {
+        name: String(curation.name || ""),
+        groupLetters: groupLetters.slice()
+    };
+
     status("loadCuration: complete (" + groupLetters.length + " groups, "
         + populated + "/" + totalPads + " pads populated)");
     return curation;
@@ -3148,6 +3179,232 @@ function _findTrackIndexByName(name) {
         if (trackName(i) === target) return i;
     }
     return -1;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Configurator v1 Phase 2 — COMMIT keystone.
+//
+// Walk the staging tracks (STG-A..STG-N for the active curation), snapshot
+// each clip slot's state into a Pad-shaped wire payload, ship it to the
+// server which does the forge reverse-lookup + persists the new curation
+// YAML.
+//
+// Spec refs: §2.3 (Pad shape, destination), §3.3 (verbs), §6.6 (commit
+// flow), §11 (keystone — once this works the architecture's promise holds).
+//
+// Wire format (decided in PR description — chosen because the server's
+// `POST /curations/{name}/commit` already exists, and the response payload
+// — the new Curation — is information the device needs back; UDP is
+// fire-and-forget so HTTP is the cleaner pick):
+//
+//   messnamed("sf-commit-send", curationName, jsonPayload)
+//
+// The patcher wires `sf-commit-send` to a Node-for-Max HTTP shim that
+// POSTs to /curations/{name}/commit and bangs back `sf-commit-ack` on
+// success (or `sf-commit-err <reason>` on failure). For headless tests we
+// capture `sf-commit-send` directly off max-stub's messnamed log.
+//
+// Payload shape (matches DeviceCommitBody Pydantic schema):
+//
+//   {
+//     "als_path": null,            // Phase 4A will fill this
+//     "groups": {
+//       "A": {
+//         "label": null,           // null = preserve existing
+//         "template": null,
+//         "pads": [
+//           { "pad_id": "A01",
+//             "audio_path": "/abs/path/to/clip.wav",
+//             "clip_settings": {
+//               "warp_bpm": 138.0,
+//               "loop_start_bar": 0,
+//               "loop_end_bar": 4,
+//               "looping": true
+//             }
+//           },
+//           { "pad_id": "A02" }    // empty pad — no audio_path
+//         ]
+//       }
+//     }
+//   }
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Clip slot cap per staging track. Matches loadCuration's default and
+// curation.target.pads_per_group for the EP-133 device-class (12).
+var COMMIT_SLOT_COUNT = 12;
+
+// Receive port the patcher subscribes to for outgoing commit payloads.
+var COMMIT_SEND_RECV = "sf-commit-send";
+
+// Receive port the patcher's HTTP shim bangs back on success so the device
+// can emit a `commit: server ack received` status line. Wired via the
+// `commitAck()` message handler. Outside the [udpreceive] route table for
+// now — Phase 4 wires the proper UDP path; this stub keeps the contract
+// testable via `messnamed("commitAck", ...)`.
+var COMMIT_ACK_RECV = "sf-commit-ack";
+
+// Read a clip's properties via LiveAPI and return a flat JSON-ready shape.
+// Returns null when the slot is empty (no clip → LiveAPI id "0").
+function _commitReadClipSettings(clipApi) {
+    if (!clipApi || clipApi.id === "0") return null;
+    var rawWarp = clipApi.get("warp_bpm");
+    var warpBpm = (rawWarp && rawWarp.length) ? Number(rawWarp[0]) : null;
+    var rawLoopStart = clipApi.get("loop_start");
+    var rawLoopEnd = clipApi.get("loop_end");
+    var loopStartBeats = (rawLoopStart && rawLoopStart.length) ? Number(rawLoopStart[0]) : 0;
+    var loopEndBeats = (rawLoopEnd && rawLoopEnd.length) ? Number(rawLoopEnd[0]) : 4;
+    var rawLooping = clipApi.get("looping");
+    var looping = (rawLooping && rawLooping.length) ? !!Number(rawLooping[0]) : true;
+    // Convert beats → bars (4/4 assumption — matches loadCuration's
+    // inverse and the server's _normalize_clip_settings fallback).
+    return {
+        warp_bpm: warpBpm,
+        loop_start_bar: loopStartBeats / 4.0,
+        loop_end_bar: loopEndBeats / 4.0,
+        looping: !!looping
+    };
+}
+
+// Read a clip's `file_path` (the absolute audio file the clip points at).
+// Returns "" when the property is missing — that's the empty-clip case.
+function _commitReadAudioPath(clipApi) {
+    if (!clipApi || clipApi.id === "0") return "";
+    try {
+        var raw = clipApi.get("file_path");
+        if (raw && raw.length) {
+            var s = String(raw[0]);
+            // Live can emit HFS-style paths in some Max versions; strip
+            // the prefix so the server's reverse-lookup matches.
+            return _sfNormalizePath(s);
+        }
+    } catch (_) {}
+    return "";
+}
+
+// Walk one STG-<letter> track and return its group snapshot. Empty pads
+// keep their slot via `{pad_id: <letter>NN}` with no audio_path.
+function _commitWalkGroup(letter) {
+    var pads = [];
+    var trackIdx = _findTrackIndexByName("STG-" + letter);
+    var nSlots = COMMIT_SLOT_COUNT;
+    if (trackIdx < 0) {
+        // Track missing — emit the placeholder pad ids so the server
+        // still recognises the group geometry. The server preserves
+        // existing label/template (null below) so a missing staging
+        // track doesn't blow away the user's prior commit.
+        for (var k = 0; k < nSlots; k += 1) {
+            var slotNumK = k + 1;
+            var padIdK = letter + (slotNumK < 10 ? "0" : "") + slotNumK;
+            pads.push({ pad_id: padIdK });
+        }
+        return { label: null, template: null, pads: pads };
+    }
+    for (var i = 0; i < nSlots; i += 1) {
+        var slotNum = i + 1;
+        var padId = letter + (slotNum < 10 ? "0" : "") + slotNum;
+        var slotPath = "live_set tracks " + trackIdx + " clip_slots " + i;
+        var clipApi = new LiveAPI(slotPath + " clip");
+        var audioPath = _commitReadAudioPath(clipApi);
+        if (!audioPath) {
+            pads.push({ pad_id: padId });
+            continue;
+        }
+        var settings = _commitReadClipSettings(clipApi);
+        var pad = { pad_id: padId, audio_path: audioPath };
+        if (settings) pad.clip_settings = settings;
+        pads.push(pad);
+    }
+    // label/template at the group level are popup-edited via PATCH; we
+    // explicitly leave them null so the server's merge keeps whatever is
+    // already on the curation (per merge_device_snapshot semantics).
+    return { label: null, template: null, pads: pads };
+}
+
+// Build the full DeviceCommitBody payload from current LOM state.
+// Exposed for L3 tests so the snapshot can be asserted without the
+// messnamed round-trip.
+function _commitBuildPayload() {
+    var letters = (activeCuration && activeCuration.groupLetters) || [];
+    if (!letters.length) {
+        // Fallback: if no active curation was set (loadCuration not yet
+        // called), assume EP-133 4-letter default. This keeps the
+        // commit() entry point useful when devs trigger it manually
+        // post a user drag-only session.
+        letters = ["A", "B", "C", "D"];
+    }
+    var groups = {};
+    for (var i = 0; i < letters.length; i += 1) {
+        groups[letters[i]] = _commitWalkGroup(letters[i]);
+    }
+    return { als_path: null, groups: groups };
+}
+
+/**
+ * commit() — the Phase 2 keystone entry point.
+ *
+ * Walks STG-A..STG-N (driven by the active curation set during
+ * loadCuration), snapshots each populated clip, packages a
+ * DeviceCommitBody-shaped JSON payload, and fires
+ * `messnamed("sf-commit-send", curationName, jsonText)` for the patcher's
+ * HTTP shim to POST.
+ *
+ * Status emissions (all greppable by L3 tests):
+ *   "commit: walked <N> pads"
+ *   "commit: no active curation — load one first"  (no-op exit path)
+ *   "commit: sent <curationName> (<N> pads, <bytes>B)"
+ *
+ * Returns the payload object (for direct test access). The boolean-y
+ * caller in the patcher pipeline ignores the return value.
+ */
+function commit() {
+    if (!activeCuration || !activeCuration.name) {
+        status("commit: no active curation — load one first");
+        return null;
+    }
+    var payload = _commitBuildPayload();
+    var totalPads = 0;
+    var populatedPads = 0;
+    for (var letter in payload.groups) {
+        if (!Object.prototype.hasOwnProperty.call(payload.groups, letter)) continue;
+        var groupPads = payload.groups[letter].pads;
+        for (var i = 0; i < groupPads.length; i += 1) {
+            totalPads += 1;
+            if (groupPads[i].audio_path) populatedPads += 1;
+        }
+    }
+    status("commit: walked " + populatedPads + " pads");
+    var jsonText;
+    try {
+        jsonText = JSON.stringify(payload);
+    } catch (e) {
+        status("commit: stringify failed: " + e);
+        return null;
+    }
+    try {
+        messnamed(COMMIT_SEND_RECV, activeCuration.name, jsonText);
+    } catch (e2) {
+        status("commit: messnamed send failed: " + e2);
+        return payload;
+    }
+    status("commit: sent " + activeCuration.name + " ("
+        + populatedPads + "/" + totalPads + " pads, "
+        + jsonText.length + "B)");
+    return payload;
+}
+
+/**
+ * commitAck() — bound to the `commitAck` message in the patcher (and
+ * routed off `sf-commit-ack` UDP / Node-for-Max bang). Emits a status
+ * line so the device's UI loop knows the server persisted the snapshot.
+ *
+ * In Phase 2 the patcher's HTTP shim fires `commitAck` synchronously
+ * after a 200 response from `POST /curations/{name}/commit`. Phase 4
+ * may extend this to carry the new manifest_hash for stale-detection.
+ */
+function commitAck() {
+    status("commit: server ack received");
+    try { messnamed("primary-btn-enabled", 1); } catch (_) {}
+    status("commit: complete");
 }
 
 // `primary` — fired by the patcher's single primary button. Dispatches to
@@ -3209,6 +3466,20 @@ if (typeof module !== "undefined" && module.exports) {
         resetPickedSource: resetPickedSource,
         loadCuration: loadCuration,
         primary: primary,
-        getPickedSource: function () { return pickedSource; }
+        getPickedSource: function () { return pickedSource; },
+        // Configurator v1 Phase 2 — COMMIT keystone (device walker).
+        commit: commit,
+        commitAck: commitAck,
+        _commitBuildPayload: _commitBuildPayload,
+        _commitWalkGroup: _commitWalkGroup,
+        _commitReadClipSettings: _commitReadClipSettings,
+        _commitReadAudioPath: _commitReadAudioPath,
+        getActiveCuration: function () { return activeCuration; },
+        setActiveCurationForTest: function (name, letters) {
+            activeCuration = {
+                name: String(name || ""),
+                groupLetters: (letters || []).slice()
+            };
+        }
     };
 }
