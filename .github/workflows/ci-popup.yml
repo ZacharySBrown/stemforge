@@ -1,0 +1,43 @@
+name: CI — popup (web/configurator)
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-popup-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: typecheck + vitest + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    defaults:
+      run:
+        working-directory: web/configurator
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web/configurator/package-lock.json
+
+      - name: npm ci
+        run: npm ci
+
+      - name: typecheck (tsc --noEmit)
+        run: npm run lint
+
+      - name: vitest
+        run: npm test
+
+      - name: build (production bundle)
+        run: npm run build

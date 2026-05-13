@@ -1,0 +1,39 @@
+name: CI — device JS (max-stub)
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-device-js-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: vitest (tools/test-harness + v0/src/m4l-js)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web/configurator/package-lock.json
+
+      - name: npm ci (web/configurator brings vitest)
+        working-directory: web/configurator
+        run: npm ci
+
+      - name: Run vitest against the harness config
+        # Reuses web/configurator/node_modules for vitest binary, but the
+        # config under web/configurator/vitest.harness.config.ts overrides
+        # root + include so test discovery picks up tools/test-harness/ and
+        # v0/src/m4l-js/.
+        run: npx --prefix web/configurator vitest run --config web/configurator/vitest.harness.config.ts

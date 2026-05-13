@@ -1,0 +1,27 @@
+# Phase 5 — activate when Live runner lands. Filename .disabled prevents accidental scheduling.
+#
+# GitHub Actions only picks up workflow files with a .yml or .yaml extension,
+# so as long as this file ends in .disabled it will be skipped by the runner.
+# To activate (Phase 5): rename to ci-smoke-live.yml, point at the live-equipped
+# mac mini runner, uncomment the job body.
+#
+# name: CI — smoke (Live in the loop)
+#
+# on:
+#   workflow_dispatch:
+#   push:
+#     branches: [release/*]
+#
+# jobs:
+#   smoke:
+#     name: AppleScript-driven Live smoke suite
+#     runs-on: [self-hosted, macos, live-installed]
+#     timeout-minutes: 30
+#     steps:
+#       - uses: actions/checkout@v4
+#       - name: Install uv + project
+#         run: |
+#           pip install uv
+#           uv pip install --system -e '.[dev,configurator]'
+#       - name: Launch Live with fixture .als + run sf-remote suite
+#         run: ./tools/test-harness/run-live-smoke.sh

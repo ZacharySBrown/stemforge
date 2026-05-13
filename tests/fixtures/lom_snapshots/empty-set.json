@@ -1,0 +1,7 @@
+{
+  "_description": "An empty Live set: no tracks, no scenes.",
+  "live_set": {
+    "tracks": [],
+    "scenes": []
+  }
+}

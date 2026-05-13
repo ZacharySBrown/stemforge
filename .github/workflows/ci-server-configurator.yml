@@ -1,0 +1,47 @@
+name: CI — server configurator
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-server-configurator-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: pytest + ruff + mypy (configurator only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install uv + project (dev + configurator extras)
+        run: |
+          pip install uv
+          uv pip install --system -e '.[dev,configurator]'
+
+      - name: ruff check (configurator only)
+        run: ruff check stemforge/configurator
+
+      - name: ruff format --check (configurator only)
+        run: ruff format --check stemforge/configurator
+
+      - name: mypy (configurator only, loose)
+        # mypy is intentionally non-blocking for the rest of the codebase;
+        # for the configurator schemas we can hold a tighter line.
+        continue-on-error: true
+        run: mypy stemforge/configurator/schemas/
+
+      - name: pytest (configurator schemas)
+        run: pytest stemforge/configurator/schemas/ -v

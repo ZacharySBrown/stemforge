@@ -1,0 +1,115 @@
+{
+  "bpm": 138.0,
+  "clips": [
+    {
+      "audio_path": "curated_audio/drum-bar0-4.wav",
+      "clip_id": "drum-bar0-4",
+      "duration_bars": 4,
+      "source_bar_range": [
+        0,
+        4
+      ],
+      "stem": "drum",
+      "tags": [
+        "tight"
+      ]
+    },
+    {
+      "audio_path": "curated_audio/drum-bar4-8.wav",
+      "clip_id": "drum-bar4-8",
+      "duration_bars": 4,
+      "source_bar_range": [
+        4,
+        8
+      ],
+      "stem": "drum",
+      "tags": [
+        "tight"
+      ]
+    },
+    {
+      "audio_path": "curated_audio/drum-bar8-12.wav",
+      "clip_id": "drum-bar8-12",
+      "duration_bars": 4,
+      "source_bar_range": [
+        8,
+        12
+      ],
+      "stem": "drum",
+      "tags": [
+        "tight"
+      ]
+    },
+    {
+      "audio_path": "curated_audio/drum-bar12-16.wav",
+      "clip_id": "drum-bar12-16",
+      "duration_bars": 4,
+      "source_bar_range": [
+        12,
+        16
+      ],
+      "stem": "drum",
+      "tags": [
+        "tight"
+      ]
+    },
+    {
+      "audio_path": "curated_audio/bass-bar0-4.wav",
+      "clip_id": "bass-bar0-4",
+      "duration_bars": 4,
+      "source_bar_range": [
+        0,
+        4
+      ],
+      "stem": "bass",
+      "tags": [
+        "tight"
+      ]
+    },
+    {
+      "audio_path": "curated_audio/bass-bar4-8.wav",
+      "clip_id": "bass-bar4-8",
+      "duration_bars": 4,
+      "source_bar_range": [
+        4,
+        8
+      ],
+      "stem": "bass",
+      "tags": [
+        "tight"
+      ]
+    },
+    {
+      "audio_path": "curated_audio/bass-bar8-12.wav",
+      "clip_id": "bass-bar8-12",
+      "duration_bars": 4,
+      "source_bar_range": [
+        8,
+        12
+      ],
+      "stem": "bass",
+      "tags": [
+        "tight"
+      ]
+    },
+    {
+      "audio_path": "curated_audio/bass-bar12-16.wav",
+      "clip_id": "bass-bar12-16",
+      "duration_bars": 4,
+      "source_bar_range": [
+        12,
+        16
+      ],
+      "stem": "bass",
+      "tags": [
+        "tight"
+      ]
+    }
+  ],
+  "default_template": "dry-direct",
+  "first_downbeat_sec": 0.0,
+  "forge_slug": "breaks-n-beats-deck",
+  "manifest_hash": "c70d712b88346094e88529aec6be9041a9c515549a377a5bdf606bab0454a9d9",
+  "schema_version": 1,
+  "source_audio": "/tmp/breaks.wav"
+}

@@ -1,0 +1,47 @@
+{
+  "_description": "STG-A..STG-D; STG-A has 4 pads filled at slots 0-3 (A01-A04) with realistic clip data.",
+  "live_set": {
+    "tracks": [
+      {
+        "name": "STG-A",
+        "track_index": 0,
+        "clip_slots": [
+          { "clip": { "name": "A01-vocal-bar12-16", "file_path": "/Users/zak/stemforge/processed/my-track/curated_audio/vocal-bar12-16.wav", "warp_bpm": 138.0, "loop_start": 0, "loop_end": 4, "looping": 1 } },
+          { "clip": { "name": "A02-vocal-bar0-4", "file_path": "/Users/zak/stemforge/processed/my-track/curated_audio/vocal-bar0-4.wav", "warp_bpm": 138.0, "loop_start": 0, "loop_end": 4, "looping": 1 } },
+          { "clip": { "name": "A03-vocal-bar4-8", "file_path": "/Users/zak/stemforge/processed/my-track/curated_audio/vocal-bar4-8.wav", "warp_bpm": 138.0, "loop_start": 0, "loop_end": 4, "looping": 1 } },
+          { "clip": { "name": "A04-vocal-bar20-24", "file_path": "/Users/zak/stemforge/processed/my-track/curated_audio/vocal-bar20-24.wav", "warp_bpm": 138.0, "loop_start": 0, "loop_end": 4, "looping": 1 } },
+          { "clip": null }, { "clip": null }, { "clip": null }, { "clip": null },
+          { "clip": null }, { "clip": null }, { "clip": null }, { "clip": null }
+        ]
+      },
+      {
+        "name": "STG-B",
+        "track_index": 1,
+        "clip_slots": [
+          { "clip": null }, { "clip": null }, { "clip": null }, { "clip": null },
+          { "clip": null }, { "clip": null }, { "clip": null }, { "clip": null },
+          { "clip": null }, { "clip": null }, { "clip": null }, { "clip": null }
+        ]
+      },
+      {
+        "name": "STG-C",
+        "track_index": 2,
+        "clip_slots": [
+          { "clip": null }, { "clip": null }, { "clip": null }, { "clip": null },
+          { "clip": null }, { "clip": null }, { "clip": null }, { "clip": null },
+          { "clip": null }, { "clip": null }, { "clip": null }, { "clip": null }
+        ]
+      },
+      {
+        "name": "STG-D",
+        "track_index": 3,
+        "clip_slots": [
+          { "clip": null }, { "clip": null }, { "clip": null }, { "clip": null },
+          { "clip": null }, { "clip": null }, { "clip": null }, { "clip": null },
+          { "clip": null }, { "clip": null }, { "clip": null }, { "clip": null }
+        ]
+      }
+    ],
+    "scenes": []
+  }
+}

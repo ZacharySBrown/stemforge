@@ -1,0 +1,11 @@
+curation_version: 1
+name: empty
+type: deck
+created_at: 2026-05-13T10:00:00Z
+modified_at: 2026-05-13T10:00:00Z
+target:
+  device: ep133
+  groups: 4
+  pads_per_group: 12
+referenced_forges: []
+groups: {}

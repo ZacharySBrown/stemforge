@@ -11,6 +11,11 @@ build/
 .DS_Store
 test_musicai_output/
 
+# Configurator v1 fixture forges — synthetic 1-second silent WAVs that
+# exist only for path-resolution tests. Tracked so CI can validate the
+# manifests against the schemas without re-generating audio every run.
+!tests/fixtures/forges/**/*.wav
+
 # v0 build tree — ONNX weights live here (large binary artifacts).
 # The build/ glob above already excludes them; explicit rules below
 # ensure the manifest + human-readable metadata are tracked even when

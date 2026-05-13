@@ -1,0 +1,59 @@
+{
+  "bpm": 120.0,
+  "clips": [
+    {
+      "audio_path": "curated_audio/drum-bar0-4.wav",
+      "clip_id": "drum-bar0-4",
+      "duration_bars": 4,
+      "source_bar_range": [
+        0,
+        4
+      ],
+      "stem": "drum",
+      "tags": [
+        "loop"
+      ]
+    },
+    {
+      "audio_path": "curated_audio/bass-bar0-4.wav",
+      "clip_id": "bass-bar0-4",
+      "duration_bars": 4,
+      "source_bar_range": [
+        0,
+        4
+      ],
+      "stem": "bass",
+      "tags": [
+        "loop"
+      ]
+    },
+    {
+      "audio_path": "curated_audio/vocal-bar0-4.wav",
+      "clip_id": "vocal-bar0-4",
+      "duration_bars": 4,
+      "source_bar_range": [
+        0,
+        4
+      ],
+      "stem": "vocal",
+      "tags": []
+    },
+    {
+      "audio_path": "curated_audio/other-bar0-4.wav",
+      "clip_id": "other-bar0-4",
+      "duration_bars": 4,
+      "source_bar_range": [
+        0,
+        4
+      ],
+      "stem": "other",
+      "tags": []
+    }
+  ],
+  "default_template": "dry-direct",
+  "first_downbeat_sec": 0.0,
+  "forge_slug": "sample-forge",
+  "manifest_hash": "1d1e2b37abe1aba294597d01997494b594ec98c0f59de1a326a197576193f921",
+  "schema_version": 1,
+  "source_audio": "/tmp/sample.wav"
+}

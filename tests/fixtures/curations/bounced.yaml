@@ -1,0 +1,115 @@
+curation_version: 1
+name: bounced
+type: deck
+created_at: 2026-05-13T10:00:00Z
+modified_at: 2026-05-13T12:30:00Z
+target:
+  device: ep133
+  groups: 4
+  pads_per_group: 12
+referenced_forges:
+  - slug: sample-forge
+    manifest_hash: 1d1e2b37abe1aba294597d01997494b594ec98c0f59de1a326a197576193f921
+groups:
+  A:
+    label: Vocals
+    template: dry-direct
+    pads:
+      - pad_id: A01
+        source:
+          forge: sample-forge
+          clip_id: vocal-bar0-4
+          audio_path: curated_audio/vocal-bar0-4.wav
+        clip_settings:
+          warp_bpm: 120.0
+          loop_start_bar: 0
+          loop_end_bar: 4
+          looping: true
+      - pad_id: A02
+      - pad_id: A03
+      - pad_id: A04
+      - pad_id: A05
+      - pad_id: A06
+      - pad_id: A07
+      - pad_id: A08
+      - pad_id: A09
+      - pad_id: A10
+      - pad_id: A11
+      - pad_id: A12
+  B:
+    label: Drums
+    template: tight-compressed
+    pads:
+      - pad_id: B01
+        source:
+          forge: sample-forge
+          clip_id: drum-bar0-4
+          audio_path: curated_audio/drum-bar0-4.wav
+        clip_settings:
+          warp_bpm: 120.0
+          loop_start_bar: 0
+          loop_end_bar: 4
+          looping: true
+      - pad_id: B02
+      - pad_id: B03
+      - pad_id: B04
+      - pad_id: B05
+      - pad_id: B06
+      - pad_id: B07
+      - pad_id: B08
+      - pad_id: B09
+      - pad_id: B10
+      - pad_id: B11
+      - pad_id: B12
+  C:
+    label: FX
+    template: null
+    pads:
+      - pad_id: C01
+      - pad_id: C02
+      - pad_id: C03
+      - pad_id: C04
+      - pad_id: C05
+      - pad_id: C06
+      - pad_id: C07
+      - pad_id: C08
+      - pad_id: C09
+      - pad_id: C10
+      - pad_id: C11
+      - pad_id: C12
+  D:
+    label: Bass
+    template: warm-saturated
+    pads:
+      - pad_id: D01
+        source:
+          forge: sample-forge
+          clip_id: bass-bar0-4
+          audio_path: curated_audio/bass-bar0-4.wav
+        clip_settings:
+          warp_bpm: 120.0
+          loop_start_bar: 0
+          loop_end_bar: 4
+          looping: true
+      - pad_id: D02
+      - pad_id: D03
+      - pad_id: D04
+      - pad_id: D05
+      - pad_id: D06
+      - pad_id: D07
+      - pad_id: D08
+      - pad_id: D09
+      - pad_id: D10
+      - pad_id: D11
+      - pad_id: D12
+last_bounce:
+  bounced_at: 2026-05-13T12:30:00Z
+  manifest_path: bounced/bounced/bounce_manifest.json
+  pad_audio_hashes:
+    A01: aaaa111122223333444455556666777788889999000011112222333344445555
+    B01: bbbb111122223333444455556666777788889999000011112222333344445555
+    D01: dddd111122223333444455556666777788889999000011112222333344445555
+last_export:
+  exported_at: 2026-05-13T12:35:00Z
+  target_format: ppak
+  output_path: exports/bounced.ppak

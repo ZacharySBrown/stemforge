@@ -1,0 +1,41 @@
+name: CI — TS types drift
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-types-drift-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  drift-check:
+    name: Pydantic -> TS regen + diff
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install uv + project (dev + configurator extras)
+        run: |
+          pip install uv
+          uv pip install --system -e '.[dev,configurator]'
+
+      - name: Regenerate TS types
+        run: python scripts/gen_typescript_types.py
+
+      - name: Fail if generated file changed
+        # If this step exits non-zero, run
+        #   uv run python scripts/gen_typescript_types.py
+        # locally and commit the result.
+        run: git diff --exit-code web/configurator/src/lib/api-types.generated.ts

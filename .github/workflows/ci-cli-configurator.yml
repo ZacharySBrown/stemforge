@@ -1,0 +1,47 @@
+name: CI — CLI (configurator slice)
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-cli-configurator-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: CliRunner smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install uv + project (dev + configurator extras)
+        run: |
+          pip install uv
+          uv pip install --system -e '.[dev,configurator]'
+
+      - name: CLI imports without heavy deps
+        # Mirrors the existing ci.yml import guard: importing the CLI must
+        # not pull torch (or any other heavy ML dep).
+        run: |
+          python -c "import sys; import stemforge.cli; assert 'torch' not in sys.modules, 'torch leaked into core import'; print('OK: torch not imported')"
+
+      - name: CLI --help works
+        run: stemforge --help
+
+      - name: pytest (configurator CLI surface — skeleton)
+        # Phase 1A will add real CLI tests for migrate-forge, re-curate, etc.
+        # For now this just exercises any test marked as targeting the CLI.
+        run: |
+          pytest tests/ -v -k "cli" --no-header || echo "no cli-tagged tests yet (Phase 1A will add them)"

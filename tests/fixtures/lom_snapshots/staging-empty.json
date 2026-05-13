@@ -1,0 +1,44 @@
+{
+  "_description": "STG-A..STG-D staging tracks created, all clip slots empty (12 per track).",
+  "live_set": {
+    "tracks": [
+      {
+        "name": "STG-A",
+        "track_index": 0,
+        "clip_slots": [
+          { "clip": null }, { "clip": null }, { "clip": null }, { "clip": null },
+          { "clip": null }, { "clip": null }, { "clip": null }, { "clip": null },
+          { "clip": null }, { "clip": null }, { "clip": null }, { "clip": null }
+        ]
+      },
+      {
+        "name": "STG-B",
+        "track_index": 1,
+        "clip_slots": [
+          { "clip": null }, { "clip": null }, { "clip": null }, { "clip": null },
+          { "clip": null }, { "clip": null }, { "clip": null }, { "clip": null },
+          { "clip": null }, { "clip": null }, { "clip": null }, { "clip": null }
+        ]
+      },
+      {
+        "name": "STG-C",
+        "track_index": 2,
+        "clip_slots": [
+          { "clip": null }, { "clip": null }, { "clip": null }, { "clip": null },
+          { "clip": null }, { "clip": null }, { "clip": null }, { "clip": null },
+          { "clip": null }, { "clip": null }, { "clip": null }, { "clip": null }
+        ]
+      },
+      {
+        "name": "STG-D",
+        "track_index": 3,
+        "clip_slots": [
+          { "clip": null }, { "clip": null }, { "clip": null }, { "clip": null },
+          { "clip": null }, { "clip": null }, { "clip": null }, { "clip": null },
+          { "clip": null }, { "clip": null }, { "clip": null }, { "clip": null }
+        ]
+      }
+    ],
+    "scenes": []
+  }
+}
