@@ -33,9 +33,7 @@ from stemforge.configurator.schemas.export import (  # noqa: E402
     export_all_json_schemas,
 )
 
-OUTPUT_PATH = (
-    _REPO_ROOT / "web" / "configurator" / "src" / "lib" / "api-types.generated.ts"
-)
+OUTPUT_PATH = _REPO_ROOT / "web" / "configurator" / "src" / "lib" / "api-types.generated.ts"
 
 BANNER = (
     "// AUTO-GENERATED — do not edit. Run "
