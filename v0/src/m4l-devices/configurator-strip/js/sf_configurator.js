@@ -244,21 +244,22 @@ function openEditor() {
         return;
     }
     var url = _serverBase + "/";
-    // Open Chrome in app-mode: a chromeless dedicated window with no
-    // tabs/URL bar/bookmarks. Looks native, lives separately from the
-    // user's existing Chrome session. `messnamed("max", "launchbrowser")`
-    // would just spawn a tab in an existing Chrome window — not what
-    // we want for the popup. Fallback to launchbrowser if Chrome isn't
-    // installed is documented in the issue file; for the user's machine
-    // Chrome is the working browser.
-    var cmd = 'open -na "Google Chrome" --args --new-window --app=' +
-              _shellQuote(url);
-    outlet(4, "exec", cmd);
+    // Open in the default browser. macOS + Chrome combination resists
+    // every attempt to spawn a NEW chromeless window from outside the
+    // browser when Chrome is already running — `open -na --args
+    // --new-window --app=` is silently dropped, AppleScript times out
+    // on AppleEvent permission, direct-binary launch focuses the
+    // existing instance. The reliable path is launchbrowser → tab in
+    // existing Chrome, plus a Phase-4 "Pop out" button INSIDE the
+    // popup that uses window.open() to spawn a proper popup window
+    // (the only cross-permission path that works without OS-level
+    // automation grants).
+    messnamed("max", "launchbrowser", url);
     // Also fire outlet 3 with the proper [jweb] verb in case anyone has
     // patched the strip to route outlet 3 into a custom embed.
     outlet(3, "url", url);
     _status("editor opened");
-    _footer("editor → " + url);
+    _footer("editor → " + url + " — drag the tab out for a dedicated window");
 }
 
 // "Start server" CTA fired when port-file is missing.

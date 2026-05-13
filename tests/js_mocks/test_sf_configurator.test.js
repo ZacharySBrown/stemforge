@@ -154,49 +154,51 @@ test('recompute / slice / curate / reAnchor each fire their verb', () => {
     assert.ok(cmds.some(c => /intent\/re-anchor/.test(c)), 're-anchor missing');
 });
 
-// ── openEditor → Chrome app-mode via shell exec ──────────────────────────────
+// ── openEditor → launchbrowser via messnamed (default browser, new tab) ─────
 //
-// Phase 3 ships the popup via a Chrome app-mode window: a chromeless dedicated
-// window (no tabs/URL bar/bookmarks) rather than M4L's embedded [jweb] (too
-// small) or messnamed launchbrowser (lands as a tab in an existing Chrome
-// session, which is exactly what Zak hit on the first on-device test).
-// The exec command is `open -na "Google Chrome" --args --new-window --app=<url>`.
+// Tried in Phase 3:
+//   1. outlet(3, "openurl", url) → [jweb]      — [jweb] doesn't recognize
+//                                                "openurl"; verb is "url".
+//      Plus [jweb] in M4L is embedded in the device UI area (too small).
+//   2. shell `open -na "Google Chrome" --args --new-window --app=<url>`
+//      — macOS + Chrome silently drops -n when Chrome is already running,
+//      and --app= from a re-launch attempt is ignored. Tested on-device.
+//   3. AppleScript `tell app "Chrome" to make new window` — AppleEvent
+//      timeout (Chrome's automation permissions). Tested on-device.
+//   4. Direct binary `/Applications/Google Chrome.app/.../Google Chrome
+//      --app=<url> --new-window` — focuses existing instance, no window.
+//
+// Reliable cross-permission path: launchbrowser → tab in default browser.
+// Phase 4 adds an in-popup "Pop out" button that uses window.open() to
+// spawn a proper popup window (works from inside the browser without OS
+// automation grants).
 
-test('openEditor: shell exec launches Chrome in app mode with serverBase', () => {
+test('openEditor: emits messnamed launchbrowser with serverBase', () => {
     const ctx = loadConf();
     maxApi.seedFile(PORT_FILE_KEY, '7421');
     ctx._discoverPort();
 
+    maxApi.state.messnamed = [];
     ctx.openEditor();
 
-    const sh = outletOn(4);
-    const exec = sh.find(a => a[0] === 'exec' &&
-        typeof a[1] === 'string' &&
-        a[1].indexOf('Google Chrome') >= 0);
-    assert.ok(exec, 'expected shell exec with Google Chrome target');
-    assert.ok(exec[1].indexOf('--app=') >= 0, 'expected --app= flag');
-    assert.ok(exec[1].indexOf('--new-window') >= 0, 'expected --new-window flag');
-    assert.ok(exec[1].indexOf('http://127.0.0.1:7421/') >= 0,
-        'expected serverBase URL in command');
+    const calls = maxApi.state.messnamed;
+    assert.equal(calls.length, 1, 'exactly one messnamed call');
+    assert.deepEqual(calls[0], ['max', 'launchbrowser', 'http://127.0.0.1:7421/']);
 
-    // Legacy outlet-3 path emits `url <addr>` (NOT openurl — [jweb] doesn't
-    // recognize openurl).
+    // Legacy outlet-3 path emits `url <addr>` for custom-patched routes.
     const j = outletOn(3);
     const last = j[j.length - 1];
     assert.deepEqual(last, ['url', 'http://127.0.0.1:7421/']);
 });
 
-test('openEditor: with no server, fires neither shell exec nor outlet-3', () => {
+test('openEditor: with no server, fires neither launchbrowser nor outlet-3', () => {
     const ctx = loadConf();
-    // no seed
+    maxApi.state.messnamed = [];
 
     ctx.openEditor();
 
-    const sh = outletOn(4);
-    const browserExecs = sh.filter(a => a[0] === 'exec' &&
-        typeof a[1] === 'string' &&
-        a[1].indexOf('Google Chrome') >= 0);
-    assert.equal(browserExecs.length, 0, 'no browser exec without a server');
+    assert.equal((maxApi.state.messnamed || []).length, 0,
+        'no launchbrowser without a server');
 
     const j = outletOn(3);
     const urls = j.filter(a => a[0] === 'url' || a[0] === 'openurl');
