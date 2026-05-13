@@ -184,6 +184,97 @@ describe("resetMaxStub", () => {
   });
 });
 
+describe("LiveAPI verb mutators (Phase 1C extension)", () => {
+  test("create_audio_track appends a track with 12 empty clip slots", () => {
+    loadLomSnapshot(FIXTURE("empty-set.json"));
+    const api = new LiveAPI("live_set");
+    expect(api.getcount("tracks")).toBe(0);
+    api.call("create_audio_track", -1);
+    expect(api.getcount("tracks")).toBe(1);
+    const track = new LiveAPI("live_set tracks 0");
+    expect(track.getcount("clip_slots")).toBe(12);
+  });
+
+  test("delete_track removes a track at the given index", () => {
+    loadLomSnapshotObject({
+      live_set: {
+        tracks: [
+          { name: "X", clip_slots: [] },
+          { name: "Y", clip_slots: [] },
+          { name: "Z", clip_slots: [] },
+        ],
+      },
+    });
+    const api = new LiveAPI("live_set");
+    api.call("delete_track", 1);
+    expect(api.getcount("tracks")).toBe(2);
+    expect(new LiveAPI("live_set tracks 0").get("name")).toEqual(["X"]);
+    expect(new LiveAPI("live_set tracks 1").get("name")).toEqual(["Z"]);
+  });
+
+  test("create_clip on a slot path installs a clip object", () => {
+    loadLomSnapshotObject({
+      live_set: {
+        tracks: [
+          { name: "T", clip_slots: [{ clip: null }, { clip: null }] },
+        ],
+      },
+    });
+    const slot = new LiveAPI("live_set tracks 0 clip_slots 0");
+    slot.call("create_clip", 8);
+    const clip = new LiveAPI("live_set tracks 0 clip_slots 0 clip");
+    expect(clip.id).not.toBe(0);
+    expect(clip.get("loop_end")).toEqual([8]);
+  });
+});
+
+describe("File shim (Phase 1C extension)", () => {
+  test("opens a real file when given an HFS-prefixed path", () => {
+    const tmp = require("node:os").tmpdir();
+    const filepath = path.join(tmp, `max-stub-file-${Date.now()}.txt`);
+    require("node:fs").writeFileSync(filepath, "hello from disk");
+    try {
+      const f = new global.File("Macintosh HD:" + filepath);
+      expect(f.isopen).toBe(true);
+      expect(f.read()).toBe("hello from disk");
+    } finally {
+      require("node:fs").unlinkSync(filepath);
+    }
+  });
+
+  test("readstring advances position chunkwise", () => {
+    const tmp = require("node:os").tmpdir();
+    const filepath = path.join(tmp, `max-stub-chunks-${Date.now()}.txt`);
+    require("node:fs").writeFileSync(filepath, "abcdefghij");
+    try {
+      const f = new global.File(filepath);
+      expect(f.readstring(3)).toBe("abc");
+      expect(f.readstring(3)).toBe("def");
+      expect(f.readstring(100)).toBe("ghij");
+      expect(f.readstring(1)).toBe("");
+    } finally {
+      require("node:fs").unlinkSync(filepath);
+    }
+  });
+});
+
+describe("arrayfromargs (Max-magic flattener)", () => {
+  test("flattens messagename + arguments-object into a single array", () => {
+    function fakeHandler() {
+      return arrayfromargs("loadCuration", arguments);
+    }
+    expect(fakeHandler("path/to/file.yaml", 42)).toEqual([
+      "loadCuration",
+      "path/to/file.yaml",
+      42,
+    ]);
+  });
+
+  test("treats strings as scalar tokens (does not spread chars)", () => {
+    expect(arrayfromargs("hello")).toEqual(["hello"]);
+  });
+});
+
 describe("acceptance gate (spec §7.5)", () => {
   test("empty-set.json → new LiveAPI('live_set').getcount('tracks') === 0", () => {
     loadLomSnapshot(FIXTURE("empty-set.json"));
