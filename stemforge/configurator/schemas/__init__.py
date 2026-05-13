@@ -33,7 +33,13 @@ from .curation import (
     ReferencedForge,
     Target,
 )
-from .forge import ArrangementChunk, ArrangementManifest, ForgeClip, ForgeManifest
+from .forge import (
+    ArrangementChunk,
+    ArrangementManifest,
+    ForgeClip,
+    ForgeManifest,
+    compute_manifest_hash,
+)
 
 # Phase 1B/2 intent-wire schemas (previously stemforge/configurator/schemas.py).
 # Re-exported here so existing imports
@@ -65,6 +71,7 @@ __all__ = [
     "Curation",
     "ForgeClip",
     "ForgeManifest",
+    "compute_manifest_hash",
     "Group",
     "LastBounce",
     "LastExport",

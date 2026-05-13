@@ -899,6 +899,37 @@ def re_anchor(
             else:
                 console.print("  curated/manifest.json + bar WAVs updated.")
 
+    # ── New-shape configurator manifests (Phase 1A) ──
+    # When curated/ exists, project it into the new two-file shape so the
+    # configurator + popup consumers see the post-anchor bpm + clips.
+    if curated_manifest_path.exists():
+        try:
+            from .forge import (
+                build_empty_arrangement,
+                build_from_curated_dict,
+                write_arrangement,
+                write_auto_curation,
+            )
+
+            _curated_dict = json.loads(curated_manifest_path.read_text())
+            _fm = build_from_curated_dict(
+                slug=track_name,
+                forge_dir=track_dir,
+                curated=_curated_dict,
+                bpm=float(bpm),
+                first_downbeat_sec=float(first_downbeat),
+            )
+            write_auto_curation(track_dir, _fm)
+            _am = build_empty_arrangement(
+                slug=track_name,
+                source_audio=str(source_file),
+                bpm=float(bpm),
+                first_downbeat_sec=float(first_downbeat),
+            )
+            write_arrangement(track_dir, _am)
+        except Exception as exc:  # noqa: BLE001 — non-fatal during re-anchor
+            console.print(f"  [yellow]configurator manifests not refreshed: {exc}[/yellow]")
+
     console.print()
     console.print(Rule("[bold green]Re-anchored[/bold green]"))
     console.print(f"  BPM: [cyan]{bpm}[/cyan]  first_downbeat: [cyan]{first_downbeat}s[/cyan]")
@@ -908,6 +939,7 @@ def re_anchor(
             console.print("  curated/ rebuilt with fresh diversity picks at new anchor.")
         else:
             console.print("  curated/ re-sliced at new anchor.")
+        console.print("  auto_curation_manifest.json + arrangement_manifest.json refreshed.")
     if keep_old:
         console.print("  [dim]Old chunks preserved at <stem>_prechop.bak/.[/dim]")
 
@@ -953,7 +985,242 @@ def reslice_curated(track_dir):
     if result.returncode != 0:
         console.print(f"[red]reslice exited {result.returncode}[/red]")
         sys.exit(1)
+
+    # Refresh the new-shape configurator manifests (Phase 1A) so the popup
+    # sees the post-reslice clip set with a fresh manifest_hash.
+    try:
+        from .forge import (
+            build_empty_arrangement,
+            build_from_curated_dict,
+            write_arrangement,
+            write_auto_curation,
+        )
+
+        _stems = json.loads(stems_json.read_text())
+        _curated_dict = json.loads(curated.read_text())
+        _bpm = float(_curated_dict.get("bpm") or _stems.get("bpm") or 120.0)
+        _dn = float((_stems.get("tempo") or {}).get("first_downbeat_sec") or 0.0)
+        _slug = _stems.get("track_name") or track_dir.name
+        _fm = build_from_curated_dict(
+            slug=_slug,
+            forge_dir=track_dir,
+            curated=_curated_dict,
+            bpm=_bpm,
+            first_downbeat_sec=_dn,
+        )
+        write_auto_curation(track_dir, _fm)
+        _src = _stems.get("source_file") or str(track_dir)
+        write_arrangement(
+            track_dir,
+            build_empty_arrangement(
+                slug=_slug,
+                source_audio=_src,
+                bpm=_bpm,
+                first_downbeat_sec=_dn,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[yellow]configurator manifests not refreshed: {exc}[/yellow]")
+
     console.print(Rule("[bold green]Resliced[/bold green]"))
+
+
+# ── Configurator v1 (Phase 1A) — forge file-shape commands ──────────────────
+
+
+def _resolve_forge_dir(slug_or_path: str | Path) -> tuple[str, Path]:
+    """Resolve a slug/path arg into (slug, forge_dir).
+
+    Accepts either a bare slug (`my_track`) → resolves under PROCESSED_DIR,
+    or an explicit path (`./processed/my_track`) → uses the basename as
+    the slug. Raises ClickException when the dir is missing.
+    """
+    p = Path(slug_or_path)
+    if p.exists() and p.is_dir():
+        return p.name, p
+    # Treat as slug under PROCESSED_DIR
+    forge_dir = PROCESSED_DIR / str(slug_or_path)
+    if not forge_dir.exists():
+        raise click.ClickException(
+            f"forge `{slug_or_path}` not found "
+            f"(looked for path `{p}` and slug under `{PROCESSED_DIR}`)"
+        )
+    return forge_dir.name, forge_dir
+
+
+@cli.command("migrate-forge")
+@click.argument("slug")
+@with_audit("migrate-forge")
+def migrate_forge(slug):
+    """
+    Migrate a forge's legacy ``curated/manifest.json`` to the new file shape.
+
+    Reads ``~/stemforge/processed/<slug>/curated/manifest.json`` and writes
+    two sibling files at the forge root:
+
+      - ``auto_curation_manifest.json`` (ForgeManifest with manifest_hash)
+      - ``arrangement_manifest.json`` (ArrangementManifest, chunks may be
+        empty when the legacy file lacked arrangement data)
+
+    Both writes are atomic (.tmp + os.replace). The legacy file is left in
+    place for one release for compat; a follow-up cleanup will drop it.
+
+    Argument can be either a forge slug (`my_track`) or an explicit
+    forge-dir path (`./processed/my_track`).
+    """
+    from .forge import (
+        ForgeManifestError,
+        legacy_manifest_exists,
+        migrate_legacy,
+        new_manifest_exists,
+    )
+
+    slug, forge_dir = _resolve_forge_dir(slug)
+
+    if new_manifest_exists(forge_dir) and not legacy_manifest_exists(forge_dir):
+        console.print(f"[yellow]forge `{slug}` already on new shape; nothing to migrate.[/yellow]")
+        return
+    if not legacy_manifest_exists(forge_dir):
+        raise click.ClickException(
+            f"forge `{slug}` has no curated/manifest.json to migrate (forge dir: {forge_dir})"
+        )
+
+    try:
+        fm_path, am_path = migrate_legacy(slug, forge_dir)
+    except ForgeManifestError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    console.print(Rule(f"[bold cyan]migrate-forge[/bold cyan] — {slug}"))
+    console.print(f"  wrote {fm_path.relative_to(forge_dir)}")
+    console.print(f"  wrote {am_path.relative_to(forge_dir)}")
+    console.print("  [dim]legacy curated/manifest.json left in place for one-release compat[/dim]")
+
+
+@cli.command("re-curate")
+@click.argument("slug")
+@click.option(
+    "--strategy",
+    "-s",
+    default=None,
+    type=click.Choice(["max-diversity", "rhythm-taxonomy", "sectional"]),
+    help="Override curation strategy. Default: re-use whatever the legacy manifest recorded.",
+)
+@click.option(
+    "--n-bars",
+    "-n",
+    default=None,
+    type=int,
+    help="Override the number of bars curated. Default: re-use legacy manifest value.",
+)
+@with_audit("re-curate")
+def re_curate(slug, strategy, n_bars):
+    """
+    Re-run auto-curation only — no stem separation.
+
+    Reads existing stems from ``~/stemforge/processed/<slug>/`` (drums.wav,
+    bass.wav, etc. already on disk from a prior ``stemforge forge`` or
+    ``split``), runs the curator across the existing bar-slices, and
+    writes a fresh ``auto_curation_manifest.json`` with a new
+    ``manifest_hash``.
+
+    Phase 4B's stale-detection hangs off this hash mutating: rerun this
+    command after editing the curation pipeline YAML to force every
+    curation that references this forge to surface a "stale" badge.
+    """
+    from .forge import (
+        ForgeManifestError,
+        build_empty_arrangement,
+        build_from_curated_dict,
+        write_arrangement,
+        write_auto_curation,
+    )
+
+    slug, forge_dir = _resolve_forge_dir(slug)
+
+    stems_json = forge_dir / "stems.json"
+    if not stems_json.exists():
+        raise click.ClickException(
+            f"forge `{slug}` has no stems.json at {stems_json} — run `stemforge split` first."
+        )
+
+    script = Path(__file__).resolve().parents[1] / "v0/src/stemforge_curate_bars.py"
+    if not script.exists():
+        raise click.ClickException(f"curate script not found at {script}")
+
+    # Replay strategy/n_bars from the existing manifest unless overridden.
+    legacy_path = forge_dir / "curated" / "manifest.json"
+    legacy_data: dict = {}
+    if legacy_path.exists():
+        try:
+            legacy_data = json.loads(legacy_path.read_text())
+        except json.JSONDecodeError:
+            legacy_data = {}
+
+    replay_strategy = strategy or legacy_data.get("strategy") or "max-diversity"
+    replay_n_bars = n_bars if n_bars is not None else int(legacy_data.get("n_bars") or 16)
+    replay_time_sig = int(legacy_data.get("time_signature_numerator") or 4)
+
+    console.print(Rule(f"[bold cyan]re-curate[/bold cyan] — {slug}"))
+    console.print(
+        f"  strategy=[cyan]{replay_strategy}[/cyan] "
+        f"n_bars=[cyan]{replay_n_bars}[/cyan] time_sig=[cyan]{replay_time_sig}[/cyan]"
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--stems-dir",
+            str(forge_dir),
+            "--strategy",
+            replay_strategy,
+            "--n-bars",
+            str(replay_n_bars),
+            "--time-sig",
+            str(replay_time_sig),
+        ],
+        check=False,
+    )
+    if result.returncode != 0:
+        raise click.ClickException(f"v0/src/stemforge_curate_bars.py exited {result.returncode}")
+
+    if not legacy_path.exists():
+        raise click.ClickException(
+            f"curate script ran but no {legacy_path} appeared — cannot project new shape."
+        )
+
+    try:
+        curated_dict = json.loads(legacy_path.read_text())
+    except json.JSONDecodeError as exc:
+        raise click.ClickException(f"re-curate wrote a malformed legacy manifest: {exc}") from exc
+
+    stems_data = json.loads(stems_json.read_text())
+    bpm_val = float(curated_dict.get("bpm") or stems_data.get("bpm") or 120.0)
+    dn_val = float((stems_data.get("tempo") or {}).get("first_downbeat_sec") or 0.0)
+    source_audio = curated_dict.get("source_audio") or stems_data.get("source_file") or ""
+
+    try:
+        fm = build_from_curated_dict(
+            slug=slug,
+            forge_dir=forge_dir,
+            curated=curated_dict,
+            bpm=bpm_val,
+            first_downbeat_sec=dn_val,
+        )
+        fm_path = write_auto_curation(forge_dir, fm)
+        am = build_empty_arrangement(
+            slug=slug,
+            source_audio=source_audio,
+            bpm=bpm_val,
+            first_downbeat_sec=dn_val,
+        )
+        am_path = write_arrangement(forge_dir, am)
+    except ForgeManifestError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    console.print(f"  wrote {fm_path.relative_to(forge_dir)}")
+    console.print(f"  wrote {am_path.relative_to(forge_dir)}")
+    console.print(f"  manifest_hash=[green]{fm.manifest_hash[:16]}..[/green]")
 
 
 @cli.command("list")
@@ -1365,10 +1632,49 @@ def forge(audio_file, analysis, model, strategy, n_bars, time_sig, output, curat
             )
             sys.exit(1)
         manifest_path = track_out / "curated" / "manifest.json"
+
+        # ── 3.5 Mirror to new-shape configurator manifests (Phase 1A) ──
+        # The v0 production curator writes the legacy single-file manifest;
+        # we read it back and project into the new two-file shape so
+        # downstream configurator consumers see the same data.
+        from .forge import (
+            build_empty_arrangement,
+            build_from_curated_dict,
+            write_arrangement,
+            write_auto_curation,
+        )
+
+        _curated_dict: dict = {}
+        try:
+            _curated_dict = json.loads(manifest_path.read_text())
+        except (OSError, json.JSONDecodeError):
+            _curated_dict = {}
+        _bpm_for_forge = (
+            _curated_dict.get("bpm") if isinstance(_curated_dict.get("bpm"), (int, float)) else None
+        )
+        _fm = build_from_curated_dict(
+            slug=track_name,
+            forge_dir=track_out,
+            curated=_curated_dict,
+            bpm=_bpm_for_forge,
+            first_downbeat_sec=float(_curated_dict.get("first_downbeat_sec", 0.0) or 0.0),
+        )
+        _fm_path = write_auto_curation(track_out, _fm)
+        _am = build_empty_arrangement(
+            slug=track_name,
+            source_audio=str(audio_file),
+            bpm=_fm.bpm,
+            first_downbeat_sec=_fm.first_downbeat_sec,
+        )
+        _am_path = write_arrangement(track_out, _am)
+
         emit(
             "complete",
             output_dir=str(manifest_path.parent),
             manifest=str(manifest_path),
+            auto_curation_manifest=str(_fm_path),
+            arrangement_manifest=str(_am_path),
+            manifest_hash=_fm.manifest_hash,
             bars=n_bars,
             mode="production",
         )
@@ -1497,6 +1803,40 @@ def forge(audio_file, analysis, model, strategy, n_bars, time_sig, output, curat
     manifest_path = curated_root / "manifest.json"
     manifest_path.write_text(json.dumps(curated_manifest, indent=2))
 
+    # ── 3.5 Emit new-shape configurator manifests (Phase 1A) ──
+    # `auto_curation_manifest.json` + `arrangement_manifest.json` live at the
+    # forge root next to `stems.json`. The legacy `curated/manifest.json` is
+    # left in place for one release for backward compatibility with existing
+    # exporters/readers; the compat shim in `stemforge.forge.manifest_io`
+    # accepts both shapes.
+    from .forge import (
+        build_empty_arrangement,
+        build_from_curated_dict,
+        write_arrangement,
+        write_auto_curation,
+    )
+
+    _forge_dn = (
+        float(reconciled_for_forge.first_downbeat_sec)
+        if reconciled_for_forge is not None and reconciled_for_forge.first_downbeat_sec is not None
+        else 0.0
+    )
+    _fm = build_from_curated_dict(
+        slug=track_name,
+        forge_dir=track_out,
+        curated=curated_manifest,
+        bpm=detected_bpm,
+        first_downbeat_sec=_forge_dn,
+    )
+    _fm_path = write_auto_curation(track_out, _fm)
+    _am = build_empty_arrangement(
+        slug=track_name,
+        source_audio=str(audio_file),
+        bpm=_fm.bpm,
+        first_downbeat_sec=_forge_dn,
+    )
+    _am_path = write_arrangement(track_out, _am)
+
     # ── 4. Emit per-sample sidecars + a BatchManifest (manifest-spec) ──
     # Producer-side rotation: drums→A, bass→B, vocals→C, other→D, with
     # bottom-up pad layout per BAR_INDEX_TO_LABEL. Consumers (ep133-ppak's
@@ -1557,6 +1897,9 @@ def forge(audio_file, analysis, model, strategy, n_bars, time_sig, output, curat
         "complete",
         output_dir=str(curated_root),
         manifest=str(manifest_path),
+        auto_curation_manifest=str(_fm_path),
+        arrangement_manifest=str(_am_path),
+        manifest_hash=_fm.manifest_hash,
         batch_manifest=str(batch_path),
         sidecars=len(batch_samples),
         bars=len(selected_indices),
