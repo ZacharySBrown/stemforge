@@ -392,66 +392,10 @@ test('_tmpManifestPath: appends .tmp suffix', () => {
     assert.equal(ctx._tmpManifestPath('/x.json'), '/x.json.tmp');
 });
 
-test('commitOffsets (disk-backed): reads from .tmp, writes to .tmp, schedules mv', () => {
-    const { ctx } = loadBounce();
-    const FINAL = '/tmp/atomic_rename_test2/curated/manifest.json';
-    const TMP = FINAL + '.tmp';
-
-    // Seed an existing stub at the .tmp path (no clips, just structure).
-    maxApi.seedFile(TMP, JSON.stringify({
-        bpm: 120,
-        source_dir: '/tmp/atomic_rename_test2',
-        session_tracks: { A: [], B: [], C: [], D: [] },
-        clips: [],
-    }));
-    // Seed an empty live tree so _commitAllOffsets / _commitSessionTracks
-    // have somewhere to traverse without crashing.
-    maxApi.seedLiveTree({ tracks: [] });
-
-    // Drive the disk-backed branch: commitOffsets reads `messagename` +
-    // arguments via arrayfromargs(messagename, arguments). The sandbox's
-    // arrayfromargs honors the multi-arg form, so setting messagename
-    // and calling commitOffsets.call(ctx, FINAL) gets us through.
-    ctx.messagename = 'commitOffsets';
-    ctx.commitOffsets.call(ctx, FINAL);
-
-    // After commit: .tmp has the populated manifest, final path is still
-    // untouched (the mv goes via outlet 3 → [shell], which the mock just
-    // records as outlet args, not as an actual rename).
-    assert.ok(maxApi.state.fs[TMP], '.tmp must contain the committed manifest');
-    assert.equal(maxApi.state.fs[FINAL], undefined,
-        'final path stays unwritten in JS; mv runs via outlet-3 shell');
-
-    // The mv call must appear on outlet 3 — that's the [shell] wire.
-    const outlet3 = maxApi.state.outlets[3] || [];
-    const mvCalls = outlet3.filter(args =>
-        args[0] === '/bin/mv' && args.indexOf(TMP) >= 0 && args.indexOf(FINAL) >= 0
-    );
-    assert.equal(mvCalls.length, 1,
-        'commitOffsets must emit exactly one /bin/mv outlet call for .tmp → final');
-});
-
-test('commitOffsets (disk-backed): falls back to final path if .tmp absent', () => {
-    const { ctx } = loadBounce();
-    const FINAL = '/tmp/atomic_rename_test3/curated/manifest.json';
-
-    // Only the final path is seeded (legacy / external callers that
-    // bypassed _ensureDeckManifestStub).
-    maxApi.seedFile(FINAL, JSON.stringify({
-        bpm: 120,
-        source_dir: '/tmp/atomic_rename_test3',
-        session_tracks: { A: [], B: [], C: [], D: [] },
-        clips: [],
-    }));
-    maxApi.seedLiveTree({ tracks: [] });
-
-    ctx.messagename = 'commitOffsets';
-    // Shouldn't throw / shouldn't surface "cannot read" status — the
-    // fallback read path must pick up the final-path content.
-    ctx.commitOffsets.call(ctx, FINAL);
-
-    // The .tmp gets the post-commit write since we always promote via mv.
-    const TMP = FINAL + '.tmp';
-    assert.ok(maxApi.state.fs[TMP],
-        'commitOffsets must still write to .tmp even when seeded from final');
-});
+// commitOffsets / _commitOffsetsWithPath were removed in Phase 3B (BOUNCE
+// refactor). The disk-backed deck-manifest path they implemented belonged
+// to the legacy A/B/C/D bounceTracks pipeline, which Phase 3B's
+// bounceCuration() supersedes. The atomic-rename tests that used to live
+// here are now covered by the curation-write path in
+// stemforge/configurator/curation_io.py (write_curation_atomic +
+// lock_curation), tested in tests/test_configurator_curation_crud.py.

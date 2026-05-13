@@ -678,3 +678,238 @@ describe("applyGroupTemplate (Phase 3A)", () => {
     expect(T._templatePathFor(null)).toBe("");
   });
 });
+
+// ─── Phase 3B — BOUNCE refactor tests ───────────────────────────────────────
+//
+// bounceCuration walks the active curation's STG-* pads, solos each group,
+// triggers the clip, freeze-and-crops via the loop region, writes a WAV via
+// outlet 3, and posts messnamed progress/completion beacons. Real WAV
+// rendering is Phase 5's smoke suite; these L3 tests cap the contract at
+// the LOM call + outlet/messnamed emissions captured by max-stub.
+//
+// Memory: `feedback_loop_region_canonical_for_materialize.md` and
+// `feedback_clip_crop_renders_at_warp_bpm.md` are the load-bearing reads.
+
+function captureBounceProgress() {
+  return messnamedCalls.filter((c) => c.name === "sf-bounce-progress");
+}
+
+function captureBounceComplete() {
+  return messnamedCalls.filter((c) => c.name === "sf-bounce-complete");
+}
+
+function liveApiSetCalls() {
+  // max-stub records `set` via direct snapshot mutation, NOT through the
+  // call log. To assert mute/unmute we read the snapshot's mute fields
+  // directly. Helpers below.
+  return null;
+}
+
+function trackMuteStateByName(name) {
+  // Probe the loader's own snapshot via a LiveAPI lookup; mirrors what
+  // bounceCuration's _bounceSoloGroup did. Returns null if missing.
+  // We rely on max-stub's `set()` having mutated the snapshot in place.
+  // Track names are unique under live_set in our fixtures.
+  for (let i = 0; ; i += 1) {
+    const trackPath = "live_set tracks " + i;
+    const api = new LiveAPI(trackPath);
+    if (api.id === 0) return null;
+    const nm = api.get("name");
+    if (nm && String(nm[0]) === name) {
+      const m = api.get("mute");
+      return m && m.length ? Number(m[0]) : 0;
+    }
+  }
+}
+
+describe("bounceCuration() — Phase 3B", () => {
+  test("4-pads-stg-a snapshot → crops 4 pads + writes 4 WAVs", () => {
+    loadLomSnapshot(LOM_SNAPSHOT("staging-4-pads-stg-a.json"));
+    activate("verse_swap_v1", ["A", "B", "C", "D"]);
+
+    const spec = T.bounceCuration("verse_swap_v1");
+    expect(spec).not.toBeNull();
+    expect(spec.curation_name).toBe("verse_swap_v1");
+    expect(spec.pads.length).toBe(4);
+
+    // Crop was called on every populated slot. Note: only STG-A has
+    // populated clips in this snapshot; the call log records the verb.
+    const crops = liveApiCallsOfVerb("crop");
+    expect(crops.length).toBe(4);
+
+    // Outlet 3 writes (the [shell] wire) carry the python helper invocation
+    // with the output WAV path as one of its args. Filter to those rows.
+    const writes = outletEmissions.filter((e) => e.idx === 3);
+    expect(writes.length).toBe(4);
+    const writtenPaths = writes.map((e) =>
+      e.args.find((a) => String(a).indexOf("bounced/verse_swap_v1/") !== -1)
+    );
+    expect(writtenPaths.every((p) => /bounced\/verse_swap_v1\/A0\d\.wav$/.test(String(p)))).toBe(
+      true
+    );
+
+    // Status line contract.
+    const lines = statusLines();
+    expect(lines).toContain("bounce: starting 4 pads");
+    expect(lines).toContain("bounce: rendered A01");
+    expect(lines).toContain("bounce: rendered A04");
+    expect(lines.some((l) => /bounce: complete \(4\/4 OK\)/.test(l))).toBe(true);
+  });
+
+  test("emits per-pad progress beacons + a single completion beacon", () => {
+    loadLomSnapshot(LOM_SNAPSHOT("staging-4-pads-stg-a.json"));
+    activate("verse_swap_v1", ["A", "B", "C", "D"]);
+    T.bounceCuration("verse_swap_v1");
+
+    const progress = captureBounceProgress();
+    expect(progress.length).toBe(4);
+    expect(progress[0].args[0]).toBe("verse_swap_v1");
+    // Each beacon carries pad_id + (rendered_count, total_count).
+    const first = JSON.parse(progress[0].args[1]);
+    expect(first.pad_id).toBe("A01");
+    expect(first.rendered_count).toBe(1);
+    expect(first.total_count).toBe(4);
+
+    const last = JSON.parse(progress[progress.length - 1].args[1]);
+    expect(last.rendered_count).toBe(4);
+    expect(last.total_count).toBe(4);
+
+    const complete = captureBounceComplete();
+    expect(complete.length).toBe(1);
+    expect(complete[0].args[0]).toBe("verse_swap_v1");
+    const completionBody = JSON.parse(complete[0].args[1]);
+    expect(completionBody.manifest_path).toMatch(
+      /bounced\/verse_swap_v1\/bounce_manifest\.json$/
+    );
+  });
+
+  test("materialization respects loop region (reads loop_start/loop_end)", () => {
+    loadLomSnapshot(LOM_SNAPSHOT("staging-4-pads-stg-a.json"));
+    activate("verse_swap_v1", ["A", "B", "C", "D"]);
+    T.bounceCuration("verse_swap_v1");
+
+    // Per `_collapseToLoopRegion` + `_readLoopRegion`, every cropped clip
+    // has both loop_start and loop_end read before crop. The pre-crop
+    // metadata cache also captures warp_bpm per
+    // `feedback_clip_crop_renders_at_warp_bpm.md`.
+    const spec = T.bounceCuration("verse_swap_v1"); // call again to inspect return
+    expect(spec).not.toBeNull();
+    for (const pad of spec.pads) {
+      expect(pad.loop_region).toBeDefined();
+      // The fixture clip's loop is 0..4 beats; bounceCuration normalizes
+      // via _getLomNumber which returns the raw value.
+      expect(pad.loop_region.loop_end).toBe(4);
+    }
+  });
+
+  test("solos the group track at start; unsolos every STG-* at end", () => {
+    loadLomSnapshot(LOM_SNAPSHOT("staging-4-pads-stg-a.json"));
+    activate("verse_swap_v1", ["A", "B", "C", "D"]);
+    T.bounceCuration("verse_swap_v1");
+
+    // End state: every STG-* track is unmuted (mute=0). The intermediate
+    // solo-then-unsolo sequence happens inside the loop body; we can't
+    // observe each intermediate flip without a per-step hook, but the
+    // end state is the contract: nothing remains silenced after a clean
+    // bounce.
+    expect(trackMuteStateByName("STG-A")).toBe(0);
+    expect(trackMuteStateByName("STG-B")).toBe(0);
+    expect(trackMuteStateByName("STG-C")).toBe(0);
+    expect(trackMuteStateByName("STG-D")).toBe(0);
+  });
+
+  test("solos exactly the group whose pad is being rendered", () => {
+    // Use a single-pad LOM (only STG-A has a clip) and a one-pad filter so
+    // we can observe the solo sequence in isolation.
+    loadLomSnapshotObject({
+      live_set: {
+        tracks: [
+          {
+            name: "STG-A",
+            clip_slots: [
+              {
+                clip: {
+                  name: "A01",
+                  file_path: "/abs/x.wav",
+                  warp_bpm: 120,
+                  loop_start: 0,
+                  loop_end: 4,
+                  looping: 1,
+                },
+              },
+              ...Array.from({ length: 11 }, () => ({ clip: null })),
+            ],
+            mute: 1, // start muted to prove _bounceSoloGroup unmuted it
+          },
+          {
+            name: "STG-B",
+            clip_slots: Array.from({ length: 12 }, () => ({ clip: null })),
+            mute: 0,
+          },
+        ],
+      },
+    });
+    activate("solo_test", ["A", "B"]);
+
+    // Direct helper invocation: assert post-solo state immediately.
+    T._bounceSoloGroup("A");
+    expect(trackMuteStateByName("STG-A")).toBe(0);
+    expect(trackMuteStateByName("STG-B")).toBe(1);
+
+    T._bounceUnsoloAll();
+    expect(trackMuteStateByName("STG-A")).toBe(0);
+    expect(trackMuteStateByName("STG-B")).toBe(0);
+  });
+
+  test("pad-ids filter shrinks the work list", () => {
+    loadLomSnapshot(LOM_SNAPSHOT("staging-4-pads-stg-a.json"));
+    activate("verse_swap_v1", ["A", "B", "C", "D"]);
+    const spec = T.bounceCuration("verse_swap_v1", JSON.stringify(["A01", "A03"]));
+    expect(spec.pads.length).toBe(2);
+    expect(spec.pads.map((p) => p.pad_id)).toEqual(["A01", "A03"]);
+    expect(statusLines()).toContain("bounce: starting 2 pads");
+  });
+
+  test("empty STG tracks → no-op bounce with explanatory status", () => {
+    loadLomSnapshot(LOM_SNAPSHOT("staging-empty.json"));
+    activate("empty_curation", ["A", "B", "C", "D"]);
+    const spec = T.bounceCuration("empty_curation");
+    expect(spec.pads).toEqual([]);
+    expect(statusLines()).toContain("bounce: no populated pads to render");
+    // No progress / completion beacons when there's nothing to render.
+    expect(captureBounceProgress().length).toBe(0);
+    expect(captureBounceComplete().length).toBe(0);
+  });
+
+  test("no active curation + no explicit name → status, returns null", () => {
+    loadLomSnapshot(LOM_SNAPSHOT("staging-4-pads-stg-a.json"));
+    T.setActiveCurationForTest("", []);
+    const spec = T.bounceCuration();
+    expect(spec).toBeNull();
+    expect(statusLines()).toContain("bounce: no active curation — load one first");
+  });
+
+  test("pad-id filter accepts interpunct form", () => {
+    loadLomSnapshot(LOM_SNAPSHOT("staging-4-pads-stg-a.json"));
+    activate("verse_swap_v1", ["A", "B", "C", "D"]);
+    const spec = T.bounceCuration("verse_swap_v1", '["A·02"]');
+    expect(spec.pads.length).toBe(1);
+    expect(spec.pads[0].pad_id).toBe("A02");
+  });
+});
+
+describe("bounceCuration() — legacy cleanup", () => {
+  test("commitOffsets is no longer defined on the loader (grep test)", () => {
+    expect(typeof T.commitOffsets).toBe("undefined");
+    // Also assert that the source file itself doesn't ship a top-level
+    // `function commitOffsets(` declaration — the brief calls for clean
+    // deletion, not just an unexported stub.
+    const src = require("node:fs").readFileSync(
+      require("node:path").join(__dirname, "stemforge_loader.v0.js"),
+      "utf-8"
+    );
+    expect(src).not.toMatch(/^function commitOffsets\(/m);
+    expect(src).not.toMatch(/^function bounceTracks\(/m);
+    expect(src).not.toMatch(/^function _commitOffsetsWithPath\(/m);
+  });
+});
