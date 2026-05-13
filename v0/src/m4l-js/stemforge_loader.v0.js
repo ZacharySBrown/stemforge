@@ -562,8 +562,19 @@ function loadFromDict() {
 
     status("loaded manifest from dict: " + dictName);
 
+    // Production manifest (curated with a pipeline that sets layout_mode).
     if (mf.layout_mode === "production") {
         status("detected production manifest → song loader");
+        loadSong();
+        return;
+    }
+
+    // Deck-shape manifest: only `session_tracks` populated, no `stems[]`
+    // (e.g. breaks-n-beats1-style hand-curated decks). loadSong handles
+    // this shape since the 2026-05-13 patch — it skips per-stem loading
+    // and goes straight to _restoreSessionTracks.
+    if (_sessionTracksHasContent(mf.session_tracks)) {
+        status("detected deck manifest (session_tracks only) → song loader");
         loadSong();
         return;
     }
@@ -1028,7 +1039,24 @@ function loadSong() {
     catch (e) { status("loadSong: parse error: " + e); return; }
 
     var stemData = mf.stems;
-    if (!stemData) { status("manifest has no stems"); return; }
+    var hasSessionTracks = _sessionTracksHasContent(mf.session_tracks);
+
+    // Two valid manifest shapes:
+    //   - SOURCE shape: `stems[]` populated, no session_tracks. The
+    //     loader duplicates per-stem template tracks + drops curated
+    //     bars, then _restoreSessionTracks is a no-op (auto-populate
+    //     drum hits instead).
+    //   - DECK shape: `session_tracks` populated, no stems[]. The user
+    //     has previously committed an A/B/C/D arrangement. We skip the
+    //     per-stem loop and go straight to _restoreSessionTracks, which
+    //     drops clips at the saved slots from `file` paths alone.
+    //
+    // The original code required `stems[]`, which made it impossible to
+    // re-load a deck-shape manifest (e.g. breaks-n-beats1) for editing.
+    if (!stemData && !hasSessionTracks) {
+        status("manifest has neither stems[] nor session_tracks");
+        return;
+    }
 
     var songName = mf.track || "stemforge";
     var loaded = 0;
@@ -1039,6 +1067,13 @@ function loadSong() {
     }
 
     ensureScenes(16);
+
+    // Deck-shape: no stems to load → straight to session_tracks restore.
+    if (!stemData) {
+        _restoreSessionTracks(mf, {});
+        outlet(1, "bang");
+        return;
+    }
 
     // Priority chain: sf_preset dict → manifest embedding → hardcoded fallback
     var pipelineConfig = null;
