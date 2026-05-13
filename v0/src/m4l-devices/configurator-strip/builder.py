@@ -244,86 +244,23 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         )
         lines.append(_line(_btn_box_id(btn_id), 0, _btn_tb_id(btn_id), 0))
 
-        # File-picker insertion for verbs that need a path argument.
-        #
-        #   load-manifest → [opendialog] → [prepend loadManifest] → js
-        #   export        → [savedialog] → [prepend exportPpak]   → js
-        #
-        # Other verbs go directly via a [message <handler>] that calls the
-        # JS function with no args.
-        if verb == "load-manifest":
-            dlg_id = f"{_btn_msg_id(btn_id)}-opendialog"
-            prep_id = f"{_btn_msg_id(btn_id)}-prep"
-            boxes.append(
-                _box(
-                    dlg_id,
-                    "newobj",
-                    (x_cursor, btn_y + btn_h + 30.0, 96.0, 22.0),
-                    numinlets=1,
-                    numoutlets=1,
-                    outlettype=[""],
-                    # No filter — accept any file the user picks (manifests
-                    # are .json today but we don't constrain).
-                    extras={"text": "opendialog"},
-                )
+        # Standard path: bang → [message <handler>] → JS. For verbs that
+        # need a path argument (load-manifest, export), the JS function
+        # is called with no args and pops an osascript file dialog via
+        # [shell]; the chosen path is routed back to JS through the shell
+        # output → [route PICKEDLOAD/PICKEDEXPORT] chain wired below.
+        boxes.append(
+            _box(
+                _btn_msg_id(btn_id),
+                "message",
+                (x_cursor, btn_y + btn_h + 30.0, 96.0, 22.0),
+                numinlets=2,
+                numoutlets=1,
+                outlettype=[""],
+                extras={"text": handler},
             )
-            boxes.append(
-                _box(
-                    prep_id,
-                    "newobj",
-                    (x_cursor, btn_y + btn_h + 56.0, 120.0, 22.0),
-                    numinlets=1,
-                    numoutlets=1,
-                    outlettype=[""],
-                    extras={"text": "prepend loadManifest"},
-                )
-            )
-            lines.append(_line(_btn_tb_id(btn_id), 0, dlg_id, 0))
-            lines.append(_line(dlg_id, 0, prep_id, 0))
-            lines.append(_line(prep_id, 0, OBJ_JS, 0))
-        elif verb == "export":
-            dlg_id = f"{_btn_msg_id(btn_id)}-savedialog"
-            prep_id = f"{_btn_msg_id(btn_id)}-prep"
-            boxes.append(
-                _box(
-                    dlg_id,
-                    "newobj",
-                    (x_cursor, btn_y + btn_h + 30.0, 96.0, 22.0),
-                    numinlets=1,
-                    numoutlets=1,
-                    outlettype=[""],
-                    # Default filename suggestion for the save dialog.
-                    extras={"text": "savedialog configurator-export.ppak"},
-                )
-            )
-            boxes.append(
-                _box(
-                    prep_id,
-                    "newobj",
-                    (x_cursor, btn_y + btn_h + 56.0, 120.0, 22.0),
-                    numinlets=1,
-                    numoutlets=1,
-                    outlettype=[""],
-                    extras={"text": "prepend exportPpak"},
-                )
-            )
-            lines.append(_line(_btn_tb_id(btn_id), 0, dlg_id, 0))
-            lines.append(_line(dlg_id, 0, prep_id, 0))
-            lines.append(_line(prep_id, 0, OBJ_JS, 0))
-        else:
-            # Standard path: bang → [message <handler>] → JS.
-            boxes.append(
-                _box(
-                    _btn_msg_id(btn_id),
-                    "message",
-                    (x_cursor, btn_y + btn_h + 30.0, 96.0, 22.0),
-                    numinlets=2,
-                    numoutlets=1,
-                    outlettype=[""],
-                    extras={"text": handler},
-                )
-            )
-            lines.append(_line(_btn_tb_id(btn_id), 0, _btn_msg_id(btn_id), 0))
+        )
+        lines.append(_line(_btn_tb_id(btn_id), 0, _btn_msg_id(btn_id), 0))
 
         x_cursor += btn_w + btn_gap
 
@@ -466,14 +403,8 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         )
     )
 
-    # Wire each standard button's message → JS inlet 0.
-    # Dialog-bearing verbs (load-manifest, export) wire directly inside the
-    # per-button loop above via [opendialog]/[savedialog] → [prepend H] → JS;
-    # those do not have a [message H] object to connect here.
-    DIALOG_VERBS = {"load-manifest", "export"}
+    # Wire every button's message → JS inlet 0.
     for btn in btn_items:
-        if btn["verb"] in DIALOG_VERBS:
-            continue
         lines.append(_line(_btn_msg_id(btn["id"]), 0, OBJ_JS, 0))
 
     # ── Loadbang → JS (boot-time port discovery) ────────────────────────────
@@ -554,7 +485,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     )
     lines.append(_line(OBJ_JS, 3, OBJ_JWEB, 0))
 
-    # ── [shell] — curl + start-server commands ──────────────────────────────
+    # ── [shell] — curl + start-server + osascript file pickers ─────────────
     boxes.append(
         _box(
             OBJ_SHELL,
@@ -567,6 +498,64 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         )
     )
     lines.append(_line(OBJ_JS, 4, OBJ_SHELL, 0))
+
+    # ── Shell output → JS for picker results ────────────────────────────────
+    #
+    # The osascript-based file pickers (loadManifest / exportPpak with no
+    # args) emit a single token to stdout when the user picks a file:
+    # `PICKEDLOAD` (manifest open) or `PICKEDEXPORT` (deck save). The
+    # actual chosen path is written by osascript to a known temp file
+    # (~/stemforge/.pick-load or .pick-export) which JS reads via the
+    # `File` API on the callback.
+    #
+    # This 2-channel design (signal via shell-stdout, payload via file)
+    # avoids two real M4L issues:
+    #   1. [opendialog] doesn't fire reliably in M4L's sandbox
+    #      (confirmed on Zak's Live 2026-05-12).
+    #   2. Paths with spaces split into multiple atoms when routed
+    #      through Max [shell] stdout. Writing to file sidesteps that.
+    obj_route = "obj-sf-configurator-shell-route"
+    obj_prep_picked_load = "obj-sf-configurator-prep-picked-load"
+    obj_prep_picked_export = "obj-sf-configurator-prep-picked-export"
+    boxes.append(
+        _box(
+            obj_route,
+            "newobj",
+            (320.0, 200.0, 220.0, 22.0),
+            numinlets=1,
+            # PICKEDLOAD, PICKEDEXPORT, otherwise (3 outlets total).
+            numoutlets=3,
+            outlettype=["", "", ""],
+            extras={"text": "route PICKEDLOAD PICKEDEXPORT"},
+        )
+    )
+    boxes.append(
+        _box(
+            obj_prep_picked_load,
+            "newobj",
+            (320.0, 226.0, 120.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "prepend pickedLoad"},
+        )
+    )
+    boxes.append(
+        _box(
+            obj_prep_picked_export,
+            "newobj",
+            (450.0, 226.0, 120.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "prepend pickedExport"},
+        )
+    )
+    lines.append(_line(OBJ_SHELL, 0, obj_route, 0))
+    lines.append(_line(obj_route, 0, obj_prep_picked_load, 0))
+    lines.append(_line(obj_route, 1, obj_prep_picked_export, 0))
+    lines.append(_line(obj_prep_picked_load, 0, OBJ_JS, 0))
+    lines.append(_line(obj_prep_picked_export, 0, OBJ_JS, 0))
 
     # ── Final patcher dict ──────────────────────────────────────────────────
     device_width = float(ui["size"]["width"])

@@ -131,15 +131,15 @@ def test_every_button_is_live_text_with_label_and_accent(spec, box_by_id):
         assert b["parameter_enable"] == 0
 
 
-DIALOG_VERBS = {"load-manifest", "export"}
-
-
 def test_every_button_has_tb_and_message_handler(spec, box_by_id, line_pairs):
-    """Pitfall #17 — buttons need [t b] to convert label-symbol into a bang
-    before firing the JS handler.
+    """Pitfall #17 — every button needs [t b] to convert label-symbol into a
+    bang before firing the JS handler.
 
-    Dialog-bearing verbs (load-manifest, export) route the bang through a
-    file picker first; see `test_dialog_bearing_buttons_have_file_picker`.
+    All seven buttons now follow the same shape: button → [t b] → [message
+    handler] → [js]. Verbs that need a path argument (load-manifest, export)
+    call their JS handler with no args; the handler pops an osascript file
+    picker via [shell] and the chosen path routes back through the
+    shell-output chain — see test_picker_routing_from_shell_output.
     """
     for btn in spec["ui"]["buttons"]["items"]:
         verb = btn["verb"]
@@ -147,59 +147,66 @@ def test_every_button_has_tb_and_message_handler(spec, box_by_id, line_pairs):
 
         btn_box = _btn_box_id(btn["id"])
         tb_box = _btn_tb_id(btn["id"])
+        msg_box = _btn_msg_id(btn["id"])
 
         assert tb_box in box_by_id
         assert box_by_id[tb_box]["text"] == "t b"
-        # button → t b is shared by all verbs.
-        assert (btn_box, tb_box) in line_pairs
-
-        if verb in DIALOG_VERBS:
-            # Picker variants have no [message handler] box; their wiring is
-            # asserted in test_dialog_bearing_buttons_have_file_picker.
-            continue
-
-        msg_box = _btn_msg_id(btn["id"])
         assert msg_box in box_by_id
         assert box_by_id[msg_box]["text"] == handler
-        # t b → message → JS for the standard path.
+
+        assert (btn_box, tb_box) in line_pairs
         assert (tb_box, msg_box) in line_pairs
         assert (msg_box, OBJ_JS) in line_pairs
 
 
-def test_dialog_bearing_buttons_have_file_picker(spec, box_by_id, line_pairs):
-    """Load Manifest and Export pop native file dialogs ([opendialog] /
-    [savedialog]) and pipe the chosen path into the JS via [prepend H].
-    Without the picker the user has to type an absolute path by hand.
+def test_picker_routing_from_shell_output(spec, box_by_id, line_pairs):
+    """Shell stdout → [route PICKEDLOAD PICKEDEXPORT] → [prepend pickedX] → JS.
+
+    The osascript file pickers fired by loadManifest()/exportPpak() with no
+    args emit a single token (`PICKEDLOAD` or `PICKEDEXPORT`) when the user
+    completes the dialog. That token is what we route here back into JS so
+    the corresponding `pickedLoad()`/`pickedExport()` handler can read the
+    chosen path from the temp file and dispatch.
     """
-    items = {b["verb"]: b for b in spec["ui"]["buttons"]["items"]}
+    # [route PICKEDLOAD PICKEDEXPORT] present.
+    route_box = next(
+        (
+            box_by_id[bid]
+            for bid in box_by_id
+            if box_by_id[bid].get("text", "") == "route PICKEDLOAD PICKEDEXPORT"
+        ),
+        None,
+    )
+    assert route_box is not None, "shell-output [route PICKEDLOAD PICKEDEXPORT] missing"
+    route_id = route_box["id"]
 
-    # ── load-manifest → [opendialog] → [prepend loadManifest] → JS ──────────
-    if "load-manifest" in items:
-        btn = items["load-manifest"]
-        tb_box = _btn_tb_id(btn["id"])
-        dlg_id = f"{_btn_msg_id(btn['id'])}-opendialog"
-        prep_id = f"{_btn_msg_id(btn['id'])}-prep"
-        assert dlg_id in box_by_id, "load-manifest missing [opendialog]"
-        assert box_by_id[dlg_id]["text"] == "opendialog"
-        assert prep_id in box_by_id, "load-manifest missing [prepend loadManifest]"
-        assert box_by_id[prep_id]["text"] == "prepend loadManifest"
-        assert (tb_box, dlg_id) in line_pairs
-        assert (dlg_id, prep_id) in line_pairs
-        assert (prep_id, OBJ_JS) in line_pairs
+    # [prepend pickedLoad] and [prepend pickedExport] present.
+    prep_load = next(
+        (
+            bid
+            for bid in box_by_id
+            if box_by_id[bid].get("text", "") == "prepend pickedLoad"
+        ),
+        None,
+    )
+    prep_export = next(
+        (
+            bid
+            for bid in box_by_id
+            if box_by_id[bid].get("text", "") == "prepend pickedExport"
+        ),
+        None,
+    )
+    assert prep_load, "[prepend pickedLoad] missing"
+    assert prep_export, "[prepend pickedExport] missing"
 
-    # ── export → [savedialog] → [prepend exportPpak] → JS ───────────────────
-    if "export" in items:
-        btn = items["export"]
-        tb_box = _btn_tb_id(btn["id"])
-        dlg_id = f"{_btn_msg_id(btn['id'])}-savedialog"
-        prep_id = f"{_btn_msg_id(btn['id'])}-prep"
-        assert dlg_id in box_by_id, "export missing [savedialog]"
-        assert box_by_id[dlg_id]["text"].startswith("savedialog")
-        assert prep_id in box_by_id, "export missing [prepend exportPpak]"
-        assert box_by_id[prep_id]["text"] == "prepend exportPpak"
-        assert (tb_box, dlg_id) in line_pairs
-        assert (dlg_id, prep_id) in line_pairs
-        assert (prep_id, OBJ_JS) in line_pairs
+    # Wiring: shell → route → (prepend pickedLoad | prepend pickedExport) → JS.
+    shell_id = "obj-sf-configurator-shell"
+    assert (shell_id, route_id) in line_pairs
+    assert (route_id, prep_load) in line_pairs
+    assert (route_id, prep_export) in line_pairs
+    assert (prep_load, OBJ_JS) in line_pairs
+    assert (prep_export, OBJ_JS) in line_pairs
 
 
 # ── JS dispatcher object ────────────────────────────────────────────────────

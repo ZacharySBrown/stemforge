@@ -193,12 +193,70 @@ function ping() {
     discoverPort();
 }
 
-// btn_load — POST /intent/load-manifest
-function loadManifest(path) {
-    var body = path ? { manifest_path: String(path) } : {};
-    if (_postIntent("load-manifest", body)) {
-        _status("load-manifest sent");
+// ── File-picker plumbing ─────────────────────────────────────────────────────
+//
+// [opendialog] / [savedialog] don't fire reliably in M4L's sandbox
+// (confirmed on Zak's Live 2026-05-12). Instead we use osascript via the
+// existing [shell] object:
+//
+//   1. JS fires `osascript -e '...' > ~/stemforge/.pick-X && echo PICKEDX`
+//      out outlet 4 → [shell].
+//   2. On user pick, osascript writes the chosen path to ~/stemforge/.pick-X
+//      AND prints `PICKEDX` to stdout. On cancel, neither happens
+//      (osascript exits non-zero so the && short-circuits).
+//   3. [shell]'s stdout routes through [route PICKEDLOAD PICKEDEXPORT] →
+//      [prepend pickedLoad/pickedExport] → JS inlet 0.
+//   4. The pickedLoad/pickedExport handlers below read the chosen path
+//      from the temp file and dispatch to the real intent.
+//
+// This 2-channel design (signal via stdout, payload via file) sidesteps
+// the Max-[shell]-splits-paths-with-spaces problem.
+
+var PICK_LOAD_FILE = "~/stemforge/.pick-load";
+var PICK_EXPORT_FILE = "~/stemforge/.pick-export";
+
+function _readPickFile(p) {
+    try {
+        var f = new File(_expandTilde(p), "read");
+        if (!f.isopen) return null;
+        f.position = 0;
+        var raw = f.readstring(4096);
+        f.close();
+        if (raw == null) return null;
+        var s = String(raw).replace(/[\r\n]+$/, "");
+        return s.length ? s : null;
+    } catch (_) {
+        return null;
     }
+}
+
+// btn_load — POST /intent/load-manifest.
+// With no path → pop native file picker via osascript.
+function loadManifest(path) {
+    if (path != null && String(path).length > 0) {
+        if (_postIntent("load-manifest", { manifest_path: String(path) })) {
+            _status("load-manifest sent");
+        }
+        return;
+    }
+    // Pop file picker. The result lands in the file at PICK_LOAD_FILE
+    // and PICKEDLOAD lands on stdout — see the [route] block in the
+    // patcher.
+    var inner = 'POSIX path of (choose file with prompt "Select manifest" of type {"public.json", "json"})';
+    var cmd = "mkdir -p ~/stemforge && osascript -e " + _shellQuote(inner) +
+              " > " + PICK_LOAD_FILE + " 2>/dev/null && echo PICKEDLOAD";
+    outlet(4, "exec", cmd);
+    _footer("waiting for file pick…");
+}
+
+// Patcher routes shell stdout PICKEDLOAD → pickedLoad here.
+function pickedLoad() {
+    var path = _readPickFile(PICK_LOAD_FILE);
+    if (!path) {
+        _footer("load-manifest: pick canceled or empty");
+        return;
+    }
+    loadManifest(path);
 }
 
 // btn_slice — POST /intent/slice
@@ -223,11 +281,30 @@ function curate() {
     if (_postIntent("curate", {})) _status("curate sent");
 }
 
-// btn_export — POST /intent/export
+// btn_export — POST /intent/export.
+// With no out_path → pop native save dialog via osascript.
 function exportPpak(outPath) {
-    var body = { target: "ep133" };
-    if (outPath != null) body.out_path = String(outPath);
-    if (_postIntent("export", body)) _status("export sent");
+    if (outPath != null && String(outPath).length > 0) {
+        var body = { target: "ep133", out_path: String(outPath) };
+        if (_postIntent("export", body)) _status("export sent");
+        return;
+    }
+    // Pop save dialog with a sensible default filename.
+    var inner = 'POSIX path of (choose file name with prompt "Save deck as" default name "configurator-export.ppak")';
+    var cmd = "mkdir -p ~/stemforge && osascript -e " + _shellQuote(inner) +
+              " > " + PICK_EXPORT_FILE + " 2>/dev/null && echo PICKEDEXPORT";
+    outlet(4, "exec", cmd);
+    _footer("waiting for save path…");
+}
+
+// Patcher routes shell stdout PICKEDEXPORT → pickedExport here.
+function pickedExport() {
+    var path = _readPickFile(PICK_EXPORT_FILE);
+    if (!path) {
+        _footer("export: save canceled or empty");
+        return;
+    }
+    exportPpak(path);
 }
 function exportTarget(target, outPath) {
     var body = { target: String(target || "ep133") };

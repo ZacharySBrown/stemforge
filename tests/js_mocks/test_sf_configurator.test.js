@@ -136,6 +136,89 @@ test('exportPpak: POSTs /intent/export with target=ep133', () => {
     assert.match(curl[1], /out\.ppak/);
 });
 
+// ── File-picker plumbing (osascript via [shell] + return-trip) ──────────────
+
+test('loadManifest: with no path → pops osascript file picker on outlet 4', () => {
+    const ctx = loadConf();
+    maxApi.seedFile(PORT_FILE_KEY, '7421');
+    ctx._discoverPort();
+
+    ctx.loadManifest();
+
+    const shellEmits = outletOn(4);
+    const osa = shellEmits.find(
+        a => a[0] === 'exec' && /osascript/.test(a[1]) && /choose file/.test(a[1])
+    );
+    assert.ok(osa, 'expected an osascript choose-file emission');
+    assert.match(osa[1], /\.pick-load/, 'osascript writes the chosen path to the load temp file');
+    assert.match(osa[1], /echo PICKEDLOAD/, 'osascript signals completion with PICKEDLOAD');
+});
+
+test('pickedLoad: reads temp file + dispatches loadManifest with the path', () => {
+    const ctx = loadConf();
+    maxApi.seedFile(PORT_FILE_KEY, '7421');
+    ctx._discoverPort();
+    // Seed the temp file as if osascript had written a path there.
+    maxApi.seedFile('~/stemforge/.pick-load', '/Users/zak/song/curated/manifest.json');
+
+    ctx.pickedLoad();
+
+    const shellEmits = outletOn(4);
+    const curl = shellEmits.find(
+        a => a[0] === 'exec' && /intent\/load-manifest/.test(a[1])
+    );
+    assert.ok(curl, 'expected load-manifest curl after pickedLoad');
+    assert.match(curl[1], /curated\/manifest\.json/);
+});
+
+test('pickedLoad: empty temp file → no curl emission (cancel path)', () => {
+    const ctx = loadConf();
+    maxApi.seedFile(PORT_FILE_KEY, '7421');
+    ctx._discoverPort();
+    maxApi.seedFile('~/stemforge/.pick-load', '');
+
+    ctx.pickedLoad();
+
+    const shellEmits = outletOn(4);
+    const curl = shellEmits.find(
+        a => a[0] === 'exec' && /intent\/load-manifest/.test(a[1])
+    );
+    assert.equal(curl, undefined, 'no curl should fire when cancel produced empty file');
+});
+
+test('exportPpak: with no path → pops osascript save dialog on outlet 4', () => {
+    const ctx = loadConf();
+    maxApi.seedFile(PORT_FILE_KEY, '7421');
+    ctx._discoverPort();
+
+    ctx.exportPpak();
+
+    const shellEmits = outletOn(4);
+    const osa = shellEmits.find(
+        a => a[0] === 'exec' && /osascript/.test(a[1]) && /choose file name/.test(a[1])
+    );
+    assert.ok(osa, 'expected an osascript save-dialog emission');
+    assert.match(osa[1], /\.pick-export/);
+    assert.match(osa[1], /echo PICKEDEXPORT/);
+    assert.match(osa[1], /configurator-export\.ppak/, 'default filename suggested');
+});
+
+test('pickedExport: reads temp file + dispatches exportPpak with the path', () => {
+    const ctx = loadConf();
+    maxApi.seedFile(PORT_FILE_KEY, '7421');
+    ctx._discoverPort();
+    maxApi.seedFile('~/stemforge/.pick-export', '/Users/zak/Desktop/my-deck.ppak');
+
+    ctx.pickedExport();
+
+    const shellEmits = outletOn(4);
+    const curl = shellEmits.find(
+        a => a[0] === 'exec' && /intent\/export/.test(a[1])
+    );
+    assert.ok(curl, 'expected export curl after pickedExport');
+    assert.match(curl[1], /my-deck\.ppak/);
+});
+
 test('recompute / slice / curate / reAnchor each fire their verb', () => {
     const ctx = loadConf();
     maxApi.seedFile(PORT_FILE_KEY, '7421');
