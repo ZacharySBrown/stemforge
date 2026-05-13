@@ -51,6 +51,7 @@ from .curation_io import (
     list_curations,
     lock_curation,
     read_curation,
+    rename_curation_atomic,
     write_curation_atomic,
 )
 from .schemas import (
@@ -71,6 +72,7 @@ from .schemas import (
 from .state import (
     AppState,
     load_state,
+    save_state,
     set_active_curation,
 )
 
@@ -446,6 +448,30 @@ class SaveAsBody(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class RenameCurationBody(BaseModel):
+    """Body of ``POST /curations/{name}/rename`` (Phase 1.5).
+
+    ``new_name`` follows the same shape rules as ``POST /curations`` —
+    see :func:`curation_io.is_valid_curation_name`.
+    """
+
+    new_name: str
+
+    model_config = {"extra": "forbid"}
+
+
+class CloseActiveCurationBody(BaseModel):
+    """Body of ``POST /curations/active/close`` (Phase 1.5).
+
+    Clears the active curation for ``als_path`` (sets the map entry to
+    ``None``, removing it from ``.stemforge_state.json``).
+    """
+
+    als_path: str
+
+    model_config = {"extra": "forbid"}
+
+
 class PatchTemplateBody(BaseModel):
     """Body of ``PATCH /curations/{name}/template``."""
 
@@ -462,20 +488,15 @@ class PatchTargetBody(BaseModel):
     """Body of ``PATCH /curations/{name}/target``.
 
     Any subset of fields may be supplied — unspecified fields preserve
-    their current value. ``label`` is per-group (a stretch field for
-    callers that want to relabel a group without sending the full
-    target). When provided alongside ``groups``, the label binding picks
-    the first letter (``A``) by convention.
+    their current value. ``label`` lands on :class:`Target.label`
+    (the curation's target-level hardware label). ``color_palette``
+    lands on :class:`Curation.color_palette`. Both slots were added in
+    Phase 1.5; before that the server accepted-and-dropped these fields.
     """
 
     groups: int | None = Field(default=None, ge=1, le=16)
     pads_per_group: int | None = Field(default=None, ge=1, le=32)
     device: str | None = None
-    # The spec also mentions ``color_palette`` and ``label`` — neither
-    # field exists on the Phase 0 Target/Group schema today. We accept
-    # them so the wire shape from spec §4.3 is honored and store
-    # ``label`` on the first group when present. ``color_palette`` is
-    # accepted-and-ignored at this phase (no schema slot).
     color_palette: list[str] | None = None
     label: str | None = None
 
@@ -716,6 +737,101 @@ async def handle_save_as(
     return cloned
 
 
+async def handle_rename_curation(
+    state: AppState,
+    name: str,
+    body: RenameCurationBody,
+) -> Curation:
+    """``POST /curations/{name}/rename`` — atomic on-disk rename.
+
+    Differs from ``save-as`` in that it MOVES the file (no copy) and
+    rewrites every active-curation entry pointing at the old name so
+    state integrity is preserved. Refuses with:
+
+    - 400 when ``new_name`` is malformed.
+    - 404 when ``name`` doesn't resolve to a curation file.
+    - 409 when ``new_name`` already exists.
+    """
+    if not is_valid_curation_name(name):
+        raise HTTPException(status_code=400, detail=f"invalid curation name: {name!r}")
+    if not is_valid_curation_name(body.new_name):
+        raise HTTPException(status_code=400, detail=f"invalid curation name: {body.new_name!r}")
+    src = curation_path(state.curations_dir, name)
+    dst = curation_path(state.curations_dir, body.new_name)
+
+    if name == body.new_name:
+        # No-op rename — short-circuit so callers can use this as
+        # an idempotent confirm-name endpoint.
+        return _load_curation_or_404(state, name)
+
+    async with state.mutation_lock:
+        if not src.is_file():
+            raise HTTPException(status_code=404, detail=f"curation not found: {name}")
+        if dst.exists():
+            raise HTTPException(
+                status_code=409,
+                detail=f"destination curation exists: {body.new_name}",
+            )
+        # Load + rewrite under lock so the name field on disk matches the
+        # new filename. Then move the file atomically to the new path.
+        with lock_curation(src):
+            curation = read_curation(src)
+            curation.name = body.new_name
+            curation.modified_at = datetime.now(UTC)
+            # Persist the rename in two atomic steps: write the renamed
+            # content at the OLD path (so name field == new_name on disk
+            # before the move), then move src → dst.
+            write_curation_atomic(src, curation)
+            try:
+                rename_curation_atomic(src, dst)
+            except FileExistsError as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"destination curation exists: {body.new_name}",
+                ) from exc
+
+        # Patch active-curation state: any als_path pointing at the old
+        # name now points at the new one. We re-load to avoid clobbering
+        # concurrent state-file edits, then save the merged result.
+        try:
+            sf_state = load_state(state.state_path)
+        except (FileNotFoundError, json.JSONDecodeError):
+            sf_state = None
+        if sf_state is not None:
+            mutated = False
+            for als_path, active_name in list(sf_state.active_curations.items()):
+                if active_name == name:
+                    sf_state.active_curations[als_path] = body.new_name
+                    mutated = True
+            if mutated:
+                sf_state.last_seen_at = datetime.now(UTC)
+                save_state(sf_state, state.state_path)
+
+    await state.log(f"renamed curation {name} → {body.new_name}", "info")
+    await state.broadcast_curations_state()
+    return curation
+
+
+async def handle_close_active_curation(
+    state: AppState,
+    body: CloseActiveCurationBody,
+) -> dict[str, Any]:
+    """``POST /curations/active/close`` — clear active for an .als path.
+
+    Removes ``state.active_curations[als_path]`` if present; idempotent
+    when no entry exists. Always broadcasts so the popup re-renders.
+    """
+    async with state.mutation_lock:
+        sf_state = set_active_curation(body.als_path, None, state.state_path)
+    await state.log(f"closed active curation for {body.als_path}", "info")
+    await state.broadcast_curations_state()
+    return {
+        "ok": True,
+        "als_path": body.als_path,
+        "active_curations": sf_state.active_curations,
+    }
+
+
 async def handle_delete_curation(state: AppState, name: str) -> dict[str, Any]:
     """``DELETE /curations/{name}`` — remove file unless active."""
     if not is_valid_curation_name(name):
@@ -815,12 +931,19 @@ async def handle_patch_target(
                     curation.groups[letter].pads = pads[: new_target.pads_per_group]
 
         if body.label is not None:
-            # The Phase 0 schema attaches label to Group, not Target.
-            # Apply to the first group as the "primary" group label —
-            # callers wanting per-group labels use template/etc.
+            # Phase 1.5: label is a first-class Target field. Persist it
+            # on ``Target.label``. Per Phase 1B's deprecated behavior we
+            # ALSO mirror it onto the first group's label so legacy
+            # readers (which keyed off ``groups.A.label``) keep seeing
+            # it; that mirroring drops in Phase 2 once readers migrate.
+            new_target.label = body.label
+            curation.target = new_target
             first_letter = _ALL_GROUP_LETTERS[0]
             if first_letter in curation.groups:
                 curation.groups[first_letter].label = body.label
+
+        if body.color_palette is not None:
+            curation.color_palette = body.color_palette
 
         curation.modified_at = datetime.now(UTC)
         with lock_curation(path):
@@ -914,14 +1037,17 @@ async def handle_curation_commit(
 
 
 __all__ = [
+    "CloseActiveCurationBody",
     "CommitCurationBody",
     "CreateCurationBody",
     "OpenCurationBody",
     "PatchTargetBody",
     "PatchTemplateBody",
+    "RenameCurationBody",
     "SaveAsBody",
     "handle_assign_pad",
     "handle_clear_pad",
+    "handle_close_active_curation",
     "handle_commit",
     "handle_create_curation",
     "handle_curation_commit",
@@ -934,6 +1060,7 @@ __all__ = [
     "handle_patch_target",
     "handle_patch_template",
     "handle_recompute",
+    "handle_rename_curation",
     "handle_save_as",
     "handle_set_group_format",
 ]

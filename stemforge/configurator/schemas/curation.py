@@ -92,6 +92,13 @@ class Target(BaseModel):
     device: str = Field("ep133", description="Target device identifier (ep133 only in v1)")
     groups: int = Field(4, ge=1, le=16, description="Number of groups")
     pads_per_group: int = Field(12, ge=1, le=32, description="Pads per group")
+    label: str | None = Field(
+        default=None,
+        description=(
+            "Optional human-readable label for the target hardware "
+            "(e.g. 'Studio EP-133'). Distinct from per-group Group.label."
+        ),
+    )
 
 
 class ReferencedForge(BaseModel):
@@ -148,6 +155,13 @@ class Curation(BaseModel):
     modified_at: datetime
     target: Target
     referenced_forges: list[ReferencedForge] = Field(default_factory=list)
+    color_palette: list[str] | None = Field(
+        default=None,
+        description=(
+            "Optional list of color hex strings (or named-palette refs) for "
+            "the popup/device to render. Mirrors spec §2.3."
+        ),
+    )
     groups: dict[str, Group] = Field(
         default_factory=dict,
         description="Group letter (A, B, ...) → Group. Determined by target.groups.",

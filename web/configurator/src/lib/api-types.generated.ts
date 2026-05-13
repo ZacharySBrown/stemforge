@@ -54,6 +54,8 @@ export interface ClipSettings {
  * Persisted as YAML at ``~/stemforge/curations/<name>.yaml``.
  */
 export interface Curation {
+  /** Optional list of color hex strings (or named-palette refs) for the popup/device to render. Mirrors spec §2.3. */
+  color_palette?: Array<string> | null;
   created_at: string;
   curation_version?: 1;
   /** Group letter (A, B, ...) → Group. Determined by target.groups. */
@@ -195,6 +197,8 @@ export interface Target {
   device?: string;
   /** Number of groups */
   groups?: number;
+  /** Optional human-readable label for the target hardware (e.g. 'Studio EP-133'). Distinct from per-group Group.label. */
+  label?: string | null;
   /** Pads per group */
   pads_per_group?: number;
 }
