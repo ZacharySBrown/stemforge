@@ -928,9 +928,7 @@ def re_anchor(
             )
             write_arrangement(track_dir, _am)
         except Exception as exc:  # noqa: BLE001 — non-fatal during re-anchor
-            console.print(
-                f"  [yellow]configurator manifests not refreshed: {exc}[/yellow]"
-            )
+            console.print(f"  [yellow]configurator manifests not refreshed: {exc}[/yellow]")
 
     console.print()
     console.print(Rule("[bold green]Re-anchored[/bold green]"))
@@ -941,9 +939,7 @@ def re_anchor(
             console.print("  curated/ rebuilt with fresh diversity picks at new anchor.")
         else:
             console.print("  curated/ re-sliced at new anchor.")
-        console.print(
-            "  auto_curation_manifest.json + arrangement_manifest.json refreshed."
-        )
+        console.print("  auto_curation_manifest.json + arrangement_manifest.json refreshed.")
     if keep_old:
         console.print("  [dim]Old chunks preserved at <stem>_prechop.bak/.[/dim]")
 
@@ -1082,14 +1078,11 @@ def migrate_forge(slug):
     slug, forge_dir = _resolve_forge_dir(slug)
 
     if new_manifest_exists(forge_dir) and not legacy_manifest_exists(forge_dir):
-        console.print(
-            f"[yellow]forge `{slug}` already on new shape; nothing to migrate.[/yellow]"
-        )
+        console.print(f"[yellow]forge `{slug}` already on new shape; nothing to migrate.[/yellow]")
         return
     if not legacy_manifest_exists(forge_dir):
         raise click.ClickException(
-            f"forge `{slug}` has no curated/manifest.json to migrate "
-            f"(forge dir: {forge_dir})"
+            f"forge `{slug}` has no curated/manifest.json to migrate (forge dir: {forge_dir})"
         )
 
     try:
@@ -1100,9 +1093,7 @@ def migrate_forge(slug):
     console.print(Rule(f"[bold cyan]migrate-forge[/bold cyan] — {slug}"))
     console.print(f"  wrote {fm_path.relative_to(forge_dir)}")
     console.print(f"  wrote {am_path.relative_to(forge_dir)}")
-    console.print(
-        "  [dim]legacy curated/manifest.json left in place for one-release compat[/dim]"
-    )
+    console.print("  [dim]legacy curated/manifest.json left in place for one-release compat[/dim]")
 
 
 @cli.command("re-curate")
@@ -1166,11 +1157,7 @@ def re_curate(slug, strategy, n_bars):
             legacy_data = {}
 
     replay_strategy = strategy or legacy_data.get("strategy") or "max-diversity"
-    replay_n_bars = (
-        n_bars
-        if n_bars is not None
-        else int(legacy_data.get("n_bars") or 16)
-    )
+    replay_n_bars = n_bars if n_bars is not None else int(legacy_data.get("n_bars") or 16)
     replay_time_sig = int(legacy_data.get("time_signature_numerator") or 4)
 
     console.print(Rule(f"[bold cyan]re-curate[/bold cyan] — {slug}"))
@@ -1195,9 +1182,7 @@ def re_curate(slug, strategy, n_bars):
         check=False,
     )
     if result.returncode != 0:
-        raise click.ClickException(
-            f"v0/src/stemforge_curate_bars.py exited {result.returncode}"
-        )
+        raise click.ClickException(f"v0/src/stemforge_curate_bars.py exited {result.returncode}")
 
     if not legacy_path.exists():
         raise click.ClickException(
@@ -1207,9 +1192,7 @@ def re_curate(slug, strategy, n_bars):
     try:
         curated_dict = json.loads(legacy_path.read_text())
     except json.JSONDecodeError as exc:
-        raise click.ClickException(
-            f"re-curate wrote a malformed legacy manifest: {exc}"
-        ) from exc
+        raise click.ClickException(f"re-curate wrote a malformed legacy manifest: {exc}") from exc
 
     stems_data = json.loads(stems_json.read_text())
     bpm_val = float(curated_dict.get("bpm") or stems_data.get("bpm") or 120.0)
