@@ -16,7 +16,9 @@ re-curations.
 
 from __future__ import annotations
 
-from typing import Literal
+import hashlib
+import json
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -83,3 +85,27 @@ class ArrangementManifest(BaseModel):
     first_downbeat_sec: float = Field(..., ge=0.0)
     manifest_hash: str = Field(..., description="SHA-256 of canonical chunks array")
     chunks: list[ArrangementChunk] = Field(default_factory=list)
+
+
+# ── manifest_hash helpers ────────────────────────────────────────────────────
+
+
+def _canonical_json(payload: Any) -> str:
+    """Canonical JSON for hashing: sorted keys, no whitespace, UTF-8 safe."""
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def compute_manifest_hash(items: list[dict[str, Any]]) -> str:
+    """SHA-256 of the canonical JSON of a clips/chunks array.
+
+    Per spec §2.2 the ``manifest_hash`` field is the hash of the
+    ``clips`` array (auto-curation) or ``chunks`` array (arrangement),
+    not the whole manifest dict. ``items`` should be the
+    ``model_dump(mode="json")`` form of the list — each entry a dict
+    with primitive-only values.
+
+    The function is pure: callers compute the hash, then set
+    ``manifest_hash`` on the manifest before serializing it.
+    """
+    canon = _canonical_json(items)
+    return hashlib.sha256(canon.encode("utf-8")).hexdigest()
