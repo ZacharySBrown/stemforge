@@ -4,7 +4,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type { ConnectionStatus as ConnStatus } from "@/lib/types";
+import type { ConnectionStatus as ConnStatus } from "@/lib/popup-types";
 import { cn } from "@/lib/utils";
 
 interface ConnectionStatusProps {

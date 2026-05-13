@@ -1,31 +1,31 @@
 import { motion } from "framer-motion";
 import { useEffect } from "react";
 import { toast } from "sonner";
-import { TopBar } from "@/components/TopBar";
-import { LeftRail } from "@/components/LeftRail";
-import { PadCanvas } from "@/components/PadCanvas";
-import { PadCanvasSkeleton } from "@/components/Skeletons";
+import { ActiveCuration } from "@/components/ActiveCuration";
+import { CurationList } from "@/components/CurationList";
+import { ForgeList } from "@/components/ForgeList";
 import { StatusBar } from "@/components/StatusBar";
-import { EmptyState } from "@/components/EmptyState";
+import { TopBar } from "@/components/TopBar";
 import { useProjectState } from "@/hooks/useProjectState";
 
 /**
- * App — top-level layout.
+ * App — three-panel popup layout per spec §3.2.
  *
- *   ┌──────────────────────────────────────────────┐
- *   │ TopBar                                       │
- *   ├──────────┬───────────────────────────────────┤
- *   │ LeftRail │ PadCanvas / Skeleton / EmptyState │
- *   │          │                                   │
- *   ├──────────┴───────────────────────────────────┤
- *   │ StatusBar                                    │
- *   └──────────────────────────────────────────────┘
+ *   ┌──────────────────────────────────────────────────────────────────┐
+ *   │ TopBar — active curation · save/save-as/close · pop-out · status │
+ *   ├──────────┬────────────────────────────────────────┬──────────────┤
+ *   │ ForgeList│         ActiveCuration                 │ CurationList │
+ *   │  (left)  │  (center — read-only pad grid)         │   (right)    │
+ *   ├──────────┴────────────────────────────────────────┴──────────────┤
+ *   │ StatusBar — curation summary · group templates · progress        │
+ *   └──────────────────────────────────────────────────────────────────┘
  *
- * Mounts with a 200ms fade+slide-down. Logs from the SSE stream surface as
+ * State flows from the SSE stream (`useProjectState`). Logs surface as
  * toasts via sonner.
  */
 export function App() {
-  const { state, status, error, progress, logs, clearLog } = useProjectState();
+  const { curation, activeCurationName, status, error, progress, logs, clearLog } =
+    useProjectState();
 
   // Drain log events into toasts.
   useEffect(() => {
@@ -41,9 +41,6 @@ export function App() {
     }
   }, [logs, clearLog]);
 
-  const showSkeleton = status === "connecting" && !state;
-  const showEmpty = (status === "connected" || status === "disconnected") && !state;
-
   return (
     <motion.div
       initial={{ opacity: 0, y: -4 }}
@@ -51,22 +48,20 @@ export function App() {
       transition={{ duration: 0.2, ease: "easeOut" }}
       className="flex h-screen w-screen flex-col overflow-hidden"
     >
-      <TopBar state={state} status={status} error={error} />
+      <TopBar
+        curation={curation}
+        activeCurationName={activeCurationName}
+        status={status}
+        error={error}
+      />
       <div className="flex min-h-0 flex-1 gap-3 p-3">
-        <LeftRail state={state} />
+        <ForgeList curation={curation} />
         <main className="glass relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg">
-          {showSkeleton ? (
-            <PadCanvasSkeleton />
-          ) : showEmpty ? (
-            <EmptyState />
-          ) : state ? (
-            <PadCanvas state={state} />
-          ) : (
-            <PadCanvasSkeleton />
-          )}
+          <ActiveCuration curation={curation} />
         </main>
+        <CurationList activeCurationName={activeCurationName} />
       </div>
-      <StatusBar state={state} progress={progress} />
+      <StatusBar curation={curation} progress={progress} />
     </motion.div>
   );
 }
