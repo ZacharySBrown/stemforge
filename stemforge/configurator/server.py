@@ -32,6 +32,14 @@ Routes (Phase 1B — curation CRUD, spec §4.3):
 - ``PATCH  /curations/{name}/target``
 - ``POST   /curations/{name}/commit``
 
+Routes (Phase 3A — config templates, spec §3.6 / §6.7):
+
+- ``GET    /templates``
+
+The PATCH ``/template`` endpoint above also fires a device notification
+(``template-changed <group> <template-name>``) when a template assignment
+changes, so the staging track hot-applies the rack without a full LOAD.
+
 Routes (Phase 1.5 — forge endpoints + curation rename/close bridge):
 
 - ``GET  /forges``
@@ -101,6 +109,7 @@ from .schemas import (
     SetGroupFormatRequest,
 )
 from .state import AppState, SseEvent
+from .template_io import default_templates_dir, list_templates
 
 DEFAULT_HOST = "127.0.0.1"
 PORT_ENV = "STEMFORGE_CONFIGURATOR_PORT"
@@ -111,6 +120,16 @@ DEFAULT_STATIC_DIR = Path(__file__).parent / "static"
 CURATIONS_DIR_ENV = "STEMFORGE_CURATIONS_DIR"
 STATE_FILE_ENV = "STEMFORGE_STATE_FILE"
 PROCESSED_DIR_ENV = "STEMFORGE_PROCESSED_DIR"
+TEMPLATES_DIR_ENV = "STEMFORGE_TEMPLATES_DIR"
+# Device-side ``[udpreceive]`` port — the strip device listens here for the
+# server→device notifications used by Phase 3A (template hot-apply). Phase 2
+# left no formalized reverse path, so we use UDP per the spec language
+# ("if Phase 2 didn't formalize a reverse path, do `[udpsend localhost 7420
+# template-changed <args>]`"). The patcher's `[udpreceive 7420]` already
+# exists; this constant lets tests override.
+DEVICE_UDP_PORT_ENV = "STEMFORGE_DEVICE_UDP_PORT"
+DEFAULT_DEVICE_UDP_PORT = 7420
+DEFAULT_DEVICE_UDP_HOST = "127.0.0.1"
 PLACEHOLDER_HTML = (
     '<!doctype html><html><head><meta charset="utf-8">'
     "<title>StemForge Configurator</title></head><body>"
@@ -129,7 +148,9 @@ def create_app(
     curations_dir: Path | None = None,
     state_path: Path | None = None,
     processed_dir: Path | None = None,
+    templates_dir: Path | None = None,
     subprocess_runner: Any | None = None,
+    device_notifier: Any | None = None,
 ) -> FastAPI:
     """Construct a fresh :class:`FastAPI` app and bind an :class:`AppState`.
 
@@ -146,6 +167,14 @@ def create_app(
     ``subprocess_runner`` is an injection seam for tests — defaults to
     :func:`subprocess.run`. Production code never overrides it; the test
     suite stubs it to avoid spawning real ``stemforge`` invocations.
+
+    ``templates_dir`` overrides the templates-scan root for the Phase 3A
+    ``/templates`` endpoint (defaults to ``~/stemforge/templates``).
+    ``device_notifier`` is the Phase 3A server→device notify seam — a
+    callable ``(route: str, *args: str) -> None`` that fires the
+    notification at the strip device. Production uses a UDP datagram to
+    ``localhost:7420`` (matches the device's existing ``[udpreceive]``
+    port). Tests inject a list-appending stub for assertion.
     """
     state = AppState()
     resolved_curations = (
@@ -175,6 +204,15 @@ def create_app(
             else default_processed_dir()
         )
     )
+    resolved_templates = (
+        Path(templates_dir).expanduser().resolve()
+        if templates_dir is not None
+        else (
+            Path(os.environ[TEMPLATES_DIR_ENV]).expanduser().resolve()
+            if os.environ.get(TEMPLATES_DIR_ENV)
+            else default_templates_dir()
+        )
+    )
     state.curations_dir = resolved_curations
     state.state_path = resolved_state_path
 
@@ -191,8 +229,10 @@ def create_app(
     )
     app.state.configurator = state
     app.state.processed_dir = resolved_processed
+    app.state.templates_dir = resolved_templates
     app.state.loaded_forges = set()
     app.state.subprocess_runner = subprocess_runner or subprocess.run
+    app.state.device_notifier = device_notifier or _default_device_notifier()
 
     _register_routes(app, state)
 
@@ -214,6 +254,53 @@ def _resolve_static_dir(override: Path | None) -> Path:
     if env:
         return Path(env).expanduser().resolve()
     return DEFAULT_STATIC_DIR.resolve()
+
+
+def _default_device_notifier() -> Any:
+    """Build the production server→device notifier (UDP datagram to localhost).
+
+    The patcher exposes a ``[udpreceive 7420]`` object that routes incoming
+    space-separated messages — first token is the route name, remaining
+    tokens are the route args. Our wire shape is::
+
+        <route> <arg1> <arg2> ...
+
+    e.g. ``template-changed A drum-rack-classic``. The device's JS routes
+    that off the patcher's [route template-changed ...] table into
+    :func:`templateChanged` (mirror naming TBD in Phase 3A device JS).
+
+    A new datagram is sent for every notification — there's no
+    persistent connection. Failures (port closed, no listener) are
+    logged and swallowed; the device might simply not be running yet.
+    """
+    port_env = os.environ.get(DEVICE_UDP_PORT_ENV)
+    try:
+        port = int(port_env) if port_env else DEFAULT_DEVICE_UDP_PORT
+    except ValueError:
+        port = DEFAULT_DEVICE_UDP_PORT
+
+    def _notify(route: str, *args: str) -> None:
+        # The patcher's existing [udpreceive 7420] runs in OSC mode (verified
+        # 2026-05-09 against /tmp/udp_probe). Max emits the address as a
+        # single symbol with leading-slash preserved, and downstream
+        # `[route /state /forge ...]` matches the leading slash. So we
+        # MUST prefix our route with `/` to land in the dispatcher.
+        route_str = str(route)
+        osc_addr = "/" + route_str if not route_str.startswith("/") else route_str
+        msg_parts: list[str] = [osc_addr]
+        for arg in args:
+            msg_parts.append(str(arg))
+        payload = " ".join(msg_parts).encode("utf-8")
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.sendto(payload, (DEFAULT_DEVICE_UDP_HOST, port))
+        except OSError:
+            # No listener / network blip — the device may not be open.
+            # Phase 4 may add a retry-or-acked variant; for now the
+            # popup's SSE broadcast is the user-facing signal.
+            return
+
+    return _notify
 
 
 # ── Phase 1.5 forge endpoint bodies ──────────────────────────────────────────
@@ -411,7 +498,15 @@ def _register_routes(app: FastAPI, state: AppState) -> None:
 
     @app.patch("/curations/{name}/template", response_model=Curation)
     async def patch_template_route(name: str, body: PatchTemplateBody) -> Curation:
-        return await intents.handle_patch_template(state, name, body)
+        # Phase 3A: hand the templates_dir + notifier down so the handler can
+        # validate the template exists AND notify the device to hot-apply.
+        return await intents.handle_patch_template(
+            state,
+            name,
+            body,
+            templates_dir=app.state.templates_dir,
+            device_notifier=app.state.device_notifier,
+        )
 
     @app.patch("/curations/{name}/target", response_model=Curation)
     async def patch_target_route(name: str, body: PatchTargetBody) -> Curation:
@@ -438,6 +533,19 @@ def _register_routes(app: FastAPI, state: AppState) -> None:
     @app.post("/curations/active/close")
     async def close_active_curation_route(body: CloseActiveCurationBody) -> dict[str, Any]:
         return await intents.handle_close_active_curation(state, body)
+
+    # ── Phase 3A — template index ──────────────────────────────────────────
+
+    @app.get("/templates")
+    async def list_templates_route() -> dict[str, Any]:
+        """Return the ``.adg`` templates under ``~/stemforge/templates/``.
+
+        Stable alphabetical sort. Empty dir → ``{"templates": []}``. The
+        popup's ActiveCuration panel calls this on mount to populate the
+        per-group template dropdown.
+        """
+        entries = list_templates(app.state.templates_dir)
+        return {"templates": [e.to_dict() for e in entries]}
 
     # ── Phase 1.5 — forge endpoints ────────────────────────────────────────
 

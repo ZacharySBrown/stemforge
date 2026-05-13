@@ -35,10 +35,16 @@ def configurator_paths(tmp_path: Path) -> dict[str, Path]:
     curations_dir.mkdir()
     state_path = tmp_path / ".stemforge_state.json"
     static_dir = tmp_path / "static"
+    # Phase 3A: tests that PATCH /template must seed expected ``.adg``
+    # sentinels under this dir. Created empty so unrelated tests don't
+    # leak templates into other tests' assertions.
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir()
     return {
         "curations_dir": curations_dir,
         "state_path": state_path,
         "static_dir": static_dir,
+        "templates_dir": templates_dir,
     }
 
 
@@ -48,8 +54,16 @@ def client(configurator_paths: dict[str, Path]) -> TestClient:
         static_dir=configurator_paths["static_dir"],
         curations_dir=configurator_paths["curations_dir"],
         state_path=configurator_paths["state_path"],
+        templates_dir=configurator_paths["templates_dir"],
     )
     return TestClient(app)
+
+
+def _seed_template(templates_dir: Path, name: str) -> Path:
+    """Drop a sentinel ``<name>.adg`` (empty bytes) so the patch validator passes."""
+    path = templates_dir / f"{name}.adg"
+    path.write_bytes(b"")
+    return path
 
 
 def _seed_curation(curations_dir: Path, name: str, *, populated: bool = False) -> Curation:
@@ -273,6 +287,7 @@ def test_patch_template_writes_assignment(
     client: TestClient, configurator_paths: dict[str, Path]
 ) -> None:
     _seed_curation(configurator_paths["curations_dir"], "patchme")
+    _seed_template(configurator_paths["templates_dir"], "tight-compressed")
     r = client.patch(
         "/curations/patchme/template",
         json={"group_letter": "B", "template_name": "tight-compressed"},
@@ -289,6 +304,7 @@ def test_patch_template_clears_when_null(
     client: TestClient, configurator_paths: dict[str, Path]
 ) -> None:
     _seed_curation(configurator_paths["curations_dir"], "p")
+    _seed_template(configurator_paths["templates_dir"], "x")
     client.patch("/curations/p/template", json={"group_letter": "A", "template_name": "x"})
     r = client.patch("/curations/p/template", json={"group_letter": "A", "template_name": None})
     assert r.status_code == 200
@@ -299,6 +315,8 @@ def test_patch_template_unknown_group_returns_404(
     client: TestClient, configurator_paths: dict[str, Path]
 ) -> None:
     _seed_curation(configurator_paths["curations_dir"], "p")
+    # Templates dir empty — the unknown-group check fires BEFORE template
+    # existence, so we still get 404 for the group letter.
     r = client.patch(
         "/curations/p/template",
         json={"group_letter": "Z", "template_name": "x"},
