@@ -1,0 +1,96 @@
+{
+  "_description": "4 FORGE/* tracks each with 16 session slots, half populated.",
+  "live_set": {
+    "tracks": [
+      {
+        "name": "FORGE/my-track/drum",
+        "track_index": 0,
+        "clip_slots": [
+          { "clip": { "name": "drum-bar0-4", "file_path": "/Users/zak/stemforge/processed/my-track/curated_audio/drum-bar0-4.wav", "warp_bpm": 138.0, "loop_start": 0, "loop_end": 4, "looping": 1 } },
+          { "clip": null },
+          { "clip": { "name": "drum-bar4-8", "file_path": "/Users/zak/stemforge/processed/my-track/curated_audio/drum-bar4-8.wav", "warp_bpm": 138.0, "loop_start": 0, "loop_end": 4, "looping": 1 } },
+          { "clip": null },
+          { "clip": { "name": "drum-bar8-12", "file_path": "/Users/zak/stemforge/processed/my-track/curated_audio/drum-bar8-12.wav", "warp_bpm": 138.0, "loop_start": 0, "loop_end": 4, "looping": 1 } },
+          { "clip": null },
+          { "clip": { "name": "drum-bar12-16", "file_path": "/Users/zak/stemforge/processed/my-track/curated_audio/drum-bar12-16.wav", "warp_bpm": 138.0, "loop_start": 0, "loop_end": 4, "looping": 1 } },
+          { "clip": null },
+          { "clip": { "name": "drum-bar16-20", "file_path": "/Users/zak/stemforge/processed/my-track/curated_audio/drum-bar16-20.wav", "warp_bpm": 138.0, "loop_start": 0, "loop_end": 4, "looping": 1 } },
+          { "clip": null },
+          { "clip": { "name": "drum-bar20-24", "file_path": "/Users/zak/stemforge/processed/my-track/curated_audio/drum-bar20-24.wav", "warp_bpm": 138.0, "loop_start": 0, "loop_end": 4, "looping": 1 } },
+          { "clip": null },
+          { "clip": { "name": "drum-bar24-28", "file_path": "/Users/zak/stemforge/processed/my-track/curated_audio/drum-bar24-28.wav", "warp_bpm": 138.0, "loop_start": 0, "loop_end": 4, "looping": 1 } },
+          { "clip": null },
+          { "clip": { "name": "drum-bar28-32", "file_path": "/Users/zak/stemforge/processed/my-track/curated_audio/drum-bar28-32.wav", "warp_bpm": 138.0, "loop_start": 0, "loop_end": 4, "looping": 1 } },
+          { "clip": null }
+        ]
+      },
+      {
+        "name": "FORGE/my-track/bass",
+        "track_index": 1,
+        "clip_slots": [
+          { "clip": { "name": "bass-bar0-4", "file_path": "/Users/zak/stemforge/processed/my-track/curated_audio/bass-bar0-4.wav", "warp_bpm": 138.0, "loop_start": 0, "loop_end": 4, "looping": 1 } },
+          { "clip": null },
+          { "clip": { "name": "bass-bar4-8", "file_path": "/Users/zak/stemforge/processed/my-track/curated_audio/bass-bar4-8.wav", "warp_bpm": 138.0, "loop_start": 0, "loop_end": 4, "looping": 1 } },
+          { "clip": null },
+          { "clip": { "name": "bass-bar8-12", "file_path": "/Users/zak/stemforge/processed/my-track/curated_audio/bass-bar8-12.wav", "warp_bpm": 138.0, "loop_start": 0, "loop_end": 4, "looping": 1 } },
+          { "clip": null },
+          { "clip": { "name": "bass-bar12-16", "file_path": "/Users/zak/stemforge/processed/my-track/curated_audio/bass-bar12-16.wav", "warp_bpm": 138.0, "loop_start": 0, "loop_end": 4, "looping": 1 } },
+          { "clip": null },
+          { "clip": null },
+          { "clip": null },
+          { "clip": null },
+          { "clip": null },
+          { "clip": null },
+          { "clip": null },
+          { "clip": null },
+          { "clip": null }
+        ]
+      },
+      {
+        "name": "FORGE/my-track/vocal",
+        "track_index": 2,
+        "clip_slots": [
+          { "clip": { "name": "vocal-bar0-4", "file_path": "/Users/zak/stemforge/processed/my-track/curated_audio/vocal-bar0-4.wav", "warp_bpm": 138.0, "loop_start": 0, "loop_end": 4, "looping": 1 } },
+          { "clip": { "name": "vocal-bar4-8", "file_path": "/Users/zak/stemforge/processed/my-track/curated_audio/vocal-bar4-8.wav", "warp_bpm": 138.0, "loop_start": 0, "loop_end": 4, "looping": 1 } },
+          { "clip": null },
+          { "clip": { "name": "vocal-bar12-16", "file_path": "/Users/zak/stemforge/processed/my-track/curated_audio/vocal-bar12-16.wav", "warp_bpm": 138.0, "loop_start": 0, "loop_end": 4, "looping": 1 } },
+          { "clip": null },
+          { "clip": { "name": "vocal-bar20-24", "file_path": "/Users/zak/stemforge/processed/my-track/curated_audio/vocal-bar20-24.wav", "warp_bpm": 138.0, "loop_start": 0, "loop_end": 4, "looping": 1 } },
+          { "clip": null },
+          { "clip": null },
+          { "clip": null },
+          { "clip": null },
+          { "clip": null },
+          { "clip": null },
+          { "clip": null },
+          { "clip": null },
+          { "clip": null },
+          { "clip": null }
+        ]
+      },
+      {
+        "name": "FORGE/my-track/other",
+        "track_index": 3,
+        "clip_slots": [
+          { "clip": { "name": "other-bar0-4", "file_path": "/Users/zak/stemforge/processed/my-track/curated_audio/other-bar0-4.wav", "warp_bpm": 138.0, "loop_start": 0, "loop_end": 4, "looping": 1 } },
+          { "clip": null },
+          { "clip": null },
+          { "clip": { "name": "other-bar12-16", "file_path": "/Users/zak/stemforge/processed/my-track/curated_audio/other-bar12-16.wav", "warp_bpm": 138.0, "loop_start": 0, "loop_end": 4, "looping": 1 } },
+          { "clip": null },
+          { "clip": null },
+          { "clip": null },
+          { "clip": null },
+          { "clip": null },
+          { "clip": null },
+          { "clip": null },
+          { "clip": null },
+          { "clip": null },
+          { "clip": null },
+          { "clip": null },
+          { "clip": null }
+        ]
+      }
+    ],
+    "scenes": []
+  }
+}
