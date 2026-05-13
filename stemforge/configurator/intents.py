@@ -45,6 +45,13 @@ from stemforge.scene_model import (
 )
 
 from .audio_hash import audio_hash
+from .bounce_handler import (
+    BounceCompletion,
+    BounceProgress,
+    BounceSpec,
+    build_bounce_spec,
+    merge_bounce_completion,
+)
 from .commit_handler import (
     DeviceCommitBody,
     DeviceGroupSnapshot,
@@ -77,6 +84,7 @@ from .schemas import (
 )
 from .state import (
     AppState,
+    SseEvent,
     load_state,
     save_state,
     set_active_curation,
@@ -1058,7 +1066,147 @@ def _commit_summary(body: DeviceCommitBody) -> str:
     return f"{n_groups} groups, {n_pads} populated pads"
 
 
+# ── BOUNCE (Phase 3B) ────────────────────────────────────────────────────────
+
+
+class TriggerBounceBody(BaseModel):
+    """``POST /curations/{name}/trigger-bounce`` request body.
+
+    ``pad_ids`` is optional — when omitted (or empty), every populated
+    pad in the curation is bounced. When provided, only those pad ids
+    are rendered (used by future "re-bounce the changed pads"
+    workflows).
+
+    The popup's "Bounce in Live" button POSTs ``{}`` for a full
+    bounce.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    pad_ids: list[str] | None = Field(
+        default=None,
+        description=(
+            "Optional explicit pad-id allow-list (canonical or "
+            "interpunct form). ``None`` / empty = bounce all populated."
+        ),
+    )
+
+
+async def handle_trigger_bounce(
+    state: AppState,
+    name: str,
+    body: TriggerBounceBody,
+) -> dict[str, Any]:
+    """``POST /curations/{name}/trigger-bounce`` — kickoff the BOUNCE flow.
+
+    Behavior:
+
+    1. Load the curation (404 if missing).
+    2. Build a :class:`BounceSpec` (400 if nothing to bounce — empty
+       curation or filter matches nothing).
+    3. Broadcast a ``state`` SSE event with ``kind=bounce-start`` so
+       the M4L device's SSE listener picks up the spec and runs
+       ``bounceCuration()`` against it. The popup also sees this and
+       can render an in-progress UI.
+    4. Return the :class:`BounceSpec` immediately (async kickoff
+       per Phase 3B brief — the device drives the long-running render
+       and reports back via ``/bounce-progress`` + ``/bounce-complete``).
+
+    Tests block on the SSE listener loop to assert the broadcast went
+    out + the device-bound payload was correct.
+    """
+    async with state.mutation_lock:
+        curation = _load_curation_or_404(state, name)
+        spec = build_bounce_spec(curation, pad_ids=body.pad_ids)
+        if not spec.pads:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"curation {name!r} has no pads to bounce "
+                    "(empty curation or pad_ids matched nothing)"
+                ),
+            )
+
+    payload = spec.model_dump(mode="json")
+    await state.broadcast(
+        SseEvent(
+            event="state",
+            data={
+                "kind": "bounce-start",
+                "curation": name,
+                "spec": payload,
+            },
+        )
+    )
+    await state.log(f"bounce: started {name} ({len(spec.pads)} pads)", "info")
+    return {"ok": True, "spec": payload}
+
+
+async def handle_bounce_progress(
+    state: AppState,
+    name: str,
+    body: BounceProgress,
+) -> dict[str, Any]:
+    """``POST /curations/{name}/bounce-progress`` — per-pad device beacon.
+
+    The device may POST one of these per pad as it renders. The
+    server rebroadcasts as an SSE ``progress`` event so the popup can
+    render a progress bar without polling. No on-disk state mutates
+    here — completion is the only persistence point.
+    """
+    # Cheap existence check so a stale device can't spam progress for a
+    # curation that's been deleted between trigger + completion.
+    _load_curation_or_404(state, name)
+    fraction = 0.0
+    if body.total_count > 0:
+        fraction = body.rendered_count / body.total_count
+    await state.progress(
+        op=f"bounce:{name}",
+        progress=fraction,
+        message=f"rendered {body.pad_id} ({body.rendered_count}/{body.total_count})",
+    )
+    return {"ok": True, "rendered": body.rendered_count, "total": body.total_count}
+
+
+async def handle_bounce_complete(
+    state: AppState,
+    name: str,
+    body: BounceCompletion,
+) -> Curation:
+    """``POST /curations/{name}/bounce-complete`` — finalize the bounce.
+
+    The device POSTs this once every pad has been rendered. The
+    server merges ``last_bounce`` onto the curation, persists
+    atomically, and broadcasts state.
+
+    Returns the updated :class:`Curation` so the device + popup share
+    the new ``last_bounce`` block immediately.
+    """
+    path = curation_path(state.curations_dir, name)
+    async with state.mutation_lock:
+        existing = _load_curation_or_404(state, name)
+        try:
+            merged = merge_bounce_completion(existing=existing, completion=body)
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={"errors": exc.errors()},
+            ) from exc
+        with lock_curation(path):
+            write_curation_atomic(path, merged)
+
+    await state.log(
+        f"bounce: completed {name} ({len(body.pad_audio_hashes)} pads)",
+        "info",
+    )
+    await state.broadcast_curations_state()
+    return merged
+
+
 __all__ = [
+    "BounceCompletion",
+    "BounceProgress",
+    "BounceSpec",
     "CloseActiveCurationBody",
     "CreateCurationBody",
     "DeviceCommitBody",
@@ -1069,7 +1217,10 @@ __all__ = [
     "PatchTemplateBody",
     "RenameCurationBody",
     "SaveAsBody",
+    "TriggerBounceBody",
     "handle_assign_pad",
+    "handle_bounce_complete",
+    "handle_bounce_progress",
     "handle_clear_pad",
     "handle_close_active_curation",
     "handle_commit",
@@ -1087,4 +1238,5 @@ __all__ = [
     "handle_rename_curation",
     "handle_save_as",
     "handle_set_group_format",
+    "handle_trigger_bounce",
 ]
