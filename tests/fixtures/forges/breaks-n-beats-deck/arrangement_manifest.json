@@ -1,0 +1,28 @@
+{
+  "bpm": 138.0,
+  "chunks": [
+    {
+      "audio_path": "arrangement_chunks/drum-intro.wav",
+      "bar_position": 0,
+      "chunk_id": "drum-intro",
+      "duration_bars": 8,
+      "duration_sec": 13.91,
+      "source_position_sec": 0.0,
+      "stem": "drum"
+    },
+    {
+      "audio_path": "arrangement_chunks/bass-intro.wav",
+      "bar_position": 0,
+      "chunk_id": "bass-intro",
+      "duration_bars": 8,
+      "duration_sec": 13.91,
+      "source_position_sec": 0.0,
+      "stem": "bass"
+    }
+  ],
+  "first_downbeat_sec": 0.0,
+  "forge_slug": "breaks-n-beats-deck",
+  "manifest_hash": "c071ad85334c89eb65f468229f071b369db77e3ce3bcea01548b923dba785ba5",
+  "schema_version": 1,
+  "source_audio": "/tmp/breaks.wav"
+}

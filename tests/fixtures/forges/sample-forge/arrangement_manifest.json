@@ -1,0 +1,28 @@
+{
+  "bpm": 120.0,
+  "chunks": [
+    {
+      "audio_path": "arrangement_chunks/drum-section-1.wav",
+      "bar_position": 0,
+      "chunk_id": "drum-section-1",
+      "duration_bars": 8,
+      "duration_sec": 14.2,
+      "source_position_sec": 0.0,
+      "stem": "drum"
+    },
+    {
+      "audio_path": "arrangement_chunks/bass-section-1.wav",
+      "bar_position": 0,
+      "chunk_id": "bass-section-1",
+      "duration_bars": 8,
+      "duration_sec": 14.2,
+      "source_position_sec": 0.0,
+      "stem": "bass"
+    }
+  ],
+  "first_downbeat_sec": 0.0,
+  "forge_slug": "sample-forge",
+  "manifest_hash": "42a60c5fdfefdecc2d616851a2f25f620fa34c570e0cac8de57708d18f7a1c31",
+  "schema_version": 1,
+  "source_audio": "/tmp/sample.wav"
+}
