@@ -34,9 +34,31 @@ from .curation import (
     Target,
 )
 from .forge import ArrangementChunk, ArrangementManifest, ForgeClip, ForgeManifest
+
+# Phase 1B/2 intent-wire schemas (previously stemforge/configurator/schemas.py).
+# Re-exported here so existing imports
+# `from stemforge.configurator.schemas import AssignPadRequest, ...` keep
+# working unchanged; the migration is purely about file layout.
+from .intent_wire import (
+    AssignPadRequest,
+    ClearPadRequest,
+    CommitRequest,
+    ErrorEvent,
+    ExportRequest,
+    ExportTarget,
+    GroupLetter,
+    IntentResponse,
+    LoadManifestRequest,
+    LogEvent,
+    ProgressEvent,
+    RecomputeRequest,
+    SetGroupFormatRequest,
+    StateEvent,
+)
 from .state import StemforgeState
 
 __all__ = [
+    # New configurator v1 (Phase 0) — file shapes.
     "ArrangementChunk",
     "ArrangementManifest",
     "ClipSettings",
@@ -51,4 +73,19 @@ __all__ = [
     "ReferencedForge",
     "StemforgeState",
     "Target",
+    # Legacy intent-wire schemas (preserved for intents.py / server.py).
+    "AssignPadRequest",
+    "ClearPadRequest",
+    "CommitRequest",
+    "ErrorEvent",
+    "ExportRequest",
+    "ExportTarget",
+    "GroupLetter",
+    "IntentResponse",
+    "LoadManifestRequest",
+    "LogEvent",
+    "ProgressEvent",
+    "RecomputeRequest",
+    "SetGroupFormatRequest",
+    "StateEvent",
 ]
