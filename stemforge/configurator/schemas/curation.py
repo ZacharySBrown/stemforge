@@ -39,19 +39,64 @@ class ClipSettings(BaseModel):
 
 
 class PadSource(BaseModel):
-    """Reference to a forge clip that lives in a pad."""
+    """Reference to the audio that lives in a pad.
+
+    Two shapes are accepted, both honoured per spec §2.3:
+
+    * **Forge-owned**: ``forge`` + ``clip_id`` + ``audio_path``. The pad's
+      audio belongs to a discovered forge under ``~/stemforge/processed/``.
+      Resolved at COMMIT time by the server's reverse-lookup.
+    * **External**: ``external_path`` alone. The pad's audio sits outside
+      any tracked forge (user dragged in a file from elsewhere). The path
+      is preserved verbatim; LOAD reads it as-is, no forge re-resolution.
+
+    The two shapes are mutually exclusive — validated below.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=False)
 
-    forge: str = Field(..., description="Forge slug")
-    clip_id: str = Field(..., description="Clip ID within the forge's auto_curation_manifest")
-    audio_path: str = Field(
-        ...,
+    forge: str | None = Field(default=None, description="Forge slug (when forge-owned)")
+    clip_id: str | None = Field(
+        default=None,
+        description="Clip ID within the forge's auto_curation_manifest (when forge-owned)",
+    )
+    audio_path: str | None = Field(
+        default=None,
         description=(
-            "Cached resolved relative path under the forge dir. "
+            "Cached resolved relative path under the forge dir (forge-owned only). "
             "Always recompute from the forge manifest at LOAD."
         ),
     )
+    external_path: str | None = Field(
+        default=None,
+        description=(
+            "Absolute path to audio outside any known forge. "
+            "Set iff this pad came from a file the server couldn't reverse-lookup."
+        ),
+    )
+
+    @classmethod
+    def for_forge(cls, forge: str, clip_id: str, audio_path: str) -> PadSource:
+        """Build a forge-owned :class:`PadSource`."""
+        return cls(forge=forge, clip_id=clip_id, audio_path=audio_path)
+
+    @classmethod
+    def for_external(cls, external_path: str) -> PadSource:
+        """Build an external-path :class:`PadSource`."""
+        return cls(external_path=external_path)
+
+    def model_post_init(self, __context: object) -> None:  # type: ignore[override]
+        """Enforce mutual exclusion of forge-owned vs external shapes."""
+        if self.external_path is not None:
+            if any((self.forge, self.clip_id, self.audio_path)):
+                raise ValueError(
+                    "PadSource: external_path is mutually exclusive with forge/clip_id/audio_path"
+                )
+            return
+        if not (self.forge and self.clip_id and self.audio_path):
+            raise ValueError(
+                "PadSource: must set either external_path or all of (forge, clip_id, audio_path)"
+            )
 
 
 class Pad(BaseModel):

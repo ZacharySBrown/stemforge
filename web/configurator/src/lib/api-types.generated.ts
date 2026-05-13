@@ -152,15 +152,28 @@ export interface Pad {
 }
 
 /**
- * Reference to a forge clip that lives in a pad.
+ * Reference to the audio that lives in a pad.
+ *
+ * Two shapes are accepted, both honoured per spec §2.3:
+ *
+ * * **Forge-owned**: ``forge`` + ``clip_id`` + ``audio_path``. The pad's
+ *   audio belongs to a discovered forge under ``~/stemforge/processed/``.
+ *   Resolved at COMMIT time by the server's reverse-lookup.
+ * * **External**: ``external_path`` alone. The pad's audio sits outside
+ *   any tracked forge (user dragged in a file from elsewhere). The path
+ *   is preserved verbatim; LOAD reads it as-is, no forge re-resolution.
+ *
+ * The two shapes are mutually exclusive — validated below.
  */
 export interface PadSource {
-  /** Cached resolved relative path under the forge dir. Always recompute from the forge manifest at LOAD. */
-  audio_path: string;
-  /** Clip ID within the forge's auto_curation_manifest */
-  clip_id: string;
-  /** Forge slug */
-  forge: string;
+  /** Cached resolved relative path under the forge dir (forge-owned only). Always recompute from the forge manifest at LOAD. */
+  audio_path?: string | null;
+  /** Clip ID within the forge's auto_curation_manifest (when forge-owned) */
+  clip_id?: string | null;
+  /** Absolute path to audio outside any known forge. Set iff this pad came from a file the server couldn't reverse-lookup. */
+  external_path?: string | null;
+  /** Forge slug (when forge-owned) */
+  forge?: string | null;
 }
 
 /**
