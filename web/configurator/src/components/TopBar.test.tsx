@@ -75,7 +75,9 @@ describe("TopBar", () => {
     // handlePopOut for the full rationale.
     await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
     const [url, target, features] = openSpy.mock.calls[0];
-    expect(url).toBe(window.location.href);
+    // URL carries a ?popout=1 param so Chrome doesn't dedupe against the
+    // current tab (which otherwise breaks popup-window mode).
+    expect(url).toContain("popout=1");
     expect(target).toBe("_blank");
     expect(features).toContain("popup=yes");
     expect(features).toContain("width=1200");

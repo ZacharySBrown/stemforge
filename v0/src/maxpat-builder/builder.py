@@ -1132,7 +1132,17 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             numinlets=1,
             numoutlets=5,
             outlettype=["", "", "", "", ""],
-            extras={"text": "regexp (.+):(/.*) @substitute %2"},
+            # Strip an optional HFS volume prefix ("Macintosh HD:") if present
+            # and keep the POSIX `/path/to/file`. Live 12 sometimes emits
+            # POSIX paths directly (no HFS prefix); the original
+            # `(.+):(/.*) @substitute %2` only matched when the prefix
+            # was present, so cancel-less picks fell on the floor and
+            # `applyPickedSource` never fired. The bracketed character class
+            # `[^:]+` instead of `.+` keeps the prefix-strip greedy-bounded
+            # to the volume name (no colons in macOS volume names), and the
+            # `?` makes the prefix optional so a bare POSIX path still
+            # matches the second group.
+            extras={"text": "regexp ^(?:[^:]+:)?(/.*) @substitute %1"},
         )
     )
     lines.append(_line(OBJ_PICKER_DIALOG, 0, OBJ_PICKER_DIALOG_REGEX, 0))

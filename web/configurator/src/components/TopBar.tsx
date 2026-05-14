@@ -83,7 +83,13 @@ export function TopBar({
       "scrollbars=yes",
       "resizable=yes",
     ].join(",");
-    const w = window.open(window.location.href, "_blank", features);
+    // Chrome dedupes `window.open(currentURL, ...)` and reuses the current
+    // tab when the URL exactly matches. Append a transient query param so
+    // Chrome treats it as a distinct target → opens a fresh popup window
+    // rather than navigating the parent or focusing the current tab.
+    const url = new URL(window.location.href);
+    url.searchParams.set("popout", "1");
+    const w = window.open(url.href, "_blank", features);
     if (w) {
       // Best-effort focus so the new window comes to the foreground even if
       // the OS stacked it behind Live.
