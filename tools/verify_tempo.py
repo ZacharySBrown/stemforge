@@ -14,6 +14,7 @@ Runs:
 Usage:
     uv run python tools/verify_tempo.py <track_dir> [--mix PATH]
 """
+
 from __future__ import annotations
 
 import argparse

@@ -125,7 +125,7 @@ def slice_clip(
     if le_frame <= ls_frame:
         raise ValueError(
             f"empty loop region: ls={loop_start_seconds:.3f}s "
-            f"le={loop_end_seconds:.3f}s src={source_frames/sr:.3f}s"
+            f"le={loop_end_seconds:.3f}s src={source_frames / sr:.3f}s"
         )
 
     # Clamp start into the loop region — if the user dragged the play-triangle
@@ -140,8 +140,9 @@ def slice_clip(
     while remaining > 0:
         available = le_frame - position
         n = min(available, remaining)
-        chunk, _ = sf.read(str(source_path), start=position, frames=n,
-                           always_2d=True, dtype="float32")
+        chunk, _ = sf.read(
+            str(source_path), start=position, frames=n, always_2d=True, dtype="float32"
+        )
         chunks.append(chunk)
         remaining -= n
         position = ls_frame  # subsequent passes start at loop_start
@@ -264,7 +265,8 @@ def slice_and_write_one(
     out_path = export_dir / out_filename
 
     duration, _sr = slice_clip(
-        source_path, out_path,
+        source_path,
+        out_path,
         start_seconds=start_marker_beats * seconds_per_beat,
         length_seconds=loop_length_beats * seconds_per_beat,
         loop_start_seconds=loop_start_beats * seconds_per_beat,
@@ -285,8 +287,8 @@ def slice_and_write_one(
 
 
 _STALE_OUTPUT_GLOBS = (
-    ".manifest.json",     # batch manifest
-    ".manifest_*.json",   # per-WAV sidecars (filename uses content hash)
+    ".manifest.json",  # batch manifest
+    ".manifest_*.json",  # per-WAV sidecars (filename uses content hash)
     "[ABCD][0-9][0-9].wav",  # bounced WAVs (e.g. A00.wav, D11.wav)
 )
 
@@ -363,11 +365,15 @@ def run(spec_path: Path, *, json_events: bool = False) -> Path:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("spec", type=Path, help="Path to spec.json written by sf_clip_export.js")
-    ap.add_argument("--json-events", action="store_true",
-                    help="Emit NDJSON progress events on stdout for the M4L parser")
+    ap.add_argument(
+        "--json-events",
+        action="store_true",
+        help="Emit NDJSON progress events on stdout for the M4L parser",
+    )
     args = ap.parse_args(argv)
 
     if not args.spec.exists():

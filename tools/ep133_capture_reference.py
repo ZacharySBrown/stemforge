@@ -172,9 +172,7 @@ def wrap_tar_as_ppak(
         # The on-device project picker only exposes slots 1..9 for `.ppak`
         # imports; we keep the file inside that range to avoid surprises
         # at upload time even though the SysEx layer supports 1..99.
-        raise ValueError(
-            f"project_num {project_num} out of range for .ppak container (1..9)"
-        )
+        raise ValueError(f"project_num {project_num} out of range for .ppak container (1..9)")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
 

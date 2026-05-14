@@ -11,6 +11,7 @@ Usage:
     uv run python tools/beat_dashboard.py --output dashboard.html
     uv run python tools/beat_dashboard.py --tracks the_champ_original_version benjamins
 """
+
 from __future__ import annotations
 
 import argparse
@@ -36,6 +37,7 @@ from stemforge.beat_align import (
 # beat-this is optional
 try:
     from stemforge.beat_detect import detect_beats_and_downbeats
+
     HAS_BEAT_THIS = True
 except ImportError:
     HAS_BEAT_THIS = False
@@ -70,7 +72,9 @@ def analyze_track(track_dir: Path, time_sig: int = 4) -> dict | None:
     bar_durs_orig = np.diff(bar_starts_orig)
     interior_orig = bar_durs_orig[:-1] if len(bar_durs_orig) > 1 else bar_durs_orig
     bar_median = float(np.median(interior_orig)) if len(interior_orig) > 0 else 0
-    bar_cv_orig = float(interior_orig.std() / interior_orig.mean() * 100) if len(interior_orig) > 1 else 0
+    bar_cv_orig = (
+        float(interior_orig.std() / interior_orig.mean() * 100) if len(interior_orig) > 1 else 0
+    )
 
     # Corrections
     cleaned, ghosts_removed = filter_ghost_beats(beat_times)
@@ -80,7 +84,9 @@ def analyze_track(track_dir: Path, time_sig: int = 4) -> dict | None:
     bar_starts_corr = corrected[::time_sig]
     bar_durs_corr = np.diff(bar_starts_corr)
     interior_corr = bar_durs_corr[:-1] if len(bar_durs_corr) > 1 else bar_durs_corr
-    bar_cv_corr = float(interior_corr.std() / interior_corr.mean() * 100) if len(interior_corr) > 1 else 0
+    bar_cv_corr = (
+        float(interior_corr.std() / interior_corr.mean() * 100) if len(interior_corr) > 1 else 0
+    )
 
     correction_applied = bar_cv_corr < bar_cv_orig and (ghosts_removed > 0 or offset > 0)
 
@@ -92,17 +98,16 @@ def analyze_track(track_dir: Path, time_sig: int = 4) -> dict | None:
     for off in range(time_sig):
         shifted = beat_times[off:]
         bs = shifted[::time_sig]
-        score = float(sum(
-            onset_env[min(np.searchsorted(onset_times_arr, t), len(onset_env) - 1)]
-            for t in bs
-        ))
+        score = float(
+            sum(onset_env[min(np.searchsorted(onset_times_arr, t), len(onset_env) - 1)] for t in bs)
+        )
         offset_scores.append(score)
 
     # Energy timeline (1-second windows)
     energy_timeline = []
     hop = sr
     for i in range(0, len(y) - hop, hop):
-        rms = float(np.sqrt(np.mean(y[i:i + hop] ** 2)))
+        rms = float(np.sqrt(np.mean(y[i : i + hop] ** 2)))
         energy_timeline.append(rms)
 
     # IBI histogram
@@ -120,12 +125,14 @@ def analyze_track(track_dir: Path, time_sig: int = 4) -> dict | None:
     for i in range(len(active_durs)):
         dev = (active_durs[i] - active_median) / active_median * 100 if active_median > 0 else 0
         if abs(dev) > 5:
-            deviant_bars.append({
-                "bar": i + 1,
-                "time": float(active_starts[i]),
-                "duration": float(active_durs[i]),
-                "deviation_pct": round(dev, 1),
-            })
+            deviant_bars.append(
+                {
+                    "bar": i + 1,
+                    "time": float(active_starts[i]),
+                    "duration": float(active_durs[i]),
+                    "deviation_pct": round(dev, 1),
+                }
+            )
 
     # Drift analysis
     drift = diagnose_drift(drums, n_segments=6)
@@ -148,7 +155,12 @@ def analyze_track(track_dir: Path, time_sig: int = 4) -> dict | None:
             if len(bd_db) > 2:
                 bd_durs = np.diff(bd_db)
                 bd_cv = float(bd_durs[:-1].std() / bd_durs[:-1].mean() * 100)
-                bt_drums = {"bpm": round(bd_bpm, 1), "bars": len(bd_durs), "cv": round(bd_cv, 2), "downbeats": len(bd_db)}
+                bt_drums = {
+                    "bpm": round(bd_bpm, 1),
+                    "bars": len(bd_durs),
+                    "cv": round(bd_cv, 2),
+                    "downbeats": len(bd_db),
+                }
         except Exception:
             pass
 
@@ -170,7 +182,12 @@ def analyze_track(track_dir: Path, time_sig: int = 4) -> dict | None:
                 if len(bm_db) > 2:
                     bm_durs = np.diff(bm_db)
                     bm_cv = float(bm_durs[:-1].std() / bm_durs[:-1].mean() * 100)
-                    bt_mix = {"bpm": round(bm_bpm, 1), "bars": len(bm_durs), "cv": round(bm_cv, 2), "downbeats": len(bm_db)}
+                    bt_mix = {
+                        "bpm": round(bm_bpm, 1),
+                        "bars": len(bm_durs),
+                        "cv": round(bm_cv, 2),
+                        "downbeats": len(bm_db),
+                    }
             except Exception:
                 pass
 
@@ -809,12 +826,13 @@ window.addEventListener('DOMContentLoaded', init);
 
 def main():
     ap = argparse.ArgumentParser(description="Generate beat analysis dashboard")
-    ap.add_argument("--output", "-o", type=Path,
-                    default=REPO_ROOT / "tools" / "beat_dashboard.html")
-    ap.add_argument("--processed-dir", type=Path,
-                    default=Path.home() / "stemforge" / "processed")
-    ap.add_argument("--tracks", nargs="*", default=None,
-                    help="Specific track names to analyze (default: all)")
+    ap.add_argument(
+        "--output", "-o", type=Path, default=REPO_ROOT / "tools" / "beat_dashboard.html"
+    )
+    ap.add_argument("--processed-dir", type=Path, default=Path.home() / "stemforge" / "processed")
+    ap.add_argument(
+        "--tracks", nargs="*", default=None, help="Specific track names to analyze (default: all)"
+    )
     args = ap.parse_args()
 
     processed = args.processed_dir
@@ -833,7 +851,7 @@ def main():
     for i, td in enumerate(track_dirs):
         name = td.name
         time_sig = 7 if "7_4" in name else 4
-        print(f"  [{i+1}/{len(track_dirs)}] {name}...", end=" ", flush=True)
+        print(f"  [{i + 1}/{len(track_dirs)}] {name}...", end=" ", flush=True)
         result = analyze_track(td, time_sig=time_sig)
         if result:
             if "error" in result:

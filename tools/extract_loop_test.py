@@ -9,6 +9,7 @@ Pulls the loop directly from the SOURCE mix at the chunk's `source_offset_sec`
 so we test the actual prechop math (BPM + first_downbeat), not the chunk WAV
 extraction itself.
 """
+
 from __future__ import annotations
 
 import json
@@ -46,7 +47,7 @@ def extract(track_dir: Path, source_mix: Path, chunk_index: int, out_path: Path)
     print(f"    BPM:                {bpm:.4f}")
     print(f"    source_offset_sec:  {source_offset_sec:.4f}")
     print(f"    loop duration:      {loop_duration_sec:.4f}s ({bars} bars × {beats_per_bar} beats)")
-    print(f"    frames extracted:   {loop.shape[0]} @ {sr} Hz = {loop.shape[0]/sr:.4f}s")
+    print(f"    frames extracted:   {loop.shape[0]} @ {sr} Hz = {loop.shape[0] / sr:.4f}s")
     print(f"    written to:         {out_path}")
 
 

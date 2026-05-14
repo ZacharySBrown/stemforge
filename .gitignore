@@ -58,6 +58,12 @@ zak@mini
 # Each user provides their own — not checked in.
 tests/ep133/fixtures/reference.ppak
 
+# ConfiguratorStrip is fully deleted (Phase 4B, PR #112). Guard against
+# accidental re-introduction via stray build/source artifacts.
+ConfiguratorStrip.amxd
+ConfiguratorStrip.maxpat
+v0/src/m4l-devices/configurator-strip/
+
 # Local-only work trees, large binary outputs, IDE config, and the log/
 # directory pattern (kept gitignored so scripts can mkdir log/ cleanly —
 # the prior root `log` file was moved to docs/ep133-song-triage/).

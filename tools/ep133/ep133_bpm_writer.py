@@ -43,9 +43,14 @@ def encode_bpm_override(bpm: int) -> tuple[int, int, int, int]:
     return (0x00, 0x80, bpm, 0x80)
 
 
-def patch_pad_record(record: bytes, sample_slot: int, sample_length_frames: int,
-                     bpm: int | None = None, bpm_override: bool = False,
-                     time_mode: str = "off") -> bytes:
+def patch_pad_record(
+    record: bytes,
+    sample_slot: int,
+    sample_length_frames: int,
+    bpm: int | None = None,
+    bpm_override: bool = False,
+    time_mode: str = "off",
+) -> bytes:
     """Patch a 27-byte pad record using VERIFIED offsets (see
     `memory/project_ep133_pad_record_correct.md`).
 
@@ -86,7 +91,7 @@ def find_pad_record_offsets(tar_bytes: bytes) -> dict:
     offsets = {}
     pos = 0
     while pos + TAR_BLOCK <= len(tar_bytes):
-        header = tar_bytes[pos:pos + TAR_BLOCK]
+        header = tar_bytes[pos : pos + TAR_BLOCK]
         if header[:4] == b"\x00\x00\x00\x00":
             break
         name = header[:100].rstrip(b"\x00/").decode("ascii", errors="replace")
@@ -97,7 +102,11 @@ def find_pad_record_offsets(tar_bytes: bytes) -> dict:
         typeflag = chr(header[156]) if header[156] else "0"
 
         # Match pads/<group>/p<NN>
-        if typeflag in ("0", "\x00") and name.startswith("pads/") and len(name) == len("pads/x/pNN"):
+        if (
+            typeflag in ("0", "\x00")
+            and name.startswith("pads/")
+            and len(name) == len("pads/x/pNN")
+        ):
             group = name[5]
             try:
                 pad_num = int(name[8:10])
@@ -115,12 +124,37 @@ def find_pad_record_offsets(tar_bytes: bytes) -> dict:
 # Real default-blank pad bytes (verbatim from a fresh Sample Tool backup).
 # Used to reset all pads before applying the spec — ensures the output
 # contains ONLY what we specified, not stray bindings from the base.
-DEFAULT_BLANK_PAD = bytes([
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x42,
-    0x64, 0x00, 0x00, 0x00, 0xff, 0x00, 0x00, 0x00,
-    0x3c, 0x00, 0x00,
-])
+DEFAULT_BLANK_PAD = bytes(
+    [
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0xF0,
+        0x42,
+        0x64,
+        0x00,
+        0x00,
+        0x00,
+        0xFF,
+        0x00,
+        0x00,
+        0x00,
+        0x3C,
+        0x00,
+        0x00,
+    ]
+)
 assert len(DEFAULT_BLANK_PAD) == PAD_RECORD_SIZE
 
 
@@ -139,7 +173,7 @@ def patch_tar(tar_bytes: bytes, spec: dict, reset_others: bool = True) -> bytes:
     if reset_others:
         for key, off in offsets.items():
             if key not in spec:
-                out[off:off + PAD_RECORD_SIZE] = DEFAULT_BLANK_PAD
+                out[off : off + PAD_RECORD_SIZE] = DEFAULT_BLANK_PAD
 
     for (group, pad_num), cfg in spec.items():
         key = (group, pad_num)
@@ -156,7 +190,7 @@ def patch_tar(tar_bytes: bytes, spec: dict, reset_others: bool = True) -> bytes:
             bpm_override=cfg.get("bpm_override", False),
             time_mode=cfg.get("time_mode", "off"),
         )
-        out[off:off + PAD_RECORD_SIZE] = new
+        out[off : off + PAD_RECORD_SIZE] = new
 
     return bytes(out)
 
@@ -174,8 +208,11 @@ def preset_mvp_override(sample_length: int) -> dict:
     """Same as mvp but uses override-BPM encoding at bytes 13-15."""
     return {
         ("c", 1): {
-            "slot": 100, "length": sample_length, "bpm": 120,
-            "bpm_override": True, "time_mode": "bpm",
+            "slot": 100,
+            "length": sample_length,
+            "bpm": 120,
+            "bpm_override": True,
+            "time_mode": "bpm",
         },
     }
 
@@ -183,14 +220,26 @@ def preset_mvp_override(sample_length: int) -> dict:
 def preset_matrix(sample_length: int) -> dict:
     """12-pad BPM matrix using override encoding (BPMs 60-200)."""
     pads = [
-        (1,  60), (2,  80), (3, 100), (4, 120),
-        (5, 130), (6, 140), (7, 150), (8, 160),
-        (9, 170), (10, 180), (11, 190), (12, 200),
+        (1, 60),
+        (2, 80),
+        (3, 100),
+        (4, 120),
+        (5, 130),
+        (6, 140),
+        (7, 150),
+        (8, 160),
+        (9, 170),
+        (10, 180),
+        (11, 190),
+        (12, 200),
     ]
     return {
         ("c", n): {
-            "slot": 100, "length": sample_length, "bpm": bpm,
-            "bpm_override": True, "time_mode": "bpm",
+            "slot": 100,
+            "length": sample_length,
+            "bpm": bpm,
+            "bpm_override": True,
+            "time_mode": "bpm",
         }
         for n, bpm in pads
     }
@@ -200,14 +249,26 @@ def preset_matrix_tight(sample_length: int) -> dict:
     """12-pad BPM matrix in 120-180 range — avoids aggressive compression
     that produces 'blip' playback when source_bpm << project_bpm."""
     pads = [
-        (1, 120), (2, 125), (3, 130), (4, 135),
-        (5, 140), (6, 145), (7, 150), (8, 155),
-        (9, 160), (10, 165), (11, 170), (12, 180),
+        (1, 120),
+        (2, 125),
+        (3, 130),
+        (4, 135),
+        (5, 140),
+        (6, 145),
+        (7, 150),
+        (8, 155),
+        (9, 160),
+        (10, 165),
+        (11, 170),
+        (12, 180),
     ]
     return {
         ("c", n): {
-            "slot": 100, "length": sample_length, "bpm": bpm,
-            "bpm_override": True, "time_mode": "bpm",
+            "slot": 100,
+            "length": sample_length,
+            "bpm": bpm,
+            "bpm_override": True,
+            "time_mode": "bpm",
         }
         for n, bpm in pads
     }
@@ -226,6 +287,7 @@ def patch_meta_timestamp(meta_json_bytes: bytes) -> bytes:
     other fields untouched (so device_sku, base_sku, author, pak_type
     stay exactly as Sample Tool emitted them)."""
     import json
+
     meta = json.loads(meta_json_bytes.decode("utf-8"))
     now = datetime.now(timezone.utc)
     meta["generated_at"] = now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z"
@@ -235,8 +297,13 @@ def patch_meta_timestamp(meta_json_bytes: bytes) -> bytes:
 def get_sample_length_frames(base_path: str) -> int:
     """Read the WAV inside the base ppak and return its frame count."""
     import wave
+
     with zipfile.ZipFile(base_path, "r") as zf:
-        wav_entries = [i for i in zf.infolist() if i.filename.startswith("/sounds/") and i.filename.endswith(".wav")]
+        wav_entries = [
+            i
+            for i in zf.infolist()
+            if i.filename.startswith("/sounds/") and i.filename.endswith(".wav")
+        ]
         if not wav_entries:
             raise RuntimeError("base has no WAV in /sounds/")
         wav_data = zf.read(wav_entries[0].filename)
@@ -258,12 +325,16 @@ def build_from_base(base_path: str, output_path: str, spec: dict, refresh_meta: 
     with zipfile.ZipFile(base_path, "r") as base_zf:
         info_list = base_zf.infolist()
         # Find the project TAR
-        project_entries = [i for i in info_list if "/projects/" in i.filename and i.filename.endswith(".tar")]
+        project_entries = [
+            i for i in info_list if "/projects/" in i.filename and i.filename.endswith(".tar")
+        ]
         if not project_entries:
             print("Error: base has no /projects/*.tar entry", file=sys.stderr)
             sys.exit(1)
         if len(project_entries) > 1:
-            print(f"Warning: base has {len(project_entries)} project TARs; patching the first one ({project_entries[0].filename})")
+            print(
+                f"Warning: base has {len(project_entries)} project TARs; patching the first one ({project_entries[0].filename})"
+            )
         project_info = project_entries[0]
 
         # Read everything
@@ -283,8 +354,7 @@ def build_from_base(base_path: str, output_path: str, spec: dict, refresh_meta: 
                 now = datetime.now()
                 new_info = zipfile.ZipInfo(
                     filename=info.filename,
-                    date_time=(now.year, now.month, now.day,
-                               now.hour, now.minute, now.second),
+                    date_time=(now.year, now.month, now.day, now.hour, now.minute, now.second),
                 )
                 new_info.compress_type = info.compress_type
                 new_info.external_attr = info.external_attr
@@ -304,11 +374,16 @@ def build_from_base(base_path: str, output_path: str, spec: dict, refresh_meta: 
 
 def main():
     p = argparse.ArgumentParser(description="EP-133 .ppak generator (v3, patch-from-real-backup)")
-    p.add_argument("--base", required=True, help="Real .ppak from Sample Tool Backup (used as format-clean base)")
+    p.add_argument(
+        "--base",
+        required=True,
+        help="Real .ppak from Sample Tool Backup (used as format-clean base)",
+    )
     p.add_argument("--preset", choices=PRESETS.keys(), default="mvp")
     p.add_argument("--out", default=os.path.expanduser("~/Desktop/ep133_v3.ppak"))
-    p.add_argument("--no-refresh-meta", action="store_true",
-                   help="Skip refreshing the generated_at timestamp")
+    p.add_argument(
+        "--no-refresh-meta", action="store_true", help="Skip refreshing the generated_at timestamp"
+    )
     args = p.parse_args()
 
     sample_length = get_sample_length_frames(args.base)
