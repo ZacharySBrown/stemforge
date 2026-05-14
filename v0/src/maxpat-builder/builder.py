@@ -1,30 +1,38 @@
 """
 builder — generate a Max for Live patcher (.maxpat JSON) from v0/interfaces/device.yaml.
 
-v0.1.0 matrix architecture (see specs/stemforge_device_ui_spec_LATEST.md
-and specs/stemforge_device_ui_contract.md):
+Configurator v1 layout (spec §3.1 — see specs/CONSOLIDATED_DESIGN.md).
+v0.0.3 lifts the device patcher's visible surface off the legacy
+PRESET/SOURCE umenu + LOAD/ANCH split-row + forge_click/commit_click
+route table; what ships now is a single picker + primary button row +
+verb-button row, all natively-rendered live.text widgets that talk to
+stemforge_loader.v0.js by direct message-name.
 
-    ┌──────────────────────────────────────────────────────────────┐
-    │  Device canvas 820 × 169 (fixed M4L height)                  │
-    │                                                              │
-    │  ┌──────────────────────────────────────────────────────┐    │
-    │  │  [v8ui sf_ui.js] @ 0,0  size 820×149                 │    │
-    │  │  Paints every phase (empty/idle/forging/done/error)  │    │
-    │  │  based on the sf_state dict.  Emits click events     │    │
-    │  │  out outlet 0: preset_click / source_click /         │    │
-    │  │  forge_click / cancel_click / done_click /           │    │
-    │  │  retry_click / settings_click                        │    │
-    │  └──────────────────────────────────────────────────────┘    │
-    │                                                              │
-    │  Footer 820×20 — native live.text / live.comment objects.    │
-    │     [sf_status_dot] [sf_status_text]       [sf_version_text] │
-    └──────────────────────────────────────────────────────────────┘
+    ┌──────────────────────────────────────────────────────────────────┐
+    │  Device canvas 820 × 169 (fixed M4L height)                      │
+    │                                                                  │
+    │  ┌──────────────────────────────────┐  ┌──────────────────────┐  │
+    │  │  [ Pick source… ]                │  │  FORGE / LOAD FORGE  │  │
+    │  │  status: <sniffer text>          │  │  / LOAD CURATION     │  │
+    │  │   (live.text → js.pickSource)    │  │   (label driven by   │  │
+    │  │   (live.text ← r sf-status)      │  │    primary-btn-label)│  │
+    │  └──────────────────────────────────┘  ├──────────────────────┤  │
+    │   [ v8ui sf_ui.js — background paint ] │  COMMIT  BOUNCE EXPRT│  │
+    │                                        │   (3 small buttons)  │  │
+    │                                        └──────────────────────┘  │
+    │  [ Open Editor ]   ● status dot · status text · v0.1.0           │
+    └──────────────────────────────────────────────────────────────────┘
+
+The v8ui canvas is still present (sf_state still drives its `refresh`
+hook so legacy debug-painting works) but it is no longer the source of
+truth for clicks — it is painted in the background only, behind the
+new presentation-mode widgets.
 
 Logic layer objects (classic [js], not in presentation):
     [js sf_state.js       @scripting_name sf_state_mgr]
     [js sf_forge.js       @scripting_name sf_forge_mgr]
-    [js sf_preset_loader.js]
-    [js sf_manifest_loader.js]
+    [js sf_preset_loader.js]       (preserved — populated by loadbang scan)
+    [js sf_manifest_loader.js]     (preserved — populated by loadbang scan)
     [js sf_settings.js    @scripting_name sf_settings_mgr]
     [js sf_logger.js      @scripting_name sf_logger]
 
@@ -32,24 +40,30 @@ Preserved (unchanged) objects, reused by sf_forge:
     [js stemforge_ndjson_parser.v0.js]
     [js stemforge_loader.v0.js        @scripting_name sf_lom_loader]
 
-Wiring summary (contract §8):
-    v8ui outlet 0 → [route preset_click source_click forge_click cancel_click
-                     done_click retry_click settings_click commit_click]
-        preset_click   → sf_preset_loader (open popup)
-        source_click   → sf_manifest_loader (open popup)
-        forge_click    → sf_forge_mgr startForge
-        cancel_click   → sf_forge_mgr cancelForge
-        retry_click    → sf_forge_mgr retry
-        done_click     → sf_state_mgr    reset
-        settings_click → sf_settings_mgr openFile
-        commit_click   → sf_forge_mgr commitOffsets (forwards to loader via
-                          outlet 2 for the LOM → manifest offset roundtrip)
+Wiring summary (Configurator v1 §3.1 picker contract):
+    sf_pick_source_btn (live.text mode 1) → [message pickSource]
+        → [js sf_lom_loader]  (calls pickSource(), which fires
+        messnamed("sf-open-source-dialog","bang"))
 
-    sf_state_mgr outlet 0 → [v8ui sf_ui] refresh (redraw on every mutation)
-    sf_preset_loader outlet 0 → [umenu sf_preset_menu]
-    sf_preset_loader outlet 1 → sf_state_mgr (setPreset <json>)
-    sf_manifest_loader outlet 0 → [umenu sf_source_menu]
-    sf_manifest_loader outlet 1 → sf_state_mgr (setSource <json>) or browseAudio
+    [r sf-open-source-dialog] → [opendialog] → regex (HFS→POSIX)
+        → [prepend applyPickedSource] → [js sf_lom_loader]
+
+    sf_primary_btn (live.text mode 1) → [message primary]
+        → [js sf_lom_loader]  (dispatches by pickedSource.type)
+    [r primary-btn-label]   → set text of sf_primary_btn
+    [r primary-btn-enabled] → set active of sf_primary_btn
+
+    sf_commit_btn   → [message commit]         → [js sf_lom_loader]
+    sf_bounce_btn   → [message bounceCuration] → [js sf_lom_loader]
+    sf_export_btn   → [message exportArrangementSnapshot ~/Desktop/snapshot.json]
+                                                 → [js sf_lom_loader]
+
+    sf_open_editor_btn (footer) → [t b] → [message openEditor]
+                                                 → [js sf_lom_loader]
+
+    sf_state_mgr outlet 0 → [v8ui sf_ui] refresh (redraw on every mutation
+                              — still wired so sf_state's UI debug surface
+                              keeps working).
     sf_forge_mgr outlet 0 → sf_state_mgr (phase transitions)
     sf_forge_mgr outlet 1 → [shell]        (Phase 1 native binary)
     sf_forge_mgr outlet 2 → sf_lom_loader  (Phase 2 LiveAPI track creation)
@@ -57,8 +71,25 @@ Wiring summary (contract §8):
     [shell] → [js stemforge_ndjson_parser] → [route progress stem bpm slice_dir
               complete curated error] → sf_forge_mgr on* handlers
 
+UDP receivers (HW-4 sf_remote bus, §6 docs/remote_debug.md): unchanged.
+    [udpreceive 7420] → [route /state /forge /preset-loader …] → modules
+    [udpreceive 7421] → sf_state_mgr (dumpDict)
+
 Dicts (created by a leading [dict] object per contract §2):
     sf_state / sf_preset / sf_manifest / sf_settings
+
+Removed in Configurator v1 (P0-5 + P1-7):
+    - sf_preset_menu umenu, sf_source_menu umenu (replaced by Pick source… btn)
+    - the OBJ_ROUTE_UI_EVENTS [route preset_click source_click forge_click
+      cancel_click retry_click done_click settings_click commit_click
+      bounce_clips_click export_song_click arrangement_load_click
+      anchor_locator_click] table and every legacy [message] / [opendialog]
+      branch hanging off it (preset_click, source_click, forge_click,
+      cancel_click, retry_click, done_click, settings_click, commit_click,
+      bounce_clips_click, export_song_click, arrangement_load_click,
+      anchor_locator_click).
+    - Net effect: the v8ui's outlet-0 events are no longer consumed (the
+      v8ui's onclick still fires, harmlessly).
 
 The .amxd is packed by amxd_pack.py and installed via tools/sf_deploy.py.
 """
@@ -102,10 +133,35 @@ OBJ_DICT_PRESET = "obj-dict-sf-preset"
 OBJ_DICT_MANIFEST = "obj-dict-sf-manifest"
 OBJ_DICT_SETTINGS = "obj-dict-sf-settings"
 
-OBJ_UMENU_PRESET = "obj-umenu-preset"
-OBJ_UMENU_SOURCE = "obj-umenu-source"
+# Configurator v1 §3.1 picker UI — new live.text widgets that replace the
+# legacy umenus + v8ui-click route table. The v8ui still draws background
+# pixels but is no longer the source of truth for user clicks; that role
+# moves to these native widgets in presentation mode.
+OBJ_PICK_SOURCE_BTN = "obj-sf-pick-source-btn"
+OBJ_PICK_SOURCE_MSG = "obj-sf-pick-source-msg"
+OBJ_STATUS_PICKER_TEXT = "obj-sf-status-picker-text"
+OBJ_STATUS_RECV = "obj-sf-status-recv"
 
-OBJ_ROUTE_UI_EVENTS = "obj-route-ui-events"
+OBJ_PRIMARY_BTN = "obj-sf-primary-btn"
+OBJ_PRIMARY_MSG = "obj-sf-primary-msg"
+OBJ_PRIMARY_LABEL_RECV = "obj-sf-primary-label-recv"
+OBJ_PRIMARY_LABEL_PREPEND = "obj-sf-primary-label-prepend"
+OBJ_PRIMARY_ENABLED_RECV = "obj-sf-primary-enabled-recv"
+OBJ_PRIMARY_ENABLED_PREPEND = "obj-sf-primary-enabled-prepend"
+
+OBJ_COMMIT_BTN = "obj-sf-commit-btn"
+OBJ_COMMIT_MSG = "obj-sf-commit-msg"
+OBJ_BOUNCE_BTN = "obj-sf-bounce-btn"
+OBJ_BOUNCE_MSG = "obj-sf-bounce-msg"
+OBJ_EXPORT_BTN = "obj-sf-export-btn"
+OBJ_EXPORT_MSG = "obj-sf-export-msg"
+
+# Picker dialog (driven by sf-open-source-dialog messnamed from js.pickSource).
+OBJ_PICKER_DIALOG_RECV = "obj-sf-picker-dialog-recv"
+OBJ_PICKER_DIALOG = "obj-sf-picker-dialog"
+OBJ_PICKER_DIALOG_REGEX = "obj-sf-picker-dialog-regex"
+OBJ_PICKER_DIALOG_PREPEND = "obj-sf-picker-dialog-prepend"
+
 OBJ_ROUTE_NDJSON = "obj-route-ndjson"
 
 # HW-4 (sf_remote): UDP receivers + dispatcher route. 7420 = general bus,
@@ -115,12 +171,6 @@ OBJ_UDP_DUMP = "obj-udp-dump"
 OBJ_ROUTE_UDP = "obj-route-udp"
 
 OBJ_SHELL = "obj-shell"
-OBJ_OPENDIALOG = "obj-opendialog"
-OBJ_AUDIOPATH_REGEX = "obj-audiopath-regex"
-OBJ_AUDIOPATH_PREPEND = "obj-audiopath-prepend"
-OBJ_MANIFEST_DIALOG = "obj-manifest-dialog"
-OBJ_MANIFESTPATH_REGEX = "obj-manifestpath-regex"
-OBJ_MANIFESTPATH_PREPEND = "obj-manifestpath-prepend"
 
 OBJ_STATUS_DOT = "obj-sf-status-dot"
 OBJ_STATUS_TEXT = "obj-sf-status-text"
@@ -139,10 +189,6 @@ OBJ_LOAD_SCAN_PRESETS = "obj-load-scan-presets"
 OBJ_LOAD_SCAN_MANIFESTS = "obj-load-scan-manifests"
 OBJ_LOAD_SETTINGS = "obj-load-settings"
 
-OBJ_PRESET_SELECT_PREP = "obj-preset-select-prepend"
-OBJ_SOURCE_SELECT_PREP = "obj-source-select-prepend"
-OBJ_FORGE_ACTION_ROUTE = "obj-forge-action-route"
-
 OBJ_PROGRESS_UNPACK = "obj-progress-unpack"
 OBJ_ONPROG_PREPEND = "obj-onprog-prepend"
 OBJ_ONSTEM_PREPEND = "obj-onstem-prepend"
@@ -158,12 +204,10 @@ OBJ_CX_CLIP_DONE_PREP = "obj-cx-clip-done-prepend"
 OBJ_CX_CLIP_ERROR_PREP = "obj-cx-clip-error-prepend"
 OBJ_CX_COMPLETE_PREP = "obj-cx-complete-prepend"
 OBJ_CX_ERROR_PREP = "obj-cx-error-prepend"
-OBJ_BOUNCE_CLIPS_MSG = "obj-bounce-clips-msg"
-OBJ_EXPORT_SONG_MSG = "obj-export-song-msg"
-OBJ_LOAD_ARR_MSG = "obj-load-arrangement-msg"
 
-# Locator-anchor wiring (sf_locator_anchor message names).
-OBJ_ANCHOR_CLICK_MSG = "obj-anchor-click-msg"
+# Locator-anchor NDJSON event prepends (kept for [shell] → ndjson path even
+# though the legacy ANCH button is gone; the JS module remains for UDP-driven
+# re-anchor flows and future Lane wiring).
 OBJ_LA_STARTED_PREP = "obj-la-started-prepend"
 OBJ_LA_COMPLETE_PREP = "obj-la-complete-prepend"
 OBJ_LA_ERROR_PREP = "obj-la-error-prepend"
@@ -267,7 +311,18 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     boxes: list[dict[str, Any]] = []
     lines: list[dict[str, Any]] = []
 
-    # ── Presentation: v8ui canvas (draws the whole main body) ────────────────
+    # ── v8ui canvas (background-only in Configurator v1) ─────────────────────
+    # The v8ui still receives `refresh` from sf_state so its in-script draw
+    # hooks keep firing (legacy debug surface), but it is OUT of presentation
+    # mode in v0.0.3: the spec §3.1 picker + verb buttons are the only
+    # presentation-mode widgets the user sees. The v8ui's outlet-0 click
+    # events are no longer routed anywhere — clicks happen on the native
+    # widgets that sit (in presentation) where the canvas used to be.
+    #
+    # We keep the v8ui object in patching mode so:
+    #   - sf_state's `refresh` wire still has a destination,
+    #   - in-Max debug sessions can still poke the canvas via the patching
+    #     view if needed for inspection.
 
     v8ui_rect = (
         v8ui_cfg["pos"]["x"],
@@ -275,25 +330,11 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         v8ui_cfg["size"]["width"],
         v8ui_cfg["size"]["height"],
     )
-    # Presentation-mode rect: narrowed to middle+right only (x=212..820).
-    # v8ui captures all clicks within its bounds, so if it overlaps the
-    # left-column umenus the native dropdowns never receive clicks. sf_ui.js
-    # has been updated to draw the FORGE button at the right edge of whatever
-    # canvas width it gets (onresize handles the width), so the button stays
-    # visible in the narrowed 608-wide area.
-    v8ui_presentation_rect = (
-        212.0,
-        v8ui_cfg["pos"]["y"],
-        v8ui_cfg["size"]["width"] - 212.0,
-        v8ui_cfg["size"]["height"],
-    )
     boxes.append(
         _box(
             OBJ_V8UI,
             "v8ui",
             v8ui_rect,
-            presentation=True,
-            presentation_rect=v8ui_presentation_rect,
             numinlets=1,
             numoutlets=1,
             outlettype=[""],
@@ -748,503 +789,383 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     # 7421 → sf_state_mgr (direct, dumpDict only)
     lines.append(_line(OBJ_UDP_DUMP, 0, OBJ_SF_STATE, 0))
 
-    # ── Visible native umenus (left column, presentation mode) ──────────────
+    # ── Configurator v1 §3.1 picker + verb buttons (live.text widgets) ───────
     #
-    # Pragmatic fix (2026-04-23): the previous transparent-overlay approach on
-    # top of v8ui-drawn preset/source cards was unreliable — clicks on the
-    # cards did not consistently open the dropdown in Ableton. We now put two
-    # VISIBLE umenus with native Max/Ableton chrome in the left column and
-    # narrow the v8ui presentation_rect so it doesn't cover that area.
+    # Layout in presentation mode (single 820×149 canvas, status bar excluded):
     #
-    # User-visible contract:
-    #   - Top-left dropdown  (8, 8,  196, 40)  → sf_preset_menu
-    #   - Below it           (8, 54, 196, 40)  → sf_source_menu
-    #   - v8ui owns only x=212..820 (middle+right columns)
+    #     LEFT column (x=8..718)            RIGHT column (x=720..812)
+    #     ┌─────────────────────────────┐   ┌──────────────────────┐
+    #     │ y=8..40   [Pick source…]    │   │ y=8..52   PRIMARY     │
+    #     │ y=48..76  status text       │   │ y=58..82  COMMIT      │
+    #     │            (status text)    │   │ y=86..110 BOUNCE      │
+    #     │ y=84..112  (reserved area)  │   │ y=114..138 EXPORT     │
+    #     └─────────────────────────────┘   └──────────────────────┘
     #
-    # arrow:1 gives the native triangle so it's obviously clickable. No color
-    # overrides — Max renders default chrome, which matches other M4L devices.
-    # autopopulate:0 keeps the umenu empty until the loader scans and sends
-    # `append <name>` via patchline.
+    # All widgets are live.text @parameter_enable 0 so M4L's host doesn't
+    # probe them. Click-buttons use mode 1 (momentary); the click emits
+    # the widget's `text` symbol, which the downstream [t b] converts to
+    # a bang, and a [message <verb>] box names the JS handler that
+    # stemforge_loader.v0.js resolves on its [js] inlet.
+
+    # Picker geometry — two columns, generous gap so the v8ui canvas behind
+    # them is hidden visually by the buttons' opaque backgrounds.
+    LEFT_X = 8.0
+    LEFT_W = 360.0  # Pick source… button is wide so long paths still legible.
+    STATUS_W = 700.0  # Status text spans nearly the whole left+center.
+    RIGHT_X = 720.0
+    RIGHT_W = 92.0
+    VERB_W = (RIGHT_W - 4.0) / 3.0  # 3 small buttons in a row of width RIGHT_W.
+
+    # ── Pick source button ──────────────────────────────────────────────
+    pick_src_rect = (LEFT_X, 8.0, LEFT_W, 32.0)
     boxes.append(
         _box(
-            OBJ_UMENU_PRESET,
-            "umenu",
-            (16.0, js_row_y + 80, 196.0, 40.0),
+            OBJ_PICK_SOURCE_BTN,
+            "live.text",
+            pick_src_rect,
             presentation=True,
-            presentation_rect=(8.0, 8.0, 196.0, 40.0),
+            presentation_rect=pick_src_rect,
             numinlets=1,
-            numoutlets=3,
-            outlettype=["int", "", ""],
+            numoutlets=2,
+            outlettype=["", ""],
             extras={
-                "varname": "sf_preset_menu",
-                "items": "Pick preset...",
-                "autopopulate": 0,
-                "arrow": 1,
-                "fontsize": 11.0,
+                "varname": "sf_pick_source_btn",
+                # mode 1 = momentary button (emits the `text` label on click).
+                "mode": 1,
+                "text": "Pick source…",
                 "fontname": "Ableton Sans Medium",
+                "fontsize": 11.0,
+                "textcolor": COLORS["text"],
+                "activebgcolor": COLORS["dim"],
+                "bgcolor": COLORS["status_bg"],
+                "activebgoncolor": COLORS["dim"],
+                "bgoncolor": COLORS["status_bg"],
+                "bordercolor": COLORS["dim"],
+                "activebordercolor": COLORS["text"],
+                "activebordercoloroff": COLORS["dim"],
+                "rounded": 4.0,
+                "parameter_enable": 0,
+            },
+        )
+    )
+    # Click → [message pickSource] → js sf_lom_loader (calls pickSource()).
+    boxes.append(
+        _box(
+            OBJ_PICK_SOURCE_MSG,
+            "message",
+            (LEFT_X, 44.0, 90.0, 22.0),
+            numinlets=2,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "pickSource"},
+        )
+    )
+    lines.append(_line(OBJ_PICK_SOURCE_BTN, 0, OBJ_PICK_SOURCE_MSG, 0))
+    lines.append(_line(OBJ_PICK_SOURCE_MSG, 0, OBJ_SF_LOM_LOADER, 0))
+
+    # ── Status text (below picker, driven by [r sf-status]) ─────────────
+    # The loader's status() helper currently posts via Max's [post] surface;
+    # but the new contract publishes a structured prefix that this UI label
+    # listens for via [r sf-status] → set $1 → live.text @text.
+    status_rect = (LEFT_X, 48.0, STATUS_W, 28.0)
+    boxes.append(
+        _box(
+            OBJ_STATUS_PICKER_TEXT,
+            "live.text",
+            status_rect,
+            presentation=True,
+            presentation_rect=status_rect,
+            numinlets=1,
+            numoutlets=2,
+            outlettype=["", ""],
+            extras={
+                "varname": "sf_status_picker_text",
+                # mode 0 = display-only (not a button — no click behaviour).
+                "mode": 0,
+                "text": "",
+                "fontname": "Ableton Sans Medium",
+                "fontsize": 10.0,
+                "textcolor": COLORS["text"],
+                "bgcolor": COLORS["status_bg"],
+                "activebgcolor": COLORS["status_bg"],
+                "bgoncolor": COLORS["status_bg"],
+                "activebgoncolor": COLORS["status_bg"],
+                "bordercolor": COLORS["dim"],
+                "activebordercolor": COLORS["dim"],
+                "activebordercoloroff": COLORS["dim"],
+                "rounded": 4.0,
+                "parameter_enable": 0,
+            },
+        )
+    )
+    # [r sf-status] → live.text. The loader's status() helper emits
+    # `outlet(0, "set", "<text>")` and the [s sf-status] send (wired
+    # below to the loader's outlet 0) re-broadcasts those `set ...`
+    # messages on the bus. live.text accepts `set <text>` natively
+    # so no prepend is needed — feeding the receiver straight into
+    # the widget's inlet 0 sets the visible text.
+    boxes.append(
+        _box(
+            OBJ_STATUS_RECV,
+            "newobj",
+            (LEFT_X, 78.0, 100.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "r sf-status"},
+        )
+    )
+    lines.append(_line(OBJ_STATUS_RECV, 0, OBJ_STATUS_PICKER_TEXT, 0))
+
+    # ── Primary button (right column, top) ──────────────────────────────
+    # Label is driven by [r primary-btn-label] from the loader; active
+    # state by [r primary-btn-enabled]. On click, [message primary] →
+    # js sf_lom_loader (calls primary(), which dispatches by sniffer type).
+    primary_rect = (RIGHT_X, 8.0, RIGHT_W, 44.0)
+    boxes.append(
+        _box(
+            OBJ_PRIMARY_BTN,
+            "live.text",
+            primary_rect,
+            presentation=True,
+            presentation_rect=primary_rect,
+            numinlets=1,
+            numoutlets=2,
+            outlettype=["", ""],
+            extras={
+                "varname": "sf_primary_btn",
+                "mode": 1,
+                "text": "Pick a source…",
+                "fontname": "Ableton Sans Medium",
+                "fontsize": 10.0,
+                "textcolor": COLORS["text"],
+                "activebgcolor": COLORS["text"],
+                "bgcolor": COLORS["status_bg"],
+                "activebgoncolor": COLORS["text"],
+                "bgoncolor": COLORS["status_bg"],
+                "bordercolor": COLORS["dim"],
+                "activebordercolor": COLORS["text"],
+                "activebordercoloroff": COLORS["dim"],
+                "rounded": 4.0,
                 "parameter_enable": 0,
             },
         )
     )
     boxes.append(
         _box(
-            OBJ_UMENU_SOURCE,
-            "umenu",
-            (16.0 + 220.0, js_row_y + 80, 196.0, 40.0),
-            presentation=True,
-            presentation_rect=(8.0, 54.0, 196.0, 40.0),
-            numinlets=1,
-            numoutlets=3,
-            outlettype=["int", "", ""],
-            extras={
-                "varname": "sf_source_menu",
-                "items": "Pick source...",
-                "autopopulate": 0,
-                "arrow": 1,
-                "fontsize": 11.0,
-                "fontname": "Ableton Sans Medium",
-                "parameter_enable": 0,
-            },
-        )
-    )
-
-    # umenu outlet 0 (int index) → `select <idx>` into the respective loader.
-    boxes.append(
-        _box(
-            OBJ_PRESET_SELECT_PREP,
-            "newobj",
-            (16.0, js_row_y + 110, 120.0, 22.0),
-            numinlets=1,
-            numoutlets=1,
-            outlettype=[""],
-            extras={"text": "prepend select"},
-        )
-    )
-    lines.append(_line(OBJ_UMENU_PRESET, 0, OBJ_PRESET_SELECT_PREP, 0))
-    lines.append(_line(OBJ_PRESET_SELECT_PREP, 0, OBJ_SF_PRESET_LOADER, 0))
-
-    boxes.append(
-        _box(
-            OBJ_SOURCE_SELECT_PREP,
-            "newobj",
-            (16.0 + 220.0, js_row_y + 110, 120.0, 22.0),
-            numinlets=1,
-            numoutlets=1,
-            outlettype=[""],
-            extras={"text": "prepend select"},
-        )
-    )
-    lines.append(_line(OBJ_UMENU_SOURCE, 0, OBJ_SOURCE_SELECT_PREP, 0))
-    lines.append(_line(OBJ_SOURCE_SELECT_PREP, 0, OBJ_SF_MANIFEST_LOADER, 0))
-
-    # Preset-loader outlet 0 populates the umenu.
-    lines.append(_line(OBJ_SF_PRESET_LOADER, 0, OBJ_UMENU_PRESET, 0))
-    # Preset-loader outlet 1 sends setPreset <json> → state mgr.
-    lines.append(_line(OBJ_SF_PRESET_LOADER, 1, OBJ_SF_STATE, 0))
-
-    # Manifest-loader outlet 0 populates the umenu.
-    lines.append(_line(OBJ_SF_MANIFEST_LOADER, 0, OBJ_UMENU_SOURCE, 0))
-    # Manifest-loader outlet 1 sends one of: setSource <json>, browseAudio,
-    # browseManifest. The [route] fans these out to three downstream paths.
-    boxes.append(
-        _box(
-            "obj-route-source",
-            "newobj",
-            (16.0 + 220.0, js_row_y + 140, 320.0, 22.0),
-            numinlets=1,
-            numoutlets=4,
-            outlettype=["", "", "", ""],
-            extras={"text": "route setSource browseAudio browseManifest"},
-        )
-    )
-    lines.append(_line(OBJ_SF_MANIFEST_LOADER, 1, "obj-route-source", 0))
-    # setSource → state mgr (re-prepend because [route] strips the selector)
-    boxes.append(
-        _box(
-            "obj-source-set-prepend",
-            "newobj",
-            (16.0 + 220.0, js_row_y + 166, 160.0, 22.0),
-            numinlets=1,
-            numoutlets=1,
-            outlettype=[""],
-            extras={"text": "prepend setSource"},
-        )
-    )
-    lines.append(_line("obj-route-source", 0, "obj-source-set-prepend", 0))
-    lines.append(_line("obj-source-set-prepend", 0, OBJ_SF_STATE, 0))
-
-    # browseAudio → [opendialog sound] → regexp POSIX path → audioPath …
-    boxes.append(
-        _box(
-            OBJ_OPENDIALOG,
-            "newobj",
-            (16.0 + 460.0, js_row_y + 166, 150.0, 22.0),
-            numinlets=1,
-            numoutlets=2,
-            outlettype=["", "bang"],
-            extras={"text": "opendialog sound"},
-        )
-    )
-    lines.append(_line("obj-route-source", 1, OBJ_OPENDIALOG, 0))
-    boxes.append(
-        _box(
-            OBJ_AUDIOPATH_REGEX,
-            "newobj",
-            (16.0 + 460.0, js_row_y + 192, 230.0, 22.0),
-            numinlets=1,
-            numoutlets=5,
-            outlettype=["", "", "", "", ""],
-            extras={"text": "regexp (.+):(/.*) @substitute %2"},
-        )
-    )
-    lines.append(_line(OBJ_OPENDIALOG, 0, OBJ_AUDIOPATH_REGEX, 0))
-    boxes.append(
-        _box(
-            OBJ_AUDIOPATH_PREPEND,
-            "newobj",
-            (16.0 + 460.0, js_row_y + 218, 160.0, 22.0),
-            numinlets=1,
-            numoutlets=1,
-            outlettype=[""],
-            extras={"text": "prepend audioPath"},
-        )
-    )
-    lines.append(_line(OBJ_AUDIOPATH_REGEX, 0, OBJ_AUDIOPATH_PREPEND, 0))
-    lines.append(_line(OBJ_AUDIOPATH_PREPEND, 0, OBJ_SF_MANIFEST_LOADER, 0))
-
-    # browseManifest → [opendialog] (any file) → regex strip HFS → prepend
-    # manifestPath → back into sf_manifest_loader. Mirrors the browseAudio
-    # chain above but for a .json manifest file anywhere on disk.
-    boxes.append(
-        _box(
-            OBJ_MANIFEST_DIALOG,
-            "newobj",
-            (16.0 + 700.0, js_row_y + 166, 150.0, 22.0),
-            numinlets=1,
-            numoutlets=2,
-            outlettype=["", "bang"],
-            extras={"text": "opendialog"},
-        )
-    )
-    lines.append(_line("obj-route-source", 2, OBJ_MANIFEST_DIALOG, 0))
-    boxes.append(
-        _box(
-            OBJ_MANIFESTPATH_REGEX,
-            "newobj",
-            (16.0 + 700.0, js_row_y + 192, 230.0, 22.0),
-            numinlets=1,
-            numoutlets=5,
-            outlettype=["", "", "", "", ""],
-            extras={"text": "regexp (.+):(/.*) @substitute %2"},
-        )
-    )
-    lines.append(_line(OBJ_MANIFEST_DIALOG, 0, OBJ_MANIFESTPATH_REGEX, 0))
-    boxes.append(
-        _box(
-            OBJ_MANIFESTPATH_PREPEND,
-            "newobj",
-            (16.0 + 700.0, js_row_y + 218, 160.0, 22.0),
-            numinlets=1,
-            numoutlets=1,
-            outlettype=[""],
-            extras={"text": "prepend manifestPath"},
-        )
-    )
-    lines.append(_line(OBJ_MANIFESTPATH_REGEX, 0, OBJ_MANIFESTPATH_PREPEND, 0))
-    lines.append(_line(OBJ_MANIFESTPATH_PREPEND, 0, OBJ_SF_MANIFEST_LOADER, 0))
-
-    # ── v8ui event routing (outlet 0 is a selector-prefixed list) ───────────
-
-    boxes.append(
-        _box(
-            OBJ_ROUTE_UI_EVENTS,
-            "newobj",
-            (
-                16.0,
-                js_row_y - 40,
-                # width
-                860.0,
-                22.0,
-            ),
-            numinlets=1,
-            numoutlets=13,  # 12 events + unmatched
-            outlettype=[""] * 13,
-            extras={
-                "text": (
-                    "route preset_click source_click forge_click "
-                    "cancel_click retry_click done_click settings_click "
-                    "commit_click bounce_clips_click export_song_click "
-                    "arrangement_load_click anchor_locator_click"
-                )
-            },
-        )
-    )
-    lines.append(_line(OBJ_V8UI, 0, OBJ_ROUTE_UI_EVENTS, 0))
-
-    # Outlet 0 — preset_click: open the preset umenu as popup.
-    # Simpler: every open click also triggers a `scan` into the loader so the
-    # menu is always fresh.
-    boxes.append(
-        _box(
-            "obj-preset-scan-msg",
+            OBJ_PRIMARY_MSG,
             "message",
-            (16.0, js_row_y - 10, 80.0, 22.0),
+            (RIGHT_X, 56.0, 90.0, 22.0),
             numinlets=2,
             numoutlets=1,
             outlettype=[""],
-            extras={"text": "scan"},
+            extras={"text": "primary"},
         )
     )
-    lines.append(_line(OBJ_ROUTE_UI_EVENTS, 0, "obj-preset-scan-msg", 0))
-    lines.append(_line("obj-preset-scan-msg", 0, OBJ_SF_PRESET_LOADER, 0))
-    # and also "popup" the umenu
-    boxes.append(
-        _box(
-            "obj-preset-popup-msg",
-            "message",
-            (110.0, js_row_y - 10, 80.0, 22.0),
-            numinlets=2,
-            numoutlets=1,
-            outlettype=[""],
-            extras={"text": "popup"},
-        )
-    )
-    lines.append(_line(OBJ_ROUTE_UI_EVENTS, 0, "obj-preset-popup-msg", 0))
-    lines.append(_line("obj-preset-popup-msg", 0, OBJ_UMENU_PRESET, 0))
+    lines.append(_line(OBJ_PRIMARY_BTN, 0, OBJ_PRIMARY_MSG, 0))
+    lines.append(_line(OBJ_PRIMARY_MSG, 0, OBJ_SF_LOM_LOADER, 0))
 
-    # Outlet 1 — source_click
+    # [r primary-btn-label] → prepend set → primary button text setter.
+    # The loader emits via messnamed("primary-btn-label", "<text>") whenever
+    # the sniffer's primary-label-by-type dispatch changes; see
+    # _emitPrimaryButtonState() in stemforge_loader.v0.js.
     boxes.append(
         _box(
-            "obj-source-scan-msg",
-            "message",
-            (200.0, js_row_y - 10, 110.0, 22.0),
-            numinlets=2,
+            OBJ_PRIMARY_LABEL_RECV,
+            "newobj",
+            (RIGHT_X, 80.0, 140.0, 22.0),
+            numinlets=1,
             numoutlets=1,
             outlettype=[""],
-            extras={"text": "scanManifests"},
+            extras={"text": "r primary-btn-label"},
         )
     )
-    lines.append(_line(OBJ_ROUTE_UI_EVENTS, 1, "obj-source-scan-msg", 0))
-    lines.append(_line("obj-source-scan-msg", 0, OBJ_SF_MANIFEST_LOADER, 0))
     boxes.append(
         _box(
-            "obj-source-popup-msg",
-            "message",
-            (320.0, js_row_y - 10, 80.0, 22.0),
-            numinlets=2,
+            OBJ_PRIMARY_LABEL_PREPEND,
+            "newobj",
+            (RIGHT_X, 104.0, 80.0, 22.0),
+            numinlets=1,
             numoutlets=1,
             outlettype=[""],
-            extras={"text": "popup"},
+            extras={"text": "prepend set"},
         )
     )
-    lines.append(_line(OBJ_ROUTE_UI_EVENTS, 1, "obj-source-popup-msg", 0))
-    lines.append(_line("obj-source-popup-msg", 0, OBJ_UMENU_SOURCE, 0))
+    lines.append(_line(OBJ_PRIMARY_LABEL_RECV, 0, OBJ_PRIMARY_LABEL_PREPEND, 0))
+    lines.append(_line(OBJ_PRIMARY_LABEL_PREPEND, 0, OBJ_PRIMARY_BTN, 0))
 
-    # Outlet 2 — forge_click → sf_forge startForge
-    # Outlet 3 — cancel_click → sf_forge cancelForge
-    # Outlet 4 — retry_click → sf_forge retry
-    # Outlet 5 — done_click → sf_state reset
-    # Outlet 6 — settings_click → sf_settings openFile
-    # Build a tiny [route] for the forge-targeted buttons so we can re-prepend
-    # the correct message name.
-    for out_idx, sym in [
-        (2, "startForge"),
-        (3, "cancelForge"),
-        (4, "retry"),
-    ]:
-        pid = f"obj-forge-prep-{sym}"
+    # [r primary-btn-enabled] → prepend active → primary button.
+    # live.text accepts `active 0|1` (mode 1 buttons) to enable/disable.
+    boxes.append(
+        _box(
+            OBJ_PRIMARY_ENABLED_RECV,
+            "newobj",
+            (RIGHT_X + 150.0, 80.0, 160.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "r primary-btn-enabled"},
+        )
+    )
+    boxes.append(
+        _box(
+            OBJ_PRIMARY_ENABLED_PREPEND,
+            "newobj",
+            (RIGHT_X + 150.0, 104.0, 100.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "prepend active"},
+        )
+    )
+    lines.append(_line(OBJ_PRIMARY_ENABLED_RECV, 0, OBJ_PRIMARY_ENABLED_PREPEND, 0))
+    lines.append(_line(OBJ_PRIMARY_ENABLED_PREPEND, 0, OBJ_PRIMARY_BTN, 0))
+
+    # ── Verb buttons (COMMIT / BOUNCE / EXPORT) in a row ───────────────
+    # Each is a live.text mode 1 → [message <verb>] → [js sf_lom_loader].
+    # The loader's `commit()`, `bounceCuration()`, `exportArrangementSnapshot()`
+    # functions are the targets; the message-name matching that Max performs
+    # on classic [js] objects resolves them by top-level function lookup.
+    verb_y = 58.0
+    _VERB_BTNS = [
+        # (button_obj_id, message_obj_id, varname, label, message_text, x_offset_idx)
+        (OBJ_COMMIT_BTN, OBJ_COMMIT_MSG, "sf_commit_btn", "COMMIT", "commit", 0),
+        (
+            OBJ_BOUNCE_BTN,
+            OBJ_BOUNCE_MSG,
+            "sf_bounce_btn",
+            "BOUNCE",
+            "bounceCuration",
+            1,
+        ),
+        (
+            OBJ_EXPORT_BTN,
+            OBJ_EXPORT_MSG,
+            "sf_export_btn",
+            "EXPORT",
+            "exportArrangementSnapshot ~/Desktop/snapshot.json",
+            2,
+        ),
+    ]
+    for btn_id, msg_id, varname, label, msg_text, idx in _VERB_BTNS:
+        btn_x = RIGHT_X + idx * (VERB_W + 2.0)
+        btn_rect = (btn_x, verb_y, VERB_W, 22.0)
         boxes.append(
             _box(
-                pid,
+                btn_id,
+                "live.text",
+                btn_rect,
+                presentation=True,
+                presentation_rect=btn_rect,
+                numinlets=1,
+                numoutlets=2,
+                outlettype=["", ""],
+                extras={
+                    "varname": varname,
+                    "mode": 1,
+                    "text": label,
+                    "fontname": "Ableton Sans Medium",
+                    "fontsize": 8.0,
+                    "textcolor": COLORS["text"],
+                    "activebgcolor": COLORS["dim"],
+                    "bgcolor": COLORS["status_bg"],
+                    "activebgoncolor": COLORS["dim"],
+                    "bgoncolor": COLORS["status_bg"],
+                    "bordercolor": COLORS["dim"],
+                    "activebordercolor": COLORS["text"],
+                    "activebordercoloroff": COLORS["dim"],
+                    "rounded": 3.0,
+                    "parameter_enable": 0,
+                },
+            )
+        )
+        boxes.append(
+            _box(
+                msg_id,
                 "message",
-                (410.0 + (out_idx - 2) * 110, js_row_y - 10, 100.0, 22.0),
+                (btn_x, verb_y + 26.0, max(VERB_W, 60.0) + 200.0, 22.0),
                 numinlets=2,
                 numoutlets=1,
                 outlettype=[""],
-                extras={"text": sym},
+                extras={"text": msg_text},
             )
         )
-        lines.append(_line(OBJ_ROUTE_UI_EVENTS, out_idx, pid, 0))
-        lines.append(_line(pid, 0, OBJ_SF_FORGE, 0))
+        lines.append(_line(btn_id, 0, msg_id, 0))
+        lines.append(_line(msg_id, 0, OBJ_SF_LOM_LOADER, 0))
 
+    # ── Picker dialog (driven by sf-open-source-dialog from js.pickSource) ───
+    # The loader's pickSource() fires messnamed("sf-open-source-dialog","bang"),
+    # which this [r] receives. We then bang the [opendialog], regex-strip the
+    # HFS prefix, prepend `applyPickedSource`, and feed it back into the JS
+    # so the sniffer can run and the primary button's label/enabled state
+    # gets updated via [r primary-btn-label] / [r primary-btn-enabled].
     boxes.append(
         _box(
-            "obj-done-reset-msg",
-            "message",
-            (410.0 + 3 * 110, js_row_y - 10, 60.0, 22.0),
-            numinlets=2,
-            numoutlets=1,
-            outlettype=[""],
-            extras={"text": "reset"},
-        )
-    )
-    lines.append(_line(OBJ_ROUTE_UI_EVENTS, 5, "obj-done-reset-msg", 0))
-    lines.append(_line("obj-done-reset-msg", 0, OBJ_SF_STATE, 0))
-
-    boxes.append(
-        _box(
-            "obj-settings-open-msg",
-            "message",
-            (410.0 + 4 * 110, js_row_y - 10, 80.0, 22.0),
-            numinlets=2,
-            numoutlets=1,
-            outlettype=[""],
-            extras={"text": "openFile"},
-        )
-    )
-    lines.append(_line(OBJ_ROUTE_UI_EVENTS, 6, "obj-settings-open-msg", 0))
-    lines.append(_line("obj-settings-open-msg", 0, OBJ_SF_SETTINGS, 0))
-
-    # Outlet 7 — commit_click → [message commitOffsets] → sf_forge inlet 0.
-    # sf_forge.js declares `inlets = 1`, so there's only one inlet; Max
-    # dispatches the `commitOffsets` method by message name. sf_forge's
-    # commitOffsets() forwarder then re-emits via outlet 2 to the loader,
-    # which performs the LOM → manifest offset roundtrip.
-    boxes.append(
-        _box(
-            "obj-commit-msg",
-            "message",
-            (410.0 + 5 * 110, js_row_y - 10, 120.0, 22.0),
-            numinlets=2,
-            numoutlets=1,
-            outlettype=[""],
-            extras={"text": "commitOffsets"},
-        )
-    )
-    lines.append(_line(OBJ_ROUTE_UI_EVENTS, 7, "obj-commit-msg", 0))
-    lines.append(_line("obj-commit-msg", 0, OBJ_SF_FORGE, 0))
-
-    # Outlet 8 — bounce_clips_click → [message exportClips] → sf_clip_export
-    boxes.append(
-        _box(
-            OBJ_BOUNCE_CLIPS_MSG,
-            "message",
-            (410.0 + 6 * 110, js_row_y - 10, 110.0, 22.0),
-            numinlets=2,
-            numoutlets=1,
-            outlettype=[""],
-            extras={"text": "exportClips"},
-        )
-    )
-    lines.append(_line(OBJ_ROUTE_UI_EVENTS, 8, OBJ_BOUNCE_CLIPS_MSG, 0))
-    lines.append(_line(OBJ_BOUNCE_CLIPS_MSG, 0, OBJ_SF_CLIP_EXPORT, 0))
-
-    # Outlet 9 — export_song_click → [message exportArrangementSnapshot ~/Desktop/snapshot.json]
-    # → sf_lom_loader (stemforge_loader.v0.js). The loader's wrapper includes
-    # sf_arrangement_reader.js and dispatches to runArrangementExport(). The
-    # ~ in the path is expanded inside the JS via _arrHomeDir() so the .amxd
-    # stays portable across users.
-    boxes.append(
-        _box(
-            OBJ_EXPORT_SONG_MSG,
-            "message",
-            (410.0 + 7 * 110, js_row_y - 10, 240.0, 22.0),
-            numinlets=2,
-            numoutlets=1,
-            outlettype=[""],
-            extras={"text": "exportArrangementSnapshot ~/Desktop/snapshot.json"},
-        )
-    )
-    lines.append(_line(OBJ_ROUTE_UI_EVENTS, 9, OBJ_EXPORT_SONG_MSG, 0))
-    lines.append(_line(OBJ_EXPORT_SONG_MSG, 0, OBJ_SF_LOM_LOADER, 0))
-
-    # Outlet 10 — arrangement_load_click → [opendialog] → regex strip HFS →
-    # prepend `loadArrangementFromManifest` → sf_lom_loader. Mirrors the
-    # browseManifest chain (lines ~697-736) — Max's [opendialog] is the only
-    # native picker available; the v8ui's onclick can't open a dialog itself,
-    # so it emits `arrangement_load_click` (no args) and the patcher drives
-    # the picker. The loader wrapper includes sf_arrangement_loader.js and
-    # dispatches to runArrangementLoad() with the POSIX path.
-    OBJ_LOAD_ARR_DIALOG = "obj-load-arr-dialog"
-    OBJ_LOAD_ARR_REGEX = "obj-load-arr-regex"
-    OBJ_LOAD_ARR_PREPEND = "obj-load-arr-prepend"
-    boxes.append(
-        _box(
-            OBJ_LOAD_ARR_DIALOG,
+            OBJ_PICKER_DIALOG_RECV,
             "newobj",
-            (410.0 + 8 * 110, js_row_y - 10, 150.0, 22.0),
+            (LEFT_X, 110.0, 200.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "r sf-open-source-dialog"},
+        )
+    )
+    boxes.append(
+        _box(
+            OBJ_PICKER_DIALOG,
+            "newobj",
+            (LEFT_X + 210.0, 110.0, 120.0, 22.0),
             numinlets=1,
             numoutlets=2,
             outlettype=["", "bang"],
+            # opendialog with no args accepts every file type — picker UX
+            # owns the user-side filtering (audio + .json + .yaml).
             extras={"text": "opendialog"},
         )
     )
-    lines.append(_line(OBJ_ROUTE_UI_EVENTS, 10, OBJ_LOAD_ARR_DIALOG, 0))
+    lines.append(_line(OBJ_PICKER_DIALOG_RECV, 0, OBJ_PICKER_DIALOG, 0))
     boxes.append(
         _box(
-            OBJ_LOAD_ARR_REGEX,
+            OBJ_PICKER_DIALOG_REGEX,
             "newobj",
-            (410.0 + 8 * 110, js_row_y + 16, 230.0, 22.0),
+            (LEFT_X + 340.0, 110.0, 240.0, 22.0),
             numinlets=1,
             numoutlets=5,
             outlettype=["", "", "", "", ""],
             extras={"text": "regexp (.+):(/.*) @substitute %2"},
         )
     )
-    lines.append(_line(OBJ_LOAD_ARR_DIALOG, 0, OBJ_LOAD_ARR_REGEX, 0))
+    lines.append(_line(OBJ_PICKER_DIALOG, 0, OBJ_PICKER_DIALOG_REGEX, 0))
     boxes.append(
         _box(
-            OBJ_LOAD_ARR_PREPEND,
+            OBJ_PICKER_DIALOG_PREPEND,
             "newobj",
-            (410.0 + 8 * 110, js_row_y + 42, 220.0, 22.0),
+            (LEFT_X + 590.0, 110.0, 200.0, 22.0),
             numinlets=1,
             numoutlets=1,
             outlettype=[""],
-            extras={"text": "prepend loadArrangementFromManifest"},
+            extras={"text": "prepend applyPickedSource"},
         )
     )
-    lines.append(_line(OBJ_LOAD_ARR_REGEX, 0, OBJ_LOAD_ARR_PREPEND, 0))
-    lines.append(_line(OBJ_LOAD_ARR_PREPEND, 0, OBJ_SF_LOM_LOADER, 0))
+    lines.append(_line(OBJ_PICKER_DIALOG_REGEX, 0, OBJ_PICKER_DIALOG_PREPEND, 0))
+    lines.append(_line(OBJ_PICKER_DIALOG_PREPEND, 0, OBJ_SF_LOM_LOADER, 0))
 
-    # Side-tap: extract dirname(manifest_path) and feed it as `trackDir <dir>`
-    # to sf_locator_anchor so the next ANCH click has a valid cached track dir
-    # without a separate user-facing setup step. Runs in parallel to the
-    # arrangement-load path above.
-    OBJ_LA_DIRNAME_REGEX = "obj-la-dirname-regex"
-    OBJ_LA_TRACKDIR_PREP = "obj-la-trackdir-prepend"
+    # sf_lom_loader outlet 0 = status (loader's status() emits via
+    # outlet(0, "set", "<text>")). Bridge it to [s sf-status] so the
+    # picker's status-text live.text — driven off [r sf-status] —
+    # receives the loader's status emissions.
+    OBJ_STATUS_SEND = "obj-sf-status-send"
     boxes.append(
         _box(
-            OBJ_LA_DIRNAME_REGEX,
+            OBJ_STATUS_SEND,
             "newobj",
-            (410.0 + 8 * 110, js_row_y + 68, 280.0, 22.0),
+            (LEFT_X + 110.0, 78.0, 100.0, 22.0),
             numinlets=1,
-            numoutlets=5,
-            outlettype=["", "", "", "", ""],
-            # Capture everything up to the last slash.
-            extras={"text": "regexp (.+)/[^/]+\\.json @substitute %1"},
+            numoutlets=0,
+            extras={"text": "s sf-status"},
         )
     )
-    lines.append(_line(OBJ_LOAD_ARR_REGEX, 0, OBJ_LA_DIRNAME_REGEX, 0))
-    boxes.append(
-        _box(
-            OBJ_LA_TRACKDIR_PREP,
-            "newobj",
-            (410.0 + 8 * 110, js_row_y + 94, 180.0, 22.0),
-            numinlets=1,
-            numoutlets=1,
-            outlettype=[""],
-            extras={"text": "prepend trackDir"},
-        )
-    )
-    lines.append(_line(OBJ_LA_DIRNAME_REGEX, 0, OBJ_LA_TRACKDIR_PREP, 0))
-    lines.append(_line(OBJ_LA_TRACKDIR_PREP, 0, OBJ_SF_LOCATOR_ANCHOR, 0))
-
-    # Outlet 11 — anchor_locator_click → [message anchor] → sf_locator_anchor.
-    # The JS uses its cached track dir (set from the most recent successful
-    # arrangement load) to know which manifest to re-anchor.
-    boxes.append(
-        _box(
-            OBJ_ANCHOR_CLICK_MSG,
-            "message",
-            (410.0 + 9 * 110, js_row_y - 10, 80.0, 22.0),
-            numinlets=2,
-            numoutlets=1,
-            outlettype=[""],
-            extras={"text": "anchor"},
-        )
-    )
-    lines.append(_line(OBJ_ROUTE_UI_EVENTS, 11, OBJ_ANCHOR_CLICK_MSG, 0))
-    lines.append(_line(OBJ_ANCHOR_CLICK_MSG, 0, OBJ_SF_LOCATOR_ANCHOR, 0))
+    lines.append(_line(OBJ_SF_LOM_LOADER, 0, OBJ_STATUS_SEND, 0))
 
     # sf_clip_export outlet 0 = status (currently logged inside the JS only;
     # could be wired to status text later). Outlet 1 = [shell] spawn commands
