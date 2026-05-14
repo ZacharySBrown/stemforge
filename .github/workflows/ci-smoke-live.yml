@@ -1,0 +1,102 @@
+# Phase 5 — Live-in-the-loop smoke suite.
+#
+# Requires a SELF-HOSTED runner with Ableton Live installed (the L4
+# layer in the testing strategy; see specs/CONSOLIDATED_DESIGN.md §7).
+# Runner labels: [self-hosted, macos, ableton-live].
+#
+# This workflow is **workflow_dispatch only**. It does not auto-run on
+# PRs or pushes — running it requires a real Live process on a Mac and
+# would just fail on GitHub's hosted runners.
+#
+# Until a self-hosted runner is registered with the matching labels,
+# this workflow stays inert. The "Actions" tab will list it but
+# clicking "Run workflow" will queue a job that waits for an eligible
+# runner indefinitely (or you can cancel it).
+#
+# See docs/configurator/SMOKE_TEST_GUIDE.md for the operator-facing
+# how-to-run-locally guide.
+
+name: smoke-live
+
+on:
+  workflow_dispatch:
+    inputs:
+      tests:
+        description: 'Comma-separated smoke test names (default: --all)'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  smoke-live:
+    name: AppleScript-driven Live smoke suite
+    runs-on: [self-hosted, macos, ableton-live]
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python + uv
+        run: |
+          if ! command -v uv >/dev/null 2>&1; then
+            pip install --upgrade uv
+          fi
+          uv --version
+
+      - name: Sync deps
+        run: |
+          unset VIRTUAL_ENV
+          uv sync --extra dev --extra configurator
+
+      - name: Install web/configurator deps
+        run: |
+          if [ -f web/configurator/package.json ]; then
+            cd web/configurator
+            npm ci || npm install
+          else
+            echo "no web/configurator/package.json — skipping npm install"
+          fi
+
+      - name: Install StemForge.amxd into Ableton User Library
+        run: |
+          unset VIRTUAL_ENV
+          uv run python tools/sf_deploy.py
+
+      - name: Start configurator server in background
+        run: |
+          mkdir -p "${HOME}/stemforge/logs"
+          unset VIRTUAL_ENV
+          nohup uv run python tools/m4l_configurator_server.py \
+            > "${HOME}/stemforge/logs/configurator-server.log" 2>&1 &
+          echo "configurator server PID $!"
+          # Give uvicorn a few seconds to bind a port and write
+          # ~/stemforge/.configurator_port.
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if [ -f "${HOME}/stemforge/.configurator_port" ]; then
+              echo "port file appeared: $(cat ${HOME}/stemforge/.configurator_port)"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Run smoke suite
+        id: smoke
+        run: |
+          if [ -z "${{ github.event.inputs.tests }}" ]; then
+            tools/test-harness/live-runner.sh --all
+          else
+            args=""
+            IFS=',' read -ra TESTS <<< "${{ github.event.inputs.tests }}"
+            for t in "${TESTS[@]}"; do
+              args="$args --test $t"
+            done
+            tools/test-harness/live-runner.sh $args
+          fi
+
+      - name: Upload server log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: configurator-server-log
+          path: ~/stemforge/logs/configurator-server.log
+          if-no-files-found: ignore
