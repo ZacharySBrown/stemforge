@@ -247,6 +247,132 @@ describe("ActiveCuration — EXPORT button (Phase 3C)", () => {
   });
 });
 
+describe("ActiveCuration — BOUNCE spec feedback (P1-8)", () => {
+  // The server's POST /curations/{name}/trigger-bounce returns the full
+  // BounceSpec the M4L device will execute. Before this lane the popup
+  // ignored the response, so operators had no visibility into what got
+  // dispatched. These tests assert the inline panel renders the pad
+  // list + output dir, and that the empty / error paths surface a toast.
+
+  const okSpec = {
+    curation_name: "verse_swap_v1",
+    bounce_dir: "bounced/verse_swap_v1/",
+    manifest_path: "bounced/verse_swap_v1/bounce_manifest.json",
+    pads: [
+      {
+        pad_id: "A01",
+        group: "A",
+        slot: 1,
+        template: "VOCAL_HI_KEY",
+        output_path: "bounced/verse_swap_v1/A01.wav",
+      },
+      {
+        pad_id: "A02",
+        group: "A",
+        slot: 2,
+        template: "VOCAL_HI_KEY",
+        output_path: "bounced/verse_swap_v1/A02.wav",
+      },
+      {
+        pad_id: "B01",
+        group: "B",
+        slot: 1,
+        template: null,
+        output_path: "bounced/verse_swap_v1/B01.wav",
+      },
+    ],
+  };
+
+  it("renders the inline bounce-spec panel after a successful trigger", async () => {
+    server.use(
+      http.post("/curations/:name/trigger-bounce", () =>
+        HttpResponse.json({ ok: true, spec: okSpec }),
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<ActiveCuration curation={CURATION_FRESH} />);
+
+    // No panel before the bounce fires.
+    expect(screen.queryByTestId("bounce-spec-panel")).toBeNull();
+
+    await user.click(screen.getByTestId("trigger-bounce"));
+
+    const panel = await screen.findByTestId("bounce-spec-panel");
+    expect(panel).toBeInTheDocument();
+    // Pad count line:
+    expect(screen.getByText(/bouncing 3 pads/i)).toBeInTheDocument();
+    // Output directory line shows the relative bounce_dir under ~/stemforge/.
+    expect(screen.getByTestId("bounce-spec-dir").textContent).toMatch(
+      /~\/stemforge\/bounced\/verse_swap_v1\//,
+    );
+    // Pad list renders one row per spec pad.
+    const padRows = screen.getAllByTestId("bounce-spec-pad");
+    expect(padRows).toHaveLength(3);
+    expect(padRows[0].getAttribute("data-pad-id")).toBe("A01");
+  });
+
+  it("collapses the pad list when the toggle is clicked", async () => {
+    server.use(
+      http.post("/curations/:name/trigger-bounce", () =>
+        HttpResponse.json({ ok: true, spec: okSpec }),
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<ActiveCuration curation={CURATION_FRESH} />);
+    await user.click(screen.getByTestId("trigger-bounce"));
+    await screen.findByTestId("bounce-spec-panel");
+
+    // Pad list is expanded by default.
+    expect(screen.getByTestId("bounce-spec-pad-list")).toBeInTheDocument();
+
+    await user.click(screen.getByTestId("bounce-spec-toggle"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("bounce-spec-pad-list")).toBeNull(),
+    );
+  });
+
+  it("dismiss button clears the panel", async () => {
+    server.use(
+      http.post("/curations/:name/trigger-bounce", () =>
+        HttpResponse.json({ ok: true, spec: okSpec }),
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<ActiveCuration curation={CURATION_FRESH} />);
+    await user.click(screen.getByTestId("trigger-bounce"));
+    await screen.findByTestId("bounce-spec-panel");
+    await user.click(screen.getByTestId("bounce-spec-dismiss"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("bounce-spec-panel")).toBeNull(),
+    );
+  });
+
+  it("toasts an error when the server returns 0 pads", async () => {
+    server.use(
+      http.post("/curations/:name/trigger-bounce", () =>
+        HttpResponse.json({
+          ok: true,
+          spec: { ...okSpec, pads: [] },
+        }),
+      ),
+    );
+    const toastErrorSpy = vi.spyOn(toast, "error");
+
+    const user = userEvent.setup();
+    renderWithProviders(<ActiveCuration curation={CURATION_FRESH} />);
+    await user.click(screen.getByTestId("trigger-bounce"));
+
+    await waitFor(() => expect(toastErrorSpy).toHaveBeenCalled());
+    expect(toastErrorSpy.mock.calls.at(-1)?.[0]).toMatch(/0 pads/i);
+    // No panel rendered for the empty case.
+    expect(screen.queryByTestId("bounce-spec-panel")).toBeNull();
+    toastErrorSpy.mockRestore();
+  });
+});
+
 describe("ActiveCuration — Refresh from forge (Phase 4B)", () => {
   it("hides the Refresh button when no forge is stale", async () => {
     renderWithProviders(<ActiveCuration curation={CURATION_FRESH} />);

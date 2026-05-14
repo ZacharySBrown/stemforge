@@ -347,6 +347,20 @@ export function ForgeList({ curation }: ForgeListProps) {
         </div>
       </div>
 
+      {/*
+       * TODO(P2-3): virtualize this list once ~35+ forges are common.
+       *
+       * The pre-UAT review flagged that 35 ForgeRow components mounted at
+       * once may stutter on slower hardware (each row carries 5 Radix
+       * Tooltips + 5 Buttons + framer-motion layout animation). The fix is
+       * to render only the rows in the visible window via either
+       * `react-window` or `@tanstack/react-virtual`.
+       *
+       * Skipped in this lane because neither package is currently a
+       * dependency and the brief explicitly forbade adding new deps. Pick
+       * up post-UAT once we have a real-world forge count that triggers
+       * the regression.
+       */}
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-0.5">
         {isLoading ? (
           <ForgeListSkeleton />
