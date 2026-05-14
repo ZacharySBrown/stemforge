@@ -55,7 +55,7 @@ describe("TopBar", () => {
     expect(screen.getByText(/connecting/i)).toBeInTheDocument();
   });
 
-  it("Pop out button calls window.open with the spec §6.8 args", async () => {
+  it("Pop out button calls window.open as a real popup window (spec §6.8)", async () => {
     const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
     renderWithProviders(
       <TopBar
@@ -68,12 +68,18 @@ describe("TopBar", () => {
     const user = userEvent.setup();
     await user.click(screen.getByTestId("top-bar-popout"));
 
+    // Chrome treats `window.open(url, "named-window", "popup")` as
+    // "focus the named tab" rather than open a popup window. Using
+    // "_blank" forces a fresh window; explicit `popup=yes` plus chrome
+    // suppression flags push it into popup-window mode. See TopBar
+    // handlePopOut for the full rationale.
     await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
-    expect(openSpy).toHaveBeenCalledWith(
-      window.location.href,
-      "stemforge",
-      "popup,width=1200,height=800",
-    );
+    const [url, target, features] = openSpy.mock.calls[0];
+    expect(url).toBe(window.location.href);
+    expect(target).toBe("_blank");
+    expect(features).toContain("popup=yes");
+    expect(features).toContain("width=1200");
+    expect(features).toContain("height=900");
   });
 
   it("Save as fires save-as endpoint with a new name", async () => {

@@ -13,7 +13,7 @@ referenced_forges:
 groups:
   A:
     label: Vocals
-    template: dry-direct
+    template: vocal-bloom
     pads:
       - pad_id: A01
         source:
@@ -47,7 +47,7 @@ groups:
       - pad_id: A12
   B:
     label: Drums
-    template: tight-compressed
+    template: drum-rack-classic
     pads:
       - pad_id: B01
         source:
@@ -97,7 +97,7 @@ groups:
       - pad_id: C12
   D:
     label: Bass
-    template: warm-saturated
+    template: drum-rack-classic
     pads:
       - pad_id: D01
         source:

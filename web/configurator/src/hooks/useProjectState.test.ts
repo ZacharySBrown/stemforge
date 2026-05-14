@@ -174,6 +174,40 @@ describe("useProjectState", () => {
     expect(result.current.activeCurationName).toBeNull();
   });
 
+  it("does NOT fall back to other-host curation entries (regression for explicit close)", async () => {
+    // When the user closes the popup's active curation, the server removes
+    // POPUP_ALS_SENTINEL from `active_curations`. Earlier handler code fell
+    // back to `Object.values(active).find(...)` which incorrectly re-bound
+    // the popup to a stale entry from a different `.als` host (or leftover
+    // dev/test fixtures like `/tmp/demo.als`), so the close looked like a
+    // noop. The popup must ONLY honor its own sentinel.
+    const { result } = renderWithMock();
+    await waitFor(() => expect(result.current.status).toBe("connected"));
+
+    // Seed a popup-active curation first.
+    act(() =>
+      MockEventSource.instances[0].emit("state", {
+        kind: "curations",
+        active_curations: { __popup__: "verse_swap_v1" },
+      }),
+    );
+    await waitFor(() =>
+      expect(result.current.activeCurationName).toBe("verse_swap_v1"),
+    );
+
+    // Server broadcasts after `__popup__` is cleared but another host still
+    // has an active curation. Popup should clear, NOT pick up the other host.
+    act(() =>
+      MockEventSource.instances[0].emit("state", {
+        kind: "curations",
+        active_curations: { "/tmp/demo.als": "partial" },
+      }),
+    );
+
+    await waitFor(() => expect(result.current.activeCurationName).toBeNull());
+    expect(result.current.curation).toBeNull();
+  });
+
   it("legacy snapshot shape still routes to curation state (backward compat)", async () => {
     const { result } = renderWithMock();
     await waitFor(() => expect(result.current.status).toBe("connected"));
