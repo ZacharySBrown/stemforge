@@ -154,41 +154,13 @@ class AppState:
         so the popup can render stale badges in ``ForgeList`` (per-forge
         stale count) and ``ActiveCuration`` (per-pad stale indicator)
         without re-resolving every forge in the browser.
+
+        Pre-UAT P0-3: payload-construction factored into
+        :func:`current_curations_state` so the cold-start SSE snapshot
+        path in ``server.py`` can emit the same shape without a
+        full mutation cycle.
         """
-        from .curation_io import list_curations, read_curation  # local: avoid cycle
-        from .stale_check import stale_summary
-
-        # Phase 4A: cache refresh keeps /als-opened lookups disk-free.
-        current_state = self.refresh_cached_stemforge_state()
-        active_curations = current_state.active_curations
-        curation_paths = list_curations(self.curations_dir)
-        names = [p.stem for p in curation_paths]
-
-        # Phase 4B: compute per-pad stale flags against current forges.
-        forges_by_slug = _load_forges_by_slug(self.processed_dir)
-        stale_by_curation: dict[str, dict[str, dict[str, object]]] = {}
-        for path in curation_paths:
-            try:
-                curation = read_curation(path)
-            except Exception:  # noqa: BLE001 - broadcaster mustn't crash on bad files
-                continue
-            entries = stale_summary(curation, forges_by_slug)
-            stale_by_curation[curation.name] = {
-                pad_id: entry.to_dict() for pad_id, entry in entries.items()
-            }
-
-        await self.broadcast(
-            SseEvent(
-                event="state",
-                data={
-                    "kind": "curations",
-                    "curations": names,
-                    "active_curations": active_curations,
-                    "stale_by_curation": stale_by_curation,
-                    "ts": time.time(),
-                },
-            )
-        )
+        await self.broadcast(SseEvent(event="state", data=current_curations_state(self)))
 
     async def log(self, message: str, level: str = "info") -> None:
         """Emit a ``log`` SSE event."""
@@ -221,6 +193,57 @@ class AppState:
                 data={"code": code, "message": message, "ts": time.time()},
             )
         )
+
+
+# ── Curation-state payload builder (Pre-UAT P0-3) ───────────────────────────
+
+
+def current_curations_state(state: AppState) -> dict[str, Any]:
+    """Build the ``kind: "curations"`` SSE payload for ``state``.
+
+    Pure function — no broadcasting, no SSE wrapping. Mirrors what
+    :meth:`AppState.broadcast_curations_state` would push, so the
+    cold-start SSE snapshot path in :mod:`server` can emit the same
+    shape as every subsequent mutation-driven event.
+
+    Side effect: refreshes the in-memory ``cached_stemforge_state``
+    so the result reflects the latest ``.stemforge_state.json`` on
+    disk. Matches the legacy behaviour the broadcaster used to
+    perform inline.
+
+    Returns:
+        Dict ready to drop into ``SseEvent(event="state", data=...)``
+        or into the ``GET /state/stream`` initial-snapshot wire.
+    """
+    from .curation_io import list_curations, read_curation  # local: avoid cycle
+    from .stale_check import stale_summary
+
+    # Phase 4A: cache refresh keeps /als-opened lookups disk-free.
+    current_state = state.refresh_cached_stemforge_state()
+    active_curations = current_state.active_curations
+    curation_paths = list_curations(state.curations_dir)
+    names = [p.stem for p in curation_paths]
+
+    # Phase 4B: compute per-pad stale flags against current forges.
+    forges_by_slug = _load_forges_by_slug(state.processed_dir)
+    stale_by_curation: dict[str, dict[str, dict[str, object]]] = {}
+    for path in curation_paths:
+        try:
+            curation = read_curation(path)
+        except Exception:  # noqa: BLE001 - mustn't crash on bad files
+            continue
+        entries = stale_summary(curation, forges_by_slug)
+        stale_by_curation[curation.name] = {
+            pad_id: entry.to_dict() for pad_id, entry in entries.items()
+        }
+
+    return {
+        "kind": "curations",
+        "curations": names,
+        "active_curations": active_curations,
+        "stale_by_curation": stale_by_curation,
+        "ts": time.time(),
+    }
 
 
 # ── Forge manifest loader (for Phase 4B stale-check) ────────────────────────
@@ -394,6 +417,7 @@ __all__ = [
     "AppState",
     "EventName",
     "SseEvent",
+    "current_curations_state",
     "get_active_curation",
     "load_state",
     "load_state_with_recovery",
