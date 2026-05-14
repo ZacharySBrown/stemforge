@@ -413,6 +413,35 @@ def test_dependency_cache_lists_every_js(patcher):
         assert needed in dep, f"dependency_cache missing {needed}"
 
 
+def test_every_js_box_declares_numoutlets_in_text(boxes):
+    """Every [js] box MUST carry @numoutlets in its text attribute.
+
+    Without this, Max defaults a fresh [js] box to outlets=1 and only honors
+    the JS file's `outlets = N` declaration AFTER the script has finished
+    evaluating. During that interval Max walks the saved patcher cords and
+    deletes any whose source-outlet index >= 1 as
+    "patchcord outlet out of range: deleting patchcord". This is the regression
+    fix from the 2026-05-14 install-time triage. The box-level numoutlets field
+    is NOT enough — Max ignores it for [js] in favor of the text-arg attribute.
+    """
+    import re
+
+    for box in boxes:
+        text = box.get("text", "")
+        if not text.startswith("js "):
+            continue
+        assert "@numoutlets" in text, (
+            f"[js] box missing @numoutlets in text: {text!r} — Max will lose "
+            "cords during the init race. See _js_box() in builder.py."
+        )
+        m = re.search(r"@numoutlets\s+(\d+)", text)
+        assert m, f"could not parse @numoutlets from {text!r}"
+        assert int(m.group(1)) == box["numoutlets"], (
+            f"@numoutlets {m.group(1)} disagrees with box numoutlets "
+            f"{box['numoutlets']} for {text!r}"
+        )
+
+
 # ── Dicts ────────────────────────────────────────────────────────────────────
 
 
