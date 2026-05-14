@@ -80,6 +80,7 @@ from pydantic import BaseModel, Field
 from stemforge.scene_model import Project
 
 from . import intents
+from .bounce_handler import BounceCompletion, BounceProgress
 from .export_handler import (
     DEFAULT_TARGET_FORMAT,
     ExportValidationError,
@@ -95,6 +96,7 @@ from .intents import (
     PatchTemplateBody,
     RenameCurationBody,
     SaveAsBody,
+    TriggerBounceBody,
 )
 from .preview import build_audio_response
 from .schemas import (
@@ -523,6 +525,25 @@ def _register_routes(app: FastAPI, state: AppState) -> None:
             body,
             processed_dir=app.state.processed_dir,
         )
+
+    # ── BOUNCE (Phase 3B, spec §4.3 + §5.5) ───────────────────────────────
+
+    @app.post("/curations/{name}/trigger-bounce")
+    async def trigger_bounce_route(name: str, body: TriggerBounceBody) -> dict[str, Any]:
+        # Async kickoff: validates curation + spec, broadcasts the spec via
+        # SSE for the device's listener to pick up, returns the spec to the
+        # popup so the user sees what's about to render. The actual WAV
+        # rendering happens device-side; completion arrives via
+        # /bounce-progress + /bounce-complete below.
+        return await intents.handle_trigger_bounce(state, name, body)
+
+    @app.post("/curations/{name}/bounce-progress")
+    async def bounce_progress_route(name: str, body: BounceProgress) -> dict[str, Any]:
+        return await intents.handle_bounce_progress(state, name, body)
+
+    @app.post("/curations/{name}/bounce-complete", response_model=Curation)
+    async def bounce_complete_route(name: str, body: BounceCompletion) -> Curation:
+        return await intents.handle_bounce_complete(state, name, body)
 
     # ── Phase 1.5 — curation rename / active close ─────────────────────────
 
