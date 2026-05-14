@@ -218,7 +218,11 @@ def _refresh_pad(pad: Pad, forges: dict[str, ForgeManifest | None]) -> Pad:
         # Can't resolve; leave pad untouched, broadcaster will surface
         # the dangling reference.
         return pad
-    clip = next((c for c in forge.clips if c.clip_id == pad.source.clip_id), None)
+    clip_id = pad.source.clip_id
+    if clip_id is None:
+        # No clip_id to match against — bail.
+        return pad
+    clip = next((c for c in forge.clips if c.clip_id == clip_id), None)
     if clip is None:
         # clip_id missing in current manifest — leave audio_path untouched
         # so the loader's LOAD path surfaces a "missing clip" rather than
@@ -226,7 +230,7 @@ def _refresh_pad(pad: Pad, forges: dict[str, ForgeManifest | None]) -> Pad:
         return pad
     new_source = PadSource.for_forge(
         forge=pad.source.forge,
-        clip_id=pad.source.clip_id,
+        clip_id=clip_id,
         audio_path=clip.audio_path,
     )
     return pad.model_copy(update={"source": new_source})
