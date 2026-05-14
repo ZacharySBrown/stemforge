@@ -26,4 +26,6 @@ Entry points:
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from .intents import POPUP_ALS_SENTINEL
+
+__all__: list[str] = ["POPUP_ALS_SENTINEL"]

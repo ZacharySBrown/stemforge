@@ -28,9 +28,10 @@ Discipline (both families):
 from __future__ import annotations
 
 import json
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, ValidationError
@@ -92,6 +93,18 @@ from .state import (
 
 DEFAULT_GROUPS = ("A", "B", "C", "D")
 PADS_PER_GROUP = 12
+
+# Sentinel ``als_path`` used by the standalone popup, which has no Live
+# context. Both the popup and the server need to share this exact value
+# so the active-curation map stays consistent across surfaces; popup
+# JS imports it (via the api shim) so a popup-only "Open" and a
+# Live-attached "Open" land in distinct entries of ``active_curations``.
+#
+# Pre-UAT P0-2: making ``als_path`` optional on Open/Close request
+# bodies (defaulting to this sentinel) unblocks the popup TopBar's
+# Close button, which previously POSTed ``{}`` and 422'd because the
+# field was required.
+POPUP_ALS_SENTINEL = "__popup__"
 
 # Group-letter sequence used to seed empty curations. Targeted at v1's
 # EP-133 4-group layout but extends to any ``target.groups`` up to 16.
@@ -440,12 +453,17 @@ class OpenCurationBody(BaseModel):
     """Body of ``POST /curations/{name}/open``.
 
     ``als_path`` keys the active-curation map (one per Live project). In
-    Phase 1B device-to-server wiring is deferred (Phase 4A); meanwhile
-    callers must pass it explicitly so the active-curation file stays a
-    real shared resource across surfaces.
+    Phase 1B device-to-server wiring is deferred (Phase 4A); Live-attached
+    callers pass the absolute ``.als`` path explicitly.
+
+    Pre-UAT P0-2: ``als_path`` is optional and defaults to
+    :data:`POPUP_ALS_SENTINEL` (``"__popup__"``) — use that when no real
+    Live context exists, e.g. when the popup is running standalone. This
+    lets the popup's TopBar "Close active" button work with an empty body
+    instead of 422-ing on a missing field.
     """
 
-    als_path: str
+    als_path: str = POPUP_ALS_SENTINEL
 
     model_config = {"extra": "forbid"}
 
@@ -479,9 +497,14 @@ class CloseActiveCurationBody(BaseModel):
 
     Clears the active curation for ``als_path`` (sets the map entry to
     ``None``, removing it from ``.stemforge_state.json``).
+
+    Pre-UAT P0-2: ``als_path`` is optional and defaults to
+    :data:`POPUP_ALS_SENTINEL` (``"__popup__"``) — use that when no real
+    Live context exists, e.g. when the popup is running standalone.
+    Live-attached flows still pass the actual ``.als`` path.
     """
 
-    als_path: str
+    als_path: str = POPUP_ALS_SENTINEL
 
     model_config = {"extra": "forbid"}
 
@@ -1343,6 +1366,238 @@ async def handle_bounce_complete(
     return merged
 
 
+# ── Pre-UAT P0-1 — POST /intent/pick-manifest ───────────────────────────────
+
+
+PickManifestFilter = Literal["audio", "manifest", "any"]
+SnifferKind = Literal[
+    "audio",
+    "forge_manifest",
+    "arrangement_manifest",
+    "curation",
+    "unknown",
+]
+
+# Audio extensions the popup's "add forge…" + sniffer recognise. Mirrors
+# the device-side ``SNIFFER_AUDIO_EXTS`` list in
+# ``v0/src/m4l-js/stemforge_loader.v0.js`` so popup + device classify
+# identically.
+_SNIFFER_AUDIO_EXTS = (".wav", ".aif", ".aiff", ".mp3", ".flac", ".m4a", ".ogg")
+_FILTER_TO_EXT_LIST: dict[str, tuple[str, ...]] = {
+    "audio": _SNIFFER_AUDIO_EXTS,
+    "manifest": (".json", ".yaml", ".yml"),
+    "any": (),
+}
+
+
+class PickManifestBody(BaseModel):
+    """Body of ``POST /intent/pick-manifest`` (Pre-UAT P0-1).
+
+    Drives a server-side osascript ``choose file`` dialog for the popup's
+    ForgeList "add forge…" button. Returns the chosen POSIX path plus
+    a sniffer ``kind`` classification (mirrors the device's pickSource
+    taxonomy in ``stemforge_loader.v0.js``).
+    """
+
+    filter: PickManifestFilter = Field(
+        default="any",
+        description=(
+            "Optional file-type filter. ``audio`` constrains to "
+            f"{_SNIFFER_AUDIO_EXTS!r}; ``manifest`` to .json/.yaml/.yml; "
+            "``any`` (default) lets the user pick anything and relies "
+            "on the sniffer for classification."
+        ),
+    )
+    prompt: str | None = Field(
+        default=None,
+        description="Optional title text for the macOS open dialog.",
+    )
+    default_dir: str | None = Field(
+        default=None,
+        description=(
+            "Optional directory to open the dialog in. Defaults to the user's home directory."
+        ),
+    )
+
+    model_config = {"extra": "forbid"}
+
+
+def _native_file_dialog_pick_manifest(
+    *,
+    runner: Any,
+    filter_kind: PickManifestFilter = "any",
+    prompt: str | None = None,
+    default_dir: str | None = None,
+) -> str | None:
+    """Drive an ``osascript`` "choose file" dialog → POSIX path or None.
+
+    Mirrors :func:`stemforge.configurator.server._osascript_pick_save_path`
+    (the Phase 3C save-as helper) but uses AppleScript's ``choose file``
+    verb so the user picks an EXISTING file rather than naming a new one.
+
+    Subprocess invocation flows through ``runner`` (defaults to
+    :func:`subprocess.run`) so tests stub it cleanly. Returns ``None``
+    on:
+
+    * user cancel (osascript exits non-zero),
+    * missing ``osascript`` binary (``FileNotFoundError``),
+    * subprocess timeout.
+
+    All three cases must surface as 200 + ``{path: null, ...}`` at the
+    route layer; the popup handles the null path gracefully.
+    """
+    prompt_text = prompt or "Pick a forge manifest, curation, or audio file"
+    default_location_path = Path(default_dir).expanduser() if default_dir else Path.home()
+
+    of_clause = ""
+    ext_tuple = _FILTER_TO_EXT_LIST.get(filter_kind, ())
+    if ext_tuple:
+        # AppleScript: ``of type {"ext1", "ext2", ...}`` — strip leading dot.
+        quoted = ", ".join(f'"{ext.lstrip(".")}"' for ext in ext_tuple)
+        of_clause = f" of type {{{quoted}}}"
+
+    script = (
+        "set theFile to (choose file "
+        f'with prompt "{_applescript_escape(prompt_text)}"'
+        f"{of_clause} "
+        f'default location (POSIX file "{_applescript_escape(str(default_location_path))}"))\n'
+        "POSIX path of theFile"
+    )
+    cmd = ["osascript", "-e", script]
+    try:
+        proc = runner(cmd, capture_output=True, text=True, timeout=120, check=False)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    except OSError:
+        # Sandbox / permission errors — same null-result fallback.
+        return None
+    if getattr(proc, "returncode", 1) != 0:
+        return None
+    chosen = (getattr(proc, "stdout", "") or "").strip()
+    return chosen or None
+
+
+def _applescript_escape(value: str) -> str:
+    """Quote-escape a string for inline embedding in AppleScript source.
+
+    Mirrors :func:`stemforge.configurator.server._applescript_escape` —
+    duplicated here so :mod:`intents` doesn't import from :mod:`server`
+    (would be a cycle).
+    """
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def sniff_manifest_kind(path: str) -> SnifferKind:
+    """Classify ``path`` per the device-side sniffer taxonomy.
+
+    Resolution order (cheapest first), mirroring ``_snifferInspect`` in
+    ``v0/src/m4l-js/stemforge_loader.v0.js``:
+
+    1. Extension match → ``audio``.
+    2. ``.json``: parse + look for ``schema_version`` + (``pads`` →
+       ``forge_manifest``, ``chunks`` → ``arrangement_manifest``).
+    3. ``.yaml``/``.yml``: parse + look for top-level ``curation_version``
+       → ``curation``.
+
+    Anything that fails classification returns ``"unknown"`` — the
+    popup is expected to surface that as a soft warning, not an error.
+    """
+    if not path:
+        return "unknown"
+
+    lower = path.lower()
+    for ext in _SNIFFER_AUDIO_EXTS:
+        if lower.endswith(ext):
+            return "audio"
+
+    target = Path(path)
+    if not target.is_file():
+        return "unknown"
+
+    if lower.endswith(".json"):
+        try:
+            raw = target.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return "unknown"
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return "unknown"
+        if not isinstance(parsed, dict):
+            return "unknown"
+        if "schema_version" not in parsed:
+            return "unknown"
+        if "pads" in parsed:
+            return "forge_manifest"
+        if "chunks" in parsed:
+            return "arrangement_manifest"
+        return "unknown"
+
+    if lower.endswith((".yaml", ".yml")):
+        try:
+            raw = target.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return "unknown"
+        # Lightweight peek: look for a top-level ``curation_version:`` line.
+        # Avoids pulling pyyaml for what's a one-shot heuristic.
+        for line in raw.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if stripped.startswith("curation_version"):
+                return "curation"
+            # First non-comment non-empty line — if it's not curation_version
+            # we still scan a few more in case the file has a leading
+            # ``---`` document marker. Cap at the first 50 non-trivial
+            # lines so a multi-MB YAML doesn't read in full.
+        # Try a more permissive search via line scan capped at 50 lines.
+        scanned = 0
+        for line in raw.splitlines():
+            scanned += 1
+            if scanned > 50:
+                break
+            if "curation_version" in line:
+                return "curation"
+        return "unknown"
+
+    return "unknown"
+
+
+async def handle_pick_manifest(
+    state: AppState,
+    body: PickManifestBody,
+    *,
+    runner: Any,
+) -> dict[str, Any]:
+    """``POST /intent/pick-manifest`` — open native picker + classify result.
+
+    Pre-UAT P0-1. The popup's ForgeList "add forge…" button POSTs to
+    this route. The previous code path 404'd against the production
+    server; the popup's msw mocks made vitest stay green even though
+    the production server lacked the route.
+
+    Always returns 200 with ``{path, kind}`` — user cancel, missing
+    osascript, and subprocess error all surface as ``{path: null,
+    kind: "unknown"}`` so the popup can render "no file picked" without
+    a thrown-error toast.
+    """
+    chosen = _native_file_dialog_pick_manifest(
+        runner=runner,
+        filter_kind=body.filter,
+        prompt=body.prompt,
+        default_dir=body.default_dir,
+    )
+    if chosen is None:
+        kind: SnifferKind = "unknown"
+    else:
+        kind = sniff_manifest_kind(chosen)
+    await state.log(
+        f"pick-manifest filter={body.filter!r} → path={chosen!r} kind={kind!r}",
+        "info",
+    )
+    return {"path": chosen, "kind": kind}
+
+
 __all__ = [
     "AlsOpenedBody",
     "BounceCompletion",
@@ -1356,8 +1611,11 @@ __all__ = [
     "OpenCurationBody",
     "PatchTargetBody",
     "PatchTemplateBody",
+    "PickManifestBody",
+    "POPUP_ALS_SENTINEL",
     "RenameCurationBody",
     "SaveAsBody",
+    "SnifferKind",
     "TriggerBounceBody",
     "handle_als_opened",
     "handle_assign_pad",
@@ -1376,10 +1634,12 @@ __all__ = [
     "handle_open_curation",
     "handle_patch_target",
     "handle_patch_template",
+    "handle_pick_manifest",
     "handle_recompute",
     "handle_refresh_curation",
     "handle_rename_curation",
     "handle_save_as",
+    "sniff_manifest_kind",
     "handle_set_group_format",
     "handle_trigger_bounce",
 ]
