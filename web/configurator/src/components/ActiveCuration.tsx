@@ -6,7 +6,9 @@ import {
   Download,
   FileMusic,
   Layers,
+  Loader2,
   Play,
+  RefreshCw,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +20,7 @@ import {
 import {
   useExportCuration,
   usePickSavePath,
+  useRefreshCuration,
   useSetGroupLabel,
   useSetGroupTemplate,
   useTriggerBounce,
@@ -304,6 +307,7 @@ export function ActiveCuration({ curation }: ActiveCurationProps) {
   const triggerBounce = useTriggerBounce();
   const exportCuration = useExportCuration();
   const pickSavePath = usePickSavePath();
+  const refreshCuration = useRefreshCuration();
 
   const forgeStaleSet = useMemo(() => {
     if (!curation || !forges.data) return new Set<string>();
@@ -320,6 +324,7 @@ export function ActiveCuration({ curation }: ActiveCurationProps) {
   const groupKeys = Object.keys(groups).sort();
   const hasBounce = !!curation.last_bounce;
   const hasExport = !!curation.last_export;
+  const hasStaleForge = forgeStaleSet.size > 0;
 
   return (
     <section
@@ -336,6 +341,29 @@ export function ActiveCuration({ curation }: ActiveCurationProps) {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {hasStaleForge && (
+            <Tooltip delayDuration={200}>
+              <TooltipTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => refreshCuration.mutate(curation.name)}
+                  disabled={refreshCuration.isPending}
+                  data-testid="active-curation-refresh"
+                >
+                  {refreshCuration.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  )}
+                  refresh from forge
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                re-derive pad refs against the current forge manifests
+              </TooltipContent>
+            </Tooltip>
+          )}
           <Badge variant="muted">
             <Layers className="h-3 w-3" />
             {groupKeys.length} groups

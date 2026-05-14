@@ -73,99 +73,105 @@ import yaml
 # ── Palette (kept small — v8ui owns most color; we only need footer text
 # and status dot defaults here) ──────────────────────────────────────────────
 COLORS = {
-    "bg":        [0.055, 0.055, 0.055, 1.0],
-    "text":      [0.878, 0.878, 0.878, 1.0],
-    "dim":       [0.533, 0.533, 0.533, 1.0],
-    "status_bg": [0.118, 0.118, 0.137, 1.0],   # #1E1E23 matches v8ui panel
-    "dot_grey":  [0.333, 0.333, 0.333, 1.0],   # #555555 — empty/waiting default
+    "bg": [0.055, 0.055, 0.055, 1.0],
+    "text": [0.878, 0.878, 0.878, 1.0],
+    "dim": [0.533, 0.533, 0.533, 1.0],
+    "status_bg": [0.118, 0.118, 0.137, 1.0],  # #1E1E23 matches v8ui panel
+    "dot_grey": [0.333, 0.333, 0.333, 1.0],  # #555555 — empty/waiting default
 }
 
 
 # ── Stable object IDs ─────────────────────────────────────────────────────────
 # Keep these stable so patchlines are readable and diffs small.
 
-OBJ_V8UI                = "obj-sf-ui"
+OBJ_V8UI = "obj-sf-ui"
 
-OBJ_SF_STATE            = "obj-sf-state"
-OBJ_SF_FORGE            = "obj-sf-forge"
-OBJ_SF_PRESET_LOADER    = "obj-sf-preset-loader"
-OBJ_SF_MANIFEST_LOADER  = "obj-sf-manifest-loader"
-OBJ_SF_SETTINGS         = "obj-sf-settings"
-OBJ_SF_LOGGER           = "obj-sf-logger"
-OBJ_SF_NDJSON_PARSER    = "obj-sf-ndjson-parser"
-OBJ_SF_LOM_LOADER       = "obj-sf-lom-loader"
-OBJ_SF_CLIP_EXPORT      = "obj-sf-clip-export"
-OBJ_SF_LOCATOR_ANCHOR   = "obj-sf-locator-anchor"
+OBJ_SF_STATE = "obj-sf-state"
+OBJ_SF_FORGE = "obj-sf-forge"
+OBJ_SF_PRESET_LOADER = "obj-sf-preset-loader"
+OBJ_SF_MANIFEST_LOADER = "obj-sf-manifest-loader"
+OBJ_SF_SETTINGS = "obj-sf-settings"
+OBJ_SF_LOGGER = "obj-sf-logger"
+OBJ_SF_NDJSON_PARSER = "obj-sf-ndjson-parser"
+OBJ_SF_LOM_LOADER = "obj-sf-lom-loader"
+OBJ_SF_CLIP_EXPORT = "obj-sf-clip-export"
+OBJ_SF_LOCATOR_ANCHOR = "obj-sf-locator-anchor"
 
-OBJ_DICT_STATE          = "obj-dict-sf-state"
-OBJ_DICT_PRESET         = "obj-dict-sf-preset"
-OBJ_DICT_MANIFEST       = "obj-dict-sf-manifest"
-OBJ_DICT_SETTINGS       = "obj-dict-sf-settings"
+OBJ_DICT_STATE = "obj-dict-sf-state"
+OBJ_DICT_PRESET = "obj-dict-sf-preset"
+OBJ_DICT_MANIFEST = "obj-dict-sf-manifest"
+OBJ_DICT_SETTINGS = "obj-dict-sf-settings"
 
-OBJ_UMENU_PRESET        = "obj-umenu-preset"
-OBJ_UMENU_SOURCE        = "obj-umenu-source"
+OBJ_UMENU_PRESET = "obj-umenu-preset"
+OBJ_UMENU_SOURCE = "obj-umenu-source"
 
-OBJ_ROUTE_UI_EVENTS     = "obj-route-ui-events"
-OBJ_ROUTE_NDJSON        = "obj-route-ndjson"
+OBJ_ROUTE_UI_EVENTS = "obj-route-ui-events"
+OBJ_ROUTE_NDJSON = "obj-route-ndjson"
 
 # HW-4 (sf_remote): UDP receivers + dispatcher route. 7420 = general bus,
 # 7421 = direct dump-dict bus into sf_state_mgr. See docs/remote_debug.md.
-OBJ_UDP_GENERAL         = "obj-udp-general"
-OBJ_UDP_DUMP            = "obj-udp-dump"
-OBJ_ROUTE_UDP           = "obj-route-udp"
+OBJ_UDP_GENERAL = "obj-udp-general"
+OBJ_UDP_DUMP = "obj-udp-dump"
+OBJ_ROUTE_UDP = "obj-route-udp"
 
-OBJ_SHELL               = "obj-shell"
-OBJ_OPENDIALOG          = "obj-opendialog"
-OBJ_AUDIOPATH_REGEX     = "obj-audiopath-regex"
-OBJ_AUDIOPATH_PREPEND   = "obj-audiopath-prepend"
-OBJ_MANIFEST_DIALOG     = "obj-manifest-dialog"
-OBJ_MANIFESTPATH_REGEX  = "obj-manifestpath-regex"
+OBJ_SHELL = "obj-shell"
+OBJ_OPENDIALOG = "obj-opendialog"
+OBJ_AUDIOPATH_REGEX = "obj-audiopath-regex"
+OBJ_AUDIOPATH_PREPEND = "obj-audiopath-prepend"
+OBJ_MANIFEST_DIALOG = "obj-manifest-dialog"
+OBJ_MANIFESTPATH_REGEX = "obj-manifestpath-regex"
 OBJ_MANIFESTPATH_PREPEND = "obj-manifestpath-prepend"
 
-OBJ_STATUS_DOT          = "obj-sf-status-dot"
-OBJ_STATUS_TEXT         = "obj-sf-status-text"
-OBJ_VERSION_TEXT        = "obj-sf-version-text"
+OBJ_STATUS_DOT = "obj-sf-status-dot"
+OBJ_STATUS_TEXT = "obj-sf-status-text"
+OBJ_VERSION_TEXT = "obj-sf-version-text"
 
-OBJ_LOADBANG            = "obj-loadbang"
-OBJ_LOAD_DEFERLOW       = "obj-load-deferlow"
-OBJ_LOAD_SEQ            = "obj-load-seq"
-OBJ_LOAD_SCAN_PRESETS   = "obj-load-scan-presets"
+# Phase 4B — footer-left "Open Editor" button (replaces ConfiguratorStrip.amxd).
+# textbutton → [t b] → [message openEditor] → [js sf_lom_loader].
+OBJ_OPEN_EDITOR_BTN = "obj-sf-open-editor-btn"
+OBJ_OPEN_EDITOR_TB = "obj-sf-open-editor-tb"
+OBJ_OPEN_EDITOR_MSG = "obj-sf-open-editor-msg"
+
+OBJ_LOADBANG = "obj-loadbang"
+OBJ_LOAD_DEFERLOW = "obj-load-deferlow"
+OBJ_LOAD_SEQ = "obj-load-seq"
+OBJ_LOAD_SCAN_PRESETS = "obj-load-scan-presets"
 OBJ_LOAD_SCAN_MANIFESTS = "obj-load-scan-manifests"
-OBJ_LOAD_SETTINGS       = "obj-load-settings"
+OBJ_LOAD_SETTINGS = "obj-load-settings"
 
-OBJ_PRESET_SELECT_PREP  = "obj-preset-select-prepend"
-OBJ_SOURCE_SELECT_PREP  = "obj-source-select-prepend"
-OBJ_FORGE_ACTION_ROUTE  = "obj-forge-action-route"
+OBJ_PRESET_SELECT_PREP = "obj-preset-select-prepend"
+OBJ_SOURCE_SELECT_PREP = "obj-source-select-prepend"
+OBJ_FORGE_ACTION_ROUTE = "obj-forge-action-route"
 
-OBJ_PROGRESS_UNPACK     = "obj-progress-unpack"
-OBJ_ONPROG_PREPEND      = "obj-onprog-prepend"
-OBJ_ONSTEM_PREPEND      = "obj-onstem-prepend"
-OBJ_ONBPM_PREPEND       = "obj-onbpm-prepend"
-OBJ_ONCOMPLETE_PREPEND  = "obj-oncomplete-prepend"
-OBJ_ONCURATED_PREPEND   = "obj-oncurated-prepend"
-OBJ_ONERROR_PREPEND     = "obj-onerror-prepend"
+OBJ_PROGRESS_UNPACK = "obj-progress-unpack"
+OBJ_ONPROG_PREPEND = "obj-onprog-prepend"
+OBJ_ONSTEM_PREPEND = "obj-onstem-prepend"
+OBJ_ONBPM_PREPEND = "obj-onbpm-prepend"
+OBJ_ONCOMPLETE_PREPEND = "obj-oncomplete-prepend"
+OBJ_ONCURATED_PREPEND = "obj-oncurated-prepend"
+OBJ_ONERROR_PREPEND = "obj-onerror-prepend"
 
 # Clip-export NDJSON event prepends (sf_clip_export message names).
-OBJ_CX_STARTED_PREP     = "obj-cx-started-prepend"
-OBJ_CX_PROGRESS_PREP    = "obj-cx-progress-prepend"
-OBJ_CX_CLIP_DONE_PREP   = "obj-cx-clip-done-prepend"
-OBJ_CX_CLIP_ERROR_PREP  = "obj-cx-clip-error-prepend"
-OBJ_CX_COMPLETE_PREP    = "obj-cx-complete-prepend"
-OBJ_CX_ERROR_PREP       = "obj-cx-error-prepend"
-OBJ_BOUNCE_CLIPS_MSG    = "obj-bounce-clips-msg"
-OBJ_EXPORT_SONG_MSG     = "obj-export-song-msg"
-OBJ_LOAD_ARR_MSG        = "obj-load-arrangement-msg"
+OBJ_CX_STARTED_PREP = "obj-cx-started-prepend"
+OBJ_CX_PROGRESS_PREP = "obj-cx-progress-prepend"
+OBJ_CX_CLIP_DONE_PREP = "obj-cx-clip-done-prepend"
+OBJ_CX_CLIP_ERROR_PREP = "obj-cx-clip-error-prepend"
+OBJ_CX_COMPLETE_PREP = "obj-cx-complete-prepend"
+OBJ_CX_ERROR_PREP = "obj-cx-error-prepend"
+OBJ_BOUNCE_CLIPS_MSG = "obj-bounce-clips-msg"
+OBJ_EXPORT_SONG_MSG = "obj-export-song-msg"
+OBJ_LOAD_ARR_MSG = "obj-load-arrangement-msg"
 
 # Locator-anchor wiring (sf_locator_anchor message names).
-OBJ_ANCHOR_CLICK_MSG    = "obj-anchor-click-msg"
-OBJ_LA_STARTED_PREP     = "obj-la-started-prepend"
-OBJ_LA_COMPLETE_PREP    = "obj-la-complete-prepend"
-OBJ_LA_ERROR_PREP       = "obj-la-error-prepend"
+OBJ_ANCHOR_CLICK_MSG = "obj-anchor-click-msg"
+OBJ_LA_STARTED_PREP = "obj-la-started-prepend"
+OBJ_LA_COMPLETE_PREP = "obj-la-complete-prepend"
+OBJ_LA_ERROR_PREP = "obj-la-error-prepend"
 
-OBJ_PLUGIN_IN           = "obj-plugin-in"
-OBJ_PLUGOUT             = "obj-plugout"
+OBJ_PLUGIN_IN = "obj-plugin-in"
+OBJ_PLUGOUT = "obj-plugout"
 
-OBJ_FILELOG_PREPEND     = "obj-filelog-prepend"
+OBJ_FILELOG_PREPEND = "obj-filelog-prepend"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -200,9 +206,7 @@ def _box(
     return {"box": body}
 
 
-def _line(
-    src_id: str, src_outlet: int, dst_id: str, dst_inlet: int
-) -> dict[str, Any]:
+def _line(src_id: str, src_outlet: int, dst_id: str, dst_inlet: int) -> dict[str, Any]:
     return {
         "patchline": {
             "source": [src_id, src_outlet],
@@ -257,8 +261,8 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     device_name = spec["device"]["name"]
     device_version = spec["device"].get("version", "0.1.0")
 
-    v8ui_cfg    = ui["v8ui"]
-    status_bar  = ui["status_bar"]
+    v8ui_cfg = ui["v8ui"]
+    status_bar = ui["status_bar"]
 
     boxes: list[dict[str, Any]] = []
     lines: list[dict[str, Any]] = []
@@ -325,14 +329,14 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             outlettype=["", ""],
             extras={
                 "varname": dot_cfg["id"],
-                "mode": 0,          # display-only button
+                "mode": 0,  # display-only button
                 "text": "",
-                "activebgcolor":   COLORS["dot_grey"],
-                "bgcolor":         COLORS["dot_grey"],
+                "activebgcolor": COLORS["dot_grey"],
+                "bgcolor": COLORS["dot_grey"],
                 "activebgoncolor": COLORS["dot_grey"],
-                "bgoncolor":       COLORS["dot_grey"],
-                "bordercolor":     COLORS["dot_grey"],
-                "activebordercolor":    COLORS["dot_grey"],
+                "bgoncolor": COLORS["dot_grey"],
+                "bordercolor": COLORS["dot_grey"],
+                "activebordercolor": COLORS["dot_grey"],
                 "activebordercoloroff": COLORS["dot_grey"],
                 "rounded": 24.0,
                 "fontsize": 1.0,
@@ -399,15 +403,88 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         )
     )
 
+    # ── Phase 4B — "Open Editor" footer button ─────────────────────────────
+    # Single live.text button (mode 1 = momentary) at the right edge of the
+    # footer, just inside the version stamp. On click → [t b] →
+    # [message openEditor] → [js sf_lom_loader].openEditor(), which asks
+    # Max to `launchbrowser` the popup URL.
+    #
+    # Position: anchored right of the status text, left of the version stamp.
+    # The status_text at x=24 is 600 wide → ends at x=624. The version_text
+    # starts at x=720. We use the 96-px gap for the Open Editor button.
+    btn_x = 632.0
+    btn_y = status_bar["status_dot"]["pos"]["y"]
+    btn_w = 80.0
+    btn_h = status_bar["status_dot"]["size"]["height"]
+    open_editor_rect = (btn_x, btn_y, btn_w, btn_h)
+    boxes.append(
+        _box(
+            OBJ_OPEN_EDITOR_BTN,
+            "live.text",
+            open_editor_rect,
+            presentation=True,
+            presentation_rect=open_editor_rect,
+            numinlets=1,
+            numoutlets=2,
+            outlettype=["", ""],
+            extras={
+                "varname": "sf_open_editor_btn",
+                # mode 1 = momentary button (emits its `text` label on click).
+                # The downstream [t b] converts the label-symbol into a bang,
+                # then the [message openEditor] names the JS handler (pitfall
+                # #17 in memory/m4l_device_development_guide.md).
+                "mode": 1,
+                "text": "Open Editor",
+                "fontname": "Ableton Sans Medium",
+                "fontsize": 9.0,
+                "textcolor": COLORS["text"],
+                "activebgcolor": COLORS["dim"],
+                "bgcolor": COLORS["status_bg"],
+                "activebgoncolor": COLORS["dim"],
+                "bgoncolor": COLORS["status_bg"],
+                "bordercolor": COLORS["dim"],
+                "activebordercolor": COLORS["text"],
+                "activebordercoloroff": COLORS["dim"],
+                "rounded": 4.0,
+                "parameter_enable": 0,
+            },
+        )
+    )
+    # [t b] — converts the button's label-symbol output into a bang.
+    boxes.append(
+        _box(
+            OBJ_OPEN_EDITOR_TB,
+            "newobj",
+            (btn_x, btn_y + 18.0, 40.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=["bang"],
+            extras={"text": "t b"},
+        )
+    )
+    # Message box names the JS handler — bang fires it, then [js sf_lom_loader]
+    # resolves the message-name to `openEditor()`.
+    boxes.append(
+        _box(
+            OBJ_OPEN_EDITOR_MSG,
+            "message",
+            (btn_x, btn_y + 42.0, 96.0, 22.0),
+            numinlets=2,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "openEditor"},
+        )
+    )
+
     # ── Dict objects (one per canonical dict name) ──────────────────────────
     # These just ensure the dicts exist on patcher load so JS Dict() refs work.
 
-    dict_row_y = 200.0   # out of presentation mode; patcher-area only
+    dict_row_y = 200.0  # out of presentation mode; patcher-area only
     dict_width = 150.0
     for i, (box_id, dict_name) in enumerate(
         [
-            (OBJ_DICT_STATE,    "sf_state"),
-            (OBJ_DICT_PRESET,   "sf_preset"),
+            (OBJ_DICT_STATE, "sf_state"),
+            (OBJ_DICT_PRESET, "sf_preset"),
             (OBJ_DICT_MANIFEST, "sf_manifest"),
             (OBJ_DICT_SETTINGS, "sf_settings"),
         ]
@@ -642,13 +719,13 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     # 7420 → route input
     lines.append(_line(OBJ_UDP_GENERAL, 0, OBJ_ROUTE_UDP, 0))
     # route outlets → modules. Outlet order matches the route's tag order.
-    lines.append(_line(OBJ_ROUTE_UDP, 0, OBJ_SF_STATE, 0))             # state
-    lines.append(_line(OBJ_ROUTE_UDP, 1, OBJ_SF_FORGE, 0))             # forge
-    lines.append(_line(OBJ_ROUTE_UDP, 2, OBJ_SF_PRESET_LOADER, 0))     # preset-loader
-    lines.append(_line(OBJ_ROUTE_UDP, 3, OBJ_SF_MANIFEST_LOADER, 0))   # manifest-loader
-    lines.append(_line(OBJ_ROUTE_UDP, 4, OBJ_SF_SETTINGS, 0))          # settings
-    lines.append(_line(OBJ_ROUTE_UDP, 5, OBJ_V8UI, 0))                 # ui
-    lines.append(_line(OBJ_ROUTE_UDP, 6, OBJ_SF_LOGGER, 0))            # logger
+    lines.append(_line(OBJ_ROUTE_UDP, 0, OBJ_SF_STATE, 0))  # state
+    lines.append(_line(OBJ_ROUTE_UDP, 1, OBJ_SF_FORGE, 0))  # forge
+    lines.append(_line(OBJ_ROUTE_UDP, 2, OBJ_SF_PRESET_LOADER, 0))  # preset-loader
+    lines.append(_line(OBJ_ROUTE_UDP, 3, OBJ_SF_MANIFEST_LOADER, 0))  # manifest-loader
+    lines.append(_line(OBJ_ROUTE_UDP, 4, OBJ_SF_SETTINGS, 0))  # settings
+    lines.append(_line(OBJ_ROUTE_UDP, 5, OBJ_V8UI, 0))  # ui
+    lines.append(_line(OBJ_ROUTE_UDP, 6, OBJ_SF_LOGGER, 0))  # logger
     # Phase 3A: outlet 7 = `/template-changed <letter> <name>`. Prepend the
     # message name `templateChanged` so the classic [js] loader dispatches
     # to its top-level `templateChanged(letter, name)` function (which then
@@ -882,9 +959,13 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         _box(
             OBJ_ROUTE_UI_EVENTS,
             "newobj",
-            (16.0, js_row_y - 40,
-             # width
-             860.0, 22.0),
+            (
+                16.0,
+                js_row_y - 40,
+                # width
+                860.0,
+                22.0,
+            ),
             numinlets=1,
             numoutlets=13,  # 12 events + unmatched
             outlettype=[""] * 13,
@@ -1075,7 +1156,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     # the picker. The loader wrapper includes sf_arrangement_loader.js and
     # dispatches to runArrangementLoad() with the POSIX path.
     OBJ_LOAD_ARR_DIALOG = "obj-load-arr-dialog"
-    OBJ_LOAD_ARR_REGEX  = "obj-load-arr-regex"
+    OBJ_LOAD_ARR_REGEX = "obj-load-arr-regex"
     OBJ_LOAD_ARR_PREPEND = "obj-load-arr-prepend"
     boxes.append(
         _box(
@@ -1188,6 +1269,13 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     )
     lines.append(_line(OBJ_SF_LOCATOR_ANCHOR, 2, OBJ_LA_RELOAD_PREP, 0))
     lines.append(_line(OBJ_LA_RELOAD_PREP, 0, OBJ_SF_LOM_LOADER, 0))
+
+    # ── Phase 4B — Open Editor button wiring ─────────────────────────────
+    # [live.text Open Editor] (mode 1) → [t b] → [message openEditor]
+    #     → [js sf_lom_loader] (resolves the message-name to openEditor()).
+    lines.append(_line(OBJ_OPEN_EDITOR_BTN, 0, OBJ_OPEN_EDITOR_TB, 0))
+    lines.append(_line(OBJ_OPEN_EDITOR_TB, 0, OBJ_OPEN_EDITOR_MSG, 0))
+    lines.append(_line(OBJ_OPEN_EDITOR_MSG, 0, OBJ_SF_LOM_LOADER, 0))
 
     # ── sf_state outlet 0 → v8ui refresh ────────────────────────────────────
     # The state mgr emits `bang` on mutation. We prepend `refresh` so the
@@ -1359,12 +1447,12 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     # / Complete / Error).
     _CX_PREPENDS = [
         # (route_outlet_idx, prepend_obj_id, message_name, x_offset_idx)
-        (7,  OBJ_CX_STARTED_PREP,    "onClipExportStarted",    0),
-        (8,  OBJ_CX_PROGRESS_PREP,   "onClipExportProgress",   1),
-        (9,  OBJ_CX_CLIP_DONE_PREP,  "onClipExportClipDone",   2),
-        (10, OBJ_CX_CLIP_ERROR_PREP, "onClipExportClipError",  3),
-        (11, OBJ_CX_COMPLETE_PREP,   "onClipExportComplete",   4),
-        (12, OBJ_CX_ERROR_PREP,      "onClipExportError",      5),
+        (7, OBJ_CX_STARTED_PREP, "onClipExportStarted", 0),
+        (8, OBJ_CX_PROGRESS_PREP, "onClipExportProgress", 1),
+        (9, OBJ_CX_CLIP_DONE_PREP, "onClipExportClipDone", 2),
+        (10, OBJ_CX_CLIP_ERROR_PREP, "onClipExportClipError", 3),
+        (11, OBJ_CX_COMPLETE_PREP, "onClipExportComplete", 4),
+        (12, OBJ_CX_ERROR_PREP, "onClipExportError", 5),
     ]
     for route_idx, obj_id, msg_name, x_idx in _CX_PREPENDS:
         boxes.append(
@@ -1386,9 +1474,9 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     # call into the sf_locator_anchor [js] box. Names mirror the JS handlers.
     _LA_PREPENDS = [
         # (route_outlet_idx, prepend_obj_id, message_name, x_offset_idx)
-        (13, OBJ_LA_STARTED_PREP,  "onAnchorStarted",  6),
+        (13, OBJ_LA_STARTED_PREP, "onAnchorStarted", 6),
         (14, OBJ_LA_COMPLETE_PREP, "onAnchorComplete", 7),
-        (15, OBJ_LA_ERROR_PREP,    "onAnchorError",    8),
+        (15, OBJ_LA_ERROR_PREP, "onAnchorError", 8),
     ]
     for route_idx, obj_id, msg_name, x_idx in _LA_PREPENDS:
         boxes.append(

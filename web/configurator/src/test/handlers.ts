@@ -46,6 +46,11 @@ export const okHandlers = [
   http.patch("/curations/:name/target", () => HttpResponse.json(OK)),
   http.post("/curations/:name/export", () => HttpResponse.json(OK)),
   http.post("/curations/:name/trigger-bounce", () => HttpResponse.json(OK)),
+  // Phase 4B — re-derive pad refs against current forges. Returns the
+  // refreshed Curation; tests just need a parseable body.
+  http.post("/curations/:name/refresh", () =>
+    HttpResponse.json(CURATION_FRESH),
+  ),
   http.post("/curations/active/close", () => HttpResponse.json(OK)),
 
   // Server-side native pickers

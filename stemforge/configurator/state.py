@@ -89,6 +89,10 @@ class AppState:
     # disk) and replaced atomically by writers via
     # :meth:`refresh_cached_stemforge_state`.
     cached_stemforge_state: StemforgeState = field(default_factory=StemforgeState)
+    # Phase 4B: the broadcaster needs to read forge manifests to compute
+    # per-pad stale flags. Mirrors ``app.state.processed_dir`` so the
+    # broadcaster can run without reaching into FastAPI state.
+    processed_dir: Path = field(default_factory=lambda: Path.home() / "stemforge" / "processed")
 
     def refresh_cached_stemforge_state(self) -> StemforgeState:
         """Re-read ``.stemforge_state.json`` into the in-memory cache.
@@ -144,12 +148,35 @@ class AppState:
         Phase 4A: refreshes the in-memory cache before broadcasting so
         all subsequent ``/als-opened`` lookups see the latest map without
         re-reading disk.
-        """
-        from .curation_io import list_curations  # local: avoid import cycle
 
+        Phase 4B: payload now carries a ``stale_by_curation`` map keyed
+        by curation name → ``{pad_id: {stale, current_manifest_hash}}``
+        so the popup can render stale badges in ``ForgeList`` (per-forge
+        stale count) and ``ActiveCuration`` (per-pad stale indicator)
+        without re-resolving every forge in the browser.
+        """
+        from .curation_io import list_curations, read_curation  # local: avoid cycle
+        from .stale_check import stale_summary
+
+        # Phase 4A: cache refresh keeps /als-opened lookups disk-free.
         current_state = self.refresh_cached_stemforge_state()
         active_curations = current_state.active_curations
-        names = [p.stem for p in list_curations(self.curations_dir)]
+        curation_paths = list_curations(self.curations_dir)
+        names = [p.stem for p in curation_paths]
+
+        # Phase 4B: compute per-pad stale flags against current forges.
+        forges_by_slug = _load_forges_by_slug(self.processed_dir)
+        stale_by_curation: dict[str, dict[str, dict[str, object]]] = {}
+        for path in curation_paths:
+            try:
+                curation = read_curation(path)
+            except Exception:  # noqa: BLE001 - broadcaster mustn't crash on bad files
+                continue
+            entries = stale_summary(curation, forges_by_slug)
+            stale_by_curation[curation.name] = {
+                pad_id: entry.to_dict() for pad_id, entry in entries.items()
+            }
+
         await self.broadcast(
             SseEvent(
                 event="state",
@@ -157,6 +184,7 @@ class AppState:
                     "kind": "curations",
                     "curations": names,
                     "active_curations": active_curations,
+                    "stale_by_curation": stale_by_curation,
                     "ts": time.time(),
                 },
             )
@@ -193,6 +221,47 @@ class AppState:
                 data={"code": code, "message": message, "ts": time.time()},
             )
         )
+
+
+# ── Forge manifest loader (for Phase 4B stale-check) ────────────────────────
+
+
+def _load_forges_by_slug(processed_dir: Path) -> dict[str, object]:
+    """Build ``{slug: ForgeManifest}`` for every loadable forge dir.
+
+    Used by :meth:`AppState.broadcast_curations_state` to feed
+    :func:`stemforge.configurator.stale_check.stale_summary`. Forges
+    whose manifest fails to parse are skipped (their slugs will
+    therefore not appear in the map, causing dependent pads to read as
+    stale via the "missing forge" branch). The return type is widened
+    to ``dict[str, object]`` to keep the import cycle local — the
+    consumer in :mod:`stale_check` is the only place that needs the
+    concrete :class:`ForgeManifest` type.
+    """
+    from stemforge.forge.manifest_io import (
+        AUTO_CURATION_FILENAME,
+        ForgeManifestError,
+        LEGACY_FILENAME,
+        LEGACY_PARENT,
+        load_forge,
+    )
+
+    out: dict[str, object] = {}
+    if not processed_dir.is_dir():
+        return out
+    for child in processed_dir.iterdir():
+        if not child.is_dir() or child.name.startswith("."):
+            continue
+        has_new = (child / AUTO_CURATION_FILENAME).is_file()
+        has_legacy = (child / LEGACY_PARENT / LEGACY_FILENAME).is_file()
+        if not (has_new or has_legacy):
+            continue
+        try:
+            manifest = load_forge(child.name, forge_dir=child)
+        except ForgeManifestError:
+            continue
+        out[child.name] = manifest
+    return out
 
 
 # ── StemforgeState I/O ──────────────────────────────────────────────────────

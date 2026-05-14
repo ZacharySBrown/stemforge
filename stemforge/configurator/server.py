@@ -55,6 +55,10 @@ Routes (Phase 4A — active-curation persistence + device bootstrap):
 
 - ``POST /als-opened``  (device → server on Live's ``loadbang``)
 
+Routes (Phase 4B — stale-detection refresh):
+
+- ``POST /curations/{name}/refresh``  (re-derive pad refs vs current forges)
+
 Routes (Phase 3C — EXPORT via server):
 
 - ``POST /curations/{name}/export``
@@ -228,6 +232,10 @@ def create_app(
     # state file by archiving it and resetting to empty — the server
     # keeps booting either way.
     state.refresh_cached_stemforge_state()
+    # Phase 4B: mirror processed_dir onto AppState so
+    # ``broadcast_curations_state`` can load forge manifests for the
+    # per-pad stale check without reaching into FastAPI's ``app.state``.
+    state.processed_dir = resolved_processed
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -534,6 +542,23 @@ def _register_routes(app: FastAPI, state: AppState) -> None:
             state,
             name,
             body,
+            processed_dir=app.state.processed_dir,
+        )
+
+    @app.post("/curations/{name}/refresh", response_model=Curation)
+    async def refresh_curation_route(name: str) -> Curation:
+        """Phase 4B — re-derive pad refs against the current forge manifests.
+
+        Idempotent: a curation with no stale references comes back
+        unchanged (modulo ``modified_at`` bump). When a forge has been
+        re-anchored or re-curated, every pad whose ``clip_id`` still
+        exists in the new manifest has its ``audio_path`` rewritten to
+        the current relative path; ``referenced_forges`` is updated to
+        the current hash so the curation stops reading as stale.
+        """
+        return await intents.handle_refresh_curation(
+            state,
+            name,
             processed_dir=app.state.processed_dir,
         )
 

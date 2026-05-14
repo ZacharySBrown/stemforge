@@ -246,3 +246,38 @@ describe("ActiveCuration — EXPORT button (Phase 3C)", () => {
     toastErrorSpy.mockRestore();
   });
 });
+
+describe("ActiveCuration — Refresh from forge (Phase 4B)", () => {
+  it("hides the Refresh button when no forge is stale", async () => {
+    renderWithProviders(<ActiveCuration curation={CURATION_FRESH} />);
+    // forges query needs to resolve before the staleness check runs.
+    await waitFor(() =>
+      expect(screen.getAllByTestId("pad-cell").length).toBeGreaterThan(0),
+    );
+    expect(screen.queryByTestId("active-curation-refresh")).toBeNull();
+  });
+
+  it("shows the Refresh button when a forge is stale", async () => {
+    renderWithProviders(<ActiveCuration curation={CURATION_STALE} />);
+    const btn = await screen.findByTestId("active-curation-refresh");
+    expect(btn).toBeInTheDocument();
+  });
+
+  it("clicking Refresh POSTs to /curations/{name}/refresh", async () => {
+    const refreshCalls: string[] = [];
+    server.use(
+      http.post("/curations/:name/refresh", ({ params }) => {
+        refreshCalls.push(String(params.name));
+        return HttpResponse.json(CURATION_FRESH);
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<ActiveCuration curation={CURATION_STALE} />);
+
+    const btn = await screen.findByTestId("active-curation-refresh");
+    await user.click(btn);
+
+    await waitFor(() => expect(refreshCalls).toContain(CURATION_STALE.name));
+  });
+});

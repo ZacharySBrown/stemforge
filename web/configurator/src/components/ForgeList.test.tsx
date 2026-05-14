@@ -1,9 +1,11 @@
 import { screen, waitFor } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { http, HttpResponse } from "msw";
+import { describe, expect, it, vi } from "vitest";
 import { server } from "@/test/server";
 import { emptyHandlers, failingHandlers } from "@/test/handlers";
 import { renderWithProviders } from "@/test/render";
-import { CURATION_STALE } from "@/test/fixtures";
+import { CURATION_FRESH, CURATION_STALE } from "@/test/fixtures";
 import { ForgeList } from "./ForgeList";
 
 describe("ForgeList", () => {
@@ -76,9 +78,46 @@ describe("ForgeList", () => {
     await waitFor(() =>
       expect(screen.getAllByTestId("forge-row").length).toBeGreaterThan(0),
     );
-    // import inline to avoid circular fixture import
-    const { CURATION_FRESH } = await import("@/test/fixtures");
     rerender(<ForgeList curation={CURATION_FRESH} />);
     expect(screen.queryAllByTestId("stale-badge")).toHaveLength(0);
+  });
+
+  it("renders a rail-level stale count badge that totals per-forge stales", async () => {
+    // CURATION_STALE has one stale ref (definition-of-sound).
+    renderWithProviders(<ForgeList curation={CURATION_STALE} />);
+    await waitFor(() =>
+      expect(screen.getAllByTestId("forge-row").length).toBeGreaterThan(0),
+    );
+
+    const count = screen.getByTestId("forge-list-stale-count");
+    expect(count).toHaveTextContent("1 stale");
+  });
+
+  it("hides the refresh button when no curation is open or nothing is stale", async () => {
+    renderWithProviders(<ForgeList curation={null} />);
+    await waitFor(() =>
+      expect(screen.getAllByTestId("forge-row").length).toBeGreaterThan(0),
+    );
+    expect(screen.queryByTestId("forge-list-refresh")).toBeNull();
+  });
+
+  it("shows the Refresh button when curation has a stale ref and POSTs the right endpoint on click", async () => {
+    const refreshSpy = vi.fn();
+    server.use(
+      http.post("/curations/:name/refresh", ({ params }) => {
+        refreshSpy(params.name);
+        return HttpResponse.json(CURATION_FRESH);
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<ForgeList curation={CURATION_STALE} />);
+
+    const button = await screen.findByTestId("forge-list-refresh");
+    await user.click(button);
+
+    await waitFor(() =>
+      expect(refreshSpy).toHaveBeenCalledWith(CURATION_STALE.name),
+    );
   });
 });
