@@ -187,6 +187,36 @@ export function useTriggerBounce() {
 }
 
 /**
+ * Phase 4B — "Refresh from forge". Re-derives every forge-owned pad's
+ * `audio_path` against the current `auto_curation_manifest.json` and
+ * rewrites `referenced_forges` hashes so the curation no longer reads
+ * as stale.
+ *
+ * Optimistic UI: the calling component flips its local stale state to
+ * "pending"; on success the SSE state event (broadcast_curations_state)
+ * delivers the new `stale_by_curation` map and the badges clear.
+ */
+export function useRefreshCuration() {
+  const qc = useQueryClient();
+  return useMutation<unknown, Error, string>({
+    mutationFn: (name) => api.refreshCuration(name),
+    onSuccess: () => {
+      toast.success("refresh from forge ok");
+    },
+    onError: (err: Error) => {
+      toast.error("refresh from forge failed", { description: err.message });
+    },
+    onSettled: () => {
+      // Invalidate the curation index + active curation queries so the
+      // updated referenced_forges + modified_at land in the UI without
+      // waiting for a separate SSE refresh.
+      qc.invalidateQueries({ queryKey: ["curations"] });
+      qc.invalidateQueries({ queryKey: ["curation"] });
+    },
+  });
+}
+
+/**
  * Server-side export envelope. The server returns 200 even on subprocess
  * failure (mirrors the re-anchor pattern) — `ok: false` plus `stderr` /
  * `stdout` / `error` carry the diagnostics. The hook surfaces stderr in

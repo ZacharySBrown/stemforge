@@ -250,6 +250,22 @@ export function triggerBounce(name: string): Promise<ApiResult> {
   );
 }
 
+/**
+ * Phase 4B — "Refresh from forge": re-derive every forge-owned pad's
+ * `audio_path` against the current `auto_curation_manifest.json` and
+ * rewrite `referenced_forges` hashes so the curation no longer reads as
+ * stale.
+ *
+ * Returns the refreshed `Curation` document. Idempotent: a curation with
+ * no stale references comes back unchanged (modulo `modified_at`).
+ */
+export function refreshCuration(name: string): Promise<Curation> {
+  return jsonRequest<Curation>(
+    `/curations/${encodeURIComponent(name)}/refresh`,
+    { method: "POST", body: "{}" },
+  );
+}
+
 /** Close the currently-active curation (clears the active marker server-side). */
 export function closeActiveCuration(): Promise<ApiResult> {
   return jsonRequest<ApiResult>("/curations/active/close", {
@@ -313,6 +329,7 @@ export const api = {
   patchCurationTarget,
   exportCuration,
   triggerBounce,
+  refreshCuration,
   closeActiveCuration,
   pickManifest,
   pickSavePath,

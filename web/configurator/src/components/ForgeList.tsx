@@ -23,6 +23,7 @@ import {
   usePickManifest,
   useReAnchorForge,
   useReCurateForge,
+  useRefreshCuration,
   useShowForgeInFinder,
   useUnloadForge,
 } from "@/hooks/useIntent";
@@ -269,9 +270,18 @@ function ForgeListSkeleton() {
 export function ForgeList({ curation }: ForgeListProps) {
   const { data, isLoading, isError, error, refetch } = useForges();
   const pickManifest = usePickManifest();
+  const refreshCuration = useRefreshCuration();
 
   const forges = data?.forges ?? [];
   const refs = curation?.referenced_forges;
+
+  // Phase 4B — per-forge stale count drives the rail-level "n stale" badge,
+  // and the "Refresh from forge" button only enables when there's a stale
+  // ref to actually refresh. Computed once per render against the index.
+  const staleCount = forges.reduce(
+    (n, f) => (isForgeStale(refs, f) ? n + 1 : n),
+    0,
+  );
 
   return (
     <motion.aside
@@ -282,14 +292,59 @@ export function ForgeList({ curation }: ForgeListProps) {
       data-testid="forge-list"
     >
       <div className="flex items-center justify-between px-1 pb-0.5">
-        <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
-          forges
+        <div className="flex items-center gap-1.5">
+          <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+            forges
+          </div>
+          {staleCount > 0 && (
+            <Tooltip delayDuration={200}>
+              <TooltipTrigger asChild>
+                <Badge
+                  variant="warning"
+                  className="!text-[9px] !px-1.5 !py-0"
+                  data-testid="forge-list-stale-count"
+                >
+                  {staleCount} stale
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {staleCount} forge{staleCount === 1 ? "" : "s"} have changed
+                since this curation last referenced them
+              </TooltipContent>
+            </Tooltip>
+          )}
         </div>
-        {forges.length > 0 && (
-          <Badge variant="muted" className="!text-[10px]">
-            {forges.length}
-          </Badge>
-        )}
+        <div className="flex items-center gap-2">
+          {curation && staleCount > 0 && (
+            <Tooltip delayDuration={200}>
+              <TooltipTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="!h-6 !px-2 !text-[10px]"
+                  disabled={refreshCuration.isPending}
+                  onClick={() => refreshCuration.mutate(curation.name)}
+                  data-testid="forge-list-refresh"
+                >
+                  {refreshCuration.isPending ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3 w-3" />
+                  )}
+                  refresh
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                re-derive pad refs against the current forge manifests
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {forges.length > 0 && (
+            <Badge variant="muted" className="!text-[10px]">
+              {forges.length}
+            </Badge>
+          )}
+        </div>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-0.5">
