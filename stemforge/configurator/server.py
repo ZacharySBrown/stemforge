@@ -64,6 +64,10 @@ Routes (Phase 3C — EXPORT via server):
 - ``POST /curations/{name}/export``
 - ``POST /intent/pick-save-path``
 
+Routes (Pre-UAT P0-1 — popup ForgeList "add forge…"):
+
+- ``POST /intent/pick-manifest``  (native open-file dialog + sniffer)
+
 Plus a static-files mount on ``/`` (configurable static dir; defaults to
 the package's ``static/`` directory). Lane B's frontend build output
 lands there.
@@ -72,7 +76,6 @@ lands there.
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import socket
 import subprocess
@@ -103,6 +106,7 @@ from .intents import (
     OpenCurationBody,
     PatchTargetBody,
     PatchTemplateBody,
+    PickManifestBody,
     RenameCurationBody,
     SaveAsBody,
     TriggerBounceBody,
@@ -119,7 +123,7 @@ from .schemas import (
     RecomputeRequest,
     SetGroupFormatRequest,
 )
-from .state import AppState, SseEvent
+from .state import AppState, SseEvent, current_curations_state
 from .template_io import default_templates_dir, list_templates
 
 DEFAULT_HOST = "127.0.0.1"
@@ -430,9 +434,18 @@ def _register_routes(app: FastAPI, state: AppState) -> None:
             try:
                 # Send the current state immediately so a fresh subscriber
                 # has a baseline without waiting for the next mutation.
+                #
+                # Pre-UAT P0-3: emit the ``kind: "curations"`` shape that
+                # ``broadcast_curations_state`` uses for every subsequent
+                # mutation-driven event. Previously this route emitted the
+                # legacy ``Project`` shape on cold-start, which the popup's
+                # ``handleStateEvent`` mis-routed into the legacy branch
+                # (``payload.curation === undefined``) and rendered as
+                # "no curation active". The popup recovered after the next
+                # mutation; the first frame was wrong.
                 snapshot = SseEvent(
                     event="state",
-                    data=json.loads(state.project.model_dump_json(exclude_none=True)),
+                    data=current_curations_state(state),
                 )
                 yield snapshot.to_wire().encode("utf-8")
                 while True:
@@ -764,6 +777,25 @@ def _register_routes(app: FastAPI, state: AppState) -> None:
             prompt=body.prompt,
         )
         return {"ok": True, "path": chosen}
+
+    @app.post("/intent/pick-manifest")
+    async def pick_manifest_route(body: PickManifestBody) -> dict[str, Any]:
+        """Pre-UAT P0-1 — open-file dialog + sniffer for popup ForgeList.
+
+        Drives a native osascript ``choose file`` dialog and classifies
+        the result against the device-side sniffer taxonomy:
+        ``audio | forge_manifest | arrangement_manifest | curation |
+        unknown``. Always returns 200 with ``{path, kind}`` — user
+        cancel, missing osascript, or subprocess error all surface as
+        ``{path: null, kind: "unknown"}``.
+
+        Lives server-side because the popup runs inside Live's [jweb]
+        host without filesystem access. Subprocess invocation flows
+        through ``app.state.subprocess_runner`` so tests stub it
+        cleanly without spawning a real osascript dialog.
+        """
+        runner = app.state.subprocess_runner
+        return await intents.handle_pick_manifest(state, body, runner=runner)
 
     @app.post("/forges/{slug}/re-curate")
     async def re_curate_forge_route(slug: str, body: ReCurateBody) -> dict[str, Any]:
