@@ -29,7 +29,7 @@ class StemforgeState(BaseModel):
         description="Map of .als absolute path → active curation name",
     )
     last_known_port: int | None = Field(
-        None,
+        default=None,
         ge=1,
         le=65535,
         description="Most recent server port (mirrors .configurator_port)",

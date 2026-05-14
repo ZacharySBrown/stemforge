@@ -85,7 +85,7 @@ class PadSource(BaseModel):
         """Build an external-path :class:`PadSource`."""
         return cls(external_path=external_path)
 
-    def model_post_init(self, __context: object) -> None:  # type: ignore[override]
+    def model_post_init(self, __context: object) -> None:
         """Enforce mutual exclusion of forge-owned vs external shapes."""
         if self.external_path is not None:
             if any((self.forge, self.clip_id, self.audio_path)):
@@ -134,9 +134,9 @@ class Target(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=False)
 
-    device: str = Field("ep133", description="Target device identifier (ep133 only in v1)")
-    groups: int = Field(4, ge=1, le=16, description="Number of groups")
-    pads_per_group: int = Field(12, ge=1, le=32, description="Pads per group")
+    device: str = Field(default="ep133", description="Target device identifier (ep133 only in v1)")
+    groups: int = Field(default=4, ge=1, le=16, description="Number of groups")
+    pads_per_group: int = Field(default=12, ge=1, le=32, description="Pads per group")
     label: str | None = Field(
         default=None,
         description=(
