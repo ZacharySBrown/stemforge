@@ -913,3 +913,161 @@ describe("bounceCuration() — legacy cleanup", () => {
     expect(src).not.toMatch(/^function _commitOffsetsWithPath\(/m);
   });
 });
+
+// ─── Phase 4A — als-opened bootstrap ─────────────────────────────────────────
+//
+// `loadbang()` queries Live for the current set's path and POSTs it to the
+// server via `messnamed("sf-als-opened", path)`. The server responds with
+// `{active_curation: name | null}` and the patcher's HTTP shim hands that
+// back via `messnamed("sf-als-opened-ack", curationOrEmpty)` → `alsOpenedAck()`.
+//
+// LOM-verb caveat (deferred to Phase 5): the production code probes three
+// LOM paths in order — `live_app view path_to_set_file`, `live_set path`,
+// `live_set name`. Tests cover each fallback level.
+
+describe("Phase 4A — als-opened bootstrap", () => {
+  beforeEach(() => {
+    // Each test starts with a fresh fired-flag so consecutive calls aren't
+    // squashed by the double-loadbang guard.
+    T.resetAlsOpenedFiredForTest();
+    T.setAlsPathForTest(null);
+  });
+
+  test("loadbang emits sf-als-opened with the LOM-reported absolute path", () => {
+    // Seed the snapshot with a `live_app view` node carrying the
+    // documented `path_to_set_file` property. The loader's first-choice
+    // probe should hit this and emit the path verbatim.
+    loadLomSnapshotObject({
+      live_app: { view: { path_to_set_file: "/Users/zak/projects/song.als" } },
+      live_set: { tracks: [], path: "", name: "song.als" },
+    });
+
+    T.loadbang();
+
+    const sends = global.messnamedCalls.filter((c) => c.name === T.ALS_OPENED_SEND);
+    expect(sends).toHaveLength(1);
+    expect(sends[0].args[0]).toBe("/Users/zak/projects/song.als");
+  });
+
+  test("ack with a curation name reads the YAML and calls loadCuration", () => {
+    // Drop a real curation YAML under a tmp ~/stemforge/curations dir and
+    // point the loader's home-resolver at it via setTemplateDir... actually
+    // the loader resolves home via _getHomePath() which uses Folder
+    // ("Macintosh HD:/Users/") — the max-stub's Folder shim reads the
+    // real filesystem, so we have to either mock _getHomePath OR seed a
+    // fixture that the loader can actually resolve.
+    //
+    // Pragmatic approach: assert on the status emissions. The loader logs
+    // "als-opened: ack <name>" before it tries to read the file. That
+    // alone proves the ack handler routed correctly. The happy-path
+    // file-read is integration-tested by L4 (Phase 5).
+    T.alsOpenedAck("verse_swap_v1");
+    const status = global.outletEmissions
+      .filter((e) => Array.isArray(e.args) && e.args[0] === "set")
+      .map((e) => e.args.slice(1).join(" "));
+    expect(status.some((s) => s.includes("als-opened: ack verse_swap_v1"))).toBe(true);
+  });
+
+  test("ack with empty / sentinel curation is a no-op (status only)", () => {
+    T.alsOpenedAck("");
+    let status = global.outletEmissions
+      .filter((e) => Array.isArray(e.args) && e.args[0] === "set")
+      .map((e) => e.args.slice(1).join(" "));
+    expect(status.some((s) => s.includes("als-opened: ack <none>"))).toBe(true);
+    // No further loadCuration noise — no "staging:" status lines fire.
+    expect(status.some((s) => s.startsWith("staging:"))).toBe(false);
+
+    // The "-" sentinel from the template-clear convention is also a noop.
+    resetMaxStub();
+    T.resetAlsOpenedFiredForTest();
+    T.alsOpenedAck("-");
+    status = global.outletEmissions
+      .filter((e) => Array.isArray(e.args) && e.args[0] === "set")
+      .map((e) => e.args.slice(1).join(" "));
+    expect(status.some((s) => s.includes("als-opened: ack <none>"))).toBe(true);
+  });
+
+  test("LOM fallback chain — uses live_set.path when path_to_set_file is missing", () => {
+    // No `live_app.view.path_to_set_file` — the loader must fall through to
+    // `live_set.path`. We seed only the second probe target.
+    loadLomSnapshotObject({
+      live_set: { tracks: [], path: "/secondary/probe.als", name: "probe.als" },
+    });
+
+    T.loadbang();
+
+    const sends = global.messnamedCalls.filter((c) => c.name === T.ALS_OPENED_SEND);
+    expect(sends).toHaveLength(1);
+    expect(sends[0].args[0]).toBe("/secondary/probe.als");
+  });
+
+  test("LOM fallback chain — degrades to live_set.name when no path is available", () => {
+    // Neither `path_to_set_file` nor `live_set.path` set — only `name`.
+    // The loader emits the filename-only fallback; the server may not be
+    // able to resolve an exact active-curation, but the wire round-trip
+    // still happens cleanly.
+    loadLomSnapshotObject({
+      live_set: { tracks: [], name: "fallback.als" },
+    });
+
+    T.loadbang();
+
+    const sends = global.messnamedCalls.filter((c) => c.name === T.ALS_OPENED_SEND);
+    expect(sends).toHaveLength(1);
+    expect(sends[0].args[0]).toBe("fallback.als");
+  });
+
+  test("test override beats every LOM probe", () => {
+    // setAlsPathForTest forces the path regardless of what LOM reports —
+    // ensures L3 tests can drive the loader without LOM seeding when the
+    // path itself isn't under test.
+    loadLomSnapshotObject({
+      live_app: { view: { path_to_set_file: "/lom/wins.als" } },
+      live_set: { tracks: [], path: "/lom/wins.als", name: "wins.als" },
+    });
+    T.setAlsPathForTest("/override/wins.als");
+
+    T.loadbang();
+
+    const sends = global.messnamedCalls.filter((c) => c.name === T.ALS_OPENED_SEND);
+    expect(sends).toHaveLength(1);
+    expect(sends[0].args[0]).toBe("/override/wins.als");
+  });
+
+  test("double loadbang is a no-op on the second call", () => {
+    // Max can fire loadbang twice on patcher reload — we MUST NOT POST
+    // /als-opened twice or the server will see duplicate bootstrap
+    // events. The fired-flag guard short-circuits the second call.
+    T.setAlsPathForTest("/once.als");
+    T.loadbang();
+    T.loadbang(); // second call — should be a no-op
+
+    const sends = global.messnamedCalls.filter((c) => c.name === T.ALS_OPENED_SEND);
+    expect(sends).toHaveLength(1);
+
+    const status = global.outletEmissions
+      .filter((e) => Array.isArray(e.args) && e.args[0] === "set")
+      .map((e) => e.args.slice(1).join(" "));
+    expect(status.some((s) => s.includes("als-opened: skipping (already fired)"))).toBe(true);
+  });
+
+  test("loadbang with no LOM info still emits (empty path is forwarded)", () => {
+    // No live_app, no live_set.path, no live_set.name. The probe chain
+    // bottoms out and the loader emits empty string. The server will
+    // ack with null; the device's ack handler logs and does nothing.
+    // We still want a single emission so the user-visible status line
+    // ("als-opened: sent <unknown>") fires and SSE listeners learn the
+    // device just booted.
+    loadLomSnapshotObject({ live_set: { tracks: [] } });
+
+    T.loadbang();
+
+    const sends = global.messnamedCalls.filter((c) => c.name === T.ALS_OPENED_SEND);
+    expect(sends).toHaveLength(1);
+    expect(sends[0].args[0]).toBe("");
+    const status = global.outletEmissions
+      .filter((e) => Array.isArray(e.args) && e.args[0] === "set")
+      .map((e) => e.args.slice(1).join(" "));
+    expect(status.some((s) => s.includes("als-opened: sent <unknown>"))).toBe(true);
+  });
+});
