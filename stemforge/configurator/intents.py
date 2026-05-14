@@ -86,9 +86,10 @@ from .schemas import (
 from .state import (
     AppState,
     SseEvent,
+    clear_active_curation_for_host,
     load_state,
     save_state,
-    set_active_curation,
+    set_active_curation_for_host,
 )
 
 DEFAULT_GROUPS = ("A", "B", "C", "D")
@@ -104,6 +105,29 @@ PADS_PER_GROUP = 12
 # bodies (defaulting to this sentinel) unblocks the popup TopBar's
 # Close button, which previously POSTed ``{}`` and 422'd because the
 # field was required.
+#
+# Pre-UAT P1-3 design call: the sentinel stays a "glorified namespace
+# prefix" inside ``StemforgeState.active_curations`` — we explicitly
+# chose NOT to add a parallel ``headless_active_curation`` slot on the
+# schema (option (a) in the lane plan) to avoid two sources of truth.
+# Every server-side writer instead routes through
+# :func:`set_active_curation_for_host` /
+# :func:`clear_active_curation_for_host` (state.py), which normalize
+# ``None`` / empty / sentinel into the same dict key. Tests that read
+# ``active_curations[some_als_path]`` directly keep working unchanged.
+#
+# When to use the sentinel from popup code:
+#
+# - Standalone popup (browser, no Live attached): every Open/Close call
+#   sends ``{"als_path": "__popup__"}`` so the server keys writes off
+#   the same namespace the SSE broadcaster keys reads off of.
+# - Live-attached popup (jweb inside Live): pass the absolute ``.als``
+#   path so popup + device + future "what does Live see right now"
+#   queries all key off the same identity.
+#
+# The string value MUST stay ``"__popup__"`` — the popup's TS shim
+# (``web/configurator/src/lib/api.ts``) hard-codes the same constant.
+# Drift between the two would silently scramble active-curation lookups.
 POPUP_ALS_SENTINEL = "__popup__"
 
 # Group-letter sequence used to seed empty curations. Targeted at v1's
@@ -444,7 +468,7 @@ class CreateCurationBody(BaseModel):
     """Body of ``POST /curations``."""
 
     name: str
-    target: Target = Field(default_factory=Target)
+    target: Target = Field(default_factory=lambda: Target())
 
     model_config = {"extra": "forbid"}
 
@@ -703,7 +727,10 @@ async def handle_open_curation(
     """
     curation = _load_curation_or_404(state, name)
     async with state.mutation_lock:
-        sf_state = set_active_curation(body.als_path, curation.name, state.state_path)
+        # P1-3: route through the helper so sentinel handling stays in
+        # one place. ``body.als_path`` is already the sentinel default
+        # for popup-only callers; the helper normalizes None/empty too.
+        sf_state = set_active_curation_for_host(state, body.als_path, curation.name)
     await state.log(f"opened curation {name} for {body.als_path}", "info")
     await state.broadcast_curations_state()
     return {
@@ -740,7 +767,11 @@ async def handle_save_as(
         with lock_curation(dst):
             write_curation_atomic(dst, cloned)
         if body.als_path:
-            set_active_curation(body.als_path, body.new_name, state.state_path)
+            # P1-3: route through the helper so cache + disk write stay
+            # in sync. ``body.als_path`` is the caller-supplied path
+            # (``SaveAsBody`` doesn't default to the sentinel — the
+            # save-as flow is Live-attached by design).
+            set_active_curation_for_host(state, body.als_path, body.new_name)
     await state.log(f"saved {name} as {body.new_name}", "info")
     await state.broadcast_curations_state()
     return cloned
@@ -831,7 +862,10 @@ async def handle_close_active_curation(
     when no entry exists. Always broadcasts so the popup re-renders.
     """
     async with state.mutation_lock:
-        sf_state = set_active_curation(body.als_path, None, state.state_path)
+        # P1-3: route through the helper so sentinel handling stays in
+        # one place. ``body.als_path`` is already the sentinel default
+        # for popup-only callers; the helper normalizes None/empty too.
+        sf_state = clear_active_curation_for_host(state, body.als_path)
     await state.log(f"closed active curation for {body.als_path}", "info")
     await state.broadcast_curations_state()
     return {
