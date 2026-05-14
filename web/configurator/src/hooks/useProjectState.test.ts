@@ -114,4 +114,86 @@ describe("useProjectState", () => {
 
     expect(result.current.curation).toBeNull();
   });
+
+  // ── P0-4: Phase 4B broadcaster shape ──────────────────────────────────────
+  // The Phase 4B server emits `{kind: "curations", curations, active_curations,
+  // stale_by_curation}` rather than the legacy `{curation, active_curation_name}`
+  // snapshot. The handler must recognize both shapes and, when the popup is
+  // the active host, hydrate the full Curation via `fetchCuration(name)`.
+
+  it("handles kind:'curations' shape — resolves popup sentinel + fetches curation", async () => {
+    const { result } = renderWithMock();
+    await waitFor(() => expect(result.current.status).toBe("connected"));
+
+    act(() =>
+      MockEventSource.instances[0].emit("state", {
+        kind: "curations",
+        active_curations: { __popup__: "verse_swap_v1" },
+      }),
+    );
+
+    // Name updates synchronously.
+    await waitFor(() =>
+      expect(result.current.activeCurationName).toBe("verse_swap_v1"),
+    );
+    // Then the fetched curation lands (msw handler returns CURATION_FRESH).
+    await waitFor(() =>
+      expect(result.current.curation?.name).toBe("verse_swap_v1"),
+    );
+  });
+
+  it("handles kind:'curations' shape — empty active_curations clears state", async () => {
+    const { result } = renderWithMock();
+    await waitFor(() => expect(result.current.status).toBe("connected"));
+
+    // Seed some state so we can observe it being cleared.
+    act(() =>
+      MockEventSource.instances[0].emit("state", {
+        curation: {
+          name: "verse_swap_v1",
+          created_at: "2026-05-13T00:00:00Z",
+          modified_at: "2026-05-13T00:00:00Z",
+          target: { device: "ep133", groups: 4, pads_per_group: 12 },
+        } satisfies Curation,
+        active_curation_name: "verse_swap_v1",
+      }),
+    );
+    await waitFor(() =>
+      expect(result.current.activeCurationName).toBe("verse_swap_v1"),
+    );
+
+    // Phase 4B broadcaster with no active hosts clears the popup's view.
+    act(() =>
+      MockEventSource.instances[0].emit("state", {
+        kind: "curations",
+        active_curations: {},
+      }),
+    );
+
+    await waitFor(() => expect(result.current.curation).toBeNull());
+    expect(result.current.activeCurationName).toBeNull();
+  });
+
+  it("legacy snapshot shape still routes to curation state (backward compat)", async () => {
+    const { result } = renderWithMock();
+    await waitFor(() => expect(result.current.status).toBe("connected"));
+
+    const curation: Curation = {
+      name: "verse_swap_v1",
+      created_at: "2026-05-13T00:00:00Z",
+      modified_at: "2026-05-13T00:00:00Z",
+      target: { device: "ep133", groups: 4, pads_per_group: 12 },
+    };
+    act(() =>
+      MockEventSource.instances[0].emit("state", {
+        curation,
+        active_curation_name: "verse_swap_v1",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(result.current.curation?.name).toBe("verse_swap_v1"),
+    );
+    expect(result.current.activeCurationName).toBe("verse_swap_v1");
+  });
 });

@@ -49,6 +49,17 @@ function url(path: string): string {
   return `${API_BASE}${path}`;
 }
 
+/**
+ * Sentinel `als_path` for popup-initiated curation intents.
+ *
+ * The Phase 4B server keys per-host active curations on `als_path` and
+ * accepts `__popup__` as the standalone-popup identifier. Sending it
+ * explicitly is a noop against the post-P0-3 server (which defaults missing
+ * `als_path` to this same sentinel) but ALSO unblocks the pre-fix server
+ * that 422'd on empty bodies. Keep both endpoints sending it.
+ */
+const POPUP_ALS_SENTINEL_BODY = JSON.stringify({ als_path: "__popup__" });
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -183,7 +194,7 @@ export function createCuration(body: CreateCurationRequest): Promise<ApiResult> 
 export function openCuration(name: string): Promise<ApiResult> {
   return jsonRequest<ApiResult>(
     `/curations/${encodeURIComponent(name)}/open`,
-    { method: "POST", body: "{}" },
+    { method: "POST", body: POPUP_ALS_SENTINEL_BODY },
   );
 }
 
@@ -270,7 +281,7 @@ export function refreshCuration(name: string): Promise<Curation> {
 export function closeActiveCuration(): Promise<ApiResult> {
   return jsonRequest<ApiResult>("/curations/active/close", {
     method: "POST",
-    body: "{}",
+    body: POPUP_ALS_SENTINEL_BODY,
   });
 }
 

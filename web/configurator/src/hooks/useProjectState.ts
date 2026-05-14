@@ -24,7 +24,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { streamUrl } from "@/lib/api";
+import { fetchCuration, streamUrl } from "@/lib/api";
 import type { Curation } from "@/lib/api-types.generated";
 import type {
   ConnectionStatus,
@@ -32,6 +32,17 @@ import type {
   SseProgressPayload,
   SseStatePayload,
 } from "@/lib/popup-types";
+
+/**
+ * Sentinel `als_path` used by the popup when it has no Live host (i.e. the
+ * configurator was opened standalone via the browser, not via the [jweb] in
+ * Ableton). The Phase 4B server-side broadcaster keys per-host active
+ * curations on `als_path`, so the popup announces itself with this sentinel.
+ *
+ * Keep in lock-step with the same sentinel in `web/configurator/src/lib/api.ts`
+ * and the server's `Intent.open_curation` default.
+ */
+const POPUP_ALS_SENTINEL = "__popup__";
 
 export interface ProgressState {
   operation: string;
@@ -91,11 +102,40 @@ export function useProjectState(
   const reconnectTokenRef = useRef(0);
 
   const handleStateEvent = useCallback((evt: MessageEvent<string>) => {
-    const payload = safeParse<SseStatePayload>(evt.data);
+    const payload = safeParse<
+      SseStatePayload & {
+        kind?: string;
+        active_curations?: Record<string, string | null>;
+      }
+    >(evt.data);
     if (!payload) {
       setError("malformed SSE state payload");
       return;
     }
+
+    // Phase 4B broadcaster shape: `{kind: "curations", active_curations: {...}}`.
+    // Resolve the popup's curation by sentinel first, then fall back to any
+    // host that has an active curation set (covers the single-Live-host
+    // case). When nothing is active, clear local state.
+    if (payload.kind === "curations") {
+      const active = payload.active_curations ?? {};
+      const name =
+        active[POPUP_ALS_SENTINEL] ??
+        Object.values(active).find((v) => typeof v === "string") ??
+        null;
+      if (!name) {
+        setCuration(null);
+        setActiveCurationName(null);
+        return;
+      }
+      setActiveCurationName(name);
+      fetchCuration(name)
+        .then((c) => setCuration(c))
+        .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+      return;
+    }
+
+    // Legacy shape — `{curation, active_curation_name}` snapshot.
     setCuration(payload.curation ?? null);
     setActiveCurationName(
       payload.active_curation_name ?? payload.curation?.name ?? null,
