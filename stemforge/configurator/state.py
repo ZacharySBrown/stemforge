@@ -19,6 +19,14 @@ Persistence layout (per spec §2.4):
   Map of ``.als`` absolute path → active curation name. Tiny;
   hand-edit-safe; atomic-write.
 - ``~/stemforge/curations/*.yaml`` — see :mod:`curation_io`.
+
+Phase 4A wired the **als-opened bootstrap**: on every Live ``.als`` open,
+the device JS posts the project's absolute path to ``POST /als-opened``;
+the server consults its in-memory :class:`StemforgeState` cache and
+responds with the matching ``active_curation`` (or ``null``) so the
+device can auto-load the right curation without user intervention. See
+:func:`load_state_with_recovery` and
+:attr:`AppState.cached_stemforge_state` for the cache.
 """
 
 from __future__ import annotations
@@ -73,6 +81,26 @@ class AppState:
     state_path: Path = field(
         default_factory=lambda: Path.home() / "stemforge" / ".stemforge_state.json"
     )
+    # Phase 4A: in-memory cache of the on-disk :class:`StemforgeState`,
+    # primed by :func:`stemforge.configurator.server.create_app`. The
+    # ``POST /als-opened`` handler reads from this cache so device
+    # bootstrap is one disk-touch at process start, not per-request. The
+    # cache is refreshed lazily by readers (``load_state`` always reads
+    # disk) and replaced atomically by writers via
+    # :meth:`refresh_cached_stemforge_state`.
+    cached_stemforge_state: StemforgeState = field(default_factory=StemforgeState)
+
+    def refresh_cached_stemforge_state(self) -> StemforgeState:
+        """Re-read ``.stemforge_state.json`` into the in-memory cache.
+
+        Called by handlers after every write so the cache mirrors disk
+        without forcing every reader to round-trip through the filesystem.
+        Corruption is handled by :func:`load_state_with_recovery` — a
+        malformed file is moved aside and the cache resets to empty so the
+        server stays operational.
+        """
+        self.cached_stemforge_state = load_state_with_recovery(self.state_path)
+        return self.cached_stemforge_state
 
     # ── Subscribers / broker ─────────────────────────────────────────────────
 
@@ -112,14 +140,15 @@ class AppState:
         Used by the new curation CRUD endpoints (spec §4.3). The payload
         intentionally mirrors what ``GET /curations`` and the popup's
         SSE-driven curation list want to render.
+
+        Phase 4A: refreshes the in-memory cache before broadcasting so
+        all subsequent ``/als-opened`` lookups see the latest map without
+        re-reading disk.
         """
         from .curation_io import list_curations  # local: avoid import cycle
 
-        try:
-            current_state = load_state(self.state_path)
-            active_curations = current_state.active_curations
-        except (FileNotFoundError, json.JSONDecodeError):
-            active_curations = {}
+        current_state = self.refresh_cached_stemforge_state()
+        active_curations = current_state.active_curations
         names = [p.stem for p in list_curations(self.curations_dir)]
         await self.broadcast(
             SseEvent(
@@ -184,6 +213,53 @@ def load_state(state_path: Path | None = None) -> StemforgeState:
         return StemforgeState()
     data = json.loads(raw)
     return StemforgeState.model_validate(data)
+
+
+def load_state_with_recovery(state_path: Path | None = None) -> StemforgeState:
+    """Best-effort variant of :func:`load_state` that survives corruption.
+
+    Phase 4A startup hook. If the state file exists but is malformed
+    (truncated mid-write, hand-edited into invalid JSON, schema-version
+    drift), this helper moves the bad file aside to
+    ``<state_path>.corrupt-<unix-ts>`` and returns a fresh empty
+    :class:`StemforgeState` so the server keeps booting. A clean miss
+    (file absent / blank) falls through to :func:`load_state`'s default
+    empty-state branch — no backup written.
+
+    The backup-on-corruption behaviour means a power-cut between
+    ``fsync`` and ``rename`` (`save_state`'s atomic-write pattern) will
+    leave the OLD file intact at the real path. Only a half-written final
+    file ever triggers the backup; the OS-level atomicity of ``rename``
+    on POSIX prevents that on every platform we ship to.
+    """
+    target = state_path or (Path.home() / "stemforge" / ".stemforge_state.json")
+    try:
+        return load_state(target)
+    except json.JSONDecodeError:
+        # Move aside + reset. Preserve the bytes for forensics.
+        backup = target.with_name(f"{target.name}.corrupt-{int(time.time())}")
+        try:
+            os.replace(target, backup)
+        except OSError:
+            # Couldn't move it — try removing it. Either way we keep
+            # serving from an empty in-memory state.
+            try:
+                target.unlink()
+            except FileNotFoundError:
+                pass
+        return StemforgeState()
+    except (ValueError, TypeError):
+        # Pydantic ValidationError lands here too (it subclasses
+        # ValueError). Same recovery: archive + reset.
+        backup = target.with_name(f"{target.name}.corrupt-{int(time.time())}")
+        try:
+            os.replace(target, backup)
+        except OSError:
+            try:
+                target.unlink()
+            except FileNotFoundError:
+                pass
+        return StemforgeState()
 
 
 def save_state(state: StemforgeState, state_path: Path | None = None) -> None:
@@ -251,6 +327,7 @@ __all__ = [
     "SseEvent",
     "get_active_curation",
     "load_state",
+    "load_state_with_recovery",
     "save_state",
     "set_active_curation",
 ]

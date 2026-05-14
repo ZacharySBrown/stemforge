@@ -51,6 +51,10 @@ Routes (Phase 1.5 — forge endpoints + curation rename/close bridge):
 - ``POST /curations/{name}/rename``
 - ``POST /curations/active/close``
 
+Routes (Phase 4A — active-curation persistence + device bootstrap):
+
+- ``POST /als-opened``  (device → server on Live's ``loadbang``)
+
 Routes (Phase 3C — EXPORT via server):
 
 - ``POST /curations/{name}/export``
@@ -88,6 +92,7 @@ from .export_handler import (
 )
 from .forge_io import default_processed_dir, list_forges, resolve_forge_dir
 from .intents import (
+    AlsOpenedBody,
     CloseActiveCurationBody,
     CreateCurationBody,
     DeviceCommitBody,
@@ -217,6 +222,12 @@ def create_app(
     )
     state.curations_dir = resolved_curations
     state.state_path = resolved_state_path
+    # Phase 4A: prime the in-memory StemforgeState cache from disk so the
+    # device-bootstrap path (``POST /als-opened``) doesn't pay an I/O hit
+    # on every request. ``load_state_with_recovery`` handles a malformed
+    # state file by archiving it and resetting to empty — the server
+    # keeps booting either way.
+    state.refresh_cached_stemforge_state()
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -554,6 +565,18 @@ def _register_routes(app: FastAPI, state: AppState) -> None:
     @app.post("/curations/active/close")
     async def close_active_curation_route(body: CloseActiveCurationBody) -> dict[str, Any]:
         return await intents.handle_close_active_curation(state, body)
+
+    # ── Phase 4A — device bootstrap on Live `.als` open ────────────────────
+
+    @app.post("/als-opened")
+    async def als_opened_route(body: AlsOpenedBody) -> dict[str, Any]:
+        """Device-driven bootstrap: resolve the active curation for ``als_path``.
+
+        See :func:`intents.handle_als_opened`. The response body carries
+        ``active_curation: str | null`` — the device's HTTP shim hands it
+        back to the loader JS via ``messnamed("sf-als-opened-ack", name)``.
+        """
+        return await intents.handle_als_opened(state, body)
 
     # ── Phase 3A — template index ──────────────────────────────────────────
 
