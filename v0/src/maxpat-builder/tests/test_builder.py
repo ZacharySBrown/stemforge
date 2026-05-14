@@ -119,8 +119,13 @@ def test_v8ui_emits_events_via_route(boxes, line_pairs):
     assert route is not None, "missing route for v8ui events"
     tokens = set(route["text"].split())
     for required in (
-        "preset_click", "source_click", "forge_click",
-        "cancel_click", "retry_click", "done_click", "settings_click",
+        "preset_click",
+        "source_click",
+        "forge_click",
+        "cancel_click",
+        "retry_click",
+        "done_click",
+        "settings_click",
         "commit_click",
     ):
         assert required in tokens, f"route missing branch for {required}"
@@ -132,14 +137,11 @@ def test_commit_click_wired_to_forge(boxes, line_pairs):
     [message commitOffsets] box into sf_forge so the loader does the
     LOM → manifest offset roundtrip."""
     msg = next(
-        (b for b in boxes if b.get("text") == "commitOffsets"
-         and b.get("maxclass") == "message"),
+        (b for b in boxes if b.get("text") == "commitOffsets" and b.get("maxclass") == "message"),
         None,
     )
     assert msg is not None, "missing [message commitOffsets] box"
-    assert (msg["id"], "obj-sf-forge") in line_pairs, (
-        "commitOffsets message must feed sf_forge"
-    )
+    assert (msg["id"], "obj-sf-forge") in line_pairs, "commitOffsets message must feed sf_forge"
     # And the route's commit_click outlet must reach that message box.
     route = next(
         (b for b in boxes if b.get("text", "").startswith("route preset_click")),
@@ -190,9 +192,7 @@ def test_dependency_cache_lists_every_js(patcher):
 )
 def test_each_canonical_dict_is_declared(boxes, dict_name):
     texts = _texts(boxes)
-    assert any(t == f"dict {dict_name}" for t in texts), (
-        f"missing [dict {dict_name}] box"
-    )
+    assert any(t == f"dict {dict_name}" for t in texts), f"missing [dict {dict_name}] box"
 
 
 # ── Status bar native objects ────────────────────────────────────────────────
@@ -215,6 +215,31 @@ def test_version_text_widget(boxes):
     assert ver is not None, "missing sf_version_text"
     assert ver["maxclass"] == "live.comment"
     assert ver.get("text", "").startswith("v"), "version text should start with 'v'"
+
+
+def test_open_editor_button_present(boxes):
+    """Phase 4B — footer carries the 'Open Editor' live.text button."""
+    btn = next((b for b in boxes if b.get("varname") == "sf_open_editor_btn"), None)
+    assert btn is not None, "missing sf_open_editor_btn"
+    assert btn["maxclass"] == "live.text"
+    # mode 1 = momentary button; label is the click-emitted symbol.
+    assert btn.get("mode") == 1
+    assert btn.get("text") == "Open Editor"
+
+
+def test_open_editor_button_wired_to_loader(line_pairs):
+    """Phase 4B — button → [t b] → [message openEditor] → [js sf_lom_loader]."""
+    assert ("obj-sf-open-editor-btn", "obj-sf-open-editor-tb") in line_pairs
+    assert ("obj-sf-open-editor-tb", "obj-sf-open-editor-msg") in line_pairs
+    assert ("obj-sf-open-editor-msg", "obj-sf-lom-loader") in line_pairs
+
+
+def test_open_editor_message_names_handler(boxes):
+    """The [message] box's text is the JS handler name resolved by [js]."""
+    msg = next((b for b in boxes if b.get("id") == "obj-sf-open-editor-msg"), None)
+    assert msg is not None, "missing obj-sf-open-editor-msg"
+    assert msg["maxclass"] == "message"
+    assert msg.get("text") == "openEditor"
 
 
 # ── Wiring ───────────────────────────────────────────────────────────────────
@@ -242,9 +267,7 @@ def test_preset_loader_to_state(line_pairs):
 def test_manifest_loader_to_state_and_popup(line_pairs, boxes):
     assert ("obj-sf-manifest-loader", "obj-umenu-source") in line_pairs
     # outlet 1 → route setSource browseAudio
-    route = next(
-        (b for b in boxes if b.get("text", "").startswith("route setSource")), None
-    )
+    route = next((b for b in boxes if b.get("text", "").startswith("route setSource")), None)
     assert route is not None
     assert ("obj-sf-manifest-loader", route["id"]) in line_pairs
 

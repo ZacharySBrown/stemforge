@@ -3813,6 +3813,65 @@ function loadbang() {
     }
 }
 
+// ── Open Editor (Phase 4B) ────────────────────────────────────────────────────
+//
+// The footer's [ Open Editor ] button is bound via the patcher's
+// `[r sf-open-editor]` → message → [js] route; `[textbutton] → [t b] →
+// [message openEditor]` lands here. We resolve the configurator server's
+// port from `~/stemforge/.configurator_port` (written by
+// `stemforge.configurator.server.discover_port`) and ask Max to open the
+// popup URL via `messnamed("max", "launchbrowser", url)`. Per spec §4.2
+// this is the only [shell]-free pop-out that's been proven to work inside
+// Live's M4L sandbox.
+//
+// If the port file is missing (server not running), we fall back to the
+// well-known port 7430 — the start of the server's PORT_RANGE — so a
+// "Open Editor" click still attempts to reach a running server in the
+// common single-instance case. The browser will surface the connection
+// error if nothing is listening.
+
+var CONFIGURATOR_PORT_FILE_PATH = "/stemforge/.configurator_port";
+var CONFIGURATOR_DEFAULT_PORT = 7430;
+var CONFIGURATOR_HOST = "127.0.0.1";
+
+function _readConfiguratorPort() {
+    // Max's classic [js] File API doesn't reliably expand ~ on macOS, so
+    // we compose the absolute path from $HOME like sf_logger does. The
+    // file's contents are a single integer (the resolved server port);
+    // anything malformed → null.
+    try {
+        var home;
+        try {
+            if (typeof max !== "undefined" && max && typeof max.getsystemvariable === "function") {
+                home = String(max.getsystemvariable("HOME") || "");
+            }
+        } catch (_) { /* try File.getenv next */ }
+        if (!home) {
+            try {
+                if (typeof File !== "undefined" && typeof File.getenv === "function") {
+                    home = String(File.getenv("HOME") || "");
+                }
+            } catch (_) { /* fall through */ }
+        }
+        if (!home) return null;
+        var maxPath = "Macintosh HD:" + home + CONFIGURATOR_PORT_FILE_PATH;
+        var f = new File(maxPath, "read");
+        if (!f || !f.isopen) return null;
+        f.position = 0;
+        var raw = f.readstring(64);
+        f.close();
+        if (raw == null) return null;
+        var s = String(raw).replace(/\s+/g, "");
+        if (!s.length) return null;
+        var n = parseInt(s, 10);
+        if (!isFinite(n) || n <= 0) return null;
+        return n;
+    } catch (e) {
+        try { post("[sf_loader] _readConfiguratorPort error: " + e + "\n"); } catch (_) {}
+        return null;
+    }
+}
+
 /**
  * alsOpenedAck(curationOrSentinel) — message handler bound to the
  * patcher's `[r sf-als-opened-ack]`. The HTTP shim parses the
@@ -3863,6 +3922,27 @@ function alsOpenedAck(curationOrSentinel) {
     loadCuration(text, curationPath);
 }
 
+/**
+ * openEditor — bound to the footer's "Open Editor" button via the
+ * patcher's `[r sf-open-editor]` receiver.
+ *
+ * Resolves the configurator server's port from disk (or falls back to
+ * 7430 — the start of the server's PORT_RANGE) and asks Max to open the
+ * popup URL via the documented `messnamed("max", "launchbrowser", url)`
+ * verb. Returns the URL so tests can assert against it without driving
+ * `messnamed` through a real Max.
+ */
+function openEditor() {
+    var port = _readConfiguratorPort();
+    if (port == null) port = CONFIGURATOR_DEFAULT_PORT;
+    var url = "http://" + CONFIGURATOR_HOST + ":" + port + "/";
+    try { messnamed("max", "launchbrowser", url); } catch (e) {
+        try { post("[sf_loader] openEditor messnamed failed: " + e + "\n"); } catch (_) {}
+    }
+    status("editor → " + url);
+    return url;
+}
+
 // ── Entry points from Max ─────────────────────────────────────────────────────
 // These aren't stored on `globalThis`; Max's classic [js] object scans for
 // top-level functions automatically.
@@ -3903,6 +3983,11 @@ if (typeof module !== "undefined" && module.exports) {
         setTemplateDirForTest: function (dir) {
             _templateDirOverride = String(dir || "");
         },
+        // Configurator v1 Phase 4B — Open Editor button (footer of StemForge.amxd).
+        openEditor: openEditor,
+        _readConfiguratorPort: _readConfiguratorPort,
+        CONFIGURATOR_DEFAULT_PORT: CONFIGURATOR_DEFAULT_PORT,
+        CONFIGURATOR_HOST: CONFIGURATOR_HOST,
         // Configurator v1 Phase 3B — BOUNCE refactor (curation-driven render).
         bounceCuration: bounceCuration,
         _bounceCropOnePad: _bounceCropOnePad,
