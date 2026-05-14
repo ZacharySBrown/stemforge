@@ -88,7 +88,7 @@ class AppState:
     # cache is refreshed lazily by readers (``load_state`` always reads
     # disk) and replaced atomically by writers via
     # :meth:`refresh_cached_stemforge_state`.
-    cached_stemforge_state: StemforgeState = field(default_factory=StemforgeState)
+    cached_stemforge_state: StemforgeState = field(default_factory=lambda: StemforgeState())
     # Phase 4B: the broadcaster needs to read forge manifests to compute
     # per-pad stale flags. Mirrors ``app.state.processed_dir`` so the
     # broadcaster can run without reaching into FastAPI state.
@@ -133,9 +133,33 @@ class AppState:
                 pass
 
     async def broadcast_state(self) -> None:
-        """Convenience: emit a ``state`` event with the current project."""
+        """Convenience: emit a ``state`` event with the current project.
+
+        Pre-UAT P1-9 (belt-and-suspenders): the payload now carries an
+        explicit ``kind: "project"`` discriminator alongside the legacy
+        ``Project`` shape. The popup's ``handleStateEvent`` already
+        dispatches on ``payload.kind === "curations"`` first; tagging
+        legacy project broadcasts keeps the discrimination uniform and
+        unblocks future regression tests that assert every emitted
+        ``state`` frame carries a recognized kind.
+
+        Wire shape (was a bare ``Project`` JSON object):
+        ``{"kind": "project", "project": {...}}``. The popup's legacy
+        fall-through still reads ``payload.curation`` / ``payload
+        .active_curation_name``, neither of which exists on the legacy
+        Project shape we emit here — so the popup will simply clear its
+        curation state, which is the right behaviour for these scene-
+        model intents.
+        """
         await self.broadcast(
-            SseEvent(event="state", data=json.loads(project_to_json(self.project)))
+            SseEvent(
+                event="state",
+                data={
+                    "kind": "project",
+                    "project": json.loads(project_to_json(self.project)),
+                    "ts": time.time(),
+                },
+            )
         )
 
     async def broadcast_curations_state(self) -> None:
@@ -215,6 +239,10 @@ def current_curations_state(state: AppState) -> dict[str, Any]:
         Dict ready to drop into ``SseEvent(event="state", data=...)``
         or into the ``GET /state/stream`` initial-snapshot wire.
     """
+    from typing import cast
+
+    from stemforge.forge.manifest_io import ForgeManifest
+
     from .curation_io import list_curations, read_curation  # local: avoid cycle
     from .stale_check import stale_summary
 
@@ -225,7 +253,10 @@ def current_curations_state(state: AppState) -> dict[str, Any]:
     names = [p.stem for p in curation_paths]
 
     # Phase 4B: compute per-pad stale flags against current forges.
-    forges_by_slug = _load_forges_by_slug(state.processed_dir)
+    forges_by_slug = cast(
+        "dict[str, ForgeManifest | None]",
+        _load_forges_by_slug(state.processed_dir),
+    )
     stale_by_curation: dict[str, dict[str, dict[str, object]]] = {}
     for path in curation_paths:
         try:
@@ -413,14 +444,102 @@ def set_active_curation(
     return state
 
 
+# ── Sentinel-aware helpers (Pre-UAT P1-3) ────────────────────────────────────
+#
+# Every call site that previously did
+# ``state.active_curations[als_path] = name`` should funnel through these
+# helpers. They encapsulate the ``None``→sentinel coercion so the rest of
+# the codebase never has to reason about ``POPUP_ALS_SENTINEL`` ("__popup__")
+# directly. Two-source-of-truth risks (e.g. a parallel
+# ``headless_active_curation`` slot on :class:`StemforgeState`) are
+# explicitly avoided — the sentinel is just a glorified namespace prefix
+# on the ``active_curations`` dict and tests that read
+# ``active_curations[some_als_path]`` keep working unchanged.
+
+
+def _normalize_host_key(als_path: str | None) -> str:
+    """Coerce ``None`` / empty / sentinel into the popup sentinel key.
+
+    The on-wire shape (``OpenCurationBody.als_path``,
+    ``CloseActiveCurationBody.als_path``) defaults to the sentinel at the
+    pydantic layer, so by the time a value reaches a handler it should
+    already be ``POPUP_ALS_SENTINEL`` for popup-only intents. The
+    coercion here is a belt-and-suspenders for callers that go through
+    the helper API directly (tests, programmatic seeds, etc.).
+    """
+    # Local import keeps state.py independent of the body-model module.
+    from .intents import POPUP_ALS_SENTINEL
+
+    if als_path is None or als_path == "":
+        return POPUP_ALS_SENTINEL
+    return als_path
+
+
+def set_active_curation_for_host(
+    app_state: AppState,
+    als_path: str | None,
+    curation_name: str,
+) -> StemforgeState:
+    """Record ``curation_name`` as the active curation for ``als_path``.
+
+    Wraps :func:`set_active_curation` with sentinel normalization and
+    refreshes :attr:`AppState.cached_stemforge_state` so subsequent
+    ``GET /als-opened`` lookups see the new value without an extra disk
+    read.
+
+    Returns the newly-persisted :class:`StemforgeState`.
+    """
+    key = _normalize_host_key(als_path)
+    sf_state = set_active_curation(key, curation_name, app_state.state_path)
+    # Mirror the disk write into the in-memory cache so /als-opened sees
+    # it without re-reading disk. ``refresh_cached_stemforge_state``
+    # would reach disk again — assigning directly is cheaper.
+    app_state.cached_stemforge_state = sf_state
+    return sf_state
+
+
+def clear_active_curation_for_host(
+    app_state: AppState,
+    als_path: str | None,
+) -> StemforgeState:
+    """Remove the active-curation entry for ``als_path``.
+
+    Idempotent — clearing an unset host returns the loaded state
+    unchanged. Normalizes ``None`` / empty / sentinel through
+    :func:`_normalize_host_key`.
+    """
+    key = _normalize_host_key(als_path)
+    sf_state = set_active_curation(key, None, app_state.state_path)
+    app_state.cached_stemforge_state = sf_state
+    return sf_state
+
+
+def get_active_curation_for_host(
+    app_state: AppState,
+    als_path: str | None,
+) -> str | None:
+    """Return the active curation name for ``als_path``, or ``None``.
+
+    Reads from :attr:`AppState.cached_stemforge_state` — disk-free,
+    matches the read path of ``POST /als-opened``. Callers wanting a
+    fresh disk read should ``app_state.refresh_cached_stemforge_state()``
+    first.
+    """
+    key = _normalize_host_key(als_path)
+    return app_state.cached_stemforge_state.active_curations.get(key)
+
+
 __all__ = [
     "AppState",
     "EventName",
     "SseEvent",
+    "clear_active_curation_for_host",
     "current_curations_state",
     "get_active_curation",
+    "get_active_curation_for_host",
     "load_state",
     "load_state_with_recovery",
     "save_state",
     "set_active_curation",
+    "set_active_curation_for_host",
 ]
