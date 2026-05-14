@@ -59,6 +59,16 @@ function CurationRow({ entry, active }: CurationRowProps) {
 
   const busy = open.isPending || dupe.isPending || rename.isPending || del.isPending;
 
+  // P0-7 — Whole-tile click affordance. The row body (everything above the
+  // 4 icon-button toolbar) is a button that fires the same "open as active"
+  // mutation as the BookOpen icon. Already-active rows skip the mutation
+  // (open is a no-op when nothing changes) but stay focusable for a11y.
+  const canOpen = !busy && !active;
+  function handleRowOpen() {
+    if (!canOpen) return;
+    open.mutate(entry.name);
+  }
+
   return (
     <motion.div
       layout
@@ -75,50 +85,75 @@ function CurationRow({ entry, active }: CurationRowProps) {
       data-curation-name={entry.name}
       data-active={active ? "true" : "false"}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <div className="truncate text-[12px] font-semibold tracking-tightish text-foreground">
-              {entry.name}
-            </div>
-            {active && (
-              <Badge
-                variant="default"
-                className="!text-[9px] !px-1.5 !py-0"
-                data-testid="active-badge"
-              >
-                active
-              </Badge>
-            )}
-          </div>
-          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground tabular">
-            {entry.target_device && (
-              <span className="uppercase">{entry.target_device}</span>
-            )}
-            {entry.target_groups && entry.target_pads_per_group && (
-              <>
-                <span className="text-muted-foreground/40">·</span>
-                <span>
-                  {entry.target_groups}×{entry.target_pads_per_group}
-                </span>
-              </>
-            )}
-            <span className="text-muted-foreground/40">·</span>
-            <span>modified {timeAgo(entry.modified_at)}</span>
-          </div>
-          {(entry.last_bounced_at || entry.last_exported_at) && (
-            <div className="mt-0.5 text-[10px] text-muted-foreground/70 tabular">
-              {entry.last_bounced_at && (
-                <span>bounced {timeAgo(entry.last_bounced_at)}</span>
-              )}
-              {entry.last_bounced_at && entry.last_exported_at && (
-                <span className="text-muted-foreground/40"> · </span>
-              )}
-              {entry.last_exported_at && (
-                <span>exported {timeAgo(entry.last_exported_at)}</span>
+      <div
+        role="button"
+        tabIndex={canOpen ? 0 : -1}
+        aria-disabled={!canOpen}
+        aria-label={
+          active
+            ? `${entry.name} (already active)`
+            : `Open ${entry.name} as active`
+        }
+        data-testid="curation-row-body"
+        onClick={handleRowOpen}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            handleRowOpen();
+          }
+        }}
+        className={cn(
+          "-m-0.5 rounded-md p-0.5 outline-none transition-colors",
+          "focus-visible:ring-1 focus-visible:ring-[hsl(var(--accent)/0.55)]",
+          canOpen && "cursor-pointer hover:bg-accent-muted/15",
+          !canOpen && "cursor-default",
+        )}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <div className="truncate text-[12px] font-semibold tracking-tightish text-foreground">
+                {entry.name}
+              </div>
+              {active && (
+                <Badge
+                  variant="default"
+                  className="!text-[9px] !px-1.5 !py-0"
+                  data-testid="active-badge"
+                >
+                  active
+                </Badge>
               )}
             </div>
-          )}
+            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground tabular">
+              {entry.target_device && (
+                <span className="uppercase">{entry.target_device}</span>
+              )}
+              {entry.target_groups && entry.target_pads_per_group && (
+                <>
+                  <span className="text-muted-foreground/40">·</span>
+                  <span>
+                    {entry.target_groups}×{entry.target_pads_per_group}
+                  </span>
+                </>
+              )}
+              <span className="text-muted-foreground/40">·</span>
+              <span>modified {timeAgo(entry.modified_at)}</span>
+            </div>
+            {(entry.last_bounced_at || entry.last_exported_at) && (
+              <div className="mt-0.5 text-[10px] text-muted-foreground/70 tabular">
+                {entry.last_bounced_at && (
+                  <span>bounced {timeAgo(entry.last_bounced_at)}</span>
+                )}
+                {entry.last_bounced_at && entry.last_exported_at && (
+                  <span className="text-muted-foreground/40"> · </span>
+                )}
+                {entry.last_exported_at && (
+                  <span>exported {timeAgo(entry.last_exported_at)}</span>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

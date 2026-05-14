@@ -69,15 +69,6 @@ export function TopBar({
     );
   }
 
-  function handleSave() {
-    // For v1 there is no explicit "save" intent — committing happens on
-    // the device (COMMIT button). The Save button surfaces in the
-    // TopBar to remind the user that the device is the writer. We
-    // surface a tooltip and noop.
-    // Lane 1B may eventually add /intent/save-active for popup-side
-    // metadata writes; we shim with a stale-info toast until then.
-  }
-
   function handleSaveAs() {
     if (!name) return;
     const newName = window.prompt(
@@ -145,23 +136,44 @@ export function TopBar({
       </div>
 
       <div className="flex items-center gap-1.5">
+        {/*
+         * P0-8 — Save is permanently disabled. v1 has no popup-side save
+         * intent: curation files are written exclusively by the device's
+         * COMMIT action. The button stays visible so users who instinctively
+         * look for "save" find it (and the tooltip teaches them where saves
+         * really happen). When/if a popup-side save endpoint lands, this is
+         * the wire point.
+         */}
         <Tooltip delayDuration={200}>
           <TooltipTrigger asChild>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={handleSave}
-              disabled={!name}
-              data-testid="top-bar-save"
-              aria-label="Save"
+            {/*
+             * Radix Tooltip won't open on a `disabled` <button> because the
+             * browser swallows pointer events. Wrap in a span so hover still
+             * works; the inner Button stays `disabled` for keyboard + a11y.
+             */}
+            <span
+              tabIndex={0}
+              data-testid="top-bar-save-wrap"
+              aria-label="Save (disabled)"
+              className="inline-flex"
             >
-              <Save className="h-3.5 w-3.5" />
-              save
-            </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled
+                data-testid="top-bar-save"
+                aria-label="Save"
+                tabIndex={-1}
+                className="pointer-events-none"
+              >
+                <Save className="h-3.5 w-3.5" />
+                save
+              </Button>
+            </span>
           </TooltipTrigger>
           <TooltipContent side="bottom">
-            curation writes happen on device COMMIT — this is a status
-            indicator only
+            Curation files are written by the device's COMMIT action. The
+            popup doesn't save directly.
           </TooltipContent>
         </Tooltip>
 
