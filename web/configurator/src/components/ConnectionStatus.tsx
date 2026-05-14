@@ -4,12 +4,27 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { API_BASE } from "@/lib/api";
 import type { ConnectionStatus as ConnStatus } from "@/lib/popup-types";
 import { cn } from "@/lib/utils";
 
 interface ConnectionStatusProps {
   status: ConnStatus;
   error: string | null;
+}
+
+/** Resolve the URL the popup is actually talking to. `API_BASE` is empty
+ *  when same-origin requests are used (the typical case when the popup is
+ *  served by the configurator server); in that case we fall back to
+ *  `window.location.origin` so the tooltip still surfaces a concrete URL.
+ *  Defaults to the documented dev port when neither is available
+ *  (test/jsdom environments without a real location). */
+function resolveServerUrl(): string {
+  if (API_BASE) return API_BASE;
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return window.location.origin;
+  }
+  return "http://localhost:8765";
 }
 
 const STATUS_COPY: Record<ConnStatus, string> = {
@@ -63,17 +78,27 @@ export function ConnectionStatus({ status, error }: ConnectionStatusProps) {
         </div>
       </TooltipTrigger>
       <TooltipContent side="bottom">
-        {error
-          ? `last error: ${error}`
-          : status === "connected"
-            ? "SSE stream open · receiving project state in real time"
-            : status === "connecting"
-              ? "establishing SSE stream to the configurator server"
-              : status === "disconnected"
-                ? "stream dropped; auto-reconnecting"
-                : status === "error"
-                  ? "stream error — check the server logs"
-                  : "idle"}
+        <div className="space-y-0.5" data-testid="connection-status-tooltip">
+          <div>
+            {error
+              ? `last error: ${error}`
+              : status === "connected"
+                ? "SSE stream open · receiving project state in real time"
+                : status === "connecting"
+                  ? "establishing SSE stream to the configurator server"
+                  : status === "disconnected"
+                    ? "stream dropped; auto-reconnecting"
+                    : status === "error"
+                      ? "stream error — check the server logs"
+                      : "idle"}
+          </div>
+          <div
+            className="font-mono text-[10px] text-muted-foreground"
+            data-testid="connection-status-url"
+          >
+            {resolveServerUrl()}
+          </div>
+        </div>
       </TooltipContent>
     </Tooltip>
   );
