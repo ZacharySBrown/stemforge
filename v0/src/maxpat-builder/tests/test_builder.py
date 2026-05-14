@@ -64,93 +64,323 @@ def test_device_width_matches_yaml(patcher):
     assert patcher["patcher"]["devicewidth"] == 820.0
 
 
-# ── v8ui canvas (the heart of the new UI) ────────────────────────────────────
+# ── v8ui canvas (background only — Configurator v1 §3.1 lifts UI to natives) ─
 
 
-def test_v8ui_canvas_present(boxes):
+def test_v8ui_canvas_present_in_patching_only(boxes):
+    """v0.0.3 removes v8ui from presentation mode — the Configurator v1
+    picker/primary/verb live.text widgets own the presentation surface."""
     v8s = [b for b in boxes if b["maxclass"] == "v8ui"]
     assert len(v8s) == 1, "expected exactly one v8ui box"
     v8 = v8s[0]
     assert v8["filename"] == "sf_ui.js"
-    # Full-canvas patching_rect (820×149) per contract §1 — script still
-    # renders/measures the whole canvas.
+    # Full-canvas patching_rect (820×149) — sf_state still emits `refresh`
+    # to it so the in-script debug surface keeps working.
     assert v8["patching_rect"][2:] == [820, 149]
-    # Presentation-mode rect is narrowed to middle+right columns only
-    # (x=212..820, w=608) so the left column can host visible native
-    # preset/source umenus without visual collision.
-    assert v8["presentation_rect"][0] == 212.0
-    assert v8["presentation_rect"][1] == 0
-    assert v8["presentation_rect"][2:] == [608.0, 149]
-    assert v8.get("presentation") == 1
+    # NOT in presentation mode any more — there's no presentation_rect and
+    # the `presentation` flag must be absent (or 0).
+    assert not v8.get("presentation"), (
+        "v8ui must NOT be in presentation mode in Configurator v1 (live.text "
+        "buttons own the user surface)"
+    )
 
 
-def test_preset_and_source_umenus_visible(boxes):
-    """The two dropdowns must be in presentation mode with visible native
-    chrome (no transparency overrides) and a clickable arrow — this is the
-    reliability fix for the Ableton popup-click regression."""
-    preset = next((b for b in boxes if b.get("varname") == "sf_preset_menu"), None)
-    source = next((b for b in boxes if b.get("varname") == "sf_source_menu"), None)
-    assert preset is not None, "sf_preset_menu umenu missing"
-    assert source is not None, "sf_source_menu umenu missing"
-
-    for menu, expected_y in [(preset, 8.0), (source, 54.0)]:
-        assert menu["maxclass"] == "umenu"
-        assert menu.get("presentation") == 1
-        rect = menu["presentation_rect"]
-        assert rect[0] == 8.0
-        assert rect[1] == expected_y
-        assert rect[2] == 196.0
-        assert rect[3] == 40.0
-        assert menu.get("arrow") == 1
-        # No transparency overrides — rely on default visible chrome.
-        assert "bgcolor" not in menu
-        assert "textcolor" not in menu
-        assert "bordercolor" not in menu
-        assert "elementcolor" not in menu
+# ── P0-5 — Configurator v1 picker (spec §3.1) ────────────────────────────────
 
 
-def test_v8ui_emits_events_via_route(boxes, line_pairs):
-    # There must be a [route ... preset_click ... forge_click ...] wired
-    # from the v8ui outlet.
-    route = next(
+def test_pick_source_button_present(boxes):
+    """The 'Pick source…' button must be a live.text mode-1 widget in
+    presentation mode, with varname sf_pick_source_btn."""
+    btn = next((b for b in boxes if b.get("varname") == "sf_pick_source_btn"), None)
+    assert btn is not None, "missing sf_pick_source_btn"
+    assert btn["maxclass"] == "live.text"
+    assert btn.get("mode") == 1, "Pick source… button must be momentary (mode 1)"
+    assert btn.get("presentation") == 1
+    # Spec §3.1 uses the unicode-ellipsis label so the user sees the same
+    # visual that the popup advertises.
+    assert btn.get("text", "").startswith("Pick source"), (
+        "Pick source button text must start with 'Pick source'"
+    )
+
+
+def test_pick_source_wired_to_loader(boxes, line_pairs):
+    """Pick source button → [message pickSource] → js sf_lom_loader."""
+    msg = next(
+        (
+            b
+            for b in boxes
+            if b.get("maxclass") == "message" and b.get("text") == "pickSource"
+        ),
+        None,
+    )
+    assert msg is not None, "missing [message pickSource] box"
+    assert ("obj-sf-pick-source-btn", msg["id"]) in line_pairs
+    assert (msg["id"], "obj-sf-lom-loader") in line_pairs
+
+
+def test_primary_button_present(boxes):
+    """The primary button must be a live.text mode-1 widget. Its label is
+    driven by [r primary-btn-label] from the loader; its active state by
+    [r primary-btn-enabled]."""
+    btn = next((b for b in boxes if b.get("varname") == "sf_primary_btn"), None)
+    assert btn is not None, "missing sf_primary_btn"
+    assert btn["maxclass"] == "live.text"
+    assert btn.get("mode") == 1
+    assert btn.get("presentation") == 1
+
+
+def test_primary_button_wired_via_messnamed(boxes, line_pairs):
+    """The loader's `_emitPrimaryButtonState` writes to messnamed receivers
+    `primary-btn-label` and `primary-btn-enabled`; the patcher must have
+    `[r primary-btn-label]` → prepend set → primary btn, and
+    `[r primary-btn-enabled]` → prepend active → primary btn."""
+    label_recv = next(
+        (b for b in boxes if b.get("text") == "r primary-btn-label"), None
+    )
+    enabled_recv = next(
+        (b for b in boxes if b.get("text") == "r primary-btn-enabled"), None
+    )
+    assert label_recv is not None, "missing [r primary-btn-label]"
+    assert enabled_recv is not None, "missing [r primary-btn-enabled]"
+    # Both must route through a prepend → primary btn.
+    assert ("obj-sf-primary-label-recv", "obj-sf-primary-label-prepend") in line_pairs
+    assert ("obj-sf-primary-label-prepend", "obj-sf-primary-btn") in line_pairs
+    assert ("obj-sf-primary-enabled-recv", "obj-sf-primary-enabled-prepend") in line_pairs
+    assert ("obj-sf-primary-enabled-prepend", "obj-sf-primary-btn") in line_pairs
+
+
+def test_primary_click_wired_to_loader(boxes, line_pairs):
+    """Primary button click → [message primary] → js sf_lom_loader. The
+    loader's `primary()` function dispatches by sniffer type."""
+    msg = next(
+        (
+            b
+            for b in boxes
+            if b.get("maxclass") == "message" and b.get("text") == "primary"
+        ),
+        None,
+    )
+    assert msg is not None, "missing [message primary] box"
+    assert ("obj-sf-primary-btn", msg["id"]) in line_pairs
+    assert (msg["id"], "obj-sf-lom-loader") in line_pairs
+
+
+def test_status_picker_text_receives_sf_status(boxes, line_pairs):
+    """The picker's status live.text reads from [r sf-status]; the bus is
+    driven by a [s sf-status] send fed from the loader's outlet 0 (which
+    is where status() emits `set <text>` messages — live.text consumes
+    those natively, no `prepend set` needed)."""
+    txt = next(
+        (b for b in boxes if b.get("varname") == "sf_status_picker_text"), None
+    )
+    assert txt is not None, "missing sf_status_picker_text"
+    assert txt["maxclass"] == "live.text"
+    assert txt.get("mode") == 0, "status text must be display-only (mode 0)"
+
+    recv = next((b for b in boxes if b.get("text") == "r sf-status"), None)
+    assert recv is not None, "missing [r sf-status]"
+    # recv → txt
+    assert ("obj-sf-status-recv", "obj-sf-status-picker-text") in line_pairs
+    # And a [s sf-status] must be fed by the loader's status outlet (outlet 0).
+    send = next((b for b in boxes if b.get("text") == "s sf-status"), None)
+    assert send is not None, "missing [s sf-status]"
+    assert ("obj-sf-lom-loader", send["id"]) in line_pairs
+
+
+def test_picker_dialog_wired_from_messnamed_receiver(boxes, line_pairs):
+    """pickSource() in the loader fires messnamed("sf-open-source-dialog","bang").
+    The patcher must have `[r sf-open-source-dialog]` → [opendialog] → regex
+    strip HFS → [prepend applyPickedSource] → js sf_lom_loader."""
+    recv = next(
+        (b for b in boxes if b.get("text") == "r sf-open-source-dialog"), None
+    )
+    assert recv is not None, "missing [r sf-open-source-dialog]"
+    assert (recv["id"], "obj-sf-picker-dialog") in line_pairs
+    assert ("obj-sf-picker-dialog", "obj-sf-picker-dialog-regex") in line_pairs
+    assert ("obj-sf-picker-dialog-regex", "obj-sf-picker-dialog-prepend") in line_pairs
+    prep = next(
+        (b for b in boxes if b.get("id") == "obj-sf-picker-dialog-prepend"), None
+    )
+    assert prep is not None
+    assert prep.get("text") == "prepend applyPickedSource"
+    assert ("obj-sf-picker-dialog-prepend", "obj-sf-lom-loader") in line_pairs
+
+
+# ── Verb buttons (COMMIT / BOUNCE / EXPORT) — spec §3.1 right column ─────────
+
+
+def test_commit_button_present_and_wired(boxes, line_pairs):
+    """COMMIT live.text → [message commit] → js sf_lom_loader. The loader's
+    `commit()` reads activeCuration and emits messnamed("sf-commit-send"…)."""
+    btn = next((b for b in boxes if b.get("varname") == "sf_commit_btn"), None)
+    assert btn is not None, "missing sf_commit_btn"
+    assert btn["maxclass"] == "live.text"
+    assert btn.get("mode") == 1
+    assert btn.get("presentation") == 1
+    assert btn.get("text") == "COMMIT"
+
+    msg = next(
+        (
+            b
+            for b in boxes
+            if b.get("maxclass") == "message" and b.get("text") == "commit"
+        ),
+        None,
+    )
+    assert msg is not None, "missing [message commit] box"
+    assert ("obj-sf-commit-btn", msg["id"]) in line_pairs
+    assert (msg["id"], "obj-sf-lom-loader") in line_pairs
+
+
+def test_bounce_button_present_and_wired(boxes, line_pairs):
+    """BOUNCE live.text → [message bounceCuration] → js sf_lom_loader. The
+    loader's `bounceCuration()` falls back to activeCuration when no args."""
+    btn = next((b for b in boxes if b.get("varname") == "sf_bounce_btn"), None)
+    assert btn is not None, "missing sf_bounce_btn"
+    assert btn["maxclass"] == "live.text"
+    assert btn.get("mode") == 1
+    assert btn.get("presentation") == 1
+    assert btn.get("text") == "BOUNCE"
+
+    msg = next(
+        (
+            b
+            for b in boxes
+            if b.get("maxclass") == "message" and b.get("text") == "bounceCuration"
+        ),
+        None,
+    )
+    assert msg is not None, "missing [message bounceCuration] box"
+    assert ("obj-sf-bounce-btn", msg["id"]) in line_pairs
+    assert (msg["id"], "obj-sf-lom-loader") in line_pairs
+
+
+def test_export_button_present_and_wired(boxes, line_pairs):
+    """EXPORT live.text → [message exportArrangementSnapshot ~/Desktop/snapshot.json]
+    → js sf_lom_loader. The loader's `exportArrangementSnapshot()` writes the
+    snapshot to disk."""
+    btn = next((b for b in boxes if b.get("varname") == "sf_export_btn"), None)
+    assert btn is not None, "missing sf_export_btn"
+    assert btn["maxclass"] == "live.text"
+    assert btn.get("mode") == 1
+    assert btn.get("presentation") == 1
+    assert btn.get("text") == "EXPORT"
+
+    msg = next(
+        (
+            b
+            for b in boxes
+            if b.get("maxclass") == "message"
+            and b.get("text", "").startswith("exportArrangementSnapshot")
+        ),
+        None,
+    )
+    assert msg is not None, "missing [message exportArrangementSnapshot …] box"
+    assert ("obj-sf-export-btn", msg["id"]) in line_pairs
+    assert (msg["id"], "obj-sf-lom-loader") in line_pairs
+
+
+# ── Snapshot / golden test on the picker + verb-row JSON ────────────────────
+
+
+def test_picker_and_verb_layout_snapshot(boxes):
+    """Snapshot the geometry of the 5 user-visible widgets so future
+    layout edits are reviewable. If this test breaks because of a
+    deliberate move, update the expected dict here."""
+    expected = {
+        "sf_pick_source_btn": {"x": 8.0, "y": 8.0, "w": 360.0, "h": 32.0, "mode": 1},
+        "sf_status_picker_text": {"x": 8.0, "y": 48.0, "w": 700.0, "h": 28.0, "mode": 0},
+        "sf_primary_btn": {"x": 720.0, "y": 8.0, "w": 92.0, "h": 44.0, "mode": 1},
+        "sf_commit_btn": {"x": 720.0, "y": 58.0, "mode": 1, "text": "COMMIT"},
+        "sf_bounce_btn": {"mode": 1, "text": "BOUNCE"},
+        "sf_export_btn": {"mode": 1, "text": "EXPORT"},
+    }
+    found = {}
+    for b in boxes:
+        v = b.get("varname")
+        if v in expected:
+            rect = b.get("presentation_rect") or b.get("patching_rect", [])
+            row = {
+                "x": rect[0] if len(rect) >= 1 else None,
+                "y": rect[1] if len(rect) >= 2 else None,
+                "w": rect[2] if len(rect) >= 3 else None,
+                "h": rect[3] if len(rect) >= 4 else None,
+                "mode": b.get("mode"),
+                "text": b.get("text"),
+            }
+            found[v] = row
+    for varname, want in expected.items():
+        assert varname in found, f"snapshot missing widget {varname}"
+        got = found[varname]
+        for key, value in want.items():
+            assert got.get(key) == value, (
+                f"snapshot widget {varname}.{key}: got {got.get(key)!r}, "
+                f"expected {value!r}"
+            )
+
+
+# ── P0-5 + P1-7 — Regression: no legacy controls ─────────────────────────────
+
+
+def test_no_legacy_preset_or_source_umenus(boxes):
+    """The legacy `sf_preset_menu` / `sf_source_menu` umenus must be gone —
+    they were the user-visible dropdowns that the new picker replaces."""
+    for varname in ("sf_preset_menu", "sf_source_menu"):
+        match = next((b for b in boxes if b.get("varname") == varname), None)
+        assert match is None, (
+            f"legacy umenu {varname!r} found — Configurator v1 §3.1 removes it"
+        )
+    # Belt-and-braces: no umenu objects at all in the patcher (the loaders
+    # may still scan, but their outputs are no longer rendered).
+    umenus = [b for b in boxes if b.get("maxclass") == "umenu"]
+    assert not umenus, f"unexpected umenu box(es) found: {umenus}"
+
+
+def test_no_legacy_v8ui_event_route(boxes):
+    """The `[route preset_click source_click forge_click … commit_click …]`
+    table is removed — Configurator v1 wires clicks directly off live.text
+    widgets into the loader's [js] inlet."""
+    legacy_route = next(
         (b for b in boxes if b.get("text", "").startswith("route preset_click")),
         None,
     )
-    assert route is not None, "missing route for v8ui events"
-    tokens = set(route["text"].split())
-    for required in (
+    assert legacy_route is None, (
+        "legacy v8ui-event route table found — must be removed (P0-5)"
+    )
+
+
+def test_no_commit_click_dead_wire(boxes):
+    """P1-7 — `commit_click` was the dead-wire alias for `commitOffsets`
+    pulled into sf_forge. The new COMMIT button goes directly to the loader."""
+    # Scan every text field for the dead string.
+    for b in boxes:
+        text = b.get("text", "") or ""
+        assert "commit_click" not in text, (
+            f"dead-wire 'commit_click' found in box {b.get('id')!r} text"
+        )
+        assert "commitOffsets" not in text, (
+            f"dead-wire 'commitOffsets' found in box {b.get('id')!r} text — "
+            "the new COMMIT goes direct to js.commit()"
+        )
+
+
+def test_no_legacy_forge_click_or_other_routes(boxes):
+    """All the legacy [route ...] outlet branches are gone."""
+    legacy_strings = (
         "preset_click",
         "source_click",
         "forge_click",
-        "cancel_click",
-        "retry_click",
-        "done_click",
-        "settings_click",
-        "commit_click",
-    ):
-        assert required in tokens, f"route missing branch for {required}"
-    assert ("obj-sf-ui", route["id"]) in line_pairs
-
-
-def test_commit_click_wired_to_forge(boxes, line_pairs):
-    """The COMMIT button emits commit_click; it must route through a
-    [message commitOffsets] box into sf_forge so the loader does the
-    LOM → manifest offset roundtrip."""
-    msg = next(
-        (b for b in boxes if b.get("text") == "commitOffsets" and b.get("maxclass") == "message"),
-        None,
+        "anchor_locator_click",
+        "bounce_clips_click",
+        "export_song_click",
+        "arrangement_load_click",
     )
-    assert msg is not None, "missing [message commitOffsets] box"
-    assert (msg["id"], "obj-sf-forge") in line_pairs, "commitOffsets message must feed sf_forge"
-    # And the route's commit_click outlet must reach that message box.
-    route = next(
-        (b for b in boxes if b.get("text", "").startswith("route preset_click")),
-        None,
-    )
-    assert route is not None
-    assert (route["id"], msg["id"]) in line_pairs, (
-        "route commit_click outlet must feed the commitOffsets message"
-    )
+    for b in boxes:
+        text = (b.get("text", "") or "")
+        for needle in legacy_strings:
+            assert needle not in text, (
+                f"legacy token {needle!r} found in box {b.get('id')!r}"
+            )
 
 
 # ── Modular JS objects ───────────────────────────────────────────────────────
@@ -258,18 +488,19 @@ def test_forge_outlets_wired(line_pairs):
     assert ("obj-sf-forge", "obj-sf-lom-loader") in line_pairs
 
 
-def test_preset_loader_to_state(line_pairs):
-    # outlet 0 → umenu, outlet 1 → state
-    assert ("obj-sf-preset-loader", "obj-umenu-preset") in line_pairs
-    assert ("obj-sf-preset-loader", "obj-sf-state") in line_pairs
+def test_preset_loader_still_present(boxes):
+    """Configurator v1 removed the preset umenu, but sf_preset_loader.js is
+    kept in the patcher (loaded at boot) so a future picker can re-use the
+    same scan results without touching the legacy dropdown surface."""
+    pre = next((b for b in boxes if "js sf_preset_loader.js" in b.get("text", "")), None)
+    assert pre is not None
 
 
-def test_manifest_loader_to_state_and_popup(line_pairs, boxes):
-    assert ("obj-sf-manifest-loader", "obj-umenu-source") in line_pairs
-    # outlet 1 → route setSource browseAudio
-    route = next((b for b in boxes if b.get("text", "").startswith("route setSource")), None)
-    assert route is not None
-    assert ("obj-sf-manifest-loader", route["id"]) in line_pairs
+def test_manifest_loader_still_present(boxes):
+    """Same as above for sf_manifest_loader.js — kept for the loadbang scan
+    even though its umenu surface is gone."""
+    mf = next((b for b in boxes if "js sf_manifest_loader.js" in b.get("text", "")), None)
+    assert mf is not None
 
 
 def test_ndjson_parser_wired_from_shell(line_pairs):
