@@ -14,6 +14,7 @@ Usage:
     uv run python tools/probe_loop.py <source_wav> --bpm 85.11 --first-downbeat 0.5 \\
         --start-bar 28 --bars 4
 """
+
 from __future__ import annotations
 
 import argparse
@@ -28,24 +29,26 @@ def main() -> int:
     p.add_argument("source", type=Path, help="Source mix WAV")
     p.add_argument("--bpm", type=float, required=True, help="Tempo in BPM")
     p.add_argument(
-        "--first-downbeat", type=float, default=0.0,
-        help="Seconds from start of file to musical bar 1 (default 0)"
+        "--first-downbeat",
+        type=float,
+        default=0.0,
+        help="Seconds from start of file to musical bar 1 (default 0)",
     )
     p.add_argument(
-        "--start-bar", type=int, default=1,
-        help="Which musical bar to start the loop on (1-indexed, default 1)"
+        "--start-bar",
+        type=int,
+        default=1,
+        help="Which musical bar to start the loop on (1-indexed, default 1)",
+    )
+    p.add_argument("--bars", type=int, default=4, help="Loop length in bars (default 4)")
+    p.add_argument(
+        "--beats-per-bar", type=int, default=4, help="4 for 4/4 (default), 3 for 3/4, etc."
     )
     p.add_argument(
-        "--bars", type=int, default=4,
-        help="Loop length in bars (default 4)"
-    )
-    p.add_argument(
-        "--beats-per-bar", type=int, default=4,
-        help="4 for 4/4 (default), 3 for 3/4, etc."
-    )
-    p.add_argument(
-        "--out", type=Path, default=None,
-        help="Output WAV path (default: ./probe_<bpm>_<downbeat>_<bar>.wav)"
+        "--out",
+        type=Path,
+        default=None,
+        help="Output WAV path (default: ./probe_<bpm>_<downbeat>_<bar>.wav)",
     )
     args = p.parse_args()
 
@@ -80,7 +83,7 @@ def main() -> int:
     print(f"start_bar:        {args.start_bar} ({args.bars} bars × {args.beats_per_bar} beats)")
     print(f"computed offset:  {bar_offset_sec:.4f}s in source")
     print(f"loop duration:    {loop_duration_sec:.4f}s")
-    print(f"frames extracted: {loop.shape[0]} @ {sr} Hz = {loop.shape[0]/sr:.4f}s")
+    print(f"frames extracted: {loop.shape[0]} @ {sr} Hz = {loop.shape[0] / sr:.4f}s")
     print(f"Wrote:            {out}")
     return 0
 

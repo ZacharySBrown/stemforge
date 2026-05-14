@@ -41,7 +41,7 @@ from pathlib import Path
 #   row 1:          4=4   5=5   6=6
 #   row 0 (top):    7=1   8=2   9=3
 BAR_INDEX_TO_PAD_NUM = [10, 11, 12, 7, 8, 9, 4, 5, 6, 1, 2, 3]
-BAR_INDEX_TO_LABEL   = [".", "0", "ENTER", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
+BAR_INDEX_TO_LABEL = [".", "0", "ENTER", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
 
 
 def parse_groups(group_args: list[str]) -> list[tuple[str, str]]:
@@ -104,26 +104,28 @@ def plan_load(
             )
         for bar_i, loop in enumerate(loops_sorted):
             slot = start_slot + g_idx * n_pads + bar_i
-            ops.append({
-                "group":     group,
-                "stem":      stem_name,
-                "bar_index": bar_i,
-                "pad_num":   BAR_INDEX_TO_PAD_NUM[bar_i],
-                "pad_label": BAR_INDEX_TO_LABEL[bar_i],
-                "slot":      slot,
-                "wav_path":  Path(loop["file"]),
-            })
+            ops.append(
+                {
+                    "group": group,
+                    "stem": stem_name,
+                    "bar_index": bar_i,
+                    "pad_num": BAR_INDEX_TO_PAD_NUM[bar_i],
+                    "pad_label": BAR_INDEX_TO_LABEL[bar_i],
+                    "slot": slot,
+                    "wav_path": Path(loop["file"]),
+                }
+            )
     return ops
 
 
 def print_plan(ops: list[dict], project: int, track: str) -> None:
     print(f"\n  EP-133 load plan — {track!r}  →  Project {project}")
     print(f"  {'Group':<6} {'Stem':<10} {'Bar':<6} {'Pad':<7} {'Slot':<6} {'File'}")
-    print(f"  {'-'*5} {'-'*9} {'-'*5} {'-'*6} {'-'*5} {'-'*30}")
+    print(f"  {'-' * 5} {'-' * 9} {'-' * 5} {'-' * 6} {'-' * 5} {'-' * 30}")
     for op in ops:
         print(
             f"  {op['group']:<6} {op['stem']:<10} "
-            f"bar_{op['bar_index']+1:03d}  "
+            f"bar_{op['bar_index'] + 1:03d}  "
             f"{op['pad_label']:<7} "
             f"{op['slot']:<6} "
             f"{op['wav_path'].name}"
@@ -153,7 +155,9 @@ def run_load(
     from stemforge.exporters.ep133 import EP133Client
     from stemforge.exporters.ep133.commands import TE_SYSEX_FILE
     from stemforge.exporters.ep133.payloads import (
-        PadParams, SampleParams, build_slot_metadata_set,
+        PadParams,
+        SampleParams,
+        build_slot_metadata_set,
     )
 
     results = []
@@ -167,13 +171,12 @@ def run_load(
             t0 = time.monotonic()
 
             print(
-                f"  [{i+1:>2}/{len(ops)}] uploading {wav.name}"
-                f"  →  slot {slot} ...",
+                f"  [{i + 1:>2}/{len(ops)}] uploading {wav.name}  →  slot {slot} ...",
                 end=" ",
                 flush=True,
             )
             client.upload_sample(wav, slot=slot)
-            print(f"done  ({time.monotonic()-t0:.1f}s)", flush=True)
+            print(f"done  ({time.monotonic() - t0:.1f}s)", flush=True)
 
             if source_bpm is not None:
                 t_bpm = time.monotonic()
@@ -186,7 +189,7 @@ def run_load(
                 payload = build_slot_metadata_set(slot, params)
                 request_id = client._send(TE_SYSEX_FILE, payload)
                 client._await_response(request_id, timeout=5.0)
-                print(f"done  ({time.monotonic()-t_bpm:.2f}s)", flush=True)
+                print(f"done  ({time.monotonic() - t_bpm:.2f}s)", flush=True)
 
             print(
                 f"           assigning  P{project} {group}-{op['pad_label']}"
@@ -196,9 +199,10 @@ def run_load(
             )
             t1 = time.monotonic()
             pad_params = PadParams(time_mode="bpm") if source_bpm is not None else None
-            client.assign_pad(project=project, group=group, pad_num=pad_num,
-                              slot=slot, params=pad_params)
-            print(f"done  ({time.monotonic()-t1:.1f}s)", flush=True)
+            client.assign_pad(
+                project=project, group=group, pad_num=pad_num, slot=slot, params=pad_params
+            )
+            print(f"done  ({time.monotonic() - t1:.1f}s)", flush=True)
 
             results.append({**op, "wav_path": str(op["wav_path"]), "ok": True})
 
@@ -221,10 +225,13 @@ def run_update_params(
     if playmode is not None:
         kwargs["playmode"] = playmode
 
-    desc = "  ".join(
-        ([f"playmode={playmode}"] if playmode else [])
-        + ([f"time_mode=bpm  {bpm:.2f} BPM"] if bpm else [])
-    ) or "no changes"
+    desc = (
+        "  ".join(
+            ([f"playmode={playmode}"] if playmode else [])
+            + ([f"time_mode=bpm  {bpm:.2f} BPM"] if bpm else [])
+        )
+        or "no changes"
+    )
 
     if dry_run:
         print(f"  DRY RUN — would set {desc} on {len(ops)} pads\n")
@@ -243,7 +250,7 @@ def run_update_params(
             pad_num = op["pad_num"]
 
             print(
-                f"  [{i+1:>2}/{len(ops)}] P{project} {group}-{op['pad_label']}"
+                f"  [{i + 1:>2}/{len(ops)}] P{project} {group}-{op['pad_label']}"
                 f"  (pad_num={pad_num})  slot {slot}  →  {desc} ...",
                 end=" ",
                 flush=True,
@@ -252,7 +259,7 @@ def run_update_params(
             client.assign_pad(
                 project=project, group=group, pad_num=pad_num, slot=slot, params=params
             )
-            print(f"done  ({time.monotonic()-t0:.2f}s)", flush=True)
+            print(f"done  ({time.monotonic() - t0:.2f}s)", flush=True)
             results.append({**op, "wav_path": str(op["wav_path"]), "ok": True})
 
     return results
@@ -266,14 +273,11 @@ def write_report(
     dry_run: bool,
 ) -> Path:
     report = {
-        "track":     track,
-        "project":   project,
-        "dry_run":   dry_run,
+        "track": track,
+        "project": project,
+        "dry_run": dry_run,
         "loaded_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "ops": [
-            {k: str(v) if isinstance(v, Path) else v for k, v in op.items()}
-            for op in ops
-        ],
+        "ops": [{k: str(v) if isinstance(v, Path) else v for k, v in op.items()} for op in ops],
     }
     stem = f"ep133_p{project}_{track}"
     report_path = manifest_path.parent / f"{stem}_load_report.json"
@@ -288,25 +292,45 @@ def main() -> None:
         epilog=__doc__,
     )
     parser.add_argument("manifest", type=Path, help="Path to curated manifest.json")
-    parser.add_argument("--project",    "-P", type=int, default=8,
-                        help="EP-133 project number (default: 8)")
-    parser.add_argument("--groups",     "-g", nargs="+", required=True,
-                        metavar="GROUP=stem",
-                        help="Group→stem mappings, e.g. A=drums B=bass C=other D=vocals")
-    parser.add_argument("--start-slot", "-s", type=int, default=701,
-                        help="First library slot (default: 701)")
-    parser.add_argument("--pads",       "-n", type=int, default=12,
-                        help="Bars/pads to load per group (1-12, default: 12)")
-    parser.add_argument("--delay-ms",      type=int, default=10,
-                        help="Inter-message delay in ms (default: 10)")
-    parser.add_argument("--dry-run",       action="store_true",
-                        help="Print the plan without touching the device")
-    parser.add_argument("--update-params", action="store_true",
-                        help="Skip uploads; only push pad metadata to already-loaded slots")
-    parser.add_argument("--playmode", choices=["oneshot", "key", "legato"], default=None,
-                        help="Set playback mode on all pads (key=gate, stops when finger lifts)")
-    parser.add_argument("--no-bpm", action="store_true",
-                        help="Skip writing sound.bpm + time.mode=bpm to slots (default: writes manifest's bpm)")
+    parser.add_argument(
+        "--project", "-P", type=int, default=8, help="EP-133 project number (default: 8)"
+    )
+    parser.add_argument(
+        "--groups",
+        "-g",
+        nargs="+",
+        required=True,
+        metavar="GROUP=stem",
+        help="Group→stem mappings, e.g. A=drums B=bass C=other D=vocals",
+    )
+    parser.add_argument(
+        "--start-slot", "-s", type=int, default=701, help="First library slot (default: 701)"
+    )
+    parser.add_argument(
+        "--pads", "-n", type=int, default=12, help="Bars/pads to load per group (1-12, default: 12)"
+    )
+    parser.add_argument(
+        "--delay-ms", type=int, default=10, help="Inter-message delay in ms (default: 10)"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Print the plan without touching the device"
+    )
+    parser.add_argument(
+        "--update-params",
+        action="store_true",
+        help="Skip uploads; only push pad metadata to already-loaded slots",
+    )
+    parser.add_argument(
+        "--playmode",
+        choices=["oneshot", "key", "legato"],
+        default=None,
+        help="Set playback mode on all pads (key=gate, stops when finger lifts)",
+    )
+    parser.add_argument(
+        "--no-bpm",
+        action="store_true",
+        help="Skip writing sound.bpm + time.mode=bpm to slots (default: writes manifest's bpm)",
+    )
     args = parser.parse_args()
 
     if not (1 <= args.pads <= 12):
@@ -347,8 +371,9 @@ def main() -> None:
             source_bpm = None if args.no_bpm else bpm
             if source_bpm is not None:
                 print(f"  Tagging slots with sound.bpm={source_bpm:.2f} + time.mode=bpm\n")
-            results = run_load(ops, args.project, args.delay_ms, args.dry_run,
-                               source_bpm=source_bpm)
+            results = run_load(
+                ops, args.project, args.delay_ms, args.dry_run, source_bpm=source_bpm
+            )
     except Exception as e:
         print(f"\nERROR: {e}", file=sys.stderr)
         sys.exit(1)

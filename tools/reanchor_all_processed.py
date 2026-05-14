@@ -16,6 +16,7 @@ Continues on per-track errors and reports a summary at the end.
 Usage:
     uv run python tools/reanchor_all_processed.py [--dry-run]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -118,7 +119,12 @@ def reanchor_one(track_dir: Path, *, dry_run: bool = False) -> dict:
             "bpm": 120.0,
             "beat_count": 0,
             "stems": [
-                {"name": s, "wav_path": str(p), "beats_dir": str(track_dir / f"{s}_beats"), "beat_count": 0}
+                {
+                    "name": s,
+                    "wav_path": str(p),
+                    "beats_dir": str(track_dir / f"{s}_beats"),
+                    "beat_count": 0,
+                }
                 for s, p in stem_paths.items()
             ],
             "pipeline": "arrangement",
@@ -130,7 +136,11 @@ def reanchor_one(track_dir: Path, *, dry_run: bool = False) -> dict:
     source_mix = find_source_mix(track_dir, sj)
 
     if dry_run:
-        return {"track": name, "status": "dry-run", "would_use": "mix" if source_mix else "drums-only"}
+        return {
+            "track": name,
+            "status": "dry-run",
+            "would_use": "mix" if source_mix else "drums-only",
+        }
 
     try:
         reconciled = reconcile_tempo(
@@ -160,7 +170,11 @@ def reanchor_one(track_dir: Path, *, dry_run: bool = False) -> dict:
     # Resolve pre_bars: auto-fill the intro
     pipeline_cfg = get_pipeline_cfg()
     if pipeline_cfg is None or pipeline_cfg.prechop is None:
-        return {"track": name, "status": "fail", "reason": "pipeline 'arrangement' missing or no prechop"}
+        return {
+            "track": name,
+            "status": "fail",
+            "reason": "pipeline 'arrangement' missing or no prechop",
+        }
 
     bars_per_chunk = pipeline_cfg.prechop.bars
     bar_period = bars_per_chunk * pipeline_cfg.prechop.beats_per_bar * 60.0 / bpm
@@ -195,7 +209,11 @@ def reanchor_one(track_dir: Path, *, dry_run: bool = False) -> dict:
         warning=(
             f"bulk re-anchor 2026-05-02; prior bpm={sj.get('bpm')} "
             f"prior_source={(sj.get('tempo') or {}).get('source', 'unknown')}"
-            + (f" | prior: {sj['tempo']['warning']}" if (sj.get('tempo') or {}).get('warning') else '')
+            + (
+                f" | prior: {sj['tempo']['warning']}"
+                if (sj.get("tempo") or {}).get("warning")
+                else ""
+            )
         ),
         all_estimates=[e.to_dict() for e in reconciled.all_estimates],
     )

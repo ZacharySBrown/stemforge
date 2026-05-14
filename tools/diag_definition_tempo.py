@@ -9,6 +9,7 @@ production path. Standalone: only depends on stemforge + librosa + beat-this
 Usage:
     uv run python tools/diag_definition_tempo.py
 """
+
 from __future__ import annotations
 
 import sys
@@ -53,9 +54,7 @@ def beat_this_detect(
     downbeats = np.asarray(downbeats, dtype=float)
 
     bpm = 60.0 / float(np.median(np.diff(beats))) if len(beats) > 1 else 0.0
-    db_period = (
-        float(np.median(np.diff(downbeats))) if len(downbeats) > 1 else None
-    )
+    db_period = float(np.median(np.diff(downbeats))) if len(downbeats) > 1 else None
     db_bpm = 60.0 * 4 / db_period if db_period else None  # 4 beats/bar assumption
 
     return {

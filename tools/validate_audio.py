@@ -203,10 +203,14 @@ def validate_manifest(
 
             except Exception as e:
                 print(f"ERROR: {e}")
-                stem_results.append({
-                    "file": file_path.name, "type": item_type,
-                    "error": str(e), "quality_score": 0,
-                })
+                stem_results.append(
+                    {
+                        "file": file_path.name,
+                        "type": item_type,
+                        "error": str(e),
+                        "quality_score": 0,
+                    }
+                )
 
         results["stems"][stem_name] = stem_results
 
@@ -244,8 +248,7 @@ def validate_manifest(
 # ── Reference evaluation ─────────────────────────────────────────────────────
 
 CORE_LIBRARY = Path(
-    "/Applications/Ableton Live 12 Suite.app/Contents/App-Resources"
-    "/Core Library/Samples"
+    "/Applications/Ableton Live 12 Suite.app/Contents/App-Resources/Core Library/Samples"
 )
 
 REFERENCE_SAMPLES = {
@@ -258,13 +261,25 @@ REFERENCE_SAMPLES = {
         ("oneshot", CORE_LIBRARY / "One Shots/Drums/Snare/Snare Taka Natural.wav", "snare"),
     ],
     "hihat": [
-        ("oneshot", CORE_LIBRARY / "One Shots/Drums/Hihat/Hihat Closed Pointy Hat.wav", "hat_closed"),
+        (
+            "oneshot",
+            CORE_LIBRARY / "One Shots/Drums/Hihat/Hihat Closed Pointy Hat.wav",
+            "hat_closed",
+        ),
     ],
     "loop": [
-        ("loop", Path.home() / "Music/Ableton/User Library/Indie Drums Vol.1 Plus by Bram Inscore"
-         "/IDV1 Ableton Live Instruments/Samples/drum loops/Bram_2020_113BPM_1.wav", ""),
-        ("loop", Path.home() / "Music/Ableton/User Library/Indie Drums Vol.1 Plus by Bram Inscore"
-         "/IDV1 Ableton Live Instruments/Samples/drum loops/Bram_2020_113BPM_2.wav", ""),
+        (
+            "loop",
+            Path.home() / "Music/Ableton/User Library/Indie Drums Vol.1 Plus by Bram Inscore"
+            "/IDV1 Ableton Live Instruments/Samples/drum loops/Bram_2020_113BPM_1.wav",
+            "",
+        ),
+        (
+            "loop",
+            Path.home() / "Music/Ableton/User Library/Indie Drums Vol.1 Plus by Bram Inscore"
+            "/IDV1 Ableton Live Instruments/Samples/drum loops/Bram_2020_113BPM_2.wav",
+            "",
+        ),
     ],
 }
 
@@ -360,7 +375,8 @@ def validate_reference(dry_run: bool = False) -> dict:
                     uploaded = client.files.get(name=uploaded.name)
 
                 response = client.models.generate_content(
-                    model=model, contents=[uploaded, prompt],
+                    model=model,
+                    contents=[uploaded, prompt],
                 )
 
                 text = response.text.strip()
@@ -427,16 +443,25 @@ def main():
     ap.add_argument("manifest", nargs="?", type=Path, help="Path to curated manifest.json")
     ap.add_argument("--stems", nargs="+", default=None, help="Only validate these stems")
     ap.add_argument("--dry-run", action="store_true", help="Show plan without calling API")
-    ap.add_argument("--max-per-stem", type=int, default=4, help="Max samples to check per stem per type")
-    ap.add_argument("--reference", action="store_true",
-                    help="Validate Ableton factory samples as a scoring baseline")
+    ap.add_argument(
+        "--max-per-stem", type=int, default=4, help="Max samples to check per stem per type"
+    )
+    ap.add_argument(
+        "--reference",
+        action="store_true",
+        help="Validate Ableton factory samples as a scoring baseline",
+    )
     args = ap.parse_args()
 
     if args.reference:
         validate_reference(dry_run=args.dry_run)
     elif args.manifest:
-        validate_manifest(args.manifest, stems_filter=args.stems,
-                         dry_run=args.dry_run, max_per_stem=args.max_per_stem)
+        validate_manifest(
+            args.manifest,
+            stems_filter=args.stems,
+            dry_run=args.dry_run,
+            max_per_stem=args.max_per_stem,
+        )
     else:
         ap.error("either manifest path or --reference is required")
 

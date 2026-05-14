@@ -70,14 +70,18 @@ def _run_re_anchor(track_dir: Path, bpm: float, first_downbeat: float) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--track-dir", required=True, type=Path)
     ap.add_argument("--bpm", required=True, type=float)
     ap.add_argument("--first-downbeat", required=True, type=float)
-    ap.add_argument("--manifest-out", required=True, type=Path,
-                    help="Path the JS will reload after success "
-                         "(typically <track-dir>/prechop_manifest.json).")
+    ap.add_argument(
+        "--manifest-out",
+        required=True,
+        type=Path,
+        help="Path the JS will reload after success (typically <track-dir>/prechop_manifest.json).",
+    )
     args = ap.parse_args(argv)
 
     if not args.track_dir.exists():
@@ -87,14 +91,15 @@ def main(argv: list[str] | None = None) -> int:
         _emit("anchor_error", message=f"bpm must be > 0, got {args.bpm}")
         return 2
     if args.first_downbeat < 0:
-        _emit("anchor_error",
-              message=f"first-downbeat must be >= 0, got {args.first_downbeat}")
+        _emit("anchor_error", message=f"first-downbeat must be >= 0, got {args.first_downbeat}")
         return 2
 
-    _emit("anchor_started",
-          track_dir=str(args.track_dir),
-          bpm=args.bpm,
-          first_downbeat=args.first_downbeat)
+    _emit(
+        "anchor_started",
+        track_dir=str(args.track_dir),
+        bpm=args.bpm,
+        first_downbeat=args.first_downbeat,
+    )
 
     try:
         _run_re_anchor(args.track_dir, args.bpm, args.first_downbeat)
@@ -103,14 +108,15 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if not args.manifest_out.exists():
-        _emit("anchor_error",
-              message=f"re-anchor finished but manifest not at {args.manifest_out}")
+        _emit("anchor_error", message=f"re-anchor finished but manifest not at {args.manifest_out}")
         return 2
 
-    _emit("anchor_complete",
-          manifest=str(args.manifest_out),
-          bpm=args.bpm,
-          first_downbeat=args.first_downbeat)
+    _emit(
+        "anchor_complete",
+        manifest=str(args.manifest_out),
+        bpm=args.bpm,
+        first_downbeat=args.first_downbeat,
+    )
     return 0
 
 

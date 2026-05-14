@@ -26,6 +26,7 @@ Usage:
         /Users/zak/stemforge/processed/smack_my_bitch_up/curated/manifest.json \\
         [--project 1] [--dry-run] [--delay-ms 50]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -57,15 +58,25 @@ LAYOUT = {
         # rootnote=60 (C4) so when KEYS is engaged on a B pad, the natural-
         # pitch pad (bottom-left per device convention) plays the chop
         # untransposed; pads ascend chromatically up the grid.
-        "default_rule": {"time_mode": "off", "time_bars": None, "mute_group": True,
-                         "kind": "key", "rootnote": 60},
+        "default_rule": {
+            "time_mode": "off",
+            "time_bars": None,
+            "mute_group": True,
+            "kind": "key",
+            "rootnote": 60,
+        },
     },
     "C": {
         "group": "C",
         "slot_base": 140,
         # All slots = vocal key chops, time.mode=off, no mute group (let them stack).
-        "default_rule": {"time_mode": "off", "time_bars": None, "mute_group": False,
-                         "kind": "key", "rootnote": 60},
+        "default_rule": {
+            "time_mode": "off",
+            "time_bars": None,
+            "mute_group": False,
+            "kind": "key",
+            "rootnote": 60,
+        },
     },
     "D": {
         "group": "D",
@@ -83,7 +94,9 @@ def rule_for_slot(letter: str, slot_idx: int) -> dict:
         if slot_idx < cfg["hits_until_pad"]:
             return cfg["hit_rule"]
         return cfg["loop_rule"]
-    return cfg.get("default_rule", {"time_mode": "off", "time_bars": None, "mute_group": False, "kind": "key"})
+    return cfg.get(
+        "default_rule", {"time_mode": "off", "time_bars": None, "mute_group": False, "kind": "key"}
+    )
 
 
 def bottom_up_pad_num(n: int) -> int:
@@ -104,8 +117,8 @@ def bottom_up_pad_num(n: int) -> int:
     """
     if n < 1 or n > 12:
         return n  # leave out-of-range alone — caller should validate
-    row_from_bottom = (n - 1) // 3   # 0..3
-    col = (n - 1) % 3                # 0..2
+    row_from_bottom = (n - 1) // 3  # 0..3
+    col = (n - 1) % 3  # 0..2
     return 10 - 3 * row_from_bottom + col
 
 
@@ -192,8 +205,7 @@ def bake_clip(src_wav: Path, dst_wav: Path, entry: dict, rule: dict, bpm: float)
         # If we ran out of source, pad the tail with silence so the
         # output is exactly N bars long.
         if data.shape[0] < target_frames:
-            pad = np.zeros((target_frames - data.shape[0], data.shape[1]),
-                           dtype=data.dtype)
+            pad = np.zeros((target_frames - data.shape[0], data.shape[1]), dtype=data.dtype)
             data = np.concatenate([data, pad], axis=0)
         out = data
     elif mode == "rotate":
@@ -235,27 +247,31 @@ def build_plan(manifest: dict, manifest_path: Path) -> list[dict]:
             rule = rule_for_slot(letter, k_idx)
             src = Path(e["file"])
             if not src.exists():
-                print(f"  SKIP {letter}{k_idx+1}: source missing {src}")
+                print(f"  SKIP {letter}{k_idx + 1}: source missing {src}")
                 continue
             slot = cfg["slot_base"] + k_idx
-            dst = bake_root / letter / f"pad_{k_idx+1:02d}_{rule['kind']}.wav"
-            plan.append({
-                "letter": letter,
-                "group": cfg["group"],
-                "pad_num": k_idx + 1,
-                "slot": slot,
-                "src": src,
-                "dst": dst,
-                "entry": e,
-                "rule": rule,
-                "bpm": bpm,
-            })
+            dst = bake_root / letter / f"pad_{k_idx + 1:02d}_{rule['kind']}.wav"
+            plan.append(
+                {
+                    "letter": letter,
+                    "group": cfg["group"],
+                    "pad_num": k_idx + 1,
+                    "slot": slot,
+                    "src": src,
+                    "dst": dst,
+                    "entry": e,
+                    "rule": rule,
+                    "bpm": bpm,
+                }
+            )
     return plan
 
 
 def print_plan(plan: list[dict]) -> None:
-    print(f"\n{'pad':>5} {'slot':>5} {'kind':>5} {'mode':>7} {'baked':>7} "
-          f"{'tmode':>5} {'bars':>5} {'mute':>5}  src")
+    print(
+        f"\n{'pad':>5} {'slot':>5} {'kind':>5} {'mode':>7} {'baked':>7} "
+        f"{'tmode':>5} {'bars':>5} {'mute':>5}  src"
+    )
     print("-" * 95)
     for p in plan:
         r = p["rule"]
@@ -273,20 +289,26 @@ def print_plan(plan: list[dict]) -> None:
             est_dur = max(0.0, e["end_offset_sec"] - e["start_offset_sec"])
         eff_tmode, eff_bars = per_clip_time_mode(r, est_dur, bpm)
         bars_str = f"{eff_bars:.0f}" if eff_bars is not None else "-"
-        print(f"{p['group']}{p['pad_num']:<4} {p['slot']:>5} {r['kind']:>5} "
-              f"{e['mode']:>7} {est_dur:>6.3f}s {eff_tmode:>5} {bars_str:>5} "
-              f"{('yes' if r['mute_group'] else 'no'):>5}  {p['src'].name}")
+        print(
+            f"{p['group']}{p['pad_num']:<4} {p['slot']:>5} {r['kind']:>5} "
+            f"{e['mode']:>7} {est_dur:>6.3f}s {eff_tmode:>5} {bars_str:>5} "
+            f"{('yes' if r['mute_group'] else 'no'):>5}  {p['src'].name}"
+        )
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("manifest", type=Path)
     ap.add_argument("--project", type=int, default=1)
     ap.add_argument("--delay-ms", type=int, default=50)
     ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--skip-upload", action="store_true",
-                    help="Bake WAVs but skip device upload (for inspection)")
+    ap.add_argument(
+        "--skip-upload",
+        action="store_true",
+        help="Bake WAVs but skip device upload (for inspection)",
+    )
     args = ap.parse_args()
 
     if not args.manifest.exists():
@@ -294,8 +316,10 @@ def main() -> None:
     mf = json.loads(args.manifest.read_text())
 
     if "session_tracks" not in mf:
-        raise SystemExit("manifest has no session_tracks block — did you "
-                         "click COMMIT in the device with clips on tracks A/B/C/D?")
+        raise SystemExit(
+            "manifest has no session_tracks block — did you "
+            "click COMMIT in the device with clips on tracks A/B/C/D?"
+        )
 
     plan = build_plan(mf, args.manifest)
     print_plan(plan)
@@ -309,8 +333,10 @@ def main() -> None:
     for p in plan:
         in_n, out_n = bake_clip(p["src"], p["dst"], p["entry"], p["rule"], p["bpm"])
         out_dur = out_n / sf.info(str(p["dst"])).samplerate
-        print(f"  {p['group']}{p['pad_num']:<4} {p['entry']['mode']:>7}  "
-              f"{out_dur:.3f}s ({out_n}/{in_n} frames)  → {p['dst'].name}")
+        print(
+            f"  {p['group']}{p['pad_num']:<4} {p['entry']['mode']:>7}  "
+            f"{out_dur:.3f}s ({out_n}/{in_n} frames)  → {p['dst'].name}"
+        )
 
     if args.dry_run or args.skip_upload:
         msg = "--dry-run" if args.dry_run else "--skip-upload"
@@ -322,21 +348,23 @@ def main() -> None:
     from stemforge.exporters.ep133 import EP133Client
     from stemforge.exporters.ep133.commands import TE_SYSEX_FILE
     from stemforge.exporters.ep133.payloads import (
-        PadParams, SampleParams, build_slot_metadata_set,
+        PadParams,
+        SampleParams,
+        build_slot_metadata_set,
     )
 
     print(f"\nconnecting to EP-133 (delay {args.delay_ms}ms)...")
     with EP133Client.open(inter_message_delay_s=args.delay_ms / 1000.0) as client:
         print("connected.\n")
         for i, p in enumerate(plan):
-            tag = f"[{i+1:>2}/{len(plan)}] {p['group']}{p['pad_num']}"
+            tag = f"[{i + 1:>2}/{len(plan)}] {p['group']}{p['pad_num']}"
             print(f"\n{tag}  →  slot {p['slot']}")
 
             # 1. Upload baked WAV
             t0 = time.monotonic()
             print(f"  upload {p['dst'].name}...", end=" ", flush=True)
             client.upload_sample(p["dst"], slot=p["slot"])
-            print(f"done ({time.monotonic()-t0:.1f}s)")
+            print(f"done ({time.monotonic() - t0:.1f}s)")
 
             # 2. Slot-level meta: bpm + time.mode + bars (per-clip resolved)
             #    Use the baked WAV's actual duration to pick time.mode, so
@@ -355,25 +383,31 @@ def main() -> None:
             # key) when KEYS is engaged.
             if r.get("rootnote") is not None:
                 slot_kwargs["rootnote"] = int(r["rootnote"])
-            print(f"  slot meta: time.mode={eff_tmode}"
-                  + (f" bars={eff_bars:.0f}" if eff_bars else "")
-                  + (f" rootnote={r['rootnote']}" if r.get("rootnote") is not None else "")
-                  + "...",
-                  end=" ", flush=True)
+            print(
+                f"  slot meta: time.mode={eff_tmode}"
+                + (f" bars={eff_bars:.0f}" if eff_bars else "")
+                + (f" rootnote={r['rootnote']}" if r.get("rootnote") is not None else "")
+                + "...",
+                end=" ",
+                flush=True,
+            )
             slot_params = SampleParams(**slot_kwargs)
             payload = build_slot_metadata_set(p["slot"], slot_params)
             request_id = client._send(TE_SYSEX_FILE, payload)
             client._await_response(request_id, timeout=5.0)
-            print(f"done ({time.monotonic()-t1:.2f}s)")
+            print(f"done ({time.monotonic() - t1:.2f}s)")
 
             # 3. Pad assign: playmode=oneshot, time.mode mirror, mutegroup.
             # Remap user-friendly pad_num (1..12, fills bottom-left first)
             # to the device's internal pad_num (1=top-left, 10=bottom-left).
             t2 = time.monotonic()
             device_pad = bottom_up_pad_num(p["pad_num"])
-            print(f"  assign P{args.project} {p['group']}-pad{p['pad_num']} "
-                  f"(device pad {device_pad}, playmode=oneshot, mute={r['mute_group']})...",
-                  end=" ", flush=True)
+            print(
+                f"  assign P{args.project} {p['group']}-pad{p['pad_num']} "
+                f"(device pad {device_pad}, playmode=oneshot, mute={r['mute_group']})...",
+                end=" ",
+                flush=True,
+            )
             pad_params = PadParams(
                 playmode="oneshot",
                 sample_start=0,
@@ -388,7 +422,7 @@ def main() -> None:
                 slot=p["slot"],
                 params=pad_params,
             )
-            print(f"done ({time.monotonic()-t2:.1f}s)")
+            print(f"done ({time.monotonic() - t2:.1f}s)")
 
     print(f"\n✓ Loaded {len(plan)} pads to project {args.project}.")
 

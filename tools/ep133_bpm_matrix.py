@@ -44,7 +44,7 @@ from pathlib import Path
 # Bar index (0-based) → pad_num (visual position, 1-indexed top-to-bottom left-to-right).
 # Same convention as tools/ep133_load_project.py.
 BAR_INDEX_TO_PAD_NUM = [10, 11, 12, 7, 8, 9, 4, 5, 6, 1, 2, 3]
-BAR_INDEX_TO_LABEL   = [".", "0", "ENTER", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
+BAR_INDEX_TO_LABEL = [".", "0", "ENTER", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
 
 DEFAULT_BPMS = [60, 80, 100, 120, 130, 140, 150, 160, 170, 180, 190, 200]
 
@@ -56,14 +56,16 @@ def main() -> None:
         epilog=__doc__,
     )
     p.add_argument("wav", type=Path, help="WAV file to replicate across slots")
-    p.add_argument("--project",    "-P", type=int, default=7)
-    p.add_argument("--group",      "-g", default="C", choices=list("ABCD"))
+    p.add_argument("--project", "-P", type=int, default=7)
+    p.add_argument("--group", "-g", default="C", choices=list("ABCD"))
     p.add_argument("--start-slot", "-s", type=int, default=100)
-    p.add_argument("--bpms",       default=",".join(str(b) for b in DEFAULT_BPMS),
-                   help="Comma-separated BPM list (1-12 values, default: 60..200 matrix)")
-    p.add_argument("--delay-ms",   type=int, default=10)
-    p.add_argument("--dry-run",    action="store_true",
-                   help="Print plan without sending anything")
+    p.add_argument(
+        "--bpms",
+        default=",".join(str(b) for b in DEFAULT_BPMS),
+        help="Comma-separated BPM list (1-12 values, default: 60..200 matrix)",
+    )
+    p.add_argument("--delay-ms", type=int, default=10)
+    p.add_argument("--dry-run", action="store_true", help="Print plan without sending anything")
     args = p.parse_args()
 
     if not args.wav.exists():
@@ -82,12 +84,12 @@ def main() -> None:
     # Plan
     print(f"\n  EP-133 BPM matrix — {args.wav.name} → P{args.project} {args.group}")
     print(f"  {'idx':<5} {'pad':<7} {'pad_num':<8} {'slot':<6} {'sound.bpm':<10}")
-    print(f"  {'-'*4} {'-'*6} {'-'*7} {'-'*5} {'-'*9}")
+    print(f"  {'-' * 4} {'-' * 6} {'-' * 7} {'-' * 5} {'-' * 9}")
     for i, bpm in enumerate(bpms):
         pad_num = BAR_INDEX_TO_PAD_NUM[i]
         label = BAR_INDEX_TO_LABEL[i]
         slot = args.start_slot + i
-        print(f"  {i+1:<5} {label:<7} {pad_num:<8} {slot:<6} {bpm:<10}")
+        print(f"  {i + 1:<5} {label:<7} {pad_num:<8} {slot:<6} {bpm:<10}")
     print()
 
     if args.dry_run:
@@ -98,7 +100,9 @@ def main() -> None:
     from stemforge.exporters.ep133 import EP133Client
     from stemforge.exporters.ep133.commands import TE_SYSEX_FILE
     from stemforge.exporters.ep133.payloads import (
-        PadParams, SampleParams, build_slot_metadata_set,
+        PadParams,
+        SampleParams,
+        build_slot_metadata_set,
     )
 
     with EP133Client.open(inter_message_delay_s=args.delay_ms / 1000.0) as client:
@@ -109,9 +113,9 @@ def main() -> None:
 
             # 1. Upload sample to slot
             t0 = time.monotonic()
-            print(f"  [{i+1:>2}/{len(bpms)}] upload  → slot {slot}    ", end="", flush=True)
+            print(f"  [{i + 1:>2}/{len(bpms)}] upload  → slot {slot}    ", end="", flush=True)
             client.upload_sample(args.wav, slot=slot)
-            print(f"({time.monotonic()-t0:.1f}s)")
+            print(f"({time.monotonic() - t0:.1f}s)")
 
             # 2. Set sound.bpm + time.mode=bpm on the slot's metadata
             t0 = time.monotonic()
@@ -120,26 +124,30 @@ def main() -> None:
             payload = build_slot_metadata_set(slot, params)
             request_id = client._send(TE_SYSEX_FILE, payload)
             client._await_response(request_id, timeout=5.0)
-            print(f"({time.monotonic()-t0:.2f}s)")
+            print(f"({time.monotonic() - t0:.2f}s)")
 
             # 3. Assign pad to slot, with pad-level time.mode=bpm too
             t0 = time.monotonic()
             print(
                 f"           assign  P{args.project} {args.group}-{label} (pad_num={pad_num}) → slot {slot}",
-                end="", flush=True,
+                end="",
+                flush=True,
             )
             pad_params = PadParams(time_mode="bpm")
             client.assign_pad(
-                project=args.project, group=args.group, pad_num=pad_num,
-                slot=slot, params=pad_params,
+                project=args.project,
+                group=args.group,
+                pad_num=pad_num,
+                slot=slot,
+                params=pad_params,
             )
-            print(f"  ({time.monotonic()-t0:.2f}s)")
+            print(f"  ({time.monotonic() - t0:.2f}s)")
 
     print()
     print("  ✓ All slots loaded + pads assigned.")
     print(f"    On the device: hit Project {args.project}, Group {args.group}, then tap pads.")
-    print( "    Lowest-BPM pad should sound fastest; highest-BPM should sound slowest.")
-    print( "    (because stretch_ratio = project_bpm / sound.bpm)")
+    print("    Lowest-BPM pad should sound fastest; highest-BPM should sound slowest.")
+    print("    (because stretch_ratio = project_bpm / sound.bpm)")
 
 
 if __name__ == "__main__":

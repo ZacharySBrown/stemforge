@@ -41,8 +41,7 @@ LIVE_PKG_JS_DIR = HOME / "Documents" / "Max 9" / "Packages" / "StemForge" / "jav
 LIVE_PKG_PRESETS_DIR = HOME / "Documents" / "Max 9" / "Packages" / "StemForge" / "presets"
 # Ableton User Library path — standard on macOS. Override with --ableton-lib.
 DEFAULT_ABLETON_LIB = (
-    HOME / "Music" / "Ableton" / "User Library" / "Presets" / "Audio Effects"
-    / "Max Audio Effect"
+    HOME / "Music" / "Ableton" / "User Library" / "Presets" / "Audio Effects" / "Max Audio Effect"
 )
 
 
@@ -136,7 +135,8 @@ def rebuild_amxd(dry_run: bool) -> int:
     print(f"→ rebuild: python {BUILD_AMXD}")
     r = subprocess.run(
         [sys.executable, str(BUILD_AMXD)],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if r.returncode != 0:
         print("build_amxd failed:", file=sys.stderr)
@@ -165,12 +165,11 @@ def main(argv: list[str] | None = None) -> int:
         prog="sf-deploy",
         description="Sync StemForge JS + rebuild/install .amxd.",
     )
-    ap.add_argument("--js-only", action="store_true",
-                    help="Only sync JS files.")
-    ap.add_argument("--amxd-only", action="store_true",
-                    help="Only rebuild + install the .amxd.")
-    ap.add_argument("--dry-run", action="store_true",
-                    help="Print what would happen but make no changes.")
+    ap.add_argument("--js-only", action="store_true", help="Only sync JS files.")
+    ap.add_argument("--amxd-only", action="store_true", help="Only rebuild + install the .amxd.")
+    ap.add_argument(
+        "--dry-run", action="store_true", help="Print what would happen but make no changes."
+    )
     ap.add_argument(
         "--skip-live",
         action="store_true",

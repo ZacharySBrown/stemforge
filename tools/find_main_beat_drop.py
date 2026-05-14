@@ -17,6 +17,7 @@ Usage:
     uv run python tools/find_main_beat_drop.py SONG.wav --bpm 85.11
     uv run python tools/find_main_beat_drop.py TRACK_DIR --bpm 85.11
 """
+
 from __future__ import annotations
 
 import argparse
@@ -38,13 +39,9 @@ def detect_strong_kicks(
         target = audio_path / "drums.wav"
 
     y, sr = librosa.load(str(target), sr=None, mono=True)
-    onset_multi = librosa.onset.onset_strength_multi(
-        y=y, sr=sr, channels=[0, 32, 64, 96, 128]
-    )
+    onset_multi = librosa.onset.onset_strength_multi(y=y, sr=sr, channels=[0, 32, 64, 96, 128])
     kick_env = onset_multi[0]
-    times = librosa.frames_to_time(
-        np.arange(len(kick_env)), sr=sr, hop_length=512
-    )
+    times = librosa.frames_to_time(np.arange(len(kick_env)), sr=sr, hop_length=512)
 
     peaks = librosa.util.peak_pick(
         kick_env, pre_max=3, post_max=3, pre_avg=3, post_avg=5, delta=0.5, wait=10
@@ -113,9 +110,7 @@ def main() -> int:
         args.source, threshold_quantile=args.quantile
     )
     print(f"Bar period: {bar_period:.4f}s @ {args.bpm} BPM")
-    print(
-        f"Strong-onset threshold: {threshold:.2f} (top {(1-args.quantile)*100:.0f}%)"
-    )
+    print(f"Strong-onset threshold: {threshold:.2f} (top {(1 - args.quantile) * 100:.0f}%)")
     print(f"Detected {len(onset_times)} strong onsets")
     print()
 

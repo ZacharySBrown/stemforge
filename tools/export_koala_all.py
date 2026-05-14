@@ -13,6 +13,7 @@ Skips tracks without curated/. Continues on per-track errors.
 Usage:
     uv run python tools/export_koala_all.py
 """
+
 from __future__ import annotations
 
 import argparse
@@ -112,7 +113,7 @@ def main() -> int:
     print(f"Full log: {log}")
 
     total_size = sum(r.get("size_mb", 0) for r in results if r["status"] == "ok")
-    print(f"Total: {len([r for r in results if r['status']=='ok'])} zips, {total_size:.1f} MB")
+    print(f"Total: {len([r for r in results if r['status'] == 'ok'])} zips, {total_size:.1f} MB")
 
     return 0 if not fails else 1
 
