@@ -1131,6 +1131,81 @@ def _commit_summary(body: DeviceCommitBody) -> str:
     return f"{n_groups} groups, {n_pads} populated pads"
 
 
+# ── Stale-detection refresh (Phase 4B) ──────────────────────────────────────
+
+
+async def handle_refresh_curation(
+    state: AppState,
+    name: str,
+    *,
+    processed_dir: Path | None = None,
+) -> Curation:
+    """``POST /curations/{name}/refresh`` — re-derive pad refs vs current forges.
+
+    Behaviour (per spec §5.6 step 8 "Refresh from forge"):
+
+    1. Load the curation (404 if missing, 400 if name invalid).
+    2. Snapshot every forge under ``processed_dir`` and feed it to
+       :func:`stale_check.refresh_pad_refs`, which:
+
+       * Re-resolves ``audio_path`` for any forge-owned pad whose
+         ``clip_id`` is still present in the current manifest (handles
+         re-anchor moving a clip to a different relative path).
+       * Drops referenced_forges entries whose forge no longer exists.
+       * Rewrites referenced_forges hashes to the current values so the
+         curation reads non-stale afterwards.
+
+    3. Persist atomically + broadcast state.
+
+    Idempotent: a second call with no underlying changes returns the
+    same curation (modulo a ``modified_at`` bump).
+    """
+    from .stale_check import refresh_pad_refs
+
+    if processed_dir is None:
+        processed_dir = state.processed_dir
+
+    path = curation_path(state.curations_dir, name)
+    async with state.mutation_lock:
+        existing = _load_curation_or_404(state, name)
+        # Local import keeps the manifest_io dependency out of the module
+        # import graph — matches the pattern in state._load_forges_by_slug.
+        from stemforge.forge.manifest_io import (
+            AUTO_CURATION_FILENAME,
+            ForgeManifestError,
+            LEGACY_FILENAME,
+            LEGACY_PARENT,
+            load_forge,
+        )
+
+        forges_by_slug: dict[str, Any] = {}
+        if processed_dir.is_dir():
+            for child in processed_dir.iterdir():
+                if not child.is_dir() or child.name.startswith("."):
+                    continue
+                has_new = (child / AUTO_CURATION_FILENAME).is_file()
+                has_legacy = (child / LEGACY_PARENT / LEGACY_FILENAME).is_file()
+                if not (has_new or has_legacy):
+                    continue
+                try:
+                    forges_by_slug[child.name] = load_forge(child.name, forge_dir=child)
+                except ForgeManifestError:
+                    continue
+
+        refreshed = refresh_pad_refs(existing, forges_by_slug)
+        # Touch modified_at so the popup's curation row resorts after
+        # the refresh — matches the convention used by other handlers
+        # that mutate the curation document.
+        refreshed = refreshed.model_copy(update={"modified_at": datetime.now(UTC)})
+
+        with lock_curation(path):
+            write_curation_atomic(path, refreshed)
+
+    await state.log(f"refreshed curation {name} against current forges", "info")
+    await state.broadcast_curations_state()
+    return refreshed
+
+
 # ── BOUNCE (Phase 3B) ────────────────────────────────────────────────────────
 
 
@@ -1302,6 +1377,7 @@ __all__ = [
     "handle_patch_target",
     "handle_patch_template",
     "handle_recompute",
+    "handle_refresh_curation",
     "handle_rename_curation",
     "handle_save_as",
     "handle_set_group_format",
