@@ -71,8 +71,10 @@ describe("useIntent", () => {
       template_name: "VOCAL_HI_KEY",
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    // Phase 3A: the hook now translates `group` → `group_letter` to
+    // match the server's PatchTemplateBody wire shape.
     expect(lastBody).toEqual({
-      group: "A",
+      group_letter: "A",
       template_name: "VOCAL_HI_KEY",
     });
   });

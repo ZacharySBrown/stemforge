@@ -578,3 +578,103 @@ describe("commit() payload shape contract", () => {
     );
   });
 });
+
+// ─── Phase 3A: applyGroupTemplate + templateChanged ──────────────────────────
+
+describe("applyGroupTemplate (Phase 3A)", () => {
+  const FAKE_TEMPLATE_DIR = "/tmp/sf-test-templates";
+
+  beforeEach(() => {
+    // Pin the templates dir so we don't depend on `_getHomePath()` (which
+    // walks `/Users/` and isn't deterministic in the Node test env).
+    T.setTemplateDirForTest(FAKE_TEMPLATE_DIR);
+  });
+
+  test("calls load_browser_item with the resolved .adg path on STG-<letter>", () => {
+    loadLomSnapshot(LOM_SNAPSHOT("staging-empty.json"));
+    const ok = T.applyGroupTemplate("A", "drum-rack-classic");
+    expect(ok).toBe(true);
+
+    const loadCalls = liveApiCallsOfVerb("load_browser_item");
+    expect(loadCalls.length).toBe(1);
+    expect(loadCalls[0].path).toBe("live_set tracks 0");
+    expect(loadCalls[0].args[0]).toBe(
+      "/tmp/sf-test-templates/drum-rack-classic.adg",
+    );
+    // Status emission greppable by humans + future debugging.
+    expect(statusLines()).toContain(
+      "template: applied drum-rack-classic to STG-A",
+    );
+  });
+
+  test("resolves the correct STG-<letter> track by name (B, not A)", () => {
+    loadLomSnapshot(LOM_SNAPSHOT("staging-empty.json"));
+    const ok = T.applyGroupTemplate("B", "vocal-bloom");
+    expect(ok).toBe(true);
+    const loadCalls = liveApiCallsOfVerb("load_browser_item");
+    expect(loadCalls[0].path).toBe("live_set tracks 1");
+    expect(loadCalls[0].args[0]).toBe(
+      "/tmp/sf-test-templates/vocal-bloom.adg",
+    );
+  });
+
+  test("clear case (TEMPLATE_CLEAR_SENTINEL) emits status, no LOM call", () => {
+    loadLomSnapshot(LOM_SNAPSHOT("staging-empty.json"));
+    const ok = T.applyGroupTemplate("C", T.TEMPLATE_CLEAR_SENTINEL);
+    expect(ok).toBe(true);
+    expect(liveApiCallsOfVerb("load_browser_item").length).toBe(0);
+    expect(statusLines()).toContain("template: cleared on STG-C");
+  });
+
+  test("clear via explicit null also emits the cleared status", () => {
+    loadLomSnapshot(LOM_SNAPSHOT("staging-empty.json"));
+    const ok = T.applyGroupTemplate("D", null);
+    expect(ok).toBe(true);
+    expect(liveApiCallsOfVerb("load_browser_item").length).toBe(0);
+    expect(statusLines()).toContain("template: cleared on STG-D");
+  });
+
+  test("missing STG-<letter> track emits the not-found status, no LOM call", () => {
+    loadLomSnapshot(LOM_SNAPSHOT("empty-set.json")); // no STG tracks
+    const ok = T.applyGroupTemplate("A", "drum-rack-classic");
+    expect(ok).toBe(false);
+    expect(liveApiCallsOfVerb("load_browser_item").length).toBe(0);
+    expect(statusLines()).toContain("template: STG-A not found");
+  });
+
+  test("idempotent — calling twice doesn't break state, both calls fire", () => {
+    loadLomSnapshot(LOM_SNAPSHOT("staging-empty.json"));
+    T.applyGroupTemplate("A", "drum-rack-classic");
+    T.applyGroupTemplate("A", "drum-rack-classic");
+    const loadCalls = liveApiCallsOfVerb("load_browser_item");
+    // Each call hits the LOM verb; Live treats the second one as a no-op
+    // modulo rack mtime — the test asserts the JS doesn't error out
+    // between invocations.
+    expect(loadCalls.length).toBe(2);
+    expect(loadCalls[0].args[0]).toBe(loadCalls[1].args[0]);
+  });
+
+  test("templateChanged() is a thin wrapper — delegates to applyGroupTemplate", () => {
+    loadLomSnapshot(LOM_SNAPSHOT("staging-empty.json"));
+    T.templateChanged("B", "vocal-bloom");
+    const loadCalls = liveApiCallsOfVerb("load_browser_item");
+    expect(loadCalls.length).toBe(1);
+    expect(loadCalls[0].args[0]).toBe(
+      "/tmp/sf-test-templates/vocal-bloom.adg",
+    );
+    expect(statusLines()).toContain(
+      "template: applied vocal-bloom to STG-B",
+    );
+  });
+
+  test("_templatePathFor resolves <name>.adg under the templates dir", () => {
+    expect(T._templatePathFor("foo")).toBe("/tmp/sf-test-templates/foo.adg");
+    // Trailing slash handled (test the no-slash case via override reset).
+    T.setTemplateDirForTest("/abs/dir/");
+    expect(T._templatePathFor("bar")).toBe("/abs/dir/bar.adg");
+    // Clear sentinel + falsy: empty path.
+    expect(T._templatePathFor(T.TEMPLATE_CLEAR_SENTINEL)).toBe("");
+    expect(T._templatePathFor("")).toBe("");
+    expect(T._templatePathFor(null)).toBe("");
+  });
+});

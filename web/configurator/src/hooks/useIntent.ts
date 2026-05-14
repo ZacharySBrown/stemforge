@@ -152,8 +152,15 @@ export function useSetGroupTemplate() {
     Error,
     { name: string; group: string; template_name: string | null }
   >({
+    // Phase 3A: the server's PatchTemplateBody requires `group_letter`
+    // (NOT `group`). The popup keeps using `group` internally for
+    // backwards consistency with the hook's existing call sites and
+    // translates at the boundary.
     mutationFn: ({ name, group, template_name }) =>
-      api.patchCurationTemplate(name, { group, template_name }),
+      api.patchCurationTemplate(name, {
+        group_letter: group,
+        template_name,
+      }),
     ...buildOptions({ label: "template", silentSuccess: true }),
   });
 }

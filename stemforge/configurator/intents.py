@@ -60,6 +60,7 @@ from .curation_io import (
     rename_curation_atomic,
     write_curation_atomic,
 )
+from .template_io import template_exists
 from .schemas import (
     AssignPadRequest,
     ClearPadRequest,
@@ -825,23 +826,91 @@ async def handle_patch_template(
     state: AppState,
     name: str,
     body: PatchTemplateBody,
+    *,
+    templates_dir: Path | None = None,
+    device_notifier: Any | None = None,
 ) -> Curation:
-    """``PATCH /curations/{name}/template`` — set per-group template."""
+    """``PATCH /curations/{name}/template`` — set per-group template.
+
+    Phase 3A additions:
+
+    * When ``templates_dir`` is provided and ``template_name`` is non-null,
+      reject the assignment with 404 if the named template doesn't exist
+      on disk. Keeps the curation file from referencing a phantom rack.
+    * After the YAML write, fire ``device_notifier("template-changed",
+      letter, template_name)`` (or ``"-"`` for the clear case) so the
+      strip device hot-applies the rack on STG-<letter>.
+
+    Both extras are opt-in via kwargs so the legacy unit tests (which
+    construct the handler directly without the new wiring) keep working.
+
+    Args:
+        state: The :class:`AppState`.
+        name: Curation name (path-segment).
+        body: :class:`PatchTemplateBody`.
+        templates_dir: Optional templates-dir override; ``None`` skips the
+            template-existence check.
+        device_notifier: Optional callable
+            ``(route: str, *args: str) -> None`` invoked after a successful
+            write. ``None`` skips the notification entirely.
+
+    Raises:
+        HTTPException(400): malformed curation name or letter.
+        HTTPException(404): curation missing, group letter not present,
+            or (when ``templates_dir`` provided) template not on disk.
+    """
+    # Order of checks (matters for existing test contracts):
+    #   1. Curation exists (404 from _load_curation_or_404).
+    #   2. Group letter present in the curation (404 — Phase 1B contract).
+    #   3. Template exists on disk (404 — Phase 3A addition).
+    # Then write + notify.
+    letter = body.group_letter.upper()
+    template_name = body.template_name
+
     path = curation_path(state.curations_dir, name)
     async with state.mutation_lock:
         curation = _load_curation_or_404(state, name)
-        letter = body.group_letter.upper()
         if letter not in curation.groups:
             raise HTTPException(
                 status_code=404,
                 detail=f"group {letter!r} not present in curation {name}",
             )
-        curation.groups[letter].template = body.template_name
+        if (
+            templates_dir is not None
+            and template_name is not None
+            and not template_exists(templates_dir, template_name)
+        ):
+            raise HTTPException(
+                status_code=404,
+                detail=f"template not found: {template_name}",
+            )
+        curation.groups[letter].template = template_name
         curation.modified_at = datetime.now(UTC)
         with lock_curation(path):
             write_curation_atomic(path, curation)
-    await state.log(f"set template {body.template_name!r} on {name}.{letter}", "info")
+    await state.log(f"set template {template_name!r} on {name}.{letter}", "info")
     await state.broadcast_curations_state()
+
+    if device_notifier is not None:
+        # Wire shape: ``template-changed <letter> <template-or-dash>``.
+        # The dash sentinel makes the clear case a positional arg the
+        # device can route off without a None-vs-empty-string ambiguity
+        # in Max's message system.
+        try:
+            device_notifier(
+                "template-changed",
+                letter,
+                template_name if template_name is not None else "-",
+            )
+        except Exception as exc:  # noqa: BLE001
+            # Don't fail the PATCH if the device's socket is closed —
+            # the on-disk write is the source of truth; the next LOAD
+            # will pick up the assignment regardless.
+            await state.error(
+                "device_notify_failed",
+                f"template-changed notify failed: {exc}",
+            )
+
     return curation
 
 
