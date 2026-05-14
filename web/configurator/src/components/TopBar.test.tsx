@@ -112,4 +112,57 @@ describe("TopBar", () => {
     expect(screen.getByTestId("top-bar-save-as")).toBeDisabled();
     expect(screen.getByTestId("top-bar-close")).toBeDisabled();
   });
+
+  // ── P0-8 — Save button is always disabled, tooltip explains why ────────
+
+  it("Save button is rendered", () => {
+    renderWithProviders(
+      <TopBar
+        curation={CURATION_FRESH}
+        activeCurationName="verse_swap_v1"
+        status="connected"
+        error={null}
+      />,
+    );
+    expect(screen.getByTestId("top-bar-save")).toBeInTheDocument();
+  });
+
+  it("Save button is disabled even when a curation is active", () => {
+    renderWithProviders(
+      <TopBar
+        curation={CURATION_FRESH}
+        activeCurationName="verse_swap_v1"
+        status="connected"
+        error={null}
+      />,
+    );
+    // P0-8: Save has no popup-side endpoint in v1; always disabled so users
+    // don't expect the popup to write.
+    expect(screen.getByTestId("top-bar-save")).toBeDisabled();
+  });
+
+  it("hovering Save surfaces the COMMIT-action tooltip", async () => {
+    renderWithProviders(
+      <TopBar
+        curation={CURATION_FRESH}
+        activeCurationName="verse_swap_v1"
+        status="connected"
+        error={null}
+      />,
+    );
+
+    const user = userEvent.setup();
+    // The disabled <button> swallows pointer events, so we hover the wrapper.
+    await user.hover(screen.getByTestId("top-bar-save-wrap"));
+
+    // Radix renders the tooltip body twice (visible + sr-only). At least
+    // one copy must be present — assert non-empty match.
+    await waitFor(() =>
+      expect(
+        screen.getAllByText(
+          /Curation files are written by the device's COMMIT action\. The popup doesn't save directly\./,
+        ).length,
+      ).toBeGreaterThan(0),
+    );
+  });
 });
