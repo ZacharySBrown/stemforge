@@ -3707,6 +3707,162 @@ function templateChanged(letter, name) {
     applyGroupTemplate(letter, name);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Configurator v1 Phase 4A — active-curation bootstrap on Live `.als` open.
+//
+// On every `loadbang` (Live finishes initializing this device), the loader
+// asks Live for the current set's absolute path and POSTs it to the server's
+// `/als-opened` route via the established `messnamed("sf-als-opened", path)`
+// HTTP shim. The patcher's HTTP wrapper does the request, hands the JSON
+// response body back via `messnamed("sf-als-opened-ack", curationOrEmpty)`,
+// which lands on `alsOpenedAck()` here. If the ack carries a curation name,
+// we load it as if the user had picked the curation YAML manually.
+//
+// LOM-verb caveat (deferred to Phase 5 — live-in-the-loop verification):
+//   The exact verb that returns the absolute path to the open `.als` is
+//   not yet fully nailed down — Live's published LOM reference advertises
+//   `live_app view get path_to_set_file` but builds differ. The loader
+//   tries that first, then falls back to `live_set get path` (newer
+//   builds) and finally `live_set get name` (filename without dir).
+//   Tests cover all three paths; field verification is part of Phase 5.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// messnamed targets for the HTTP shim. Patcher dispatches:
+//   [r sf-als-opened] → POST /als-opened → response body → [s sf-als-opened-ack]
+var ALS_OPENED_SEND = "sf-als-opened";
+var ALS_OPENED_ACK_RECV = "sf-als-opened-ack";
+
+// Guard against double-loadbang (Max fires loadbang twice in some patcher
+// reload scenarios — once on initial open, once on the [js] reload). We
+// only want a single bootstrap round-trip per device-open event.
+var _alsOpenedFired = false;
+
+// Test-only override hook: tests can pre-set the path the loader will
+// "discover" from LOM via setAlsPathForTest(). Always "" in production —
+// the LiveAPI walk wins.
+var _alsPathOverrideForTest = null;
+
+/**
+ * Resolve the absolute path to the currently-open .als file.
+ *
+ * Tries (in order):
+ *   1. The test override (set via setAlsPathForTest()).
+ *   2. `new LiveAPI("live_app view").get("path_to_set_file")` — the
+ *      documented verb.
+ *   3. `new LiveAPI("live_set").get("path")` — newer builds.
+ *   4. `new LiveAPI("live_set").get("name")` — filename-only fallback.
+ *
+ * Returns the resolved path string (possibly just a basename) or "" if
+ * nothing surfaced. The empty-string case is forwarded to the server so
+ * a "Live just opened Untitled" event still rings the SSE bell.
+ */
+function _getAlsPath() {
+    if (_alsPathOverrideForTest != null) {
+        return String(_alsPathOverrideForTest || "");
+    }
+    // Try the documented LOM verb first.
+    try {
+        var appView = new LiveAPI("live_app view");
+        var got = appView.get("path_to_set_file");
+        if (got && got.length) {
+            var path1 = String(got[0] == null ? "" : got[0]);
+            if (path1) return path1;
+        }
+    } catch (_e1) { /* fall through */ }
+    // Newer-build fallback: live_set carries the path directly.
+    try {
+        var liveSet = new LiveAPI("live_set");
+        var gotPath = liveSet.get("path");
+        if (gotPath && gotPath.length) {
+            var path2 = String(gotPath[0] == null ? "" : gotPath[0]);
+            if (path2) return path2;
+        }
+    } catch (_e2) { /* fall through */ }
+    // Last-resort fallback: at least return the filename so the server
+    // can still attempt a lookup.
+    try {
+        var liveSet2 = new LiveAPI("live_set");
+        var gotName = liveSet2.get("name");
+        if (gotName && gotName.length) {
+            return String(gotName[0] == null ? "" : gotName[0]);
+        }
+    } catch (_e3) { /* fall through */ }
+    return "";
+}
+
+/**
+ * loadbang() — Max entry point fired when this [js] object finishes
+ * loading. Sends the current .als path to the server so it can ack
+ * back with the active curation (if any) and we auto-load it.
+ *
+ * Idempotent within a single device-open event: a second loadbang
+ * (which Max fires on some [js] reloads) is a no-op.
+ */
+function loadbang() {
+    if (_alsOpenedFired) {
+        status("als-opened: skipping (already fired)");
+        return;
+    }
+    _alsOpenedFired = true;
+    var alsPath = _getAlsPath();
+    try {
+        messnamed(ALS_OPENED_SEND, alsPath);
+        status("als-opened: sent " + (alsPath || "<unknown>"));
+    } catch (e) {
+        status("als-opened: messnamed failed: " + e);
+    }
+}
+
+/**
+ * alsOpenedAck(curationOrSentinel) — message handler bound to the
+ * patcher's `[r sf-als-opened-ack]`. The HTTP shim parses the
+ * `/als-opened` response body and posts the resolved curation name
+ * (or the empty-string / "-" sentinel for "no active curation").
+ *
+ * Behaviour:
+ *   - non-empty + non-sentinel curation name → look up the curation YAML
+ *     on disk via `~/stemforge/curations/<name>.yaml` and call
+ *     loadCuration() with its contents.
+ *   - empty / "-" sentinel → emit a status line and do nothing else.
+ *
+ * Status lines (greppable by L3 tests):
+ *   "als-opened: ack <name>"
+ *   "als-opened: ack <none>"
+ *   "als-opened: curation file not found: <path>"
+ */
+function alsOpenedAck(curationOrSentinel) {
+    var name = String(curationOrSentinel == null ? "" : curationOrSentinel);
+    if (!name || name === TEMPLATE_CLEAR_SENTINEL) {
+        status("als-opened: ack <none>");
+        return;
+    }
+    status("als-opened: ack " + name);
+    // Resolve the curation file path under ~/stemforge/curations/<name>.yaml.
+    var home = "";
+    try {
+        home = _getHomePath();
+    } catch (_e) {
+        status("als-opened: home resolution failed");
+        return;
+    }
+    if (!home) {
+        status("als-opened: home resolution failed");
+        return;
+    }
+    var curationPath = home + "/stemforge/curations/" + name + ".yaml";
+    var text = "";
+    try {
+        text = readFileContents(curationPath);
+    } catch (_e2) {
+        text = "";
+    }
+    if (!text) {
+        status("als-opened: curation file not found: " + curationPath);
+        return;
+    }
+    loadCuration(text, curationPath);
+}
+
 // ── Entry points from Max ─────────────────────────────────────────────────────
 // These aren't stored on `globalThis`; Max's classic [js] object scans for
 // top-level functions automatically.
@@ -3760,6 +3916,18 @@ if (typeof module !== "undefined" && module.exports) {
                 name: String(name || ""),
                 groupLetters: (letters || []).slice()
             };
+        },
+        // Configurator v1 Phase 4A — als-opened bootstrap.
+        loadbang: loadbang,
+        alsOpenedAck: alsOpenedAck,
+        _getAlsPath: _getAlsPath,
+        ALS_OPENED_SEND: ALS_OPENED_SEND,
+        ALS_OPENED_ACK_RECV: ALS_OPENED_ACK_RECV,
+        setAlsPathForTest: function (path) {
+            _alsPathOverrideForTest = path == null ? null : String(path);
+        },
+        resetAlsOpenedFiredForTest: function () {
+            _alsOpenedFired = false;
         }
     };
 }
