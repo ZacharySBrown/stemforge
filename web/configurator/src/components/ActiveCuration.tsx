@@ -1,7 +1,10 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import {
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Circle,
   Download,
   FileMusic,
@@ -9,6 +12,7 @@ import {
   Loader2,
   Play,
   RefreshCw,
+  X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,6 +42,34 @@ import { cn } from "@/lib/utils";
 
 interface ActiveCurationProps {
   curation: Curation | null;
+}
+
+// ── BOUNCE spec response (P1-8) ────────────────────────────────────────────
+//
+// Mirrors stemforge.configurator.bounce_handler.BounceSpec. The server's
+// POST /curations/{name}/trigger-bounce route returns
+// `{ok: true, spec: BounceSpec}` but the `useTriggerBounce` hook in
+// `@/hooks/useIntent` types the response as the generic `ApiResult`. We
+// cast in the onSuccess handler below and surface the spec inline so
+// operators can see what the bounce kicked off.
+interface BounceSpecPadWire {
+  pad_id: string;
+  group: string;
+  slot: number;
+  template: string | null;
+  output_path: string;
+}
+interface BounceSpecWire {
+  curation_name: string;
+  bounce_dir: string;
+  manifest_path: string;
+  pads: BounceSpecPadWire[];
+}
+interface TriggerBounceResponse {
+  ok: boolean;
+  spec?: BounceSpecWire;
+  warnings?: string[];
+  errors?: string[];
 }
 
 interface PadCellProps {
@@ -309,6 +341,14 @@ export function ActiveCuration({ curation }: ActiveCurationProps) {
   const pickSavePath = usePickSavePath();
   const refreshCuration = useRefreshCuration();
 
+  // P1-8: surface the BounceSpec the server returns from
+  // POST /curations/{name}/trigger-bounce. Previously the popup
+  // fired the mutation and dropped the response on the floor — operators
+  // had zero visibility into what got dispatched. We stash the spec here
+  // so the inline panel below can render the pad list + output dir.
+  const [bounceSpec, setBounceSpec] = useState<BounceSpecWire | null>(null);
+  const [bounceSpecCollapsed, setBounceSpecCollapsed] = useState(false);
+
   const forgeStaleSet = useMemo(() => {
     if (!curation || !forges.data) return new Set<string>();
     const out = new Set<string>();
@@ -397,6 +437,83 @@ export function ActiveCuration({ curation }: ActiveCurationProps) {
         )}
       </div>
 
+      <AnimatePresence>
+        {bounceSpec && (
+          <motion.div
+            key="bounce-spec"
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.18 }}
+            className="mt-auto rounded-lg border border-[hsl(var(--accent)/0.3)] bg-accent-muted p-2.5"
+            data-testid="bounce-spec-panel"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => setBounceSpecCollapsed((v) => !v)}
+                className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                aria-expanded={!bounceSpecCollapsed}
+                aria-label="Toggle bounce spec details"
+                data-testid="bounce-spec-toggle"
+              >
+                {bounceSpecCollapsed ? (
+                  <ChevronRight className="h-3 w-3 shrink-0 text-[hsl(var(--accent))]" />
+                ) : (
+                  <ChevronDown className="h-3 w-3 shrink-0 text-[hsl(var(--accent))]" />
+                )}
+                <span className="text-[11px] font-medium text-foreground">
+                  bouncing {bounceSpec.pads.length} pad
+                  {bounceSpec.pads.length === 1 ? "" : "s"}
+                </span>
+                <span
+                  className="truncate text-[10px] font-mono text-muted-foreground"
+                  data-testid="bounce-spec-dir"
+                >
+                  → ~/stemforge/{bounceSpec.bounce_dir}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setBounceSpec(null)}
+                className="shrink-0 rounded-md p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label="Dismiss bounce spec"
+                data-testid="bounce-spec-dismiss"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+            {!bounceSpecCollapsed && (
+              <ul
+                className="mt-1.5 max-h-32 space-y-0.5 overflow-y-auto pl-4 text-[10px] font-mono text-muted-foreground"
+                data-testid="bounce-spec-pad-list"
+              >
+                {bounceSpec.pads.map((p) => (
+                  <li
+                    key={p.pad_id}
+                    className="flex items-center gap-1.5 tabular"
+                    data-testid="bounce-spec-pad"
+                    data-pad-id={p.pad_id}
+                  >
+                    <span className="text-foreground/90">{p.pad_id}</span>
+                    <span className="text-muted-foreground/40">·</span>
+                    <span className="truncate">{p.output_path}</span>
+                    {p.template && (
+                      <Badge
+                        variant="muted"
+                        className="!text-[9px] !px-1 !py-0"
+                      >
+                        {p.template}
+                      </Badge>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="mt-auto flex items-center justify-between gap-3 border-t border-border/40 pt-3">
         <div className="flex items-center gap-3 text-[11px] text-muted-foreground tabular">
           <span className={cn(hasBounce && "text-foreground")}>
@@ -415,7 +532,29 @@ export function ActiveCuration({ curation }: ActiveCurationProps) {
           <Button
             size="sm"
             variant="secondary"
-            onClick={() => triggerBounce.mutate(curation.name)}
+            onClick={() =>
+              triggerBounce.mutate(curation.name, {
+                onSuccess: (resp) => {
+                  // The hook types the response as ApiResult but the server
+                  // actually returns `{ok: true, spec: BounceSpec}` —
+                  // see stemforge.configurator.intents.handle_trigger_bounce.
+                  // Cast and surface the spec inline so the operator sees
+                  // what got dispatched to the M4L device.
+                  const wire = resp as TriggerBounceResponse;
+                  const spec = wire?.spec ?? null;
+                  if (!spec || !spec.pads || spec.pads.length === 0) {
+                    toast.error("bounce dispatched with 0 pads", {
+                      description:
+                        "the spec came back empty — nothing for Live to render",
+                    });
+                    setBounceSpec(null);
+                    return;
+                  }
+                  setBounceSpec(spec);
+                  setBounceSpecCollapsed(false);
+                },
+              })
+            }
             disabled={triggerBounce.isPending}
             data-testid="trigger-bounce"
           >
