@@ -189,21 +189,34 @@ def test_status_picker_text_receives_sf_status(boxes, line_pairs):
 
 def test_picker_dialog_wired_from_messnamed_receiver(boxes, line_pairs):
     """pickSource() in the loader fires messnamed("sf-open-source-dialog","bang").
-    The patcher must have `[r sf-open-source-dialog]` → [opendialog] → regex
-    strip HFS → [prepend applyPickedSource] → js sf_lom_loader."""
+
+    The patcher must wire `[r sf-open-source-dialog]` → [opendialog] →
+    [prepend applyPickedSource] → js sf_lom_loader. The previous design
+    routed through a [regexp] box that stripped Macintosh-HFS prefixes;
+    we removed it after the first UAT round because [regexp] with
+    multi-pattern @substitute arguments has a load-time outlet-count
+    quirk that triggered `patchcord outlet out of range`. The HFS→POSIX
+    conversion now happens in applyPickedSource() in JS.
+    """
     recv = next(
         (b for b in boxes if b.get("text") == "r sf-open-source-dialog"), None
     )
     assert recv is not None, "missing [r sf-open-source-dialog]"
     assert (recv["id"], "obj-sf-picker-dialog") in line_pairs
-    assert ("obj-sf-picker-dialog", "obj-sf-picker-dialog-regex") in line_pairs
-    assert ("obj-sf-picker-dialog-regex", "obj-sf-picker-dialog-prepend") in line_pairs
+    # opendialog wires directly to [prepend applyPickedSource] — no regex.
+    assert ("obj-sf-picker-dialog", "obj-sf-picker-dialog-prepend") in line_pairs
     prep = next(
         (b for b in boxes if b.get("id") == "obj-sf-picker-dialog-prepend"), None
     )
     assert prep is not None
     assert prep.get("text") == "prepend applyPickedSource"
     assert ("obj-sf-picker-dialog-prepend", "obj-sf-lom-loader") in line_pairs
+    # And there must be NO [regexp] in the patcher (regression guard for
+    # the outlet-count-race fix).
+    assert not any("regexp" in (b.get("text") or "") for b in boxes), (
+        "regexp box must not reappear in the picker chain — it caused a "
+        "load-time `patchcord outlet out of range` race. Strip HFS in JS."
+    )
 
 
 # ── Verb buttons (COMMIT / BOUNCE / EXPORT) — spec §3.1 right column ─────────

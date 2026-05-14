@@ -1135,28 +1135,18 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         )
     )
     lines.append(_line(OBJ_PICKER_DIALOG_RECV, 0, OBJ_PICKER_DIALOG, 0))
-    boxes.append(
-        _box(
-            OBJ_PICKER_DIALOG_REGEX,
-            "newobj",
-            (LEFT_X + 340.0, 110.0, 240.0, 22.0),
-            numinlets=1,
-            numoutlets=5,
-            outlettype=["", "", "", "", ""],
-            # Strip an optional HFS volume prefix ("Macintosh HD:") if present
-            # and keep the POSIX `/path/to/file`. Live 12 sometimes emits
-            # POSIX paths directly (no HFS prefix); the original
-            # `(.+):(/.*) @substitute %2` only matched when the prefix
-            # was present, so cancel-less picks fell on the floor and
-            # `applyPickedSource` never fired. The bracketed character class
-            # `[^:]+` instead of `.+` keeps the prefix-strip greedy-bounded
-            # to the volume name (no colons in macOS volume names), and the
-            # `?` makes the prefix optional so a bare POSIX path still
-            # matches the second group.
-            extras={"text": "regexp ^(?:[^:]+:)?(/.*) @substitute %1"},
-        )
-    )
-    lines.append(_line(OBJ_PICKER_DIALOG, 0, OBJ_PICKER_DIALOG_REGEX, 0))
+    # opendialog → [prepend applyPickedSource] → js sf_lom_loader.
+    #
+    # Note: the previous design routed opendialog through a [regexp] that
+    # stripped a Macintosh-HFS volume prefix (e.g. "Macintosh HD:/Users/...")
+    # before prepending. That regex never matched on POSIX-emitting Live
+    # builds and was a load-time race surface — Max instantiated [regexp]
+    # with 5 outlets declared in JSON vs. the dynamic outlet count [regexp]
+    # actually exposes given a single pattern, and on some Live versions the
+    # mismatch fired "patchcord outlet out of range" during cord
+    # restoration. The fix is to skip the regex entirely; the loader's
+    # applyPickedSource() handles HFS→POSIX conversion in JS where it can be
+    # unit-tested and isn't subject to Max-engine quirks.
     boxes.append(
         _box(
             OBJ_PICKER_DIALOG_PREPEND,
@@ -1168,7 +1158,8 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             extras={"text": "prepend applyPickedSource"},
         )
     )
-    lines.append(_line(OBJ_PICKER_DIALOG_REGEX, 0, OBJ_PICKER_DIALOG_PREPEND, 0))
+    # opendialog → prepend → loader (regex box removed — see comment above).
+    lines.append(_line(OBJ_PICKER_DIALOG, 0, OBJ_PICKER_DIALOG_PREPEND, 0))
     lines.append(_line(OBJ_PICKER_DIALOG_PREPEND, 0, OBJ_SF_LOM_LOADER, 0))
 
     # sf_lom_loader outlet 0 = status (loader's status() emits via

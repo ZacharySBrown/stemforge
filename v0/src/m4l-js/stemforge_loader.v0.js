@@ -3005,6 +3005,15 @@ function applyPickedSource() {
         return;
     }
     var pickPath = args.join(" ");
+    // Strip an optional Macintosh-HFS volume prefix ("Macintosh HD:") if
+    // present. Live 12 sometimes emits POSIX paths directly and sometimes
+    // emits HFS-prefixed ones; doing the conversion in JS (rather than a
+    // [regexp] box in the patcher) avoids a load-time outlet-count race
+    // we hit on the first UAT round. Single string op, easy to test.
+    var hfsMatch = pickPath.match(/^[^:\/]+:(\/.*)$/);
+    if (hfsMatch) {
+        pickPath = hfsMatch[1];
+    }
     var inspected = _snifferInspect(pickPath);
     pickedSource = {
         path: inspected.path,
