@@ -486,6 +486,20 @@ class CloseActiveCurationBody(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class AlsOpenedBody(BaseModel):
+    """Body of ``POST /als-opened`` (Phase 4A).
+
+    Device JS emits this on ``loadbang`` so the server can resolve the
+    Live project's saved active curation and ack the device to auto-load
+    it. Empty / missing path is accepted (Live's "Untitled" state) and
+    results in a ``None`` ack — the device simply does nothing further.
+    """
+
+    als_path: str = Field(default="", description="Absolute path to the open .als file.")
+
+    model_config = {"extra": "forbid"}
+
+
 class PatchTemplateBody(BaseModel):
     """Body of ``PATCH /curations/{name}/template``."""
 
@@ -801,6 +815,57 @@ async def handle_close_active_curation(
         "ok": True,
         "als_path": body.als_path,
         "active_curations": sf_state.active_curations,
+    }
+
+
+async def handle_als_opened(
+    state: AppState,
+    body: AlsOpenedBody,
+) -> dict[str, Any]:
+    """``POST /als-opened`` — bootstrap lookup for the device on Live open.
+
+    Looks up ``state.active_curations[als_path]`` from the in-memory cache
+    (primed at startup, refreshed on every mutation). Returns
+    ``{"als_path": ..., "active_curation": <name | None>}`` so the device
+    can decide whether to auto-load. Also broadcasts a typed
+    ``bootstrap`` SSE event so the popup mirrors the device's view
+    (useful when the user has the popup open BEFORE the device sends its
+    first ``loadbang``).
+
+    No mutation here — this is a read-only lookup. We intentionally do
+    NOT refresh the cache from disk: every legitimate writer routes
+    through :meth:`AppState.refresh_cached_stemforge_state`, so a cache
+    miss means the curation truly isn't active on this server's view of
+    the world.
+    """
+    als_path = body.als_path
+    active_name = state.cached_stemforge_state.active_curations.get(als_path)
+
+    # Broadcast a bootstrap event so any popup attached to this server
+    # sees the same answer the device just got. The popup can ignore it
+    # if it doesn't recognize ``kind=bootstrap``; explicit subscribers
+    # use it to surface "Live just opened <foo.als>" UI affordances.
+    import time as _time
+
+    await state.broadcast(
+        SseEvent(
+            event="state",
+            data={
+                "kind": "bootstrap",
+                "als_path": als_path,
+                "active_curation": active_name,
+                "ts": _time.time(),
+            },
+        )
+    )
+    if active_name:
+        await state.log(f"als-opened {als_path!r} → active={active_name}", "info")
+    else:
+        await state.log(f"als-opened {als_path!r} → no active curation", "info")
+    return {
+        "ok": True,
+        "als_path": als_path,
+        "active_curation": active_name,
     }
 
 
@@ -1204,6 +1269,7 @@ async def handle_bounce_complete(
 
 
 __all__ = [
+    "AlsOpenedBody",
     "BounceCompletion",
     "BounceProgress",
     "BounceSpec",
@@ -1218,6 +1284,7 @@ __all__ = [
     "RenameCurationBody",
     "SaveAsBody",
     "TriggerBounceBody",
+    "handle_als_opened",
     "handle_assign_pad",
     "handle_bounce_complete",
     "handle_bounce_progress",
