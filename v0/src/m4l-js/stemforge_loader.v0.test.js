@@ -368,6 +368,142 @@ describe("status-line count matches populated pads", () => {
   });
 });
 
+// Regression: real curations on disk (written by the server's PyYAML
+// safe_dump) emit a *flush-with-key* sequence style — the dash sits at
+// the SAME column as the parent key:
+//
+//     pads:
+//     - pad_id: A01      ← dash flush with `pads:`
+//       source: ...
+//
+// The existing fixtures use the *indented* style (`      - pad_id:` two
+// spaces deeper). Both are valid YAML, but the parser's `parseMapping`
+// branch that handles `kv with empty value → child node` required
+// `nextChild.indent > myIndent` and set `node[key] = null` otherwise.
+// Real curations loaded as `pads: null`, so `for pad in pads` was a
+// no-op and the device reported "loadCuration: complete (4 groups,
+// 0/48 pads populated)". Caught driving Live against
+// ~/stemforge/curations/bounced.yaml after a manual curl POST commit.
+describe("_yamlParseCuration: flush-with-key sequence style (PyYAML default)", () => {
+  test("pads sequence at the same indent as parent key parses correctly", () => {
+    // Real-world YAML shape — dash flush with parent key.
+    const yamlText = [
+      "curation_version: 1",
+      "name: flush-fixture",
+      "type: deck",
+      "target:",
+      "  device: ep133",
+      "  groups: 4",
+      "  pads_per_group: 12",
+      "groups:",
+      "  A:",
+      "    label: Vocals",
+      "    pads:",
+      "    - pad_id: A01",
+      "      source:",
+      "        forge: sample-forge",
+      "        clip_id: vocal-bar0-4",
+      "        audio_path: curated_audio/vocal-bar0-4.wav",
+      "      clip_settings:",
+      "        warp_bpm: 120.0",
+      "        loop_start_bar: 0.0",
+      "        loop_end_bar: 4.0",
+      "        looping: true",
+      "    - pad_id: A02",
+      "      source: null",
+      "    - pad_id: A03",
+      "      source: null",
+      "",
+    ].join("\n");
+    const result = T._yamlParseCuration(yamlText);
+    expect(result.ok).toBe(true);
+    const padsA = result.data.groups.A.pads;
+    expect(Array.isArray(padsA)).toBe(true);
+    expect(padsA.length).toBe(3);
+    expect(padsA[0].pad_id).toBe("A01");
+    expect(padsA[0].source.forge).toBe("sample-forge");
+    expect(padsA[0].clip_settings.warp_bpm).toBe(120.0);
+    expect(padsA[1].pad_id).toBe("A02");
+    expect(padsA[2].pad_id).toBe("A03");
+  });
+
+  test("referenced_forges flush sequence also parses", () => {
+    // The bounced.yaml on disk also uses flush-style for referenced_forges:
+    //     referenced_forges:
+    //     - slug: sample-forge
+    //       manifest_hash: ...
+    const yamlText = [
+      "curation_version: 1",
+      "name: flush-refs",
+      "type: deck",
+      "referenced_forges:",
+      "- slug: sample-forge",
+      "  manifest_hash: deadbeef",
+      "- slug: other-forge",
+      "  manifest_hash: cafe1234",
+      "groups: {}",
+      "",
+    ].join("\n");
+    const result = T._yamlParseCuration(yamlText);
+    expect(result.ok).toBe(true);
+    expect(Array.isArray(result.data.referenced_forges)).toBe(true);
+    expect(result.data.referenced_forges.length).toBe(2);
+    expect(result.data.referenced_forges[0].slug).toBe("sample-forge");
+    expect(result.data.referenced_forges[1].manifest_hash).toBe("cafe1234");
+  });
+
+  test("end-to-end loadCuration on flush-style YAML walks all pads", () => {
+    loadLomSnapshot(LOM_SNAPSHOT("empty-set.json"));
+    // Same shape as ~/stemforge/curations/bounced.yaml but trimmed for the test.
+    const yamlText = [
+      "curation_version: 1",
+      "name: flush-bounced",
+      "type: deck",
+      "target:",
+      "  device: ep133",
+      "  groups: 4",
+      "  pads_per_group: 12",
+      "groups:",
+      "  A:",
+      "    pads:",
+      "    - pad_id: A01",
+      "      source:",
+      "        forge: sample-forge",
+      "        clip_id: vocal-bar0-4",
+      "        audio_path: curated_audio/vocal-bar0-4.wav",
+      "      clip_settings:",
+      "        warp_bpm: 120.0",
+      "        loop_start_bar: 0.0",
+      "        loop_end_bar: 4.0",
+      "        looping: true",
+      "    - pad_id: A02",
+      "      source: null",
+      "  B:",
+      "    pads:",
+      "    - pad_id: B01",
+      "      source:",
+      "        forge: sample-forge",
+      "        clip_id: drum-bar0-4",
+      "        audio_path: curated_audio/drum-bar0-4.wav",
+      "      clip_settings:",
+      "        warp_bpm: 120.0",
+      "        loop_start_bar: 0.0",
+      "        loop_end_bar: 4.0",
+      "        looping: true",
+      "",
+    ].join("\n");
+    const result = T.loadCuration(yamlText, "/tmp/flush-fixture.yaml");
+    expect(result).not.toBeNull();
+    const completeLine = global.outletEmissions
+      .filter((e) => e.idx === 0 && e.args[0] === "set")
+      .map((e) => String(e.args[1]))
+      .find((s) => s.startsWith("loadCuration: complete"));
+    expect(completeLine).toBeTruthy();
+    // 2 populated pads (A01, B01) out of 3 total walked.
+    expect(completeLine).toMatch(/2\/3 pads populated/);
+  });
+});
+
 // ─── Pad-ID parser ───────────────────────────────────────────────────────────
 
 describe("_parsePadId", () => {

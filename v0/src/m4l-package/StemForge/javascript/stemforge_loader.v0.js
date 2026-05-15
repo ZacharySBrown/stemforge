@@ -43,7 +43,7 @@ outlets = 4;   // 0: status text  1: bang  2: preset umenu  3: [shell] (mkdir-p)
 // File.readstring loops (caught during second-UAT run).
 
 // Build fingerprint, injected by tools/inject_build_manifest.py.
-var SF_BUILD_MANIFEST = "build=2026-05-15T16:00 amxd=05fdba64 js={sf_arrangement_loader=70c939e5,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=1b1a8c17,stemforge_loader.test=d411427e,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
+var SF_BUILD_MANIFEST = "build=2026-05-15T16:26 amxd=05fdba64 js={sf_arrangement_loader=70c939e5,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=9667b45b,stemforge_loader.test=d411427e,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
 
 try {
     post("[sf_loader] " + SF_BUILD_MANIFEST + "\n");
@@ -2872,9 +2872,27 @@ function _yamlParseCuration(text) {
                 }
                 continue;
             }
-            // Child node lives on subsequent more-indented lines.
+            // Child node lives on subsequent lines. Two valid YAML shapes:
+            //   1. *Indented* child mapping or sequence — `nextChild.indent
+            //      > myIndent`. Standard.
+            //   2. *Flush* sequence — a "- item" at exactly `myIndent`. This
+            //      is PyYAML's default dump style and what the configurator
+            //      server writes for `pads:` and `referenced_forges:`. The
+            //      sequence is a child of `key` even though its dash sits at
+            //      the same column as the parent. Without this branch
+            //      `pads: null` and downstream `for pad in pads` is a no-op.
+            //      Caught 2026-05-15 against ~/stemforge/curations/bounced.yaml.
             var nextChild = tokens[cursor.i];
-            if (!nextChild || nextChild.indent <= myIndent) {
+            if (!nextChild) {
+                node[key] = null;
+                continue;
+            }
+            if (nextChild.indent < myIndent) {
+                node[key] = null;
+                continue;
+            }
+            if (nextChild.indent === myIndent && nextChild.kind !== "item") {
+                // Sibling kv at our indent — `key` has no child.
                 node[key] = null;
                 continue;
             }
