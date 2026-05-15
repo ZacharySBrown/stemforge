@@ -959,13 +959,13 @@ describe("Phase 4A — als-opened bootstrap", () => {
     T.setAlsPathForTest(null);
   });
 
-  test("loadbang emits sf-als-opened with the LOM-reported absolute path", () => {
-    // Seed the snapshot with a `live_app view` node carrying the
-    // documented `path_to_set_file` property. The loader's first-choice
-    // probe should hit this and emit the path verbatim.
+  test("liveApiReady emits sf-als-opened with live_set.file_path", () => {
+    // Live 12 exposes the absolute .als path via `live_set.file_path` (the
+    // earlier `live_app view path_to_set_file` and `live_set path` probes
+    // raised "no attribute" jsliveapi errors on every device load). Seed
+    // file_path; the loader's primary probe should hit it.
     loadLomSnapshotObject({
-      live_app: { view: { path_to_set_file: "/Users/zak/projects/song.als" } },
-      live_set: { tracks: [], path: "", name: "song.als" },
+      live_set: { tracks: [], file_path: "/Users/zak/projects/song.als", name: "song.als" },
     });
 
     T.liveApiReady();
@@ -1013,18 +1013,19 @@ describe("Phase 4A — als-opened bootstrap", () => {
     expect(status.some((s) => s.includes("als-opened: ack <none>"))).toBe(true);
   });
 
-  test("LOM fallback chain — uses live_set.path when path_to_set_file is missing", () => {
-    // No `live_app.view.path_to_set_file` — the loader must fall through to
-    // `live_set.path`. We seed only the second probe target.
+  test("LOM fallback chain — degrades to live_set.name when file_path is missing", () => {
+    // For untitled Live sets `file_path` is empty; the loader falls back
+    // to `live_set.name` so the server at least gets a filename-only
+    // best-effort lookup key.
     loadLomSnapshotObject({
-      live_set: { tracks: [], path: "/secondary/probe.als", name: "probe.als" },
+      live_set: { tracks: [], file_path: "", name: "probe.als" },
     });
 
     T.liveApiReady();
 
     const sends = global.messnamedCalls.filter((c) => c.name === T.ALS_OPENED_SEND);
     expect(sends).toHaveLength(1);
-    expect(sends[0].args[0]).toBe("/secondary/probe.als");
+    expect(sends[0].args[0]).toBe("probe.als");
   });
 
   test("LOM fallback chain — degrades to live_set.name when no path is available", () => {

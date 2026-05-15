@@ -43,7 +43,7 @@ outlets = 4;   // 0: status text  1: bang  2: preset umenu  3: [shell] (mkdir-p)
 // File.readstring loops (caught during second-UAT run).
 
 // Build fingerprint, injected by tools/inject_build_manifest.py.
-var SF_BUILD_MANIFEST = "build=2026-05-15T10:52 amxd=3fa393f2 js={sf_arrangement_loader=b6ee853f,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=66c87b44,stemforge_loader.test=d411427e,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
+var SF_BUILD_MANIFEST = "build=2026-05-15T11:02 amxd=3fa393f2 js={sf_arrangement_loader=b6ee853f,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=0a3ac79e,stemforge_loader.test=d411427e,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
 
 try {
     post("[sf_loader] " + SF_BUILD_MANIFEST + "\n");
@@ -2980,7 +2980,12 @@ function _snifferInspect(picked) {
             result.detail = "missing schema_version";
             return result;
         }
-        if (parsed.pads !== undefined) {
+        // ForgeManifest in stemforge.configurator.schemas.forge actually
+        // serializes its bar-clip array under `clips` (not `pads`); the
+        // earlier sniffer pattern reflected an older draft of the spec.
+        // We accept both for forward-compat with whatever the next schema
+        // rev calls it.
+        if (parsed.clips !== undefined || parsed.pads !== undefined) {
             result.type = "forge_manifest";
             result.validated = true;
             result.detail = "schema_version=" + parsed.schema_version;
@@ -2992,7 +2997,7 @@ function _snifferInspect(picked) {
             result.detail = "schema_version=" + parsed.schema_version;
             return result;
         }
-        result.detail = "no pads or chunks key";
+        result.detail = "no clips, pads, or chunks key";
         return result;
     }
 
@@ -3027,6 +3032,14 @@ function _emitPrimaryButtonState(type, enabled) {
     var label = _primaryLabelFor(type);
     try { messnamed(PRIMARY_LABEL_RECV, label); } catch (_) {}
     try { messnamed(PRIMARY_ENABLED_RECV, enabled ? 1 : 0); } catch (_) {}
+    // Also echo the armed action through the status line. live.text mode 1
+    // doesn't always paint a dynamic @text update (depends on Live build),
+    // so the on-device status text is the load-bearing UX signal that
+    // tells the user what the primary button is now bound to. Without
+    // this, a successful sniff looks like silence.
+    if (enabled) {
+        try { status("ready: click primary → " + label); } catch (_) {}
+    }
 }
 
 // Public message: `applyPickedSource <path>` — invoked by the patcher when
@@ -3813,33 +3826,34 @@ function _getAlsPath() {
     if (_alsPathOverrideForTest != null) {
         return String(_alsPathOverrideForTest || "");
     }
-    // Try the documented LOM verb first.
-    try {
-        var appView = new LiveAPI("live_app view");
-        var got = appView.get("path_to_set_file");
-        if (got && got.length) {
-            var path1 = String(got[0] == null ? "" : got[0]);
-            if (path1) return path1;
-        }
-    } catch (_e1) { /* fall through */ }
-    // Newer-build fallback: live_set carries the path directly.
+    // Live 12's actual LOM attribute names (verified empirically; the
+    // earlier probes `live_app view path_to_set_file` and `live_set path`
+    // raised "no attribute" errors on every device load).
+    //
+    //   1. Song (`live_set`) → `file_path` — the absolute path of the
+    //      currently-open .als, or empty for an untitled set.
+    //   2. Song (`live_set`) → `name` — the filename without the dir,
+    //      empty for an untitled set. Lets the server fall back to
+    //      "best-effort" key lookup even when full path is missing.
+    //
+    // jsliveapi emits its own error if an attribute doesn't exist, even
+    // when wrapped in try/catch on the JS side. We probe ONLY attributes
+    // that definitely exist on the host class to keep the console quiet.
     try {
         var liveSet = new LiveAPI("live_set");
-        var gotPath = liveSet.get("path");
-        if (gotPath && gotPath.length) {
-            var path2 = String(gotPath[0] == null ? "" : gotPath[0]);
-            if (path2) return path2;
+        var got = liveSet.get("file_path");
+        if (got && got.length) {
+            var path = String(got[0] == null ? "" : got[0]);
+            if (path) return path;
         }
-    } catch (_e2) { /* fall through */ }
-    // Last-resort fallback: at least return the filename so the server
-    // can still attempt a lookup.
+    } catch (_e1) { /* fall through */ }
     try {
         var liveSet2 = new LiveAPI("live_set");
         var gotName = liveSet2.get("name");
         if (gotName && gotName.length) {
             return String(gotName[0] == null ? "" : gotName[0]);
         }
-    } catch (_e3) { /* fall through */ }
+    } catch (_e2) { /* fall through */ }
     return "";
 }
 
