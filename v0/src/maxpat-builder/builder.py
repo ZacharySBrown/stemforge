@@ -415,7 +415,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             numoutlets=0,
             extras={
                 "varname": txt_cfg["id"],
-                "text": "waiting — pick a preset and source",
+                "text": "waiting — pick a source",
                 "fontsize": 9.0,
                 "textcolor": COLORS["dim"],
                 # Display-only — opt out of M4L parameter enrollment so Live's

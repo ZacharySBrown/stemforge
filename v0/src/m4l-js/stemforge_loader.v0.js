@@ -43,7 +43,7 @@ outlets = 4;   // 0: status text  1: bang  2: preset umenu  3: [shell] (mkdir-p)
 // File.readstring loops (caught during second-UAT run).
 
 // Build fingerprint, injected by tools/inject_build_manifest.py.
-var SF_BUILD_MANIFEST = "build=2026-05-15T11:02 amxd=3fa393f2 js={sf_arrangement_loader=b6ee853f,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=0a3ac79e,stemforge_loader.test=d411427e,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
+var SF_BUILD_MANIFEST = "build=2026-05-15T11:13 amxd=05fdba64 js={sf_arrangement_loader=b6ee853f,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=2e6dc32e,stemforge_loader.test=d411427e,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
 
 try {
     post("[sf_loader] " + SF_BUILD_MANIFEST + "\n");
@@ -464,7 +464,15 @@ function reload() {
 }
 
 function loadManifest() {
+    // Max-message entry: messagename = "loadManifest", arguments = [path...].
+    // arrayfromargs builds [messagename, ...args]; slice(1) drops messagename
+    // and we join remaining tokens (paths-with-spaces). This is the dispatch
+    // shape — internal callers should use _loadManifestPath() directly.
     var manifestPath = arrayfromargs(messagename, arguments).slice(1).join(" ");
+    _loadManifestPath(manifestPath);
+}
+
+function _loadManifestPath(manifestPath) {
     if (!manifestPath) { status("loadManifest: missing path"); return; }
 
     var raw = readFileContents(manifestPath);
@@ -3622,7 +3630,12 @@ function primary() {
     if (pickedSource.type === "forge_manifest"
             || pickedSource.type === "arrangement_manifest") {
         status("primary: dispatching LOAD FORGE on " + pickedSource.path);
-        loadManifest("loadManifest", pickedSource.path);
+        // Internal dispatch — DO NOT route through the Max-message wrapper.
+        // Passing "loadManifest" as a positional arg made the wrapper's
+        // `arrayfromargs(messagename, arguments).slice(1).join(" ")`
+        // pattern prefix the real path with the string "loadManifest "
+        // → "cannot read manifest". Call the helper directly.
+        _loadManifestPath(pickedSource.path);
         return;
     }
     if (pickedSource.type === "prechop_manifest") {
