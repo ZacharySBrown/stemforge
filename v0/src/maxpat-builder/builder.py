@@ -994,7 +994,12 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             numinlets=1,
             numoutlets=1,
             outlettype=[""],
-            extras={"text": "prepend set"},
+            # `set <text>` is REJECTED by live.text in mode 1 (toggle button)
+            # — Max emits "bad arguments for message set". The supported
+            # way to update the displayed label on a live.text widget is
+            # the `text <symbol>` message, which writes to the @text
+            # attribute. Caught during second UAT round.
+            extras={"text": "prepend text"},
         )
     )
     lines.append(_line(OBJ_PRIMARY_LABEL_RECV, 0, OBJ_PRIMARY_LABEL_PREPEND, 0))
@@ -1437,15 +1442,13 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             "newobj",
             (500.0, 20.0, 120.0, 22.0),
             numinlets=1,
-            numoutlets=4,
-            outlettype=["bang", "", "", "bang"],
-            # [live.thisdevice] outlets: 0=loadbang, 1=savebang, 2=patcher
-            # init, 3=initialized bang (Live API ready). We bind to outlet 3
-            # so anything routed through here only fires AFTER Live's LOM
-            # is initialized. Replaces a plain [loadbang], which fired
-            # before the API was up and produced repeated "Live API is not
-            # initialized" warnings + an empty `als-opened: sent <unknown>`
-            # because _getAlsPath() couldn't read live_app view yet.
+            # [live.thisdevice] in Max 9 has 3 outlets:
+            #   outlet 0 = loadbang   (fired at patcher load; LOM NOT ready)
+            #   outlet 1 = initialized (fired when Live API IS ready) ← use this
+            #   outlet 2 = patcher attribute dumpout
+            # We wire EVERYTHING that needs LiveAPI through outlet 1.
+            numoutlets=3,
+            outlettype=["bang", "bang", ""],
             extras={"text": "live.thisdevice"},
         )
     )
@@ -1460,8 +1463,8 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             extras={"text": "deferlow"},
         )
     )
-    # live.thisdevice outlet 3 is the "Live API ready" bang.
-    lines.append(_line(OBJ_LOADBANG, 3, OBJ_LOAD_DEFERLOW, 0))
+    # live.thisdevice outlet 1 is the "Live API ready" bang.
+    lines.append(_line(OBJ_LOADBANG, 1, OBJ_LOAD_DEFERLOW, 0))
     # ALSO fire `[message liveApiReady]` → loader when Live's API is ready.
     # The loader's liveApiReady() reads the .als path via LiveAPI (which
     # would have warned-and-returned-empty if called from the JS-box-level
@@ -1478,7 +1481,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             extras={"text": "liveApiReady"},
         )
     )
-    lines.append(_line(OBJ_LOADBANG, 3, OBJ_LIVE_API_READY_MSG, 0))
+    lines.append(_line(OBJ_LOADBANG, 1, OBJ_LIVE_API_READY_MSG, 0))
     lines.append(_line(OBJ_LIVE_API_READY_MSG, 0, OBJ_SF_LOM_LOADER, 0))
     boxes.append(
         _box(
