@@ -217,6 +217,28 @@ OBJ_PLUGOUT = "obj-plugout"
 
 OBJ_FILELOG_PREPEND = "obj-filelog-prepend"
 
+# Phase 3B C2 — Device → Server HTTP wire ([maxurl] dictionary form).
+# JS populates per-verb request Dicts (`sf_http_req_<verb_underscored>`) then
+# fires `messnamed(verb, url, jsonText)`. The receivers below ignore the
+# inlet atoms and re-fire the already-populated dict by name into a shared
+# [maxurl 4]. The response side routes [maxurl]'s `dictionary <name>` output
+# back into [js] via `[prepend onHttpResponse]`.
+OBJ_HTTP_MAXURL = "obj-sf-http-maxurl"
+OBJ_HTTP_COMMIT_RECV = "obj-sf-http-commit-recv"
+OBJ_HTTP_COMMIT_MSG = "obj-sf-http-commit-msg"
+OBJ_HTTP_BOUNCE_PROG_RECV = "obj-sf-http-bounce-progress-recv"
+OBJ_HTTP_BOUNCE_PROG_MSG = "obj-sf-http-bounce-progress-msg"
+OBJ_HTTP_BOUNCE_COMP_RECV = "obj-sf-http-bounce-complete-recv"
+OBJ_HTTP_BOUNCE_COMP_MSG = "obj-sf-http-bounce-complete-msg"
+OBJ_HTTP_RESP_ROUTE = "obj-sf-http-resp-route"
+OBJ_HTTP_RESP_PREPEND = "obj-sf-http-resp-prepend"
+
+# Dict-name conventions — MUST match `_httpRequestDictNameFor()` in
+# stemforge_loader.v0.js. Hyphens in verb names become underscores.
+HTTP_REQ_DICT_COMMIT = "sf_http_req_sf_commit_send"
+HTTP_REQ_DICT_BOUNCE_PROG = "sf_http_req_sf_bounce_progress"
+HTTP_REQ_DICT_BOUNCE_COMP = "sf_http_req_sf_bounce_complete"
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -1209,6 +1231,146 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     lines.append(_line(OBJ_OPEN_EDITOR_BTN, 0, OBJ_OPEN_EDITOR_TB, 0))
     lines.append(_line(OBJ_OPEN_EDITOR_TB, 0, OBJ_OPEN_EDITOR_MSG, 0))
     lines.append(_line(OBJ_OPEN_EDITOR_MSG, 0, OBJ_SF_LOM_LOADER, 0))
+
+    # ── Phase 3B C2 — Device → Server HTTP wire ─────────────────────────────
+    # Three `[r sf-…]` receivers feed a shared `[maxurl 4]` via the
+    # dictionary input form. The JS loader populates the per-verb request
+    # dict before firing the messnamed verb (see `_sendHttpPost` in
+    # stemforge_loader.v0.js), so each receiver just re-fires the matching
+    # dict name into maxurl. Response side: maxurl outlet 0 emits
+    # `dictionary <response_name>`, routed back into [js] via
+    # `[prepend onHttpResponse]` — JS reads status_code and calls
+    # commitAck() on a 2xx for the commit response dict.
+    http_x = LEFT_X
+    http_y = 240.0
+    http_row_h = 26.0
+
+    # Receivers (3) — left column.
+    boxes.append(
+        _box(
+            OBJ_HTTP_COMMIT_RECV,
+            "newobj",
+            (http_x, http_y, 160.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "r sf-commit-send"},
+        )
+    )
+    boxes.append(
+        _box(
+            OBJ_HTTP_BOUNCE_PROG_RECV,
+            "newobj",
+            (http_x, http_y + http_row_h, 180.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "r sf-bounce-progress"},
+        )
+    )
+    boxes.append(
+        _box(
+            OBJ_HTTP_BOUNCE_COMP_RECV,
+            "newobj",
+            (http_x, http_y + 2 * http_row_h, 180.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "r sf-bounce-complete"},
+        )
+    )
+
+    # Dict-name message boxes (3) — middle column. Each emits the literal
+    # `dictionary <req_dict_name>` message that [maxurl] interprets as
+    # "execute the request described by this dict". The bang from each
+    # [r] re-fires the message so already-populated dict contents go out.
+    msg_x = http_x + 200.0
+    boxes.append(
+        _box(
+            OBJ_HTTP_COMMIT_MSG,
+            "message",
+            (msg_x, http_y, 280.0, 22.0),
+            numinlets=2,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": f"dictionary {HTTP_REQ_DICT_COMMIT}"},
+        )
+    )
+    boxes.append(
+        _box(
+            OBJ_HTTP_BOUNCE_PROG_MSG,
+            "message",
+            (msg_x, http_y + http_row_h, 280.0, 22.0),
+            numinlets=2,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": f"dictionary {HTTP_REQ_DICT_BOUNCE_PROG}"},
+        )
+    )
+    boxes.append(
+        _box(
+            OBJ_HTTP_BOUNCE_COMP_MSG,
+            "message",
+            (msg_x, http_y + 2 * http_row_h, 280.0, 22.0),
+            numinlets=2,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": f"dictionary {HTTP_REQ_DICT_BOUNCE_COMP}"},
+        )
+    )
+
+    # [maxurl 4] — shared object, thread-count=4 so bounce-progress beacons
+    # don't stack behind a slow commit. verbosity 0 = silent on Max Console.
+    maxurl_x = msg_x + 300.0
+    boxes.append(
+        _box(
+            OBJ_HTTP_MAXURL,
+            "newobj",
+            (maxurl_x, http_y, 140.0, 22.0),
+            numinlets=2,
+            numoutlets=2,
+            outlettype=["", "list"],
+            extras={"text": "maxurl 4 @verbosity 0"},
+        )
+    )
+
+    # Request side: r → msg → maxurl.
+    lines.append(_line(OBJ_HTTP_COMMIT_RECV, 0, OBJ_HTTP_COMMIT_MSG, 0))
+    lines.append(_line(OBJ_HTTP_BOUNCE_PROG_RECV, 0, OBJ_HTTP_BOUNCE_PROG_MSG, 0))
+    lines.append(_line(OBJ_HTTP_BOUNCE_COMP_RECV, 0, OBJ_HTTP_BOUNCE_COMP_MSG, 0))
+    lines.append(_line(OBJ_HTTP_COMMIT_MSG, 0, OBJ_HTTP_MAXURL, 0))
+    lines.append(_line(OBJ_HTTP_BOUNCE_PROG_MSG, 0, OBJ_HTTP_MAXURL, 0))
+    lines.append(_line(OBJ_HTTP_BOUNCE_COMP_MSG, 0, OBJ_HTTP_MAXURL, 0))
+
+    # Response side: maxurl outlet 0 emits `dictionary <response_dict_name>`.
+    # [route dictionary] strips the leading "dictionary" symbol; its outlet
+    # 0 carries the response dict name. We prepend "onHttpResponse" so
+    # classic [js] dispatches to the loader's response handler.
+    boxes.append(
+        _box(
+            OBJ_HTTP_RESP_ROUTE,
+            "newobj",
+            (maxurl_x, http_y + http_row_h, 140.0, 22.0),
+            numinlets=1,
+            numoutlets=2,
+            outlettype=["", ""],
+            extras={"text": "route dictionary"},
+        )
+    )
+    boxes.append(
+        _box(
+            OBJ_HTTP_RESP_PREPEND,
+            "newobj",
+            (maxurl_x, http_y + 2 * http_row_h, 200.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "prepend onHttpResponse"},
+        )
+    )
+    lines.append(_line(OBJ_HTTP_MAXURL, 0, OBJ_HTTP_RESP_ROUTE, 0))
+    lines.append(_line(OBJ_HTTP_RESP_ROUTE, 0, OBJ_HTTP_RESP_PREPEND, 0))
+    lines.append(_line(OBJ_HTTP_RESP_PREPEND, 0, OBJ_SF_LOM_LOADER, 0))
 
     # ── sf_state outlet 0 → v8ui refresh ────────────────────────────────────
     # The state mgr emits `bang` on mutation. We prepend `refresh` so the

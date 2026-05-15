@@ -632,3 +632,127 @@ def test_all_live_widgets_opt_out_of_parameter_enrollment(boxes):
         "live.* widgets without parameter_enable:0 or saved_attribute_attributes.valueof "
         f"(each emits one SendMessage error 2 at boot): {offenders}"
     )
+
+
+# ── Phase 3B C2 — Device → Server HTTP wire ─────────────────────────────────
+
+
+# Hyphen→underscore convention MUST match `_httpRequestDictNameFor()` in
+# stemforge_loader.v0.js. The patcher's dict-name message boxes embed
+# these literals — any drift breaks the wire silently at runtime.
+HTTP_REQ_DICT_COMMIT = "sf_http_req_sf_commit_send"
+HTTP_REQ_DICT_BOUNCE_PROGRESS = "sf_http_req_sf_bounce_progress"
+HTTP_REQ_DICT_BOUNCE_COMPLETE = "sf_http_req_sf_bounce_complete"
+
+
+def test_http_maxurl_object_present(boxes):
+    """A single `[maxurl]` external owns all three POST verbs.
+
+    Verbosity must be 0 so dev sessions aren't drowned by per-request
+    console chatter; thread count >=2 so bounce-progress beacons (which
+    fire 3+ times back-to-back) don't block one another.
+    """
+    maxurl_boxes = [b for b in boxes if b.get("text", "").startswith("maxurl")]
+    assert len(maxurl_boxes) == 1, (
+        f"expected exactly one [maxurl] object; got {len(maxurl_boxes)}"
+    )
+    text = maxurl_boxes[0]["text"]
+    assert "@verbosity 0" in text, f"maxurl missing @verbosity 0: {text!r}"
+    # Thread count is the first positional arg after "maxurl".
+    tokens = text.split()
+    assert tokens[0] == "maxurl"
+    threads = int(tokens[1]) if len(tokens) > 1 and tokens[1].isdigit() else 1
+    assert threads >= 2, (
+        f"maxurl thread count must be >=2 so concurrent bounce posts don't "
+        f"block; got {threads}"
+    )
+
+
+@pytest.mark.parametrize(
+    "verb",
+    ["r sf-commit-send", "r sf-bounce-progress", "r sf-bounce-complete"],
+)
+def test_http_receivers_present(boxes, verb):
+    """Each of the three outbound HTTP verbs has a matching `[r <verb>]`.
+
+    Without these, JS `messnamed(verb, …)` calls land nowhere and the
+    server never sees a POST — the exact silent-drop failure mode C2
+    was opened to fix.
+    """
+    receivers = [b for b in boxes if b.get("text", "") == verb]
+    assert receivers, f"missing receiver: [{verb}]"
+
+
+@pytest.mark.parametrize(
+    "dict_name",
+    [
+        HTTP_REQ_DICT_COMMIT,
+        HTTP_REQ_DICT_BOUNCE_PROGRESS,
+        HTTP_REQ_DICT_BOUNCE_COMPLETE,
+    ],
+)
+def test_http_request_dict_messages_match_js_convention(boxes, dict_name):
+    """Each receiver pipes to a message box that fires
+    `dictionary <req_dict_name>` into maxurl.
+
+    The dict names are a wire contract with the JS loader's
+    `_httpRequestDictNameFor()` helper — any rename here without a
+    matching JS change silently breaks the post.
+    """
+    expected = f"dictionary {dict_name}"
+    msgs = [
+        b for b in boxes
+        if b.get("maxclass") == "message" and b.get("text", "") == expected
+    ]
+    assert msgs, f"missing message box with text {expected!r}"
+
+
+def test_http_request_chain_wired(line_pairs, boxes):
+    """End-to-end wire: each `[r sf-…]` → `[message dictionary …]` → `[maxurl]`."""
+    by_text = {b.get("text", ""): b["id"] for b in boxes}
+    maxurl_id = next(
+        b["id"] for b in boxes if b.get("text", "").startswith("maxurl")
+    )
+    pairs = [
+        ("r sf-commit-send", f"dictionary {HTTP_REQ_DICT_COMMIT}"),
+        ("r sf-bounce-progress", f"dictionary {HTTP_REQ_DICT_BOUNCE_PROGRESS}"),
+        ("r sf-bounce-complete", f"dictionary {HTTP_REQ_DICT_BOUNCE_COMPLETE}"),
+    ]
+    for recv_text, msg_text in pairs:
+        recv_id = by_text[recv_text]
+        msg_id = by_text[msg_text]
+        assert (recv_id, msg_id) in line_pairs, (
+            f"missing wire: [{recv_text}] → [{msg_text}]"
+        )
+        assert (msg_id, maxurl_id) in line_pairs, (
+            f"missing wire: [{msg_text}] → [maxurl]"
+        )
+
+
+def test_http_response_routed_to_loader(line_pairs, boxes):
+    """`[maxurl]` outlet 0 → `[route dictionary]` → `[prepend onHttpResponse]`
+    → `[js sf_lom_loader]` so JS receives the response dict name.
+
+    Without this chain, commitAck() never fires and the device's UI stalls
+    at `commit: sent` forever (one of the two acceptance-criteria failures
+    from the C2 handoff).
+    """
+    by_text = {b.get("text", ""): b["id"] for b in boxes}
+    maxurl_id = next(
+        b["id"] for b in boxes if b.get("text", "").startswith("maxurl")
+    )
+    route_id = by_text["route dictionary"]
+    prepend_id = by_text["prepend onHttpResponse"]
+    loader_id = next(
+        b["id"] for b in boxes
+        if b.get("text", "").startswith("js stemforge_loader.v0.js")
+    )
+    assert (maxurl_id, route_id) in line_pairs, (
+        "maxurl outlet 0 must feed [route dictionary]"
+    )
+    assert (route_id, prepend_id) in line_pairs, (
+        "[route dictionary] outlet 0 must feed [prepend onHttpResponse]"
+    )
+    assert (prepend_id, loader_id) in line_pairs, (
+        "[prepend onHttpResponse] must feed the JS loader"
+    )
