@@ -110,3 +110,68 @@ test('runArrangementLoad rejects empty manifest path', () => {
     assert.equal(runArrangementLoad(null), false);
     assert.equal(runArrangementLoad(undefined), false);
 });
+
+// Regression: real forges + the sample-forge fixture write arrangement
+// manifests as a flat chunks[] array (no nested stems{}). The adapter
+// fans them out per-stem; without it, runArrangementLoad emitted
+// "Arrangement load failed" with zero diagnostics. Caught 2026-05-15
+// driving Live via Computer Use against
+// /Users/zak/stemforge/processed/breaks-n-beats-deck/arrangement_manifest.json.
+test('_alAdaptChunksToStems: groups by stem, maps field names, preserves bar_position', () => {
+    const ctx = freshSandbox();
+    const { _alAdaptChunksToStems } = getTestExports(ctx);
+    const adapted = _alAdaptChunksToStems([
+        { stem: 'drum', audio_path: 'arrangement_chunks/drum-intro.wav',
+          bar_position: 0, duration_bars: 8, duration_sec: 14.2,
+          chunk_id: 'drum-intro' },
+        { stem: 'drum', audio_path: '/abs/drum-verse.wav',
+          bar_position: 8, duration_bars: 16, duration_sec: 28.4,
+          chunk_id: 'drum-verse' },
+        { stem: 'bass', audio_path: 'arrangement_chunks/bass-intro.wav',
+          bar_position: 0, duration_bars: 8, duration_sec: 14.2,
+          chunk_id: 'bass-intro' },
+    ]);
+    assert.deepEqual(Object.keys(adapted).sort(), ['bass', 'drum']);
+    assert.equal(adapted.drum.chunks.length, 2);
+    assert.equal(adapted.bass.chunks.length, 1);
+    // Field-name mapping intact.
+    assert.equal(adapted.drum.chunks[0].file, 'arrangement_chunks/drum-intro.wav');
+    assert.equal(adapted.drum.chunks[0].bars, 8);
+    assert.equal(adapted.drum.chunks[0].total_sec, 14.2);
+    assert.equal(adapted.drum.chunks[0].start_bar, 0);
+    // Absolute audio_path preserved (matches _alJoin's absolute-path behavior).
+    assert.equal(adapted.drum.chunks[1].file, '/abs/drum-verse.wav');
+    assert.equal(adapted.drum.chunks[1].start_bar, 8);
+});
+
+test('_alAdaptChunksToStems: handles missing/malformed entries gracefully', () => {
+    const ctx = freshSandbox();
+    const { _alAdaptChunksToStems } = getTestExports(ctx);
+    // Cross-realm deepEqual against literal {} is finicky (different
+    // prototypes). Assert key count instead.
+    assert.equal(Object.keys(_alAdaptChunksToStems(null)).length, 0);
+    assert.equal(Object.keys(_alAdaptChunksToStems(undefined)).length, 0);
+    assert.equal(Object.keys(_alAdaptChunksToStems('not-an-array')).length, 0);
+    // Entries without stem or audio_path are dropped (not crash).
+    const adapted = _alAdaptChunksToStems([
+        null,
+        { stem: 'drum' }, // no audio_path
+        { audio_path: 'x.wav' }, // no stem
+        { stem: 'vocal', audio_path: 'v.wav' }, // valid
+    ]);
+    assert.deepEqual(Object.keys(adapted), ['vocal']);
+    assert.equal(adapted.vocal.chunks.length, 1);
+});
+
+test('_alAdaptChunksToStems: bar_position is nullable (legacy chunks without positional info)', () => {
+    const ctx = freshSandbox();
+    const { _alAdaptChunksToStems } = getTestExports(ctx);
+    const adapted = _alAdaptChunksToStems([
+        { stem: 'drum', audio_path: 'a.wav', duration_bars: 4 },
+        { stem: 'drum', audio_path: 'b.wav', duration_bars: 4 },
+    ]);
+    // When bar_position is absent, start_bar is null → _alLoadStem falls
+    // back to sequential `i * bars` positioning (preserving legacy behavior).
+    assert.equal(adapted.drum.chunks[0].start_bar, null);
+    assert.equal(adapted.drum.chunks[1].start_bar, null);
+});

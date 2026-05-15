@@ -481,7 +481,13 @@ function _alLoadStem(stemName, stemBlock, manifestDir, bpm, beatsPerBar, shiftBe
 
         var absWav = _alJoin(manifestDir, ch.file);
         var bars = (ch.bars != null) ? Number(ch.bars) : 4;
-        var startBeat = i * bars * beatsPerBar + shift;
+        // Prefer explicit `start_bar` (set by the chunks[]-shape adapter from
+        // each chunk's `bar_position`). The sequential `i * bars` fallback only
+        // works when every chunk has the same length — the new-shape adapter
+        // carries per-chunk positions, so honor them when present.
+        var startBar = (ch.start_bar != null && isFinite(Number(ch.start_bar)))
+            ? Number(ch.start_bar) : (i * bars);
+        var startBeat = startBar * beatsPerBar + shift;
         // Ableton refuses negative start_time; clamp to 0. Note: this
         // clips off the leading portion of any intro chunk that would
         // have hung off the left edge. User-visible result: a partial
@@ -510,6 +516,40 @@ function _alLoadStem(stemName, stemBlock, manifestDir, bpm, beatsPerBar, shiftBe
     }
 
     return { ok: created > 0, clips_created: created };
+}
+
+// Adapt the flat `chunks[]` arrangement-manifest shape (real forges + the
+// sample-forge fixture) into the legacy `stems{}` nested shape this loader
+// was built for. The flat shape carries per-chunk `stem`, `bar_position`,
+// `duration_bars`, `duration_sec`, and `audio_path`; we fan those out into
+// per-stem chunks{} arrays without losing positional info. Field-name
+// mapping:
+//   audio_path  → file        (relative or absolute, _alJoin handles both)
+//   duration_bars → bars
+//   duration_sec  → total_sec (drives the loop-end fallback in _alLoadStem)
+//   bar_position  → start_bar (honored by _alLoadStem instead of sequential
+//                              i * bars positioning — important when chunks
+//                              are different lengths or sparse).
+//
+// Returns the adapted stems{} dict (empty if no convertible chunks found).
+// Pure function: callers responsible for status emission.
+function _alAdaptChunksToStems(chunks) {
+    var adapted = {};
+    if (!Array.isArray(chunks)) return adapted;
+    for (var ci = 0; ci < chunks.length; ci++) {
+        var c = chunks[ci];
+        if (!c || !c.stem || !c.audio_path) continue;
+        var stemKey = String(c.stem);
+        if (!adapted[stemKey]) adapted[stemKey] = { chunks: [] };
+        adapted[stemKey].chunks.push({
+            file: String(c.audio_path),
+            bars: (c.duration_bars != null) ? Number(c.duration_bars) : 4,
+            total_sec: Number(c.duration_sec) || 0,
+            start_bar: (c.bar_position != null && isFinite(Number(c.bar_position)))
+                ? Number(c.bar_position) : null
+        });
+    }
+    return adapted;
 }
 
 function runArrangementLoad(manifestPath, shiftBeats) {
@@ -545,6 +585,19 @@ function runArrangementLoad(manifestPath, shiftBeats) {
     var stems = manifest.stems || {};
     var manifestDir = _alDirname(path);
 
+    // New-shape manifests (auto-curation forge + sample-forge fixture) carry
+    // flat `chunks[]` with no `stems{}` nested object. Adapt before walking.
+    // Without this, `for (var stemName in stems)` is a no-op → 0 clips →
+    // `runArrangementLoad` returns false → device emits "Arrangement load
+    // failed" with no diagnostic. Same class of bug as the LOAD FORGE
+    // clips→stems adapter in stemforge_loader.v0.js. Caught 2026-05-15.
+    if ((!stems || Object.keys(stems).length === 0)
+            && Array.isArray(manifest.chunks)) {
+        stems = _alAdaptChunksToStems(manifest.chunks);
+        _alStatus("arrangement: adapted " + manifest.chunks.length
+            + " chunks → " + Object.keys(stems).length + " stems (chunks[] shape)");
+    }
+
     // Match Live's project tempo to the manifest tempo. The chunks are
     // pre-rendered at manifest bpm and clips are warped to it; if the
     // project tempo differs, audio is time-stretched and bar boundaries
@@ -579,6 +632,7 @@ if (typeof module !== "undefined" && module.exports) {
         _alJoin: _alJoin,
         _alDirname: _alDirname,
         _alSecToBeats: _alSecToBeats,
-        _alExpandTilde: _alExpandTilde
+        _alExpandTilde: _alExpandTilde,
+        _alAdaptChunksToStems: _alAdaptChunksToStems
     };
 }
