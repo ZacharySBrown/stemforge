@@ -30,117 +30,22 @@ autowatch = 1;
 inlets = 1;
 outlets = 4;   // 0: status text  1: bang  2: preset umenu  3: [shell] (mkdir-p)
 
-// ── Boot diagnostics ─────────────────────────────────────────────────────────
+// ── Boot version banner (SAFE — no file IO) ──────────────────────────────────
 //
-// On every script load (autowatch reload included), emit a banner with a
-// content fingerprint of this file PLUS every sibling JS in the Max Package
-// PLUS the device .amxd that's currently loaded. Lets us answer "is my
-// current edit actually running?" without guessing.
+// Emits a one-line build identifier on every script load (autowatch reload
+// included). The version literal is updated by hand or by a build hook on
+// each commit; the user can grep for it to confirm the edit they just
+// pushed is actually live in Max.
 //
-// Fingerprint = FNV-1a 32-bit hash of the file bytes. Deterministic, fast,
-// 8-char hex. We don't need cryptographic strength — just drift detection.
-// Falls back to size-only if the file is unreadable.
+// IMPORTANT: do NOT read sibling files here. Reading binary .amxd via
+// File.readstring crashes Max's JS engine (caught during second-UAT run);
+// the only safe diagnostic is a static literal.
 
-function _sfFnv1a32(text) {
-    var h = 0x811c9dc5;
-    for (var i = 0; i < text.length; i += 1) {
-        h ^= text.charCodeAt(i) & 0xff;
-        // FNV prime mul, kept in 32-bit via >>> 0.
-        h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
-    }
-    // 8-char zero-padded hex.
-    var s = h.toString(16);
-    while (s.length < 8) s = "0" + s;
-    return s;
-}
+var SF_LOADER_VERSION = "2026-05-15-prechop-sniffer";
 
-function _sfReadFileSafe(absPath) {
-    try {
-        var f = new File(absPath, "read");
-        if (!f.isopen) return null;
-        var buf = "";
-        // Read in modest chunks to bound stack/memory; we only need the
-        // bytes to feed the hash.
-        var chunk;
-        while ((chunk = f.readstring(4096))) {
-            buf += chunk;
-            if (buf.length > 4 * 1024 * 1024) break; // cap @ 4 MiB
-        }
-        var sz = -1;
-        try { sz = f.eof; } catch (_e) { sz = buf.length; }
-        f.close();
-        return { bytes: sz, text: buf };
-    } catch (_e2) { return null; }
-}
-
-function _sfFingerprintOf(absPath) {
-    var read = _sfReadFileSafe(absPath);
-    if (!read) return { ok: false, path: absPath, size: -1, hash: "????????" };
-    return {
-        ok: true,
-        path: absPath,
-        size: read.bytes,
-        hash: _sfFnv1a32(read.text)
-    };
-}
-
-function _sfBootDiagnostics() {
-    try {
-        // Discover the Max Package's javascript/ dir via Max system var.
-        // Falls back to Max 9 default location if unavailable.
-        var home = "";
-        try {
-            if (typeof max !== "undefined" && max && typeof max.getsystemvariable === "function") {
-                home = String(max.getsystemvariable("HOME") || "");
-            }
-        } catch (_e) {}
-        if (!home) home = "/Users/zak";
-        var jsDir = home + "/Documents/Max 9/Packages/StemForge/javascript";
-
-        var siblings = [
-            "stemforge_loader.v0.js",
-            "stemforge_bridge.v0.js",
-            "stemforge_ndjson_parser.v0.js",
-            "sf_state.js",
-            "sf_forge.js",
-            "sf_ui.js",
-            "sf_settings.js",
-            "sf_logger.js",
-            "sf_preset_loader.js",
-            "sf_manifest_loader.js",
-            "sf_clip_export.js",
-            "sf_locator_anchor.js"
-        ];
-        post("[sf_loader] ── boot diagnostics ──\n");
-        for (var i = 0; i < siblings.length; i += 1) {
-            var fp = _sfFingerprintOf(jsDir + "/" + siblings[i]);
-            post("[sf_loader]   " + siblings[i] + " : "
-                 + (fp.ok ? ("hash=" + fp.hash + " bytes=" + fp.size) : "<unreadable>")
-                 + "\n");
-        }
-
-        // .amxd location (User Library; mirrors install postinstall).
-        var amxdCandidates = [
-            home + "/Music/Ableton/User Library/Presets/Audio Effects/Max Audio Effect/StemForge.amxd",
-            home + "/Music/Ableton/User Library/Presets/Audio Effects/Max Audio Effect/StemForge .amxd"
-        ];
-        for (var j = 0; j < amxdCandidates.length; j += 1) {
-            var afp = _sfFingerprintOf(amxdCandidates[j]);
-            if (afp.ok) {
-                post("[sf_loader]   StemForge.amxd : hash=" + afp.hash
-                     + " bytes=" + afp.size + "\n");
-                break;
-            }
-        }
-        post("[sf_loader] ────────────────────────\n");
-    } catch (e) {
-        try { post("[sf_loader] boot diagnostics failed: " + e + "\n"); } catch (_) {}
-    }
-}
-
-// Fire immediately on script load. With autowatch=1, every save of this
-// file will retrigger the banner — confirming the new version is live.
-_sfBootDiagnostics();
+try {
+    post("[sf_loader] version=" + SF_LOADER_VERSION + "\n");
+} catch (_) {}
 
 var STEM_TARGETS = {
     // From v0/interfaces/tracks.yaml — mirrored in JS because the template
