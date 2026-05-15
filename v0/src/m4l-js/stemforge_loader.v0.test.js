@@ -37,6 +37,8 @@ const REPO_ROOT = path.resolve(__dirname, "../../../..");
 const FIXTURES_ROOT = path.resolve(__dirname, "../../../tests/fixtures");
 const LOM_SNAPSHOT = (name) => path.join(FIXTURES_ROOT, "lom_snapshots", name);
 const CURATION = (name) => path.join(FIXTURES_ROOT, "curations", name);
+const FORGE = (slug, ...rest) =>
+  path.join(FIXTURES_ROOT, "forges", slug, ...rest);
 const readCuration = (name) => fs.readFileSync(CURATION(name), "utf-8");
 
 beforeEach(() => {
@@ -1096,5 +1098,74 @@ describe("Phase 4A — als-opened bootstrap", () => {
       .filter((e) => Array.isArray(e.args) && e.args[0] === "set")
       .map((e) => e.args.slice(1).join(" "));
     expect(status.some((s) => s.includes("als-opened: sent <unknown>"))).toBe(true);
+  });
+});
+
+// ─── LOAD FORGE — auto_curation_manifest.json (new shape) ─────────────────────
+//
+// Regression for the "manifest has no stems" bug surfaced in the third UAT
+// console: `primary()` correctly dispatched LOAD FORGE on
+// `~/stemforge/processed/express_yourself/auto_curation_manifest.json`, but
+// the legacy loadManifest() walked `mf.stems[]` while the new shape stores
+// bar clips under `mf.clips[]`. Resulting in "manifest has no stems" for
+// every new-shape manifest. The loader now adapts clips[] → a synthetic
+// stems[] (one entry per stem, representative wav from the first matching
+// clip) so LOAD FORGE drops one wav per stem track.
+
+describe("_loadManifestPath — new auto_curation_manifest shape", () => {
+  test("adapts clips[] into stems[] when stems[] is absent", () => {
+    loadLomSnapshotObject({ live_set: { tracks: [] } });
+    const manifestPath = FORGE("sample-forge", "auto_curation_manifest.json");
+    T._loadManifestPath(manifestPath);
+
+    const status = global.outletEmissions
+      .filter((e) => Array.isArray(e.args) && e.args[0] === "set")
+      .map((e) => e.args.slice(1).join(" "));
+    // The "no stems" rejection must NOT fire.
+    expect(status.some((s) => s.includes("manifest has no stems"))).toBe(false);
+    // We must see the adapter status line.
+    expect(
+      status.some((s) => /adapted \d+ clips → \d+ stems/.test(s))
+    ).toBe(true);
+  });
+
+  test("clip→stem mapping renames singular ('drum') to legacy plural ('drums')", () => {
+    // Seed the LOM with the standard StemForge template tracks. With
+    // singular→plural rename, all four stems should hit their respective
+    // STEM_TARGETS entries (drums/bass/vocals/other) AND find a matching
+    // track in the seeded set.
+    loadLomSnapshotObject({
+      live_set: {
+        tracks: [
+          { name: "SF | Drums Raw", clip_slots: [{ clip: null }] },
+          { name: "SF | Bass", clip_slots: [{ clip: null }] },
+          { name: "SF | Vocals", clip_slots: [{ clip: null }] },
+          { name: "SF | Texture Verb", clip_slots: [{ clip: null }] },
+        ],
+      },
+    });
+    const manifestPath = FORGE("sample-forge", "auto_curation_manifest.json");
+    T._loadManifestPath(manifestPath);
+
+    const status = global.outletEmissions
+      .filter((e) => Array.isArray(e.args) && e.args[0] === "set")
+      .map((e) => e.args.slice(1).join(" "));
+    // Loader emits per-stem placement updates; we don't need full
+    // semantic verification (that's L4 smoke). What we DO need:
+    // - no "no target track" misses for drums/vocals (the renamed stems).
+    //   If the rename failed, drums/vocals would emit it.
+    const drumsMiss = status.find((s) => /^\s*drums: no target track/.test(s));
+    const vocalsMiss = status.find((s) => /^\s*vocals: no target track/.test(s));
+    expect(drumsMiss).toBeUndefined();
+    expect(vocalsMiss).toBeUndefined();
+  });
+
+  test("missing path produces a clean error, not a crash", () => {
+    loadLomSnapshotObject({ live_set: { tracks: [] } });
+    T._loadManifestPath("");
+    const status = global.outletEmissions
+      .filter((e) => Array.isArray(e.args) && e.args[0] === "set")
+      .map((e) => e.args.slice(1).join(" "));
+    expect(status.some((s) => s.includes("missing path"))).toBe(true);
   });
 });

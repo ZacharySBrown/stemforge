@@ -43,7 +43,7 @@ outlets = 4;   // 0: status text  1: bang  2: preset umenu  3: [shell] (mkdir-p)
 // File.readstring loops (caught during second-UAT run).
 
 // Build fingerprint, injected by tools/inject_build_manifest.py.
-var SF_BUILD_MANIFEST = "build=2026-05-15T11:13 amxd=05fdba64 js={sf_arrangement_loader=b6ee853f,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=2e6dc32e,stemforge_loader.test=d411427e,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
+var SF_BUILD_MANIFEST = "build=2026-05-15T11:19 amxd=05fdba64 js={sf_arrangement_loader=b6ee853f,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=a907ba4a,stemforge_loader.test=d411427e,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
 
 try {
     post("[sf_loader] " + SF_BUILD_MANIFEST + "\n");
@@ -483,6 +483,45 @@ function _loadManifestPath(manifestPath) {
 
     if (mf.bpm) {
         try { new LiveAPI("live_set").set("tempo", Number(mf.bpm)); } catch (_) {}
+    }
+
+    // Adapt the new auto_curation_manifest.json shape (clips[]) into the
+    // legacy stems[] shape this loader was built for. Each stem keeps its
+    // first clip's audio as the representative wav so LOAD FORGE drops
+    // one usable file per stem track. Full bar-level loading is a separate
+    // path; this is the minimum to make the new manifest shape do something
+    // sensible from the device's LOAD FORGE button.
+    if ((!mf.stems || mf.stems.length === 0) && mf.clips && mf.clips.length) {
+        var forgeDir = manifestPath.replace(/\/[^/]+$/, "");
+        // New shape uses singular stem names; legacy STEM_TARGETS uses plural.
+        var STEM_RENAME = {
+            drum: "drums",
+            vocal: "vocals",
+            bass: "bass",
+            other: "other"
+        };
+        var byStem = {};
+        for (var ci = 0; ci < mf.clips.length; ci += 1) {
+            var c = mf.clips[ci];
+            if (!c || !c.stem || !c.audio_path) continue;
+            var legacyName = STEM_RENAME[c.stem] || c.stem;
+            if (!byStem[legacyName]) {
+                byStem[legacyName] = {
+                    name: legacyName,
+                    wav_path: forgeDir + "/" + c.audio_path
+                };
+            }
+        }
+        var stemsAdapted = [];
+        for (var k in byStem) {
+            if (Object.prototype.hasOwnProperty.call(byStem, k)) {
+                stemsAdapted.push(byStem[k]);
+            }
+        }
+        mf.stems = stemsAdapted;
+        mf.track_name = mf.forge_slug || mf.track_name;
+        status("loadManifest: adapted " + mf.clips.length
+             + " clips → " + stemsAdapted.length + " stems (new auto_curation shape)");
     }
 
     if (!mf.stems || !mf.stems.length) { status("manifest has no stems"); return; }
@@ -4097,6 +4136,9 @@ if (typeof module !== "undefined" && module.exports) {
                 groupLetters: (letters || []).slice()
             };
         },
+        // LOAD FORGE — internal path-handling helper (bypasses Max-message wrap).
+        _loadManifestPath: _loadManifestPath,
+        loadManifest: loadManifest,
         // Configurator v1 Phase 4A — als-opened bootstrap.
         loadbang: loadbang,
         liveApiReady: liveApiReady,
