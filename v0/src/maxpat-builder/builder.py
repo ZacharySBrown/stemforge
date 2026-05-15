@@ -155,6 +155,12 @@ OBJ_BOUNCE_BTN = "obj-sf-bounce-btn"
 OBJ_BOUNCE_MSG = "obj-sf-bounce-msg"
 OBJ_EXPORT_BTN = "obj-sf-export-btn"
 OBJ_EXPORT_MSG = "obj-sf-export-msg"
+OBJ_ANCHOR_BTN = "obj-sf-anchor-btn"
+OBJ_ANCHOR_MSG = "obj-sf-anchor-msg"
+# Anchor wire — JS reAnchor() fires messnamed("sf-anchor-go", forgeDir);
+# the patcher routes that into [js sf_locator_anchor].anchor(forgeDir).
+OBJ_ANCHOR_GO_RECV = "obj-sf-anchor-go-recv"
+OBJ_ANCHOR_GO_PREPEND = "obj-sf-anchor-go-prepend"
 
 # Picker dialog (driven by sf-open-source-dialog messnamed from js.pickSource).
 OBJ_PICKER_DIALOG_RECV = "obj-sf-picker-dialog-recv"
@@ -1079,6 +1085,14 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             "exportArrangementSnapshot ~/Desktop/snapshot.json",
             2,
         ),
+        # ANCH — re-anchor the bar grid of the currently-picked forge. The
+        # button fires `reAnchor` on the loader, which resolves the forge
+        # dir from the last-picked source and emits messnamed("sf-anchor-go",
+        # <dir>) for the patcher to route into sf_locator_anchor.anchor(dir).
+        # The previous v8ui-canvas ANCH button got dropped by 999ee1d's
+        # right-column refactor; this restores the in-presentation entry
+        # point without bringing back the canvas surface.
+        (OBJ_ANCHOR_BTN, OBJ_ANCHOR_MSG, "sf_anchor_btn", "ANCH", "reAnchor", 3),
     ]
     for btn_id, msg_id, varname, label, msg_text, idx in _VERB_BTNS:
         btn_x = RIGHT_X + idx * (VERB_W + 2.0)
@@ -1224,6 +1238,37 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     )
     lines.append(_line(OBJ_SF_LOCATOR_ANCHOR, 2, OBJ_LA_RELOAD_PREP, 0))
     lines.append(_line(OBJ_LA_RELOAD_PREP, 0, OBJ_SF_LOM_LOADER, 0))
+
+    # ── ANCH button receive-side: route the loader's resolved forge dir into
+    # sf_locator_anchor.anchor(dir). The button itself fires `reAnchor` on
+    # the loader (declared in _VERB_BTNS); the loader then emits
+    # `messnamed("sf-anchor-go", forgeDir)`. Here we receive that, prepend
+    # the message-name `anchor`, and feed [js sf_locator_anchor] so classic
+    # Max [js] dispatches to `anchor(forgeDir)`.
+    boxes.append(
+        _box(
+            OBJ_ANCHOR_GO_RECV,
+            "newobj",
+            (LEFT_X, 140.0, 180.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "r sf-anchor-go"},
+        )
+    )
+    boxes.append(
+        _box(
+            OBJ_ANCHOR_GO_PREPEND,
+            "newobj",
+            (LEFT_X + 200.0, 140.0, 120.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "prepend anchor"},
+        )
+    )
+    lines.append(_line(OBJ_ANCHOR_GO_RECV, 0, OBJ_ANCHOR_GO_PREPEND, 0))
+    lines.append(_line(OBJ_ANCHOR_GO_PREPEND, 0, OBJ_SF_LOCATOR_ANCHOR, 0))
 
     # ── Phase 4B — Open Editor button wiring ─────────────────────────────
     # [live.text Open Editor] (mode 1) → [t b] → [message openEditor]

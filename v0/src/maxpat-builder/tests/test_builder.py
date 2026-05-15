@@ -300,6 +300,49 @@ def test_export_button_present_and_wired(boxes, line_pairs):
     assert (msg["id"], "obj-sf-lom-loader") in line_pairs
 
 
+def test_anchor_button_present_and_wired(boxes, line_pairs):
+    """ANCH live.text → [message reAnchor] → js sf_lom_loader. The loader's
+    `reAnchor()` resolves the forge dir from pickedSource and fires
+    messnamed("sf-anchor-go", forgeDir); a separate receiver chain routes
+    that into sf_locator_anchor.anchor(forgeDir). Regression for the
+    button that 999ee1d removed in the v8ui-canvas refactor."""
+    btn = next((b for b in boxes if b.get("varname") == "sf_anchor_btn"), None)
+    assert btn is not None, "missing sf_anchor_btn"
+    assert btn["maxclass"] == "live.text"
+    assert btn.get("mode") == 1
+    assert btn.get("presentation") == 1
+    assert btn.get("text") == "ANCH"
+
+    msg = next(
+        (
+            b
+            for b in boxes
+            if b.get("maxclass") == "message" and b.get("text") == "reAnchor"
+        ),
+        None,
+    )
+    assert msg is not None, "missing [message reAnchor] box"
+    assert ("obj-sf-anchor-btn", msg["id"]) in line_pairs
+    assert (msg["id"], "obj-sf-lom-loader") in line_pairs
+
+
+def test_anchor_go_wire_routes_into_locator_anchor(boxes, line_pairs):
+    """[r sf-anchor-go] → [prepend anchor] → [js sf_locator_anchor]. JS
+    `reAnchor()` emits `messnamed("sf-anchor-go", forgeDir)`; the receiver
+    here makes the forge dir become the first argument to anchor()."""
+    recv = next(
+        (b for b in boxes if b.get("text", "") == "r sf-anchor-go"), None
+    )
+    assert recv is not None, "missing [r sf-anchor-go]"
+    prep = next(
+        (b for b in boxes if b.get("text", "") == "prepend anchor"), None
+    )
+    assert prep is not None, "missing [prepend anchor]"
+
+    assert (recv["id"], prep["id"]) in line_pairs
+    assert (prep["id"], "obj-sf-locator-anchor") in line_pairs
+
+
 # ── Snapshot / golden test on the picker + verb-row JSON ────────────────────
 
 
@@ -315,6 +358,7 @@ def test_picker_and_verb_layout_snapshot(boxes):
         "sf_commit_btn": {"x": 720.0, "y": 58.0, "mode": 1, "text": "COMMIT"},
         "sf_bounce_btn": {"mode": 1, "text": "BOUNCE"},
         "sf_export_btn": {"mode": 1, "text": "EXPORT"},
+        "sf_anchor_btn": {"mode": 1, "text": "ANCH"},
     }
     found = {}
     for b in boxes:

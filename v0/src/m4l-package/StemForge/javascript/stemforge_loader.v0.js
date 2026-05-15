@@ -43,7 +43,7 @@ outlets = 4;   // 0: status text  1: bang  2: preset umenu  3: [shell] (mkdir-p)
 // File.readstring loops (caught during second-UAT run).
 
 // Build fingerprint, injected by tools/inject_build_manifest.py.
-var SF_BUILD_MANIFEST = "build=2026-05-15T20:45 amxd=fe06fcda js={sf_arrangement_loader=70c939e5,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=bc50eab2,stemforge_loader.test=d411427e,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
+var SF_BUILD_MANIFEST = "build=2026-05-15T21:23 amxd=11b07800 js={sf_arrangement_loader=70c939e5,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=28a5a6d4,stemforge_loader.test=d411427e,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
 
 try {
     post("[sf_loader] " + SF_BUILD_MANIFEST + "\n");
@@ -3729,6 +3729,39 @@ function commitAck() {
     status("commit: complete");
 }
 
+/**
+ * reAnchor() — bound to the ANCH button in the right column.
+ *
+ * Resolves the forge dir from the last-picked source and fires
+ * `messnamed("sf-anchor-go", forgeDir)`. The patcher routes that
+ * receiver into `[js sf_locator_anchor].anchor(forgeDir)`, which
+ * reads `<forge_dir>/prechop_manifest.json`, picks an Ableton
+ * locator, and shells `stemforge re-anchor` to re-cut the bar grid.
+ *
+ * Without the ANCH button (gone since 999ee1d's right-column refactor),
+ * the only way to drive re-anchoring was the legacy v8ui canvas
+ * (out of presentation) or shelling the CLI directly. This restores
+ * the in-presentation entry point.
+ */
+function reAnchor() {
+    if (!pickedSource || !pickedSource.path) {
+        status("re-anchor: no source picked — pick a forge manifest first");
+        return;
+    }
+    var path = String(pickedSource.path);
+    // Forge dir = parent of the manifest file. For
+    // `/Users/zak/stemforge/processed/definition/auto_curation_manifest.json`
+    // we want `/Users/zak/stemforge/processed/definition`.
+    var forgeDir = path.replace(/\/[^/]+$/, "");
+    if (!forgeDir || forgeDir === path) {
+        status("re-anchor: cannot resolve forge dir from " + path);
+        return;
+    }
+    status("re-anchor: dispatching on " + forgeDir);
+    try { messnamed("sf-anchor-go", forgeDir); }
+    catch (e) { status("re-anchor: messnamed failed: " + e); }
+}
+
 // `primary` — fired by the patcher's single primary button. Dispatches to
 // the right verb based on pickedSource.type. Status emissions cover the
 // "nothing picked" path so the user sees feedback even when the button is
@@ -4299,6 +4332,8 @@ if (typeof module !== "undefined" && module.exports) {
         // Configurator v1 Phase 2 — COMMIT keystone (device walker).
         commit: commit,
         commitAck: commitAck,
+        // Right-column ANCH button — re-anchor entry point.
+        reAnchor: reAnchor,
         _commitBuildPayload: _commitBuildPayload,
         _commitWalkGroup: _commitWalkGroup,
         _commitReadClipSettings: _commitReadClipSettings,

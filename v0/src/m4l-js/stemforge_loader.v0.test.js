@@ -1553,3 +1553,34 @@ describe("HTTP wire (Phase 3B C2)", () => {
   });
 });
 
+// ─── ANCH button — reAnchor() entry point ───────────────────────────────────
+describe("reAnchor() — ANCH button entry", () => {
+  test("no source picked → status only, no messnamed", () => {
+    T.resetPickedSource();
+    T.reAnchor();
+    const lines = statusLines();
+    expect(lines.some((l) => l.indexOf("re-anchor: no source picked") === 0))
+      .toBe(true);
+    expect(messnamedCalls.filter((c) => c.name === "sf-anchor-go").length)
+      .toBe(0);
+  });
+
+  test("forge_manifest source → fires sf-anchor-go with the forge dir", () => {
+    // Seed pickedSource manually via the helper the loader exposes.
+    // applyPickedSource normalizes a path; we just need the .path field.
+    global.messagename = "applyPickedSource";
+    T.applyPickedSource(
+      "/Users/zak/stemforge/processed/definition/auto_curation_manifest.json"
+    );
+
+    T.reAnchor();
+
+    const sends = messnamedCalls.filter((c) => c.name === "sf-anchor-go");
+    expect(sends.length).toBe(1);
+    // The arg is the forge dir — parent of the manifest file.
+    expect(sends[0].args[0]).toBe(
+      "/Users/zak/stemforge/processed/definition"
+    );
+  });
+});
+

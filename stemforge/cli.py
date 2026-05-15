@@ -1706,6 +1706,27 @@ def forge(audio_file, analysis, model, strategy, n_bars, time_sig, output, curat
         )
         detected_bpm = reconciled_for_forge.bpm
         shared_beat_times = reconciled_for_forge.beat_times
+        # Same `beat-this unavailable` guard the split command prints —
+        # without it, the forge silently bakes a librosa-only BPM into the
+        # manifest, which produces obvious half-time/doubled-tempo
+        # regressions on tracks like Definition (90 → 120). The split path
+        # has had this guard since 2026-05-03; mirror it here so a `forge`
+        # run in a venv missing `--extra beat` is just as loud.
+        if (reconciled_for_forge.warning or "").startswith("beat-this unavailable"):
+            console.print(Rule("[bold red]beat-this is not installed[/bold red]"))
+            console.print(
+                "  The neural downbeat detector is the half-time-hip-hop fix; "
+                "without it, BPM\n"
+                "  on tracks like Definition / DnB / trap will come back doubled, "
+                "and no\n"
+                "  first_downbeat will be detected on any track. Install with:\n\n"
+                "    [cyan]uv sync --extra beat --extra native[/cyan]\n\n"
+                "  Then re-run `stemforge forge` — the manifests this run produces "
+                "carry\n"
+                "  low-confidence metadata and should be regenerated for accurate "
+                "tempos."
+            )
+            console.print(Rule())
         if shared_beat_times is None or len(shared_beat_times) == 0:
             # Reconciler had no usable beats — fall back to librosa.
             bpm_source = drums_stem_f or next(iter(stem_paths.values()))
