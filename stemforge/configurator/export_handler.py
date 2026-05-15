@@ -422,9 +422,7 @@ def perform_export(
     # Write the plan to a tempfile so the CLI can mmap it. Keep the file
     # alive across the subprocess call but delete after — failures still
     # leave stdout/stderr captured in the envelope for diagnostics.
-    tmp_fd, tmp_path_str = tempfile.mkstemp(
-        prefix=f"sf-deck-{name}-", suffix=".json"
-    )
+    tmp_fd, tmp_path_str = tempfile.mkstemp(prefix=f"sf-deck-{name}-", suffix=".json")
     deck_plan_path = Path(tmp_path_str)
     try:
         with os.fdopen(tmp_fd, "w") as fh:

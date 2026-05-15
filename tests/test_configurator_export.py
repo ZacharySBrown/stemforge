@@ -374,16 +374,12 @@ def test_curation_to_deck_plan_parses_pad_number_from_pad_id(tmp_path: Path) -> 
                 Pad(
                     pad_id="A07",  # zero-padded
                     source=PadSource.for_external(external_path="/a.wav"),
-                    clip_settings=ClipSettings(
-                        warp_bpm=100.0, loop_end_bar=4.0
-                    ),
+                    clip_settings=ClipSettings(warp_bpm=100.0, loop_end_bar=4.0),
                 ),
                 Pad(
                     pad_id="A·12",  # interpunct form
                     source=PadSource.for_external(external_path="/b.wav"),
-                    clip_settings=ClipSettings(
-                        warp_bpm=100.0, loop_end_bar=4.0
-                    ),
+                    clip_settings=ClipSettings(warp_bpm=100.0, loop_end_bar=4.0),
                 ),
             ],
         ),
@@ -715,9 +711,7 @@ def test_export_route_defaults_target_format_to_ppak(
     assert body["last_export"]["target_format"] == "ppak"
     # The build-deck CLI doesn't take --target (it's ppak-only by design),
     # so we just verify the build-deck subcommand was invoked.
-    build_deck_call = next(
-        (c for c in calls if "build-deck" in c["cmd"]), None
-    )
+    build_deck_call = next((c for c in calls if "build-deck" in c["cmd"]), None)
     assert build_deck_call is not None
 
 
