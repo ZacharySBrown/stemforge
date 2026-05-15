@@ -43,7 +43,7 @@ outlets = 4;   // 0: status text  1: bang  2: preset umenu  3: [shell] (mkdir-p)
 // File.readstring loops (caught during second-UAT run).
 
 // Build fingerprint, injected by tools/inject_build_manifest.py.
-var SF_BUILD_MANIFEST = "build=2026-05-15T20:11 amxd=fe06fcda js={sf_arrangement_loader=70c939e5,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=20b2b392,stemforge_loader.test=d411427e,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
+var SF_BUILD_MANIFEST = "build=2026-05-15T20:45 amxd=fe06fcda js={sf_arrangement_loader=70c939e5,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=bc50eab2,stemforge_loader.test=d411427e,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
 
 try {
     post("[sf_loader] " + SF_BUILD_MANIFEST + "\n");
@@ -540,23 +540,40 @@ function _loadManifestPath(manifestPath) {
         if (!s || !s.name) continue;
         if (s.name === "residual") continue;
 
-        // Decide source template to duplicate from.
+        // Decide source template to duplicate from. If no template/match
+        // exists we create a fresh audio track at the end of the set —
+        // mirrors sf_arrangement_loader.js so LOAD FORGE works on bare
+        // sets without the user dragging the SF | * templates in first.
         var cfg = STEM_TARGETS[s.name];
         var templateName = cfg && cfg.track ? cfg.track : null;
         var templateIdx = templateName ? findTrackByName(templateName) : -1;
 
         if (templateIdx < 0) {
-            // No template for this stem. Try to at least find a matching
-            // existing track by suffix (user's custom template) or create a
-            // fresh audio track at the end of the set.
             templateIdx = findTrackBySuffix(s.name);
         }
-        if (templateIdx < 0) {
-            status("  " + s.name + ": no target track — dragging required");
-            continue;
+
+        var newIdx;
+        if (templateIdx >= 0) {
+            newIdx = duplicateTrack(templateIdx);
+        } else {
+            // Self-contained fallback: append a fresh audio track. The
+            // newly-created track lands at index = trackCount()-1; we
+            // rescan rather than trust the LiveAPI return value (the
+            // arrangement loader does the same — Live's return is not
+            // always reliable here).
+            var preCount = trackCount();
+            try { createAudioTrack(-1); }
+            catch (eCreate) {
+                status("  " + s.name + ": create track failed: " + eCreate);
+                continue;
+            }
+            if (trackCount() <= preCount) {
+                status("  " + s.name + ": create track returned no new track");
+                continue;
+            }
+            newIdx = preCount;
         }
 
-        var newIdx = duplicateTrack(templateIdx);
         var clipName = (mf.track_name || "stemforge") + " | " + s.name;
         renameTrack(newIdx, clipName, cfg ? cfg.color : null);
 

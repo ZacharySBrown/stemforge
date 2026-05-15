@@ -25,6 +25,7 @@ from .manifest_io import (
     new_manifest_exists,
     build_from_curated_dict,
     build_empty_arrangement,
+    build_arrangement_from_prechop,
 )
 
 __all__ = [
@@ -39,4 +40,5 @@ __all__ = [
     "new_manifest_exists",
     "build_from_curated_dict",
     "build_empty_arrangement",
+    "build_arrangement_from_prechop",
 ]

@@ -1319,6 +1319,35 @@ describe("_loadManifestPath — new auto_curation_manifest shape", () => {
     expect(status.some((s) => s.includes("missing path"))).toBe(true);
   });
 
+  // Regression: with the SF | * template tracks missing, LOAD FORGE used to
+  // emit "<stem>: no target track — dragging required" for every stem and
+  // place 0/4. The loader now mirrors sf_arrangement_loader.js and creates
+  // a fresh audio track per stem so the load is self-contained.
+  test("creates a fresh audio track when no template/match exists", () => {
+    loadLomSnapshotObject({ live_set: { tracks: [] } });
+    const manifestPath = FORGE("sample-forge", "auto_curation_manifest.json");
+    T._loadManifestPath(manifestPath);
+
+    const status = global.outletEmissions
+      .filter((e) => Array.isArray(e.args) && e.args[0] === "set")
+      .map((e) => e.args.slice(1).join(" "));
+
+    // The fail-mode message must NOT appear for any stem.
+    expect(status.some((s) => /no target track/.test(s))).toBe(false);
+
+    // create_audio_track should have been called once per adapted stem.
+    const creates = global.liveApiCalls
+      .filter((c) => c.verb === "create_audio_track")
+      .length;
+    expect(creates).toBeGreaterThanOrEqual(1);
+
+    // Final "loader: N/M stems placed" should show N>=1 (matching create count).
+    const placed = status.find((s) => /^loader: \d+\/\d+ stems placed/.test(s));
+    expect(placed).toBeDefined();
+    const m = placed.match(/loader: (\d+)\/(\d+) stems placed/);
+    expect(Number(m[1])).toBeGreaterThanOrEqual(1);
+  });
+
   // Regression: real forge manifests (~/stemforge/processed/*/auto_curation_manifest.json)
   // write absolute `audio_path` values. The first adapter implementation
   // unconditionally prepended forgeDir, producing doubled paths like

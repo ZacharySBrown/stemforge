@@ -1810,7 +1810,7 @@ def forge(audio_file, analysis, model, strategy, n_bars, time_sig, output, curat
     # exporters/readers; the compat shim in `stemforge.forge.manifest_io`
     # accepts both shapes.
     from .forge import (
-        build_empty_arrangement,
+        build_arrangement_from_prechop,
         build_from_curated_dict,
         write_arrangement,
         write_auto_curation,
@@ -1829,8 +1829,14 @@ def forge(audio_file, analysis, model, strategy, n_bars, time_sig, output, curat
         first_downbeat_sec=_forge_dn,
     )
     _fm_path = write_auto_curation(track_out, _fm)
-    _am = build_empty_arrangement(
+    # build_arrangement_from_prechop reads track_out/prechop_manifest.json
+    # and flattens its nested stems[].chunks[] into the schema's flat
+    # chunks[]. Falls back to an empty arrangement when no prechop exists
+    # — preserves the previous build_empty_arrangement behavior for
+    # forge runs that skipped the prechop step (e.g. older pipelines).
+    _am = build_arrangement_from_prechop(
         slug=track_name,
+        forge_dir=track_out,
         source_audio=str(audio_file),
         bpm=_fm.bpm,
         first_downbeat_sec=_forge_dn,
