@@ -1220,3 +1220,66 @@ describe("_loadManifestPath — new auto_curation_manifest shape", () => {
     }
   });
 });
+
+// Regression: arrangement_manifest must NOT route to the auto_curation forge
+// path. Sniffer detection was correct ("sniffer: detected arrangement
+// manifest") but `primary()` lumped arrangement_manifest in with forge_manifest
+// and called `_loadManifestPath`, which only handles clips[]/stems[] — so the
+// device emitted "manifest has no stems" and zero clips landed in arrangement
+// view. Fix splits the dispatch so arrangement_manifest goes through
+// `loadArrangementFromManifest` (which delegates to sf_arrangement_loader.js).
+// Caught 2026-05-15 driving Live via Computer Use against
+// /Users/zak/stemforge/processed/breaks-n-beats-deck/arrangement_manifest.json.
+
+describe("primary() dispatch — arrangement_manifest", () => {
+  test("arrangement_manifest routes to LOAD ARRANGEMENT, not LOAD FORGE", () => {
+    const arrangementPath = FORGE("sample-forge", "arrangement_manifest.json");
+    // Sanity: the fixture really is an arrangement-shape manifest (has chunks).
+    const mf = JSON.parse(fs.readFileSync(arrangementPath, "utf-8"));
+    expect(Array.isArray(mf.chunks)).toBe(true);
+
+    // Stub runArrangementLoad so `loadArrangementFromManifest` finds it after
+    // its (no-op stubbed) include() — and so we can prove the dispatch reached
+    // the arrangement branch with the right path.
+    const calls = [];
+    global.runArrangementLoad = (manifestPath, shiftBeats) => {
+      calls.push({ manifestPath, shiftBeats });
+      return true;
+    };
+    try {
+      global.messagename = "applyPickedSource";
+      T.applyPickedSource(arrangementPath);
+      const picked = T.getPickedSource();
+      expect(picked).not.toBeNull();
+      expect(picked.type).toBe("arrangement_manifest");
+      expect(picked.validated).toBe(true);
+
+      // Drive the primary button.
+      global.messagename = "primary";
+      T.primary();
+
+      const statuses = global.outletEmissions
+        .filter((e) => e.idx === 0 && e.args[0] === "set")
+        .map((e) => String(e.args[1]));
+      // The dispatch line must be LOAD ARRANGEMENT, not LOAD FORGE.
+      expect(
+        statuses.some((s) =>
+          /^primary: dispatching LOAD ARRANGEMENT on /.test(s)
+        )
+      ).toBe(true);
+      expect(
+        statuses.some((s) => /^primary: dispatching LOAD FORGE on /.test(s))
+      ).toBe(false);
+      // The forge-path failure must NOT fire — that's the bug we're guarding.
+      expect(statuses.some((s) => s.includes("manifest has no stems"))).toBe(
+        false
+      );
+
+      // And runArrangementLoad must have been invoked with this manifest.
+      expect(calls.length).toBe(1);
+      expect(calls[0].manifestPath).toBe(arrangementPath);
+    } finally {
+      delete global.runArrangementLoad;
+    }
+  });
+});

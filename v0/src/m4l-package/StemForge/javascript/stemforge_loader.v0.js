@@ -43,7 +43,7 @@ outlets = 4;   // 0: status text  1: bang  2: preset umenu  3: [shell] (mkdir-p)
 // File.readstring loops (caught during second-UAT run).
 
 // Build fingerprint, injected by tools/inject_build_manifest.py.
-var SF_BUILD_MANIFEST = "build=2026-05-15T13:28 amxd=05fdba64 js={sf_arrangement_loader=b6ee853f,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=15171b81,stemforge_loader.test=d411427e,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
+var SF_BUILD_MANIFEST = "build=2026-05-15T14:19 amxd=05fdba64 js={sf_arrangement_loader=b6ee853f,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=0b20ee13,stemforge_loader.test=d411427e,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
 
 try {
     post("[sf_loader] " + SF_BUILD_MANIFEST + "\n");
@@ -3674,8 +3674,7 @@ function primary() {
         try { messnamed("sf-run-forge", pickedSource.path); } catch (_) {}
         return;
     }
-    if (pickedSource.type === "forge_manifest"
-            || pickedSource.type === "arrangement_manifest") {
+    if (pickedSource.type === "forge_manifest") {
         status("primary: dispatching LOAD FORGE on " + pickedSource.path);
         // Internal dispatch — DO NOT route through the Max-message wrapper.
         // Passing "loadManifest" as a positional arg made the wrapper's
@@ -3685,11 +3684,22 @@ function primary() {
         _loadManifestPath(pickedSource.path);
         return;
     }
-    if (pickedSource.type === "prechop_manifest") {
-        // Legacy arrangement-pipeline manifest. Delegates to the
-        // pre-rebuild arrangement-view loader; preserved per spec §11.
+    if (pickedSource.type === "arrangement_manifest"
+            || pickedSource.type === "prechop_manifest") {
+        // Arrangement-shape manifests (chunks[]) target Live's arrangement
+        // view, not session view. Route to the dedicated arrangement loader
+        // — `_loadManifestPath` only knows the forge clips[]/stems[] shape
+        // and would emit "manifest has no stems". The legacy prechop alias
+        // is kept for back-compat (spec §11).
+        //
+        // Path is the ONLY positional arg. Do NOT pass "loadArrangementFromManifest"
+        // as a leading arg — same trap as the legacy `_loadManifestPath` dispatch
+        // (see the comment in the forge_manifest branch above). Internally the
+        // wrapper does `arrayfromargs(messagename, arguments).slice(1)` then
+        // `.join(" ")` to recompose the path; an extra leading atom gets glued
+        // onto the front of the path string.
         status("primary: dispatching LOAD ARRANGEMENT on " + pickedSource.path);
-        loadArrangementFromManifest("loadArrangementFromManifest", pickedSource.path);
+        loadArrangementFromManifest(pickedSource.path);
         return;
     }
     if (pickedSource.type === "curation") {
