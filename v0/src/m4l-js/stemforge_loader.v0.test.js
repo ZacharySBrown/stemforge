@@ -22,6 +22,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 
 require("../../../tools/test-harness/max-stub.js");
@@ -1328,9 +1329,8 @@ describe("_loadManifestPath — new auto_curation_manifest shape", () => {
         ],
       },
     });
-    const forgeDir = "/private/tmp/sf-absolute-forge";
+    const forgeDir = fs.mkdtempSync(path.join(os.tmpdir(), "sf-absolute-forge-"));
     const drumWav = forgeDir + "/curated/drums/bar_001.wav";
-    fs.mkdirSync(forgeDir, { recursive: true });
     const manifestPath = path.join(forgeDir, "auto_curation_manifest.json");
     fs.writeFileSync(
       manifestPath,
