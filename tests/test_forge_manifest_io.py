@@ -22,6 +22,7 @@ from stemforge.configurator.schemas import (
 )
 from stemforge.forge import (
     ForgeManifestError,
+    build_arrangement_from_prechop,
     build_empty_arrangement,
     build_from_curated_dict,
     legacy_manifest_exists,
@@ -316,3 +317,142 @@ def test_build_from_curated_dict_handles_v2_production_loops_block(tmp_path: Pat
     bass_clips = [c for c in fm.clips if c.stem == "bass"]
     assert len(drum_clips) == 2
     assert len(bass_clips) == 1
+
+
+# ── build_arrangement_from_prechop ───────────────────────────────────────────
+
+
+def _write_prechop(tmp_path: Path, *, beats_per_bar: int = 4) -> None:
+    """Drop a minimal prechop_manifest.json under tmp_path."""
+    data = {
+        "bpm": 120.0,
+        "bars": 4,
+        "beats_per_bar": beats_per_bar,
+        "first_downbeat_sec": 2.0,
+        "musical_bar_1_chunk_index": 1,
+        "stems": {
+            "drums": {
+                "dir": "drums_prechop",
+                "chunks": [
+                    {
+                        "file": "drums_prechop/drums_chunk_001.wav",
+                        "stem": "drums",
+                        "chunk_index": 1,
+                        "bars": 4,
+                        "total_sec": 8.0,
+                    },
+                    {
+                        "file": "drums_prechop/drums_chunk_002.wav",
+                        "stem": "drums",
+                        "chunk_index": 2,
+                        "bars": 4,
+                        "total_sec": 8.0,
+                    },
+                ],
+            },
+            "vocals": {
+                "dir": "vocals_prechop",
+                "chunks": [
+                    {
+                        "file": "vocals_prechop/vocals_chunk_001.wav",
+                        "stem": "vocals",
+                        "chunk_index": 1,
+                        "bars": 4,
+                        "total_sec": 8.0,
+                    },
+                ],
+            },
+        },
+    }
+    (tmp_path / "prechop_manifest.json").write_text(json.dumps(data))
+
+
+def test_build_arrangement_from_prechop_flattens_nested_chunks(tmp_path: Path):
+    """Each prechop chunk becomes one ArrangementChunk with renamed stem."""
+    _write_prechop(tmp_path)
+    am = build_arrangement_from_prechop(
+        slug="def",
+        forge_dir=tmp_path,
+        source_audio="/path/to/src.wav",
+        bpm=120.0,
+        first_downbeat_sec=2.0,
+    )
+    assert len(am.chunks) == 3  # 2 drum + 1 vocal
+    drums = [c for c in am.chunks if c.stem == "drum"]
+    vocals = [c for c in am.chunks if c.stem == "vocal"]
+    assert len(drums) == 2
+    assert len(vocals) == 1
+    # Schema literals are singular, prechop uses plural — rename verified.
+    assert all(c.stem in {"drum", "bass", "vocal", "other"} for c in am.chunks)
+    # Audio path is preserved as a relative path under the forge dir.
+    assert drums[0].audio_path == "drums_prechop/drums_chunk_001.wav"
+
+
+def test_build_arrangement_from_prechop_bar_position_math(tmp_path: Path):
+    """bar_position derives from (chunk_index - musical_bar_1) * bars; the
+    source_position_sec then projects onto first_downbeat_sec + bar grid."""
+    _write_prechop(tmp_path)  # bpm=120, beats_per_bar=4 → bar_period_sec = 2.0
+    am = build_arrangement_from_prechop(
+        slug="def",
+        forge_dir=tmp_path,
+        source_audio="/x.wav",
+        bpm=120.0,
+        first_downbeat_sec=2.0,
+    )
+    drums = sorted([c for c in am.chunks if c.stem == "drum"], key=lambda c: c.bar_position)
+    # Chunk 1 → bar_position 0, source_position_sec = first_downbeat_sec.
+    assert drums[0].bar_position == 0
+    assert drums[0].source_position_sec == pytest.approx(2.0)
+    # Chunk 2 → bar_position 4 (one chunk-of-4-bars later),
+    # source_position_sec = first_downbeat + 4 * 2.0 = 10.0.
+    assert drums[1].bar_position == 4
+    assert drums[1].source_position_sec == pytest.approx(10.0)
+
+
+def test_build_arrangement_from_prechop_missing_file_returns_empty(tmp_path: Path):
+    """No prechop on disk → fall back to empty arrangement (no crash)."""
+    am = build_arrangement_from_prechop(
+        slug="def",
+        forge_dir=tmp_path,
+        source_audio="/x.wav",
+        bpm=120.0,
+        first_downbeat_sec=0.0,
+    )
+    assert am.chunks == []
+    # Hash should still match the empty-chunks canonical form.
+    assert am.manifest_hash == compute_manifest_hash([])
+
+
+def test_build_arrangement_from_prechop_corrupt_json_returns_empty(tmp_path: Path):
+    """Malformed prechop JSON → fall back to empty arrangement (no crash)."""
+    (tmp_path / "prechop_manifest.json").write_text("{not-json")
+    am = build_arrangement_from_prechop(
+        slug="def",
+        forge_dir=tmp_path,
+        source_audio="/x.wav",
+        bpm=120.0,
+        first_downbeat_sec=0.0,
+    )
+    assert am.chunks == []
+
+
+def test_build_arrangement_from_prechop_chunks_sort_deterministically(tmp_path: Path):
+    """Two independent runs of the converter on identical input produce the
+    same manifest_hash. Hash depends on chunk ordering, so the function
+    must sort deterministically."""
+    _write_prechop(tmp_path)
+    am1 = build_arrangement_from_prechop(
+        slug="def",
+        forge_dir=tmp_path,
+        source_audio="/x.wav",
+        bpm=120.0,
+        first_downbeat_sec=2.0,
+    )
+    am2 = build_arrangement_from_prechop(
+        slug="def",
+        forge_dir=tmp_path,
+        source_audio="/x.wav",
+        bpm=120.0,
+        first_downbeat_sec=2.0,
+    )
+    assert am1.manifest_hash == am2.manifest_hash

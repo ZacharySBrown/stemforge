@@ -109,6 +109,18 @@ class ReconciledTempo:
     all_estimates: list[TempoEstimate] = field(default_factory=list)
     warning: str | None = None
 
+    @property
+    def first_downbeat_sec(self) -> float | None:
+        """First downbeat in seconds, or ``None`` when no downbeats were found.
+
+        Mirrors the same key in :meth:`to_dict` so callers that prefer the
+        object form (e.g. ``cli.forge``) do not need to drop down into
+        ``downbeat_times[0]`` and re-implement the empty-array guard.
+        """
+        if len(self.downbeat_times) == 0:
+            return None
+        return float(self.downbeat_times[0])
+
     def to_dict(self) -> dict:
         return {
             "bpm": round(float(self.bpm), 3),
@@ -116,9 +128,7 @@ class ReconciledTempo:
             "confidence": self.confidence,
             "n_beats": int(len(self.beat_times)),
             "n_downbeats": int(len(self.downbeat_times)),
-            "first_downbeat_sec": (
-                float(self.downbeat_times[0]) if len(self.downbeat_times) else None
-            ),
+            "first_downbeat_sec": self.first_downbeat_sec,
             "warning": self.warning,
             "all_estimates": [e.to_dict() for e in self.all_estimates],
         }

@@ -465,6 +465,119 @@ def build_empty_arrangement(
     )
 
 
+# Map prechop's plural stem labels to the schema's singular literals.
+_PRECHOP_STEM_TO_SCHEMA: dict[str, str] = {
+    "drums": "drum",
+    "bass": "bass",
+    "vocals": "vocal",
+    "other": "other",
+}
+
+
+def build_arrangement_from_prechop(
+    slug: str,
+    *,
+    forge_dir: Path,
+    source_audio: str,
+    bpm: float,
+    first_downbeat_sec: float = 0.0,
+) -> ArrangementManifest:
+    """Build an arrangement manifest from a sibling ``prechop_manifest.json``.
+
+    Reads ``<forge_dir>/prechop_manifest.json`` and flattens its nested
+    ``stems.<stem>.chunks[]`` shape into the schema's flat ``chunks[]``
+    list (one row per stem-chunk). Falls back to
+    :func:`build_empty_arrangement` when the prechop file is absent or
+    has no chunk rows.
+
+    The bar grid for each chunk is derived from prechop's
+    ``chunk_index`` / ``bars`` fields:
+        bar_position       = (chunk_index - 1) * bars
+        source_position_sec = first_downbeat_sec + bar_position * bar_period_sec
+
+    Pre-roll chunks (chunk_index < musical_bar_1_chunk_index) get a
+    bar_position of 0 and a source_position_sec of 0 so they don't
+    project negatives onto the bar grid.
+    """
+    pre_path = forge_dir / "prechop_manifest.json"
+    if not pre_path.is_file():
+        return build_empty_arrangement(
+            slug,
+            source_audio=source_audio,
+            bpm=bpm,
+            first_downbeat_sec=first_downbeat_sec,
+        )
+
+    try:
+        data: dict[str, Any] = json.loads(pre_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return build_empty_arrangement(
+            slug,
+            source_audio=source_audio,
+            bpm=bpm,
+            first_downbeat_sec=first_downbeat_sec,
+        )
+
+    beats_per_bar = int(data.get("beats_per_bar") or 4) or 4
+    bar_period_sec = (60.0 / float(bpm)) * float(beats_per_bar)
+    musical_bar_1 = int(data.get("musical_bar_1_chunk_index") or 1)
+
+    chunks: list[ArrangementChunk] = []
+    stems = data.get("stems") or {}
+    if not isinstance(stems, dict):
+        stems = {}
+
+    for stem_key, stem_block in stems.items():
+        schema_stem = _PRECHOP_STEM_TO_SCHEMA.get(str(stem_key))
+        if schema_stem is None:
+            continue
+        if not isinstance(stem_block, dict):
+            continue
+        for raw in stem_block.get("chunks") or []:
+            if not isinstance(raw, dict):
+                continue
+            try:
+                chunk_index = int(raw.get("chunk_index") or 0)
+                bars = int(raw.get("bars") or 0)
+            except (TypeError, ValueError):
+                continue
+            if chunk_index <= 0 or bars <= 0:
+                continue
+            file_rel = str(raw.get("file") or "").strip()
+            if not file_rel:
+                continue
+            offset_from_bar_1 = max(0, chunk_index - musical_bar_1)
+            bar_position = offset_from_bar_1 * bars
+            source_position_sec = float(first_downbeat_sec or 0.0) + bar_position * bar_period_sec
+            duration_sec = float(raw.get("total_sec") or (bars * bar_period_sec))
+            chunks.append(
+                ArrangementChunk(
+                    chunk_id=f"{schema_stem}-chunk-{chunk_index:03d}",
+                    audio_path=file_rel,
+                    stem=schema_stem,  # type: ignore[arg-type]
+                    source_position_sec=source_position_sec,
+                    duration_sec=duration_sec,
+                    bar_position=bar_position,
+                    duration_bars=bars,
+                )
+            )
+
+    # Sort chunks deterministically (stem, then bar_position) so the
+    # manifest_hash stays stable across runs.
+    chunks.sort(key=lambda c: (c.stem, c.bar_position, c.chunk_id))
+
+    chunk_dicts = [c.model_dump(mode="json") for c in chunks]
+    return ArrangementManifest(
+        schema_version=1,
+        forge_slug=slug,
+        source_audio=source_audio,
+        bpm=bpm,
+        first_downbeat_sec=float(first_downbeat_sec or 0.0),
+        manifest_hash=compute_manifest_hash(chunk_dicts),
+        chunks=chunks,
+    )
+
+
 def migrate_legacy(slug: str, forge_dir: Path) -> tuple[Path, Path]:
     """Convert a legacy ``curated/manifest.json`` into the new two-file shape.
 
