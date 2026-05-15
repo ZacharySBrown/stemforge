@@ -269,10 +269,21 @@ def _js_box(
     numoutlets: int = 1,
     outlettype: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Classic [js] object (SpiderMonkey engine). NOT in presentation."""
+    """Classic [js] object (SpiderMonkey engine). NOT in presentation.
+
+    @numoutlets MUST appear in the text. Max defaults a fresh [js] box to
+    outlets=1 and only honors the JS file's `outlets = N` declaration AFTER
+    the script has finished evaluating. During that interval Max walks the
+    saved patcher cords and deletes any whose source-outlet index >= 1 as
+    "patchcord outlet out of range". The box-level numoutlets field is NOT
+    enough for [js] — Max ignores it in favor of the text-arg attribute.
+    Setting @numoutlets in the text guarantees the box has the right shape
+    before cord-restoration runs.
+    """
     text = f"js {filename}"
     if scripting_name:
         text += f" @scripting_name {scripting_name}"
+    text += f" @numinlets {numinlets} @numoutlets {numoutlets}"
     if outlettype is None:
         outlettype = [""] * numoutlets
     return _box(
