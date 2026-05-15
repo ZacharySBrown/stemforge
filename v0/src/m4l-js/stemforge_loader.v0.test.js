@@ -594,10 +594,14 @@ describe("commit() walker", () => {
       for (const p of pads) expect(p.audio_path).toBeUndefined();
     }
 
-    // messnamed send: curation name + JSON payload.
+    // messnamed send: full POST URL + JSON payload. Phase 3B C2 reshaped
+    // the wire so the patcher's `[r sf-commit-send]` consumes the dict
+    // already populated by JS — the args here exist for L3 capture only.
     const sends = captureCommitSends();
     expect(sends.length).toBe(1);
-    expect(sends[0].args[0]).toBe("verse_swap_v1");
+    expect(sends[0].args[0]).toMatch(
+      /^http:\/\/127\.0\.0\.1:\d+\/curations\/verse_swap_v1\/commit$/
+    );
     const parsed = JSON.parse(sends[0].args[1]);
     expect(parsed.groups.A.pads[0].audio_path).toMatch(/vocal-bar12-16/);
 
@@ -933,7 +937,9 @@ describe("bounceCuration() — Phase 3B", () => {
 
     const progress = captureBounceProgress();
     expect(progress.length).toBe(4);
-    expect(progress[0].args[0]).toBe("verse_swap_v1");
+    expect(progress[0].args[0]).toMatch(
+      /^http:\/\/127\.0\.0\.1:\d+\/curations\/verse_swap_v1\/bounce-progress$/
+    );
     // Each beacon carries pad_id + (rendered_count, total_count).
     const first = JSON.parse(progress[0].args[1]);
     expect(first.pad_id).toBe("A01");
@@ -946,7 +952,9 @@ describe("bounceCuration() — Phase 3B", () => {
 
     const complete = captureBounceComplete();
     expect(complete.length).toBe(1);
-    expect(complete[0].args[0]).toBe("verse_swap_v1");
+    expect(complete[0].args[0]).toMatch(
+      /^http:\/\/127\.0\.0\.1:\d+\/curations\/verse_swap_v1\/bounce-complete$/
+    );
     const completionBody = JSON.parse(complete[0].args[1]);
     expect(completionBody.manifest_path).toMatch(
       /bounced\/verse_swap_v1\/bounce_manifest\.json$/
@@ -1424,3 +1432,95 @@ describe("primary() dispatch — arrangement_manifest", () => {
     }
   });
 });
+
+// ─── Phase 3B C2 — HTTP wire (_sendHttpPost + onHttpResponse) ──────────────
+describe("HTTP wire (Phase 3B C2)", () => {
+  test("_sendHttpPost populates per-verb request Dict + fires messnamed", () => {
+    const payload = { hello: "world", n: 7 };
+    const url = "http://127.0.0.1:9999/curations/foo/commit";
+    const ok = T._sendHttpPost("sf-commit-send", url, payload);
+    expect(ok).toBe(true);
+
+    // Request dict carries the maxurl-shaped fields.
+    const d = new Dict(T._httpRequestDictNameFor("sf-commit-send"));
+    expect(d.get("url")).toBe(url);
+    expect(d.get("http_method")).toBe("post");
+    expect(d.get("post_data")).toEqual(payload);
+    expect(d.get("headers")).toEqual(["Content-Type: application/json"]);
+    expect(d.get("response_dict")).toBe(
+      T._httpResponseDictNameFor("sf-commit-send")
+    );
+
+    // The messnamed wire carries url + jsonText (for patcher-side capture
+    // + L3 assertions).
+    const sends = messnamedCalls.filter((c) => c.name === "sf-commit-send");
+    expect(sends.length).toBe(1);
+    expect(sends[0].args[0]).toBe(url);
+    expect(JSON.parse(sends[0].args[1])).toEqual(payload);
+  });
+
+  test("_httpRequestDictNameFor underscores hyphens (matches patcher constant)", () => {
+    expect(T._httpRequestDictNameFor("sf-commit-send")).toBe(
+      "sf_http_req_sf_commit_send"
+    );
+    expect(T._httpRequestDictNameFor("sf-bounce-progress")).toBe(
+      "sf_http_req_sf_bounce_progress"
+    );
+    expect(T._httpRequestDictNameFor("sf-bounce-complete")).toBe(
+      "sf_http_req_sf_bounce_complete"
+    );
+  });
+
+  test("onHttpResponse fires commitAck on 2xx for the commit response dict", () => {
+    const resName = T._httpResponseDictNameFor("sf-commit-send");
+    const rd = new Dict(resName);
+    // maxurl emits "status" in real Max; we probe "status" first then
+    // fall back to "code" / "status_code" so older variants still work.
+    rd.parse(JSON.stringify({ status: 200, body: "{}" }));
+
+    T.onHttpResponse(resName);
+
+    const lines = statusLines();
+    // commitAck emits "commit: server ack received" then "commit: complete".
+    expect(lines).toContain("commit: server ack received");
+    expect(lines).toContain("commit: complete");
+  });
+
+  test("onHttpResponse on non-2xx emits an http error status, no commitAck", () => {
+    const resName = T._httpResponseDictNameFor("sf-commit-send");
+    const rd = new Dict(resName);
+    rd.parse(JSON.stringify({ status: 500, body: "{}" }));
+
+    T.onHttpResponse(resName);
+
+    const lines = statusLines();
+    expect(lines.some((l) => l.indexOf("http: " + resName + " → 500") === 0))
+      .toBe(true);
+    expect(lines).not.toContain("commit: complete");
+  });
+
+  test("onHttpResponse is silent on 2xx for bounce response dicts", () => {
+    const resName = T._httpResponseDictNameFor("sf-bounce-progress");
+    const rd = new Dict(resName);
+    rd.parse(JSON.stringify({ status: 200 }));
+
+    T.onHttpResponse(resName);
+
+    // Status should NOT mention "commit:" — the bounce response is a no-op.
+    const lines = statusLines();
+    expect(lines.some((l) => l.indexOf("commit:") === 0)).toBe(false);
+    expect(lines.some((l) => l.indexOf("http:") === 0)).toBe(false);
+  });
+
+  test("onHttpResponse falls back to 'code' key when 'status' is absent", () => {
+    const resName = T._httpResponseDictNameFor("sf-commit-send");
+    const rd = new Dict(resName);
+    rd.parse(JSON.stringify({ code: 201 }));
+
+    T.onHttpResponse(resName);
+
+    const lines = statusLines();
+    expect(lines).toContain("commit: complete");
+  });
+});
+

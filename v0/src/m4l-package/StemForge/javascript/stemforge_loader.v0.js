@@ -43,7 +43,7 @@ outlets = 4;   // 0: status text  1: bang  2: preset umenu  3: [shell] (mkdir-p)
 // File.readstring loops (caught during second-UAT run).
 
 // Build fingerprint, injected by tools/inject_build_manifest.py.
-var SF_BUILD_MANIFEST = "build=2026-05-15T17:51 amxd=05fdba64 js={sf_arrangement_loader=70c939e5,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=fe560799,stemforge_loader.test=d411427e,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
+var SF_BUILD_MANIFEST = "build=2026-05-15T20:11 amxd=fe06fcda js={sf_arrangement_loader=70c939e5,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=20b2b392,stemforge_loader.test=d411427e,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
 
 try {
     post("[sf_loader] " + SF_BUILD_MANIFEST + "\n");
@@ -2497,20 +2497,15 @@ function bounceCuration(curationName, padIdsJson) {
         });
         status("bounce: rendered " + item.pad_id);
         // 5. Per-pad progress beacon so the popup can render a bar.
-        try {
-            messnamed(
-                BOUNCE_PROGRESS_SEND,
-                name,
-                JSON.stringify({
-                    pad_id: item.pad_id,
-                    rendered_count: rendered,
-                    total_count: workList.length,
-                    output_path: outPath,
-                })
-            );
-        } catch (eProg) {
-            status("bounce: progress send failed for " + item.pad_id + ": " + eProg);
-        }
+        var progressUrl = _buildPostUrl(
+            "/curations/" + encodeURIComponent(name) + "/bounce-progress"
+        );
+        _sendHttpPost(BOUNCE_PROGRESS_SEND, progressUrl, {
+            pad_id: item.pad_id,
+            rendered_count: rendered,
+            total_count: workList.length,
+            output_path: outPath,
+        });
     }
 
     // Unmute every STG-* track at end — both on success and any partial
@@ -2519,19 +2514,14 @@ function bounceCuration(curationName, padIdsJson) {
 
     // Final completion POST. The server merges this into
     // curation.last_bounce + broadcasts SSE.
-    try {
-        messnamed(
-            BOUNCE_COMPLETE_SEND,
-            name,
-            JSON.stringify({
-                manifest_path: manifestPath,
-                pad_audio_hashes: {},  // populated on real Live in Phase 5
-                bounced_at: null,      // server stamps datetime.now(UTC)
-            })
-        );
-    } catch (eDone) {
-        status("bounce: complete send failed: " + eDone);
-    }
+    var completeUrl = _buildPostUrl(
+        "/curations/" + encodeURIComponent(name) + "/bounce-complete"
+    );
+    _sendHttpPost(BOUNCE_COMPLETE_SEND, completeUrl, {
+        manifest_path: manifestPath,
+        pad_audio_hashes: {},  // populated on real Live in Phase 5
+        bounced_at: null,      // server stamps datetime.now(UTC)
+    });
     status("bounce: complete (" + rendered + "/" + workList.length + " OK)");
     return {
         curation_name: name,
@@ -3695,10 +3685,10 @@ function commit() {
         status("commit: stringify failed: " + e);
         return null;
     }
-    try {
-        messnamed(COMMIT_SEND_RECV, activeCuration.name, jsonText);
-    } catch (e2) {
-        status("commit: messnamed send failed: " + e2);
+    var url = _buildPostUrl(
+        "/curations/" + encodeURIComponent(activeCuration.name) + "/commit"
+    );
+    if (!_sendHttpPost(COMMIT_SEND_RECV, url, payload)) {
         return payload;
     }
     status("commit: sent " + activeCuration.name + " ("
@@ -4088,6 +4078,111 @@ function _readConfiguratorPort() {
     }
 }
 
+// ─── HTTP wire (Phase 3B — C2) ────────────────────────────────────────────────
+//
+// Patcher wires three `[r sf-…]` receivers to a shared `[maxurl 4]` via the
+// dictionary input form. JS owns request building: it populates a per-verb
+// request Dict (`sf_http_req_<verb_underscored>`) with maxurl's expected
+// shape (url, http_method, post_data dict, headers, response_dict), then
+// fires `messnamed(verb, url, jsonText)`. The patcher's `[r]` ignores its
+// inlet atoms and re-fires the already-populated dict by name into maxurl.
+//
+// The url+jsonText on the messnamed wire is for L3 test capture; the
+// patcher side does not consume it. Keeping it lets vitest assert the
+// exact endpoint URL + payload without driving real Max.
+//
+// Response side: maxurl outlet 0 emits `dictionary sf_http_res_<verb>`,
+// which the patcher routes back into [js] via `[route dictionary]` +
+// `[prepend onHttpResponse]`. onHttpResponse reads status_code and, on a
+// 2xx response for the commit dict, calls commitAck(). Bounce responses
+// are fire-and-forget — the popup gets state via SSE.
+
+function _httpDictKeyFor(verbName) {
+    return String(verbName).replace(/-/g, "_");
+}
+
+function _httpRequestDictNameFor(verbName) {
+    return "sf_http_req_" + _httpDictKeyFor(verbName);
+}
+
+function _httpResponseDictNameFor(verbName) {
+    return "sf_http_res_" + _httpDictKeyFor(verbName);
+}
+
+function _buildPostUrl(pathSuffix) {
+    var port = _readConfiguratorPort();
+    if (port == null) port = CONFIGURATOR_DEFAULT_PORT;
+    return "http://" + CONFIGURATOR_HOST + ":" + port + pathSuffix;
+}
+
+// Populate the per-verb request Dict for [maxurl] and fire the verb so
+// the patcher's `[r <verb>]` activates the wire. Returns true on send.
+// Status emissions on the various failure modes keep the device's UI
+// honest even when the wire never leaves JS.
+function _sendHttpPost(verbName, url, payloadObj) {
+    var reqDictName = _httpRequestDictNameFor(verbName);
+    var responseDictName = _httpResponseDictNameFor(verbName);
+    var reqShape = {
+        url: url,
+        http_method: "post",
+        post_data: payloadObj,
+        // maxurl wants "Name: value" (colon-space), per the help patch
+        // (maxurl.maxhelp). The maxref XML's "Name=value" example is misleading
+        // and gets silently ignored — maxurl defaults to
+        // application/x-www-form-urlencoded and pydantic rejects the JSON body
+        // with 422.
+        headers: ["Content-Type: application/json"],
+        response_dict: responseDictName
+    };
+    try {
+        var d = new Dict(reqDictName);
+        d.clear();
+        d.parse(JSON.stringify(reqShape));
+    } catch (eDict) {
+        status(verbName + ": dict build failed: " + eDict);
+        return false;
+    }
+    var jsonText;
+    try { jsonText = JSON.stringify(payloadObj); }
+    catch (eS) { status(verbName + ": stringify failed: " + eS); return false; }
+    try { messnamed(verbName, url, jsonText); }
+    catch (eM) { status(verbName + ": messnamed send failed: " + eM); return false; }
+    return true;
+}
+
+// onHttpResponse — called by the patcher when [maxurl] emits a response
+// dictionary. The patcher prepends "onHttpResponse" to the dict name so
+// classic [js] dispatches here. Reads the response dict's status_code and
+// fires commitAck() on a 2xx response for the commit verb; bounce
+// responses are silent on 2xx (the popup uses SSE for state).
+function onHttpResponse(responseDictName) {
+    if (responseDictName == null) return;
+    var name = String(responseDictName);
+    if (!name) return;
+    var code = 0;
+    try {
+        var rd = new Dict(name);
+        // maxurl's response-dict key for HTTP status varies by version/usage;
+        // probe the common names so we don't depend on a single one.
+        var probed = rd.get("status");
+        if (probed == null) probed = rd.get("code");
+        if (probed == null) probed = rd.get("status_code");
+        code = Number(probed) || 0;
+    } catch (eR) {
+        status("http: response read failed for " + name + ": " + eR);
+        return;
+    }
+    if (code < 200 || code >= 300) {
+        status("http: " + name + " → " + code);
+        return;
+    }
+    if (name === _httpResponseDictNameFor(COMMIT_SEND_RECV)) {
+        commitAck();
+    }
+    // Bounce-progress / bounce-complete: nothing to do — local status
+    // emissions already reflect render progress; SSE updates the popup.
+}
+
 /**
  * alsOpenedAck(curationOrSentinel) — message handler bound to the
  * patcher's `[r sf-als-opened-ack]`. The HTTP shim parses the
@@ -4204,6 +4299,12 @@ if (typeof module !== "undefined" && module.exports) {
         _readConfiguratorPort: _readConfiguratorPort,
         CONFIGURATOR_DEFAULT_PORT: CONFIGURATOR_DEFAULT_PORT,
         CONFIGURATOR_HOST: CONFIGURATOR_HOST,
+        // Phase 3B C2 — Device → Server HTTP wire (commit + bounce).
+        _sendHttpPost: _sendHttpPost,
+        _buildPostUrl: _buildPostUrl,
+        _httpRequestDictNameFor: _httpRequestDictNameFor,
+        _httpResponseDictNameFor: _httpResponseDictNameFor,
+        onHttpResponse: onHttpResponse,
         // Configurator v1 Phase 3B — BOUNCE refactor (curation-driven render).
         bounceCuration: bounceCuration,
         _bounceCropOnePad: _bounceCropOnePad,
