@@ -103,6 +103,32 @@ describe("sniffer", () => {
     expect(result.detail).toMatch(/curation_version=1/);
   });
 
+  test("accepts a legacy prechop_manifest.json (no schema_version)", () => {
+    // Pre-rebuild manifest shape: bpm + bars + stems[], no schema_version.
+    // Still loadable via loadArrangementFromManifest() (Phase 2 LOM
+    // behavior preserved per spec §11 migration plan).
+    const tmpFile = path.join(__dirname, "__tmp_prechop.json");
+    fs.writeFileSync(
+      tmpFile,
+      JSON.stringify({
+        bpm: 95.0,
+        bars: 32,
+        pad_bars: 4,
+        beats_per_bar: 4,
+        first_downbeat_sec: 1.234,
+        stems: [{ name: "drums", path: "drums.wav" }],
+      })
+    );
+    try {
+      const result = T._snifferInspect(tmpFile);
+      expect(result.type).toBe("prechop_manifest");
+      expect(result.validated).toBe(true);
+      expect(result.detail).toMatch(/bpm=95/);
+    } finally {
+      fs.unlinkSync(tmpFile);
+    }
+  });
+
   test("rejects an unknown file type cleanly", () => {
     const tmpFile = path.join(__dirname, "__tmp_unknown.txt");
     fs.writeFileSync(tmpFile, "this is plain text, no schema_version");
@@ -942,7 +968,7 @@ describe("Phase 4A — als-opened bootstrap", () => {
       live_set: { tracks: [], path: "", name: "song.als" },
     });
 
-    T.loadbang();
+    T.liveApiReady();
 
     const sends = global.messnamedCalls.filter((c) => c.name === T.ALS_OPENED_SEND);
     expect(sends).toHaveLength(1);
@@ -994,7 +1020,7 @@ describe("Phase 4A — als-opened bootstrap", () => {
       live_set: { tracks: [], path: "/secondary/probe.als", name: "probe.als" },
     });
 
-    T.loadbang();
+    T.liveApiReady();
 
     const sends = global.messnamedCalls.filter((c) => c.name === T.ALS_OPENED_SEND);
     expect(sends).toHaveLength(1);
@@ -1010,7 +1036,7 @@ describe("Phase 4A — als-opened bootstrap", () => {
       live_set: { tracks: [], name: "fallback.als" },
     });
 
-    T.loadbang();
+    T.liveApiReady();
 
     const sends = global.messnamedCalls.filter((c) => c.name === T.ALS_OPENED_SEND);
     expect(sends).toHaveLength(1);
@@ -1027,7 +1053,7 @@ describe("Phase 4A — als-opened bootstrap", () => {
     });
     T.setAlsPathForTest("/override/wins.als");
 
-    T.loadbang();
+    T.liveApiReady();
 
     const sends = global.messnamedCalls.filter((c) => c.name === T.ALS_OPENED_SEND);
     expect(sends).toHaveLength(1);
@@ -1039,8 +1065,8 @@ describe("Phase 4A — als-opened bootstrap", () => {
     // /als-opened twice or the server will see duplicate bootstrap
     // events. The fired-flag guard short-circuits the second call.
     T.setAlsPathForTest("/once.als");
-    T.loadbang();
-    T.loadbang(); // second call — should be a no-op
+    T.liveApiReady();
+    T.liveApiReady(); // second call — should be a no-op
 
     const sends = global.messnamedCalls.filter((c) => c.name === T.ALS_OPENED_SEND);
     expect(sends).toHaveLength(1);
@@ -1060,7 +1086,7 @@ describe("Phase 4A — als-opened bootstrap", () => {
     // device just booted.
     loadLomSnapshotObject({ live_set: { tracks: [] } });
 
-    T.loadbang();
+    T.liveApiReady();
 
     const sends = global.messnamedCalls.filter((c) => c.name === T.ALS_OPENED_SEND);
     expect(sends).toHaveLength(1);

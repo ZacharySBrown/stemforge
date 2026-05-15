@@ -2626,7 +2626,11 @@ var PRIMARY_LABEL_BY_TYPE = {
     audio: "FORGE",
     forge_manifest: "LOAD FORGE",
     arrangement_manifest: "LOAD FORGE",
-    curation: "LOAD CURATION"
+    curation: "LOAD CURATION",
+    // Legacy: pre-rebuild prechop_manifest.json files (no schema_version,
+    // top-level keys like bpm/bars/stems[]). Still loadable via the
+    // preserved loadArrangementFromManifest() function.
+    prechop_manifest: "LOAD ARRANGEMENT"
 };
 
 // Default staging-track prefix when the curation file omits a `label` field.
@@ -2940,6 +2944,20 @@ function _snifferInspect(picked) {
             return result;
         }
         if (parsed.schema_version === undefined) {
+            // Legacy pre-rebuild prechop_manifest.json (no schema_version
+            // — predates the new architecture). Identified by its
+            // canonical keys: bpm + bars + stems[]. Still loadable via
+            // loadArrangementFromManifest() (Phase 2 LOM behavior
+            // preserved per spec §11 migration plan).
+            if (typeof parsed.bpm === "number"
+                    && typeof parsed.bars === "number"
+                    && Array.isArray(parsed.stems)) {
+                result.type = "prechop_manifest";
+                result.validated = true;
+                result.detail = "legacy prechop (bpm=" + parsed.bpm
+                    + ", bars=" + parsed.bars + ")";
+                return result;
+            }
             result.detail = "missing schema_version";
             return result;
         }
@@ -3575,6 +3593,13 @@ function primary() {
         loadManifest("loadManifest", pickedSource.path);
         return;
     }
+    if (pickedSource.type === "prechop_manifest") {
+        // Legacy arrangement-pipeline manifest. Delegates to the
+        // pre-rebuild arrangement-view loader; preserved per spec §11.
+        status("primary: dispatching LOAD ARRANGEMENT on " + pickedSource.path);
+        loadArrangementFromManifest("loadArrangementFromManifest", pickedSource.path);
+        return;
+    }
     if (pickedSource.type === "curation") {
         status("primary: dispatching LOAD CURATION on " + pickedSource.path);
         var text = readFileContents(pickedSource.path);
@@ -4028,6 +4053,7 @@ if (typeof module !== "undefined" && module.exports) {
         },
         // Configurator v1 Phase 4A — als-opened bootstrap.
         loadbang: loadbang,
+        liveApiReady: liveApiReady,
         alsOpenedAck: alsOpenedAck,
         _getAlsPath: _getAlsPath,
         ALS_OPENED_SEND: ALS_OPENED_SEND,
