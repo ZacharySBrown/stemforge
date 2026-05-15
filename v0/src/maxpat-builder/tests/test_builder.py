@@ -61,7 +61,9 @@ def test_device_width_matches_yaml(patcher):
     with open(DEVICE_YAML) as f:
         spec = yaml.safe_load(f)
     assert patcher["patcher"]["devicewidth"] == float(spec["ui"]["size"]["width"])
-    assert patcher["patcher"]["devicewidth"] == 820.0
+    # Slim 480px canvas (down from 820 — the live.text refactor made the
+    # extra width dead space behind transparent buttons).
+    assert patcher["patcher"]["devicewidth"] == 480.0
 
 
 # ── v8ui canvas (background only — Configurator v1 §3.1 lifts UI to natives) ─
@@ -74,9 +76,9 @@ def test_v8ui_canvas_present_in_patching_only(boxes):
     assert len(v8s) == 1, "expected exactly one v8ui box"
     v8 = v8s[0]
     assert v8["filename"] == "sf_ui.js"
-    # Full-canvas patching_rect (820×149) — sf_state still emits `refresh`
+    # Full-canvas patching_rect (480×149) — sf_state still emits `refresh`
     # to it so the in-script debug surface keeps working.
-    assert v8["patching_rect"][2:] == [820, 149]
+    assert v8["patching_rect"][2:] == [480, 149]
     # NOT in presentation mode any more — there's no presentation_rect and
     # the `presentation` flag must be absent (or 0).
     assert not v8.get("presentation"), (
@@ -165,29 +167,39 @@ def test_primary_click_wired_to_loader(boxes, line_pairs):
     assert (msg["id"], "obj-sf-lom-loader") in line_pairs
 
 
-def test_status_picker_text_receives_sf_status(boxes, line_pairs):
-    """The picker's status display reads from [r sf-status]; the bus is
-    driven by a [s sf-status] send fed from the loader's outlet 0 (which
-    is where status() emits `set <text>` messages).
+def test_footer_status_text_receives_sf_status(boxes, line_pairs):
+    """The footer's `sf_status_text` live.comment is the SINGLE dynamic
+    status surface — it consumes `set <text>` from [r sf-status]. The
+    earlier 700px in-body status box (sf_status_picker_text) is gone; this
+    test guards against a regression that would either re-introduce it or
+    leave the footer text static.
 
-    NB: this must be `live.comment`, not `live.text`. live.text mode 0
-    is a momentary BUTTON that rejects `set <text>` with
-    `bad arguments for message "set"` (caught during first UAT round).
-    live.comment is the canonical M4L widget for dynamic text labels.
+    `live.comment` must remain — `live.text` in mode 0 is a momentary
+    BUTTON that rejects `set <text>` with `bad arguments for message
+    "set"` (caught during first UAT round).
     """
     txt = next(
-        (b for b in boxes if b.get("varname") == "sf_status_picker_text"), None
+        (b for b in boxes if b.get("varname") == "sf_status_text"), None
     )
-    assert txt is not None, "missing sf_status_picker_text"
+    assert txt is not None, "missing footer sf_status_text"
     assert txt["maxclass"] == "live.comment", (
-        "status widget must be live.comment — live.text rejects `set <text>` "
-        "and emits 'bad arguments for message set' (regression for first-UAT bug)"
+        "status widget must be live.comment — live.text rejects `set <text>`"
+    )
+
+    # The legacy body-status box must NOT be re-introduced.
+    legacy = next(
+        (b for b in boxes if b.get("varname") == "sf_status_picker_text"),
+        None,
+    )
+    assert legacy is None, (
+        "sf_status_picker_text (the legacy 700px body status box) is gone — "
+        "the footer's sf_status_text is the single status surface."
     )
 
     recv = next((b for b in boxes if b.get("text") == "r sf-status"), None)
     assert recv is not None, "missing [r sf-status]"
-    # recv → txt
-    assert ("obj-sf-status-recv", "obj-sf-status-picker-text") in line_pairs
+    # recv → footer status text
+    assert ("obj-sf-status-recv", "obj-sf-status-text") in line_pairs
     # And a [s sf-status] must be fed by the loader's status outlet (outlet 0).
     send = next((b for b in boxes if b.get("text") == "s sf-status"), None)
     assert send is not None, "missing [s sf-status]"
@@ -347,18 +359,21 @@ def test_anchor_go_wire_routes_into_locator_anchor(boxes, line_pairs):
 
 
 def test_picker_and_verb_layout_snapshot(boxes):
-    """Snapshot the geometry of the 5 user-visible widgets so future
+    """Snapshot the geometry of the user-visible widgets so future
     layout edits are reviewable. If this test breaks because of a
-    deliberate move, update the expected dict here."""
+    deliberate move, update the expected dict here.
+
+    Layout (480x169):
+        row 1 (y=8-44):  Pick source (8,8,256,36) | Primary (272,8,200,36)
+        row 2 (y=52-80): COMMIT | BOUNCE | EXPORT | ANCH (4 × 113×28)
+    """
     expected = {
-        "sf_pick_source_btn": {"x": 8.0, "y": 8.0, "w": 360.0, "h": 32.0, "mode": 1},
-        # live.comment has no mode; absent key signals comment-widget.
-        "sf_status_picker_text": {"x": 8.0, "y": 48.0, "w": 700.0, "h": 28.0, "mode": None},
-        "sf_primary_btn": {"x": 720.0, "y": 8.0, "w": 92.0, "h": 44.0, "mode": 1},
-        "sf_commit_btn": {"x": 720.0, "y": 58.0, "mode": 1, "text": "COMMIT"},
-        "sf_bounce_btn": {"mode": 1, "text": "BOUNCE"},
-        "sf_export_btn": {"mode": 1, "text": "EXPORT"},
-        "sf_anchor_btn": {"mode": 1, "text": "ANCH"},
+        "sf_pick_source_btn": {"x": 8.0, "y": 8.0, "w": 256.0, "h": 36.0, "mode": 1},
+        "sf_primary_btn": {"x": 272.0, "y": 8.0, "w": 200.0, "h": 36.0, "mode": 1},
+        "sf_commit_btn": {"x": 8.0, "y": 52.0, "mode": 1, "text": "COMMIT"},
+        "sf_bounce_btn": {"x": 124.0, "y": 52.0, "mode": 1, "text": "BOUNCE"},
+        "sf_export_btn": {"x": 240.0, "y": 52.0, "mode": 1, "text": "EXPORT"},
+        "sf_anchor_btn": {"x": 356.0, "y": 52.0, "mode": 1, "text": "ANCH"},
     }
     found = {}
     for b in boxes:

@@ -139,7 +139,6 @@ OBJ_DICT_SETTINGS = "obj-dict-sf-settings"
 # moves to these native widgets in presentation mode.
 OBJ_PICK_SOURCE_BTN = "obj-sf-pick-source-btn"
 OBJ_PICK_SOURCE_MSG = "obj-sf-pick-source-msg"
-OBJ_STATUS_PICKER_TEXT = "obj-sf-status-picker-text"
 OBJ_STATUS_RECV = "obj-sf-status-recv"
 
 OBJ_PRIMARY_BTN = "obj-sf-primary-btn"
@@ -489,12 +488,11 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     # [message openEditor] → [js sf_lom_loader].openEditor(), which asks
     # Max to `launchbrowser` the popup URL.
     #
-    # Position: anchored right of the status text, left of the version stamp.
-    # The status_text at x=24 is 600 wide → ends at x=624. The version_text
-    # starts at x=720. We use the 96-px gap for the Open Editor button.
-    btn_x = 632.0
+    # Position: in the footer gap between status_text (ends ~x=314) and
+    # version_text (starts at x=422 per the slimmed device.yaml).
+    btn_x = 322.0
     btn_y = status_bar["status_dot"]["pos"]["y"]
-    btn_w = 80.0
+    btn_w = 92.0
     btn_h = status_bar["status_dot"]["size"]["height"]
     open_editor_rect = (btn_x, btn_y, btn_w, btn_h)
     boxes.append(
@@ -846,17 +844,26 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     # a bang, and a [message <verb>] box names the JS handler that
     # stemforge_loader.v0.js resolves on its [js] inlet.
 
-    # Picker geometry — two columns, generous gap so the v8ui canvas behind
-    # them is hidden visually by the buttons' opaque backgrounds.
+    # Picker geometry — slim layout for the 480px canvas (was 820 with a
+    # 700-wide status box covering most of the body). Two rows:
+    #
+    #   row 1 (y=8-44):  [ Pick source (256w) ][gap][ Primary (200w) ]
+    #   row 2 (y=52-80): [ COMMIT | BOUNCE | EXPORT | ANCH ] each ~113w
+    #
+    # Status feedback now lives entirely in the footer's `sf_status_text`
+    # live.comment (driven by [r sf-status]), so the body's old big status
+    # surface is gone.
     LEFT_X = 8.0
-    LEFT_W = 360.0  # Pick source… button is wide so long paths still legible.
-    STATUS_W = 700.0  # Status text spans nearly the whole left+center.
-    RIGHT_X = 720.0
-    RIGHT_W = 92.0
-    VERB_W = (RIGHT_W - 4.0) / 3.0  # 3 small buttons in a row of width RIGHT_W.
+    LEFT_W = 256.0  # Pick source button width.
+    RIGHT_X = 272.0  # Primary button x (after Pick source + 8px gap).
+    RIGHT_W = 200.0
+    VERB_W = 113.0  # Each of the 4 verb buttons. 4*113 + 3*3 = 461 < 480.
+    VERB_GAP = 3.0
+    VERB_Y = 52.0
+    VERB_H = 28.0
 
     # ── Pick source button ──────────────────────────────────────────────
-    pick_src_rect = (LEFT_X, 8.0, LEFT_W, 32.0)
+    pick_src_rect = (LEFT_X, 8.0, LEFT_W, 36.0)
     boxes.append(
         _box(
             OBJ_PICK_SOURCE_BTN,
@@ -902,60 +909,30 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     lines.append(_line(OBJ_PICK_SOURCE_BTN, 0, OBJ_PICK_SOURCE_MSG, 0))
     lines.append(_line(OBJ_PICK_SOURCE_MSG, 0, OBJ_SF_LOM_LOADER, 0))
 
-    # ── Status text (below picker, driven by [r sf-status]) ─────────────
-    # The loader's status() helper emits `outlet(0, "set", <text>)` which
-    # arrives here as `set <text>`. We use live.comment (not live.text)
-    # because live.text in mode 0 is a momentary BUTTON — it rejects
-    # `set <text>` with "bad arguments for message set" and any non-
-    # toggle modes vary by Max version. live.comment is the canonical
-    # M4L widget for dynamic text labels driven by `set` messages.
-    status_rect = (LEFT_X, 48.0, STATUS_W, 28.0)
-    boxes.append(
-        _box(
-            OBJ_STATUS_PICKER_TEXT,
-            "live.comment",
-            status_rect,
-            presentation=True,
-            presentation_rect=status_rect,
-            numinlets=1,
-            numoutlets=0,
-            outlettype=[],
-            extras={
-                "varname": "sf_status_picker_text",
-                "text": "",
-                "fontname": "Ableton Sans Medium",
-                "fontsize": 10.0,
-                "textcolor": COLORS["text"],
-                "bgcolor": COLORS["status_bg"],
-                "rounded": 4.0,
-                "parameter_enable": 0,
-            },
-        )
-    )
-    # [r sf-status] → live.text. The loader's status() helper emits
-    # `outlet(0, "set", "<text>")` and the [s sf-status] send (wired
-    # below to the loader's outlet 0) re-broadcasts those `set ...`
-    # messages on the bus. live.text accepts `set <text>` natively
-    # so no prepend is needed — feeding the receiver straight into
-    # the widget's inlet 0 sets the visible text.
+    # ── Status receiver — feeds the footer's sf_status_text live.comment ──
+    # The earlier 700px in-body status box was redundant with the slim
+    # footer status: both displayed the same `set <text>` stream and the
+    # body version covered most of the device. This wires [r sf-status]
+    # straight to the footer widget (live.comment accepts `set <text>`
+    # natively, so no prepend needed).
     boxes.append(
         _box(
             OBJ_STATUS_RECV,
             "newobj",
-            (LEFT_X, 78.0, 100.0, 22.0),
+            (LEFT_X, 86.0, 100.0, 22.0),
             numinlets=1,
             numoutlets=1,
             outlettype=[""],
             extras={"text": "r sf-status"},
         )
     )
-    lines.append(_line(OBJ_STATUS_RECV, 0, OBJ_STATUS_PICKER_TEXT, 0))
+    lines.append(_line(OBJ_STATUS_RECV, 0, OBJ_STATUS_TEXT, 0))
 
-    # ── Primary button (right column, top) ──────────────────────────────
+    # ── Primary button (right of Pick source, same row) ─────────────────
     # Label is driven by [r primary-btn-label] from the loader; active
     # state by [r primary-btn-enabled]. On click, [message primary] →
     # js sf_lom_loader (calls primary(), which dispatches by sniffer type).
-    primary_rect = (RIGHT_X, 8.0, RIGHT_W, 44.0)
+    primary_rect = (RIGHT_X, 8.0, RIGHT_W, 36.0)
     boxes.append(
         _box(
             OBJ_PRIMARY_BTN,
@@ -1060,12 +1037,14 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     lines.append(_line(OBJ_PRIMARY_ENABLED_RECV, 0, OBJ_PRIMARY_ENABLED_PREPEND, 0))
     lines.append(_line(OBJ_PRIMARY_ENABLED_PREPEND, 0, OBJ_PRIMARY_BTN, 0))
 
-    # ── Verb buttons (COMMIT / BOUNCE / EXPORT) in a row ───────────────
+    # ── Verb buttons row — COMMIT / BOUNCE / EXPORT / ANCH ───────────────
     # Each is a live.text mode 1 → [message <verb>] → [js sf_lom_loader].
-    # The loader's `commit()`, `bounceCuration()`, `exportArrangementSnapshot()`
-    # functions are the targets; the message-name matching that Max performs
-    # on classic [js] objects resolves them by top-level function lookup.
-    verb_y = 58.0
+    # The loader's `commit()`, `bounceCuration()`, `exportArrangementSnapshot()`,
+    # `reAnchor()` functions are the targets; the message-name matching that
+    # Max performs on classic [js] objects resolves them by top-level
+    # function lookup. Row spans the device width below the Pick source +
+    # Primary row.
+    verb_y = VERB_Y
     _VERB_BTNS = [
         # (button_obj_id, message_obj_id, varname, label, message_text, x_offset_idx)
         (OBJ_COMMIT_BTN, OBJ_COMMIT_MSG, "sf_commit_btn", "COMMIT", "commit", 0),
@@ -1095,8 +1074,8 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         (OBJ_ANCHOR_BTN, OBJ_ANCHOR_MSG, "sf_anchor_btn", "ANCH", "reAnchor", 3),
     ]
     for btn_id, msg_id, varname, label, msg_text, idx in _VERB_BTNS:
-        btn_x = RIGHT_X + idx * (VERB_W + 2.0)
-        btn_rect = (btn_x, verb_y, VERB_W, 22.0)
+        btn_x = LEFT_X + idx * (VERB_W + VERB_GAP)
+        btn_rect = (btn_x, verb_y, VERB_W, VERB_H)
         boxes.append(
             _box(
                 btn_id,
@@ -1112,7 +1091,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
                     "mode": 1,
                     "text": label,
                     "fontname": "Ableton Sans Medium",
-                    "fontsize": 8.0,
+                    "fontsize": 10.0,
                     "textcolor": COLORS["text"],
                     "activebgcolor": COLORS["dim"],
                     "bgcolor": COLORS["status_bg"],
@@ -1121,7 +1100,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
                     "bordercolor": COLORS["dim"],
                     "activebordercolor": COLORS["text"],
                     "activebordercoloroff": COLORS["dim"],
-                    "rounded": 3.0,
+                    "rounded": 4.0,
                     "parameter_enable": 0,
                 },
             )
