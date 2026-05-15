@@ -875,35 +875,30 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     lines.append(_line(OBJ_PICK_SOURCE_MSG, 0, OBJ_SF_LOM_LOADER, 0))
 
     # ── Status text (below picker, driven by [r sf-status]) ─────────────
-    # The loader's status() helper currently posts via Max's [post] surface;
-    # but the new contract publishes a structured prefix that this UI label
-    # listens for via [r sf-status] → set $1 → live.text @text.
+    # The loader's status() helper emits `outlet(0, "set", <text>)` which
+    # arrives here as `set <text>`. We use live.comment (not live.text)
+    # because live.text in mode 0 is a momentary BUTTON — it rejects
+    # `set <text>` with "bad arguments for message set" and any non-
+    # toggle modes vary by Max version. live.comment is the canonical
+    # M4L widget for dynamic text labels driven by `set` messages.
     status_rect = (LEFT_X, 48.0, STATUS_W, 28.0)
     boxes.append(
         _box(
             OBJ_STATUS_PICKER_TEXT,
-            "live.text",
+            "live.comment",
             status_rect,
             presentation=True,
             presentation_rect=status_rect,
             numinlets=1,
-            numoutlets=2,
-            outlettype=["", ""],
+            numoutlets=0,
+            outlettype=[],
             extras={
                 "varname": "sf_status_picker_text",
-                # mode 0 = display-only (not a button — no click behaviour).
-                "mode": 0,
                 "text": "",
                 "fontname": "Ableton Sans Medium",
                 "fontsize": 10.0,
                 "textcolor": COLORS["text"],
                 "bgcolor": COLORS["status_bg"],
-                "activebgcolor": COLORS["status_bg"],
-                "bgoncolor": COLORS["status_bg"],
-                "activebgoncolor": COLORS["status_bg"],
-                "bordercolor": COLORS["dim"],
-                "activebordercolor": COLORS["dim"],
-                "activebordercoloroff": COLORS["dim"],
                 "rounded": 4.0,
                 "parameter_enable": 0,
             },
@@ -1440,11 +1435,18 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         _box(
             OBJ_LOADBANG,
             "newobj",
-            (500.0, 20.0, 80.0, 22.0),
+            (500.0, 20.0, 120.0, 22.0),
             numinlets=1,
-            numoutlets=1,
-            outlettype=["bang"],
-            extras={"text": "loadbang"},
+            numoutlets=4,
+            outlettype=["bang", "", "", "bang"],
+            # [live.thisdevice] outlets: 0=loadbang, 1=savebang, 2=patcher
+            # init, 3=initialized bang (Live API ready). We bind to outlet 3
+            # so anything routed through here only fires AFTER Live's LOM
+            # is initialized. Replaces a plain [loadbang], which fired
+            # before the API was up and produced repeated "Live API is not
+            # initialized" warnings + an empty `als-opened: sent <unknown>`
+            # because _getAlsPath() couldn't read live_app view yet.
+            extras={"text": "live.thisdevice"},
         )
     )
     boxes.append(
@@ -1458,7 +1460,26 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             extras={"text": "deferlow"},
         )
     )
-    lines.append(_line(OBJ_LOADBANG, 0, OBJ_LOAD_DEFERLOW, 0))
+    # live.thisdevice outlet 3 is the "Live API ready" bang.
+    lines.append(_line(OBJ_LOADBANG, 3, OBJ_LOAD_DEFERLOW, 0))
+    # ALSO fire `[message liveApiReady]` → loader when Live's API is ready.
+    # The loader's liveApiReady() reads the .als path via LiveAPI (which
+    # would have warned-and-returned-empty if called from the JS-box-level
+    # `loadbang` at script-init time — see Phase 4A's bootstrap design).
+    OBJ_LIVE_API_READY_MSG = "obj-live-api-ready-msg"
+    boxes.append(
+        _box(
+            OBJ_LIVE_API_READY_MSG,
+            "message",
+            (640.0, 50.0, 110.0, 22.0),
+            numinlets=2,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "liveApiReady"},
+        )
+    )
+    lines.append(_line(OBJ_LOADBANG, 3, OBJ_LIVE_API_READY_MSG, 0))
+    lines.append(_line(OBJ_LIVE_API_READY_MSG, 0, OBJ_SF_LOM_LOADER, 0))
     boxes.append(
         _box(
             OBJ_LOAD_SEQ,

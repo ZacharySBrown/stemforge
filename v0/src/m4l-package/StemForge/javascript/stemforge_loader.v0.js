@@ -3801,13 +3801,28 @@ function _getAlsPath() {
 
 /**
  * loadbang() — Max entry point fired when this [js] object finishes
- * loading. Sends the current .als path to the server so it can ack
- * back with the active curation (if any) and we auto-load it.
+ * loading. INTENTIONALLY a noop: at [js]-box-load time Live's LOM hasn't
+ * been initialized yet, so calling LiveAPI here produces a stream of
+ * "Live API is not initialized" warnings + an empty .als path.
  *
- * Idempotent within a single device-open event: a second loadbang
- * (which Max fires on some [js] reloads) is a no-op.
+ * The real bootstrap fires from the patcher's `[live.thisdevice]` outlet
+ * 3 (the "Live API ready" bang) via `[message liveApiReady]` → here.
  */
 function loadbang() {
+    // No-op — see `liveApiReady` below. Logging suppressed since Max
+    // sometimes fires `loadbang` multiple times during script reload and
+    // we don't want noise.
+}
+
+/**
+ * liveApiReady() — driven by `[live.thisdevice]` outlet 3 in the
+ * patcher. Now safe to read LiveAPI verbs because Live has finished
+ * initializing the LOM. Sends the current .als path to the server so
+ * it can ack back with the active curation (if any) and we auto-load.
+ *
+ * Idempotent within a single device-open event.
+ */
+function liveApiReady() {
     if (_alsOpenedFired) {
         status("als-opened: skipping (already fired)");
         return;
