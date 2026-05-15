@@ -21,18 +21,41 @@ import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from fastapi import HTTPException
 
-from stemforge.forge.manifest_io import (
-    ARRANGEMENT_FILENAME,
-    AUTO_CURATION_FILENAME,
-    LEGACY_FILENAME,
-    LEGACY_PARENT,
-    ForgeManifestError,
-    load_arrangement,
-    load_forge,
-)
+# Filename constants duplicated here to avoid a circular import chain via
+# `stemforge.forge.manifest_io ← stemforge.configurator.schemas ←
+# stemforge.configurator.__init__ ← stemforge.configurator.intents ←
+# stemforge.configurator.commit_handler ← stemforge.configurator.forge_io`.
+# manifest_io.py is the source of truth; tests pin them to stay in sync.
+ARRANGEMENT_FILENAME = "arrangement_manifest.json"
+AUTO_CURATION_FILENAME = "auto_curation_manifest.json"
+LEGACY_FILENAME = "manifest.json"
+LEGACY_PARENT = "curated"
+
+
+def _manifest_io():
+    """Lazy import shim for the rest of manifest_io's surface — keeps the
+    module-level cycle broken while still letting handlers reach the
+    loaders / errors at call time."""
+    from stemforge.forge import manifest_io  # noqa: PLC0415 — intentional lazy import
+
+    return manifest_io
+
+
+def __getattr__(name: str) -> Any:  # noqa: D401
+    """Resolve the previously-eager imports lazily.
+
+    Anything that used to be a module-level import from
+    ``stemforge.forge.manifest_io`` (``ForgeManifestError``,
+    ``load_forge``, ``load_arrangement``) is re-exported here without
+    triggering the cycle.
+    """
+    if name in ("ForgeManifestError", "load_forge", "load_arrangement"):
+        return getattr(_manifest_io(), name)
+    raise AttributeError(name)
 
 # Reuse the curation-name validator's character class for slug safety —
 # the processed dir's child names mirror the same constraint set.
