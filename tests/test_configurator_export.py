@@ -31,6 +31,7 @@ from stemforge.configurator.curation_io import (
 from stemforge.configurator.export_handler import (
     ExportValidationError,
     build_export_command,
+    curation_to_deck_plan,
     perform_export,
     update_last_export,
     validate_curation_name,
@@ -38,6 +39,7 @@ from stemforge.configurator.export_handler import (
     validate_target_format,
 )
 from stemforge.configurator.schemas import Curation, Group, Pad, Target
+from stemforge.configurator.schemas.curation import ClipSettings, PadSource
 from stemforge.configurator.server import create_app
 
 
@@ -203,15 +205,197 @@ def test_validate_curation_name_rejects_bad_names() -> None:
 
 
 def test_build_export_command_shape(tmp_path: Path) -> None:
+    deck_plan = tmp_path / "deck-plan.json"
+    deck_plan.write_text("{}")
     cmd = build_export_command(
-        curation_name="my_kit",
-        target_format="ppak",
+        deck_plan_path=deck_plan,
         out_path=tmp_path / "out.ppak",
     )
-    assert cmd[:4] == ["uv", "run", "stemforge", "export"]
-    assert "my_kit" in cmd
-    assert "--target" in cmd and cmd[cmd.index("--target") + 1] == "ppak"
+    # New shape: stemforge build-deck DECK_PLAN --out FILE.ppak
+    # The legacy `stemforge export ... --target ppak --out ...` invocation
+    # was wrong on three axes (subcommand, --target enum, --out vs --output)
+    # and never produced a .ppak. See 2026-05-15 commit for the rewrite.
+    assert cmd[:4] == ["uv", "run", "stemforge", "build-deck"]
+    assert str(deck_plan) in cmd
     assert "--out" in cmd and cmd[cmd.index("--out") + 1] == str(tmp_path / "out.ppak")
+
+
+def test_build_export_command_attaches_reference_template_if_present(
+    tmp_path: Path,
+) -> None:
+    deck_plan = tmp_path / "deck-plan.json"
+    deck_plan.write_text("{}")
+    ref = tmp_path / "reference.ppak"
+    ref.write_bytes(b"fake ppak template")
+    cmd = build_export_command(
+        deck_plan_path=deck_plan,
+        out_path=tmp_path / "out.ppak",
+        reference_template=ref,
+    )
+    assert "--reference-template" in cmd
+    assert cmd[cmd.index("--reference-template") + 1] == str(ref)
+
+
+def test_build_export_command_skips_missing_reference_template(
+    tmp_path: Path,
+) -> None:
+    deck_plan = tmp_path / "deck-plan.json"
+    deck_plan.write_text("{}")
+    cmd = build_export_command(
+        deck_plan_path=deck_plan,
+        out_path=tmp_path / "out.ppak",
+        reference_template=tmp_path / "does-not-exist.ppak",
+    )
+    # Missing template falls through to the CLI's "synthesise minimal" path
+    # rather than failing the call. Asserts the flag is absent.
+    assert "--reference-template" not in cmd
+
+
+# ── Unit: curation_to_deck_plan adapter ─────────────────────────────────────
+
+
+def _make_curation_with_pads(forges_dir_label: str = "sample-forge") -> Curation:
+    """Build a curation with 2 populated + 1 empty pad across two groups."""
+    now = datetime.now(UTC)
+    groups: dict[str, Group] = {}
+    # Group A: Vocals, A01 populated, A02 empty.
+    groups["A"] = Group(
+        label="Vocals",
+        template="vocal-bloom",
+        pads=[
+            Pad(
+                pad_id="A01",
+                source=PadSource.for_forge(
+                    forge=forges_dir_label,
+                    clip_id="vocal-bar0-4",
+                    audio_path="curated_audio/vocal-bar0-4.wav",
+                ),
+                clip_settings=ClipSettings(
+                    warp_bpm=120.0,
+                    loop_start_bar=0.0,
+                    loop_end_bar=4.0,
+                    looping=True,
+                ),
+            ),
+            Pad(pad_id="A02"),
+        ],
+    )
+    # Group B: Drums, B01 populated (external path).
+    groups["B"] = Group(
+        label="Drums",
+        template=None,
+        pads=[
+            Pad(
+                pad_id="B01",
+                source=PadSource.for_external(
+                    external_path="/tmp/external/kick.wav",
+                ),
+                clip_settings=ClipSettings(
+                    warp_bpm=92.0,
+                    loop_start_bar=0.0,
+                    loop_end_bar=1.0,
+                    looping=False,
+                ),
+            ),
+        ],
+    )
+    return Curation(
+        name="adapter_test",
+        type="deck",
+        created_at=now,
+        modified_at=now,
+        target=Target(),
+        referenced_forges=[],
+        groups=groups,
+    )
+
+
+def test_curation_to_deck_plan_resolves_forge_paths(tmp_path: Path) -> None:
+    curation = _make_curation_with_pads()
+    forges_dir = tmp_path / "processed"
+    plan = curation_to_deck_plan(curation, forges_dir=forges_dir)
+    assert plan["project"] == "adapter_test"
+    assert plan["project_bpm"] == 120.0  # first populated pad's warp_bpm
+    # Group A: vocal profile, forge-resolved path.
+    grpA = plan["groups"]["A"]
+    assert grpA["format_profile"] == "vocal"
+    assert len(grpA["pads"]) == 1  # empty A02 dropped
+    assert grpA["pads"][0]["pad"] == 1
+    assert grpA["pads"][0]["path"] == str(
+        forges_dir / "sample-forge" / "curated_audio" / "vocal-bar0-4.wav"
+    )
+    assert grpA["pads"][0]["source_bpm"] == 120.0
+
+
+def test_curation_to_deck_plan_passes_external_paths_through(tmp_path: Path) -> None:
+    curation = _make_curation_with_pads()
+    plan = curation_to_deck_plan(curation, forges_dir=tmp_path / "processed")
+    grpB = plan["groups"]["B"]
+    assert grpB["format_profile"] == "drum"
+    # External path is preserved verbatim (no forge prefix).
+    assert grpB["pads"][0]["path"] == "/tmp/external/kick.wav"
+    assert grpB["pads"][0]["source_bpm"] == 92.0
+
+
+def test_curation_to_deck_plan_omits_groups_with_no_populated_pads(
+    tmp_path: Path,
+) -> None:
+    now = datetime.now(UTC)
+    groups: dict[str, Group] = {
+        # All-empty group.
+        "C": Group(
+            label="FX",
+            template=None,
+            pads=[Pad(pad_id=f"C{i + 1:02d}") for i in range(12)],
+        ),
+    }
+    curation = Curation(
+        name="all_empty",
+        type="deck",
+        created_at=now,
+        modified_at=now,
+        target=Target(),
+        referenced_forges=[],
+        groups=groups,
+    )
+    plan = curation_to_deck_plan(curation, forges_dir=tmp_path)
+    # Empty group dropped — CLI gets only populated groups.
+    assert "C" not in plan["groups"]
+    assert plan["project_bpm"] == 120.0  # default fallback
+
+
+def test_curation_to_deck_plan_parses_pad_number_from_pad_id(tmp_path: Path) -> None:
+    now = datetime.now(UTC)
+    groups: dict[str, Group] = {
+        "A": Group(
+            label="",
+            template=None,
+            pads=[
+                Pad(
+                    pad_id="A07",  # zero-padded
+                    source=PadSource.for_external(external_path="/a.wav"),
+                    clip_settings=ClipSettings(warp_bpm=100.0, loop_end_bar=4.0),
+                ),
+                Pad(
+                    pad_id="A·12",  # interpunct form
+                    source=PadSource.for_external(external_path="/b.wav"),
+                    clip_settings=ClipSettings(warp_bpm=100.0, loop_end_bar=4.0),
+                ),
+            ],
+        ),
+    }
+    curation = Curation(
+        name="padform",
+        type="deck",
+        created_at=now,
+        modified_at=now,
+        target=Target(),
+        referenced_forges=[],
+        groups=groups,
+    )
+    plan = curation_to_deck_plan(curation, forges_dir=tmp_path)
+    pad_numbers = sorted(p["pad"] for p in plan["groups"]["A"]["pads"])
+    assert pad_numbers == [7, 12]
 
 
 # ── Unit: perform_export orchestration ──────────────────────────────────────
@@ -237,7 +421,7 @@ def test_perform_export_success_writes_last_export(
     assert result.ok is True
     assert "12345" in result.stdout
     # Subprocess was invoked with the canonical argv shape.
-    assert calls and calls[0]["cmd"][:4] == ["uv", "run", "stemforge", "export"]
+    assert calls and calls[0]["cmd"][:4] == ["uv", "run", "stemforge", "build-deck"]
     # last_export was persisted with timestamp + path + hash.
     persisted = read_curation(curation_path(configurator_paths["curations_dir"], "alpha"))
     assert persisted.last_export is not None
@@ -348,8 +532,8 @@ def test_export_route_success_updates_last_export_and_broadcasts_sse(
         e for e in events if e.event == "state" and e.data.get("kind") == "curations"
     ]
     assert curation_events, f"no curation state events; got {[e.event for e in events]}"
-    # Subprocess was invoked with the export argv.
-    assert any("export" in c["cmd"] for c in calls)
+    # Subprocess was invoked with the build-deck argv.
+    assert any("build-deck" in c["cmd"] for c in calls)
 
 
 # ── Route: failure paths ────────────────────────────────────────────────────
@@ -512,7 +696,7 @@ def test_export_route_defaults_target_format_to_ppak(
     client_with_runner,
     configurator_paths: dict[str, Path],
 ) -> None:
-    """``target_format`` is optional on the wire."""
+    """``target_format`` is optional on the wire — defaults to ``ppak``."""
     _seed_curation(configurator_paths["curations_dir"], "defaults")
     client, calls = client_with_runner(returncode=0, artifact_bytes=b"X")
     out_path = configurator_paths["desktop"] / "defaults.ppak"
@@ -523,19 +707,19 @@ def test_export_route_defaults_target_format_to_ppak(
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["ok"] is True
-    # CLI invocation carries ``--target ppak``.
-    export_call = next((c for c in calls if "export" in c["cmd"]), None)
-    assert export_call is not None
-    assert "--target" in export_call["cmd"]
-    target_idx = export_call["cmd"].index("--target") + 1
-    assert export_call["cmd"][target_idx] == "ppak"
+    # Persisted ``target_format`` reflects the default.
+    assert body["last_export"]["target_format"] == "ppak"
+    # The build-deck CLI doesn't take --target (it's ppak-only by design),
+    # so we just verify the build-deck subcommand was invoked.
+    build_deck_call = next((c for c in calls if "build-deck" in c["cmd"]), None)
+    assert build_deck_call is not None
 
 
-def test_export_route_invocation_passes_curation_name_as_positional(
+def test_export_route_invokes_build_deck_with_temp_plan_and_out_path(
     client_with_runner,
     configurator_paths: dict[str, Path],
 ) -> None:
-    """Verify the CLI argv shape matches the brief verbatim."""
+    """Verify the CLI argv shape: ``stemforge build-deck <plan> --out <ppak>``."""
     _seed_curation(configurator_paths["curations_dir"], "argv_check")
     client, calls = client_with_runner(returncode=0, artifact_bytes=b"X")
     out_path = configurator_paths["desktop"] / "argv_check.ppak"
@@ -544,12 +728,13 @@ def test_export_route_invocation_passes_curation_name_as_positional(
         json={"out_path": str(out_path), "target_format": "ppak"},
     )
     assert r.status_code == 200
-    export_call = next(c for c in calls if "export" in c["cmd"])
-    cmd = export_call["cmd"]
-    # Exact shape from the brief:
-    #   ["uv", "run", "stemforge", "export", curation_name,
-    #    "--target", target_format, "--out", out_path]
-    assert cmd[0:5] == ["uv", "run", "stemforge", "export", "argv_check"]
+    build_deck_call = next(c for c in calls if "build-deck" in c["cmd"])
+    cmd = build_deck_call["cmd"]
+    # Shape: stemforge build-deck DECK_PLAN --out FILE.ppak
+    assert cmd[0:4] == ["uv", "run", "stemforge", "build-deck"]
+    # Positional after build-deck is the deck-plan JSON (a tempfile path).
+    assert cmd[4].endswith(".json")
+    assert "argv_check" in cmd[4]  # tempfile carries the curation name
     assert "--out" in cmd
     assert cmd[cmd.index("--out") + 1] == str(out_path.resolve())
 

@@ -1,11 +1,14 @@
-"""EXPORT handler — server-side wrapper around ``stemforge export`` for curations.
+"""EXPORT handler — server-side wrapper around ``stemforge build-deck`` for curations.
 
 Phase 3C surface. The HTTP endpoint ``POST /curations/{name}/export`` wires
 through here; this module owns:
 
 1. Path-traversal + writability validation on ``out_path``.
-2. Subprocess invocation (with timeout) of ``uv run stemforge export ...``.
-3. Post-success state mutation — writes ``curation.last_export`` (atomic)
+2. Converting the persisted ``Curation`` to a build-deck JSON plan (the CLI
+   takes a plan path, not a curation name — see
+   :func:`curation_to_deck_plan`).
+3. Subprocess invocation (with timeout) of ``uv run stemforge build-deck ...``.
+4. Post-success state mutation — writes ``curation.last_export`` (atomic)
    with timestamp + output path + artifact hash.
 
 Subprocess is invoked through an injectable runner so unit tests don't
@@ -13,15 +16,16 @@ spawn the real CLI. Mirrors the Phase 1.5 re-anchor / re-curate pattern in
 :mod:`stemforge.configurator.server`.
 
 The actual ``.ppak`` rendering happens in the CLI subprocess — this module
-is the control plane only. When ``stemforge export`` gains a curation-aware
-front-end (Phase 5 / 1A migration), the command line built here is the
-contract surface.
+is the control plane only.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -157,30 +161,128 @@ def validate_curation_name(name: str) -> str:
 # ── Subprocess wrapper ──────────────────────────────────────────────────────
 
 
+def _format_profile_from_label(label: str | None) -> str:
+    """Map a Curation group label to a build-deck ``format_profile`` value.
+
+    The CLI uses these profiles for per-group memory budgeting (Decision
+    16). Conservative default of ``"drum"`` for unknown labels because the
+    drum profile is the most permissive on sample-rate downsampling.
+    """
+    if not label:
+        return "drum"
+    norm = label.strip().lower()
+    if "vocal" in norm:
+        return "vocal"
+    # bass / kick / snare / hat etc. all land in the drum profile for now.
+    return "drum"
+
+
+def _resolve_pad_path(source: Any, forges_dir: Path) -> str | None:
+    """Resolve a Curation ``PadSource`` to an absolute audio path.
+
+    Forge-owned pads: ``<forges_dir>/<forge_slug>/<audio_path>``.
+    External pads:   ``<external_path>`` verbatim.
+    Empty pads (no ``source``): returns ``None``; caller omits the pad.
+    """
+    if source is None:
+        return None
+    if getattr(source, "external_path", None):
+        return str(source.external_path)
+    forge = getattr(source, "forge", None)
+    audio_path = getattr(source, "audio_path", None)
+    if not forge or not audio_path:
+        return None
+    return str(forges_dir / forge / audio_path)
+
+
+def curation_to_deck_plan(
+    curation: Curation,
+    *,
+    forges_dir: Path,
+    project_slot: int = 1,
+) -> dict[str, Any]:
+    """Convert a :class:`Curation` to a ``build-deck`` plan dict.
+
+    Pads with no ``source`` are dropped — the CLI accepts sparse groups
+    so we don't need to emit empty placeholders. The pad number is parsed
+    out of ``pad_id`` (e.g. ``"A03"`` → ``3``). ``project_bpm`` is read
+    from the first populated pad's ``clip_settings.warp_bpm`` so the
+    project tempo matches the audio's warp bpm.
+    """
+    project_bpm: float | None = None
+    groups_out: dict[str, dict[str, Any]] = {}
+    for letter, group in (curation.groups or {}).items():
+        pads_out: list[dict[str, Any]] = []
+        for pad in group.pads or []:
+            path = _resolve_pad_path(pad.source, forges_dir=forges_dir)
+            if path is None:
+                continue
+            # pad_id is "<L><NN>" — pull the trailing integer.
+            try:
+                pad_num = int("".join(c for c in (pad.pad_id or "") if c.isdigit()))
+            except ValueError:
+                continue
+            if pad_num <= 0:
+                continue
+            entry: dict[str, Any] = {"pad": pad_num, "path": path}
+            if pad.clip_settings and pad.clip_settings.warp_bpm:
+                bpm = float(pad.clip_settings.warp_bpm)
+                entry["source_bpm"] = bpm
+                if project_bpm is None:
+                    project_bpm = bpm
+            pads_out.append(entry)
+        if not pads_out:
+            continue
+        groups_out[letter] = {
+            "format_profile": _format_profile_from_label(group.label),
+            "pads": pads_out,
+        }
+    plan: dict[str, Any] = {
+        "project": curation.name,
+        "project_slot": int(project_slot),
+        "project_bpm": project_bpm or 120.0,
+        "groups": groups_out,
+    }
+    return plan
+
+
+# Reference .ppak template required by ``build-deck``. The CLI synthesises a
+# minimal template when omitted but emits a warning; we point at the
+# bundled fixture (a real device-captured .ppak) so the export is byte-clean.
+# Resolved relative to this file: repo-root layout assumed.
+DEFAULT_REFERENCE_TEMPLATE = (
+    Path(__file__).resolve().parent.parent.parent
+    / "tests"
+    / "ep133"
+    / "fixtures"
+    / "reference.ppak"
+)
+
+
 def build_export_command(
     *,
-    curation_name: str,
-    target_format: str,
+    deck_plan_path: Path,
     out_path: Path,
+    reference_template: Path | None = None,
 ) -> list[str]:
-    """Build the ``uv run stemforge export ...`` argv.
+    """Build the ``uv run stemforge build-deck ...`` argv.
 
     Centralised so tests can assert against the exact CLI surface without
-    string-splitting from inside the handler. The CLI itself is not in
-    scope for this lane (see hard-constraints in the lane brief); the
-    server shells out and trusts the CLI.
+    string-splitting from inside the handler.
     """
-    return [
+    cmd = [
         "uv",
         "run",
         "stemforge",
-        "export",
-        curation_name,
-        "--target",
-        target_format,
+        "build-deck",
+        str(deck_plan_path),
         "--out",
         str(out_path),
     ]
+    template = reference_template or DEFAULT_REFERENCE_TEMPLATE
+    if template and template.is_file():
+        cmd.extend(["--reference-template", str(template)])
+    return cmd
 
 
 def run_export_subprocess(
@@ -284,6 +386,7 @@ def perform_export(
     subprocess_runner: Callable[..., Any] | None = None,
     timeout: float = DEFAULT_TIMEOUT_SEC,
     now: datetime | None = None,
+    forges_dir: Path | None = None,
 ) -> ExportResult:
     """One-shot orchestration used by the HTTP route.
 
@@ -294,10 +397,15 @@ def perform_export(
     2. Confirm the curation exists. Caller is the route layer, which has
        already validated the name; we double-check on disk to surface a
        clean 404 even from direct callers (test code).
-    3. Run the subprocess. Failure ⇒ envelope with ``ok=False`` (route
+    3. Read the curation + render a build-deck JSON plan to a tempfile.
+    4. Run the subprocess. Failure ⇒ envelope with ``ok=False`` (route
        returns 200 with diagnostics — match re-anchor's pattern).
-    4. On success: update ``last_export`` + return both bodies so the
+    5. On success: update ``last_export`` + return both bodies so the
        route can broadcast a fresh state SSE event.
+
+    ``forges_dir`` defaults to a sibling of ``curations_dir`` (the
+    ``~/stemforge/{curations,processed}`` convention). Override when the
+    layout differs (tests, alternate user libraries).
     """
     validate_curation_name(name)
     target_format = validate_target_format(target_format_raw)
@@ -307,16 +415,33 @@ def perform_export(
     if not path.is_file():
         raise FileNotFoundError(f"curation not found: {name}")
 
-    cmd = build_export_command(
-        curation_name=name,
-        target_format=target_format,
-        out_path=out_path,
-    )
-    ok, stdout, stderr, error_tag = run_export_subprocess(
-        cmd,
-        runner=subprocess_runner,
-        timeout=timeout,
-    )
+    curation = read_curation(path)
+    forges_root = forges_dir if forges_dir is not None else curations_dir.parent / "processed"
+    plan = curation_to_deck_plan(curation, forges_dir=forges_root)
+
+    # Write the plan to a tempfile so the CLI can mmap it. Keep the file
+    # alive across the subprocess call but delete after — failures still
+    # leave stdout/stderr captured in the envelope for diagnostics.
+    tmp_fd, tmp_path_str = tempfile.mkstemp(prefix=f"sf-deck-{name}-", suffix=".json")
+    deck_plan_path = Path(tmp_path_str)
+    try:
+        with os.fdopen(tmp_fd, "w") as fh:
+            json.dump(plan, fh)
+        cmd = build_export_command(
+            deck_plan_path=deck_plan_path,
+            out_path=out_path,
+        )
+        ok, stdout, stderr, error_tag = run_export_subprocess(
+            cmd,
+            runner=subprocess_runner,
+            timeout=timeout,
+        )
+    finally:
+        try:
+            deck_plan_path.unlink()
+        except OSError:
+            pass
+
     if not ok:
         return ExportResult(
             ok=False,

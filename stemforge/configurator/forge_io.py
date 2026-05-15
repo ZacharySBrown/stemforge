@@ -21,18 +21,42 @@ import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from fastapi import HTTPException
 
-from stemforge.forge.manifest_io import (
-    ARRANGEMENT_FILENAME,
-    AUTO_CURATION_FILENAME,
-    LEGACY_FILENAME,
-    LEGACY_PARENT,
-    ForgeManifestError,
-    load_arrangement,
-    load_forge,
-)
+# Filename constants duplicated here to avoid a circular import chain via
+# `stemforge.forge.manifest_io ← stemforge.configurator.schemas ←
+# stemforge.configurator.__init__ ← stemforge.configurator.intents ←
+# stemforge.configurator.commit_handler ← stemforge.configurator.forge_io`.
+# manifest_io.py is the source of truth; tests pin them to stay in sync.
+ARRANGEMENT_FILENAME = "arrangement_manifest.json"
+AUTO_CURATION_FILENAME = "auto_curation_manifest.json"
+LEGACY_FILENAME = "manifest.json"
+LEGACY_PARENT = "curated"
+
+
+def _manifest_io():
+    """Lazy import shim for the rest of manifest_io's surface — keeps the
+    module-level cycle broken while still letting handlers reach the
+    loaders / errors at call time."""
+    from stemforge.forge import manifest_io  # noqa: PLC0415 — intentional lazy import
+
+    return manifest_io
+
+
+def __getattr__(name: str) -> Any:  # noqa: D401
+    """Resolve the previously-eager imports lazily.
+
+    Anything that used to be a module-level import from
+    ``stemforge.forge.manifest_io`` (``ForgeManifestError``,
+    ``load_forge``, ``load_arrangement``) is re-exported here without
+    triggering the cycle.
+    """
+    if name in ("ForgeManifestError", "load_forge", "load_arrangement"):
+        return getattr(_manifest_io(), name)
+    raise AttributeError(name)
+
 
 # Reuse the curation-name validator's character class for slug safety —
 # the processed dir's child names mirror the same constraint set.
@@ -173,6 +197,12 @@ def index_entry_for(forge_dir: Path, slug: str) -> ForgeIndexEntry:
     empty hash) rather than blowing up the whole index. The popup can
     surface a "broken forge" badge from the empty hash.
     """
+    # Bind manifest_io locally: module-level `__getattr__` only fires on
+    # `forge_io.load_forge` style lookups, not on bare names inside this
+    # module's own functions (PEP 562). Going through the helper preserves
+    # the cycle-breaking intent.
+    manifest_io = _manifest_io()
+
     arrangement_path = forge_dir / ARRANGEMENT_FILENAME
     legacy_path = forge_dir / LEGACY_PARENT / LEGACY_FILENAME
     has_arrangement = arrangement_path.is_file()
@@ -185,23 +215,23 @@ def index_entry_for(forge_dir: Path, slug: str) -> ForgeIndexEntry:
     source_audio: str | None = None
 
     try:
-        manifest = load_forge(slug, forge_dir=forge_dir)
+        manifest = manifest_io.load_forge(slug, forge_dir=forge_dir)
         bpm = float(manifest.bpm)
         manifest_hash = manifest.manifest_hash
         sample_count = len(manifest.clips)
         bar_count = sum(int(c.duration_bars) for c in manifest.clips)
         source_audio = manifest.source_audio or None
-    except ForgeManifestError:
+    except manifest_io.ForgeManifestError:
         # Surface the forge anyway with a zero-ish entry; the empty hash
         # is the signal to UIs that something is off.
         pass
 
     if has_arrangement:
         try:
-            arrangement = load_arrangement(slug, forge_dir=forge_dir)
+            arrangement = manifest_io.load_arrangement(slug, forge_dir=forge_dir)
             if arrangement is not None:
                 chunk_count = len(arrangement.chunks)
-        except ForgeManifestError:
+        except manifest_io.ForgeManifestError:
             chunk_count = None
 
     is_legacy_only = not (forge_dir / AUTO_CURATION_FILENAME).is_file() and legacy_path.is_file()

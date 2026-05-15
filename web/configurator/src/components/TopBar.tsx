@@ -62,11 +62,43 @@ export function TopBar({
     // spec §6.8: macOS+Chrome resists `open --new`, so the popup itself
     // does the new-window pop via window.open. window.open from a user
     // gesture is honored where the OS-level launcher is not.
-    window.open(
-      window.location.href,
-      "stemforge",
-      "popup,width=1200,height=800",
-    );
+    //
+    // Chrome popup gotchas we've hit:
+    //   - A bare "popup" feature is insufficient; recent Chrome treats
+    //     window.open with a reused window name as "focus the named tab"
+    //     even when "popup" is set, opening a tab instead of a chromeless
+    //     window. Using "_blank" forces a fresh window; explicit width/
+    //     height + chrome-flags push Chrome into popup-window mode rather
+    //     than full-tab.
+    //   - `popup=yes` (the modern feature key) is more reliable than the
+    //     bare `popup` flag.
+    const features = [
+      "popup=yes",
+      "width=1200",
+      "height=900",
+      "menubar=no",
+      "toolbar=no",
+      "location=no",
+      "status=no",
+      "scrollbars=yes",
+      "resizable=yes",
+    ].join(",");
+    // Chrome dedupes `window.open(currentURL, ...)` and reuses the current
+    // tab when the URL exactly matches. Append a transient query param so
+    // Chrome treats it as a distinct target → opens a fresh popup window
+    // rather than navigating the parent or focusing the current tab.
+    const url = new URL(window.location.href);
+    url.searchParams.set("popout", "1");
+    const w = window.open(url.href, "_blank", features);
+    if (w) {
+      // Best-effort focus so the new window comes to the foreground even if
+      // the OS stacked it behind Live.
+      try {
+        w.focus();
+      } catch {
+        // Cross-origin focus calls can throw; safe to ignore.
+      }
+    }
   }
 
   function handleSaveAs() {

@@ -30,6 +30,25 @@ autowatch = 1;
 inlets = 1;
 outlets = 4;   // 0: status text  1: bang  2: preset umenu  3: [shell] (mkdir-p)
 
+// ── Boot version banner ──────────────────────────────────────────────────────
+//
+// SF_BUILD_MANIFEST is REWRITTEN at build time by
+// `tools/inject_build_manifest.py`. The script computes SHA-256[:8] of
+// every JS file in the Max Package + the built .amxd, joins them into a
+// single line, and replaces the literal below. The loader then `post()`s
+// it at every script load (including autowatch reloads), so the Max
+// console always tells you which exact bytes are running.
+//
+// Do NOT read files at runtime here — Max's JS engine crashes on binary
+// File.readstring loops (caught during second-UAT run).
+
+// Build fingerprint, injected by tools/inject_build_manifest.py.
+var SF_BUILD_MANIFEST = "build=2026-05-15T17:51 amxd=05fdba64 js={sf_arrangement_loader=70c939e5,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=fe560799,stemforge_loader.test=d411427e,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
+
+try {
+    post("[sf_loader] " + SF_BUILD_MANIFEST + "\n");
+} catch (_) {}
+
 var STEM_TARGETS = {
     // From v0/interfaces/tracks.yaml — mirrored in JS because the template
     // tracks are the user-installed ones; we need to recognise them in the
@@ -445,7 +464,15 @@ function reload() {
 }
 
 function loadManifest() {
+    // Max-message entry: messagename = "loadManifest", arguments = [path...].
+    // arrayfromargs builds [messagename, ...args]; slice(1) drops messagename
+    // and we join remaining tokens (paths-with-spaces). This is the dispatch
+    // shape — internal callers should use _loadManifestPath() directly.
     var manifestPath = arrayfromargs(messagename, arguments).slice(1).join(" ");
+    _loadManifestPath(manifestPath);
+}
+
+function _loadManifestPath(manifestPath) {
     if (!manifestPath) { status("loadManifest: missing path"); return; }
 
     var raw = readFileContents(manifestPath);
@@ -456,6 +483,53 @@ function loadManifest() {
 
     if (mf.bpm) {
         try { new LiveAPI("live_set").set("tempo", Number(mf.bpm)); } catch (_) {}
+    }
+
+    // Adapt the new auto_curation_manifest.json shape (clips[]) into the
+    // legacy stems[] shape this loader was built for. Each stem keeps its
+    // first clip's audio as the representative wav so LOAD FORGE drops
+    // one usable file per stem track. Full bar-level loading is a separate
+    // path; this is the minimum to make the new manifest shape do something
+    // sensible from the device's LOAD FORGE button.
+    if ((!mf.stems || mf.stems.length === 0) && mf.clips && mf.clips.length) {
+        var forgeDir = manifestPath.replace(/\/[^/]+$/, "");
+        // New shape uses singular stem names; legacy STEM_TARGETS uses plural.
+        var STEM_RENAME = {
+            drum: "drums",
+            vocal: "vocals",
+            bass: "bass",
+            other: "other"
+        };
+        var byStem = {};
+        for (var ci = 0; ci < mf.clips.length; ci += 1) {
+            var c = mf.clips[ci];
+            if (!c || !c.stem || !c.audio_path) continue;
+            var legacyName = STEM_RENAME[c.stem] || c.stem;
+            if (!byStem[legacyName]) {
+                // Real forges write absolute audio_path; the legacy sample-forge
+                // fixture writes relative paths. Only prepend forgeDir for the
+                // relative case — otherwise we end up with a doubled path like
+                // /Users/.../definition//Users/.../bar_001.wav and create_audio_clip
+                // silently fails (loadClip still returns true → false-positive
+                // "N/N stems placed").
+                var ap = String(c.audio_path);
+                var resolved = ap.charAt(0) === "/" ? ap : forgeDir + "/" + ap;
+                byStem[legacyName] = {
+                    name: legacyName,
+                    wav_path: resolved
+                };
+            }
+        }
+        var stemsAdapted = [];
+        for (var k in byStem) {
+            if (Object.prototype.hasOwnProperty.call(byStem, k)) {
+                stemsAdapted.push(byStem[k]);
+            }
+        }
+        mf.stems = stemsAdapted;
+        mf.track_name = mf.forge_slug || mf.track_name;
+        status("loadManifest: adapted " + mf.clips.length
+             + " clips → " + stemsAdapted.length + " stems (new auto_curation shape)");
     }
 
     if (!mf.stems || !mf.stems.length) { status("manifest has no stems"); return; }
@@ -2626,7 +2700,11 @@ var PRIMARY_LABEL_BY_TYPE = {
     audio: "FORGE",
     forge_manifest: "LOAD FORGE",
     arrangement_manifest: "LOAD FORGE",
-    curation: "LOAD CURATION"
+    curation: "LOAD CURATION",
+    // Legacy: pre-rebuild prechop_manifest.json files (no schema_version,
+    // top-level keys like bpm/bars/stems[]). Still loadable via the
+    // preserved loadArrangementFromManifest() function.
+    prechop_manifest: "LOAD ARRANGEMENT"
 };
 
 // Default staging-track prefix when the curation file omits a `label` field.
@@ -2794,9 +2872,27 @@ function _yamlParseCuration(text) {
                 }
                 continue;
             }
-            // Child node lives on subsequent more-indented lines.
+            // Child node lives on subsequent lines. Two valid YAML shapes:
+            //   1. *Indented* child mapping or sequence — `nextChild.indent
+            //      > myIndent`. Standard.
+            //   2. *Flush* sequence — a "- item" at exactly `myIndent`. This
+            //      is PyYAML's default dump style and what the configurator
+            //      server writes for `pads:` and `referenced_forges:`. The
+            //      sequence is a child of `key` even though its dash sits at
+            //      the same column as the parent. Without this branch
+            //      `pads: null` and downstream `for pad in pads` is a no-op.
+            //      Caught 2026-05-15 against ~/stemforge/curations/bounced.yaml.
             var nextChild = tokens[cursor.i];
-            if (!nextChild || nextChild.indent <= myIndent) {
+            if (!nextChild) {
+                node[key] = null;
+                continue;
+            }
+            if (nextChild.indent < myIndent) {
+                node[key] = null;
+                continue;
+            }
+            if (nextChild.indent === myIndent && nextChild.kind !== "item") {
+                // Sibling kv at our indent — `key` has no child.
                 node[key] = null;
                 continue;
             }
@@ -2940,10 +3036,29 @@ function _snifferInspect(picked) {
             return result;
         }
         if (parsed.schema_version === undefined) {
+            // Legacy pre-rebuild prechop_manifest.json (no schema_version
+            // — predates the new architecture). Identified by its
+            // canonical keys: bpm + bars + stems[]. Still loadable via
+            // loadArrangementFromManifest() (Phase 2 LOM behavior
+            // preserved per spec §11 migration plan).
+            if (typeof parsed.bpm === "number"
+                    && typeof parsed.bars === "number"
+                    && Array.isArray(parsed.stems)) {
+                result.type = "prechop_manifest";
+                result.validated = true;
+                result.detail = "legacy prechop (bpm=" + parsed.bpm
+                    + ", bars=" + parsed.bars + ")";
+                return result;
+            }
             result.detail = "missing schema_version";
             return result;
         }
-        if (parsed.pads !== undefined) {
+        // ForgeManifest in stemforge.configurator.schemas.forge actually
+        // serializes its bar-clip array under `clips` (not `pads`); the
+        // earlier sniffer pattern reflected an older draft of the spec.
+        // We accept both for forward-compat with whatever the next schema
+        // rev calls it.
+        if (parsed.clips !== undefined || parsed.pads !== undefined) {
             result.type = "forge_manifest";
             result.validated = true;
             result.detail = "schema_version=" + parsed.schema_version;
@@ -2955,7 +3070,7 @@ function _snifferInspect(picked) {
             result.detail = "schema_version=" + parsed.schema_version;
             return result;
         }
-        result.detail = "no pads or chunks key";
+        result.detail = "no clips, pads, or chunks key";
         return result;
     }
 
@@ -2990,6 +3105,14 @@ function _emitPrimaryButtonState(type, enabled) {
     var label = _primaryLabelFor(type);
     try { messnamed(PRIMARY_LABEL_RECV, label); } catch (_) {}
     try { messnamed(PRIMARY_ENABLED_RECV, enabled ? 1 : 0); } catch (_) {}
+    // Also echo the armed action through the status line. live.text mode 1
+    // doesn't always paint a dynamic @text update (depends on Live build),
+    // so the on-device status text is the load-bearing UX signal that
+    // tells the user what the primary button is now bound to. Without
+    // this, a successful sniff looks like silence.
+    if (enabled) {
+        try { status("ready: click primary → " + label); } catch (_) {}
+    }
 }
 
 // Public message: `applyPickedSource <path>` — invoked by the patcher when
@@ -3005,6 +3128,15 @@ function applyPickedSource() {
         return;
     }
     var pickPath = args.join(" ");
+    // Strip an optional Macintosh-HFS volume prefix ("Macintosh HD:") if
+    // present. Live 12 sometimes emits POSIX paths directly and sometimes
+    // emits HFS-prefixed ones; doing the conversion in JS (rather than a
+    // [regexp] box in the patcher) avoids a load-time outlet-count race
+    // we hit on the first UAT round. Single string op, easy to test.
+    var hfsMatch = pickPath.match(/^[^:\/]+:(\/.*)$/);
+    if (hfsMatch) {
+        pickPath = hfsMatch[1];
+    }
     var inspected = _snifferInspect(pickPath);
     pickedSource = {
         path: inspected.path,
@@ -3276,15 +3408,61 @@ function loadCuration(yamlText, curationFilePath) {
                 continue;
             }
             var slotIdx = parsedPad.slot;
-            var clipLength = _curationClipLengthBeats(pad);
+            // Resolve audio path BEFORE creating the clip. Three shapes:
+            //   1. source.external_path → absolute, use verbatim.
+            //   2. source.audio_path + source.forge → forge-owned; try the
+            //      ~/stemforge/{curations,processed} convention by walking up
+            //      one dir from curationFilePath. Falls through to legacy
+            //      resolution when the structure does not match (tests).
+            //   3. source.audio_path alone → resolve relative to the YAML dir.
+            var audioPath = null;
+            if (pad.source.external_path) {
+                audioPath = String(pad.source.external_path);
+            } else if (pad.source.audio_path && pad.source.forge) {
+                var normCurationPath = _sfNormalizePath(curationFilePath || "");
+                var curSlash = normCurationPath.lastIndexOf("/");
+                var curationsDir = curSlash < 0 ? "" : normCurationPath.substring(0, curSlash);
+                var rootSlash = curationsDir.lastIndexOf("/");
+                var stemforgeRoot = rootSlash > 0 ? curationsDir.substring(0, rootSlash) : "";
+                if (stemforgeRoot) {
+                    audioPath = stemforgeRoot + "/processed/"
+                        + pad.source.forge + "/" + pad.source.audio_path;
+                } else {
+                    // No parent dir derivable (e.g. curationFilePath="/tmp/x.yaml").
+                    // Fall back to legacy: resolve against the YAML dir.
+                    audioPath = _resolvePadAudioPath(
+                        pad.source.audio_path, curationFilePath);
+                }
+            } else if (pad.source.audio_path) {
+                audioPath = _resolvePadAudioPath(pad.source.audio_path, curationFilePath);
+            }
+            if (!audioPath) {
+                status("staging: skipped " + displayId + " (audio_path unresolvable)");
+                continue;
+            }
+            // Use create_audio_clip with the path — NOT create_clip(length).
+            // create_clip is MIDI-only ("MIDI clips can only be created on
+            // MIDI tracks") and the previous call to it raised a silent Live
+            // error while `populated += 1` fired unconditionally, falsely
+            // reporting "staging: populated" while STG-* slots stayed empty.
+            // Mirrors loadClip() at line 244 which the LOAD FORGE path uses
+            // correctly. Caught 2026-05-15 by driving BOUN in Live: bounce
+            // walked STG-* and found 0 pads despite loadCuration claiming
+            // 3/48 populated.
             var slotPath = "live_set tracks " + trackIdx + " clip_slots " + slotIdx;
             var slotApi = new LiveAPI(slotPath);
-            slotApi.call("create_clip", clipLength);
+            try {
+                slotApi.call("create_audio_clip", String(audioPath));
+            } catch (eCreate) {
+                status("staging: create_audio_clip failed for " + displayId
+                    + ": " + eCreate);
+                continue;
+            }
             var clipApi = new LiveAPI(slotPath + " clip");
-            // Resolve audio_path (may be relative to curation YAML dir).
-            var audioPath = _resolvePadAudioPath(pad.source.audio_path, curationFilePath);
-            if (audioPath) {
-                try { clipApi.set("file_path", audioPath); } catch (_) {}
+            if (!clipApi || clipApi.id === "0") {
+                status("staging: clip handle missing after create for "
+                    + displayId);
+                continue;
             }
             // Clip name = source.clip_id when present, else the pad id.
             var clipName = pad.source.clip_id || padId;
@@ -3560,10 +3738,32 @@ function primary() {
         try { messnamed("sf-run-forge", pickedSource.path); } catch (_) {}
         return;
     }
-    if (pickedSource.type === "forge_manifest"
-            || pickedSource.type === "arrangement_manifest") {
+    if (pickedSource.type === "forge_manifest") {
         status("primary: dispatching LOAD FORGE on " + pickedSource.path);
-        loadManifest("loadManifest", pickedSource.path);
+        // Internal dispatch — DO NOT route through the Max-message wrapper.
+        // Passing "loadManifest" as a positional arg made the wrapper's
+        // `arrayfromargs(messagename, arguments).slice(1).join(" ")`
+        // pattern prefix the real path with the string "loadManifest "
+        // → "cannot read manifest". Call the helper directly.
+        _loadManifestPath(pickedSource.path);
+        return;
+    }
+    if (pickedSource.type === "arrangement_manifest"
+            || pickedSource.type === "prechop_manifest") {
+        // Arrangement-shape manifests (chunks[]) target Live's arrangement
+        // view, not session view. Route to the dedicated arrangement loader
+        // — `_loadManifestPath` only knows the forge clips[]/stems[] shape
+        // and would emit "manifest has no stems". The legacy prechop alias
+        // is kept for back-compat (spec §11).
+        //
+        // Path is the ONLY positional arg. Do NOT pass "loadArrangementFromManifest"
+        // as a leading arg — same trap as the legacy `_loadManifestPath` dispatch
+        // (see the comment in the forge_manifest branch above). Internally the
+        // wrapper does `arrayfromargs(messagename, arguments).slice(1)` then
+        // `.join(" ")` to recompose the path; an extra leading atom gets glued
+        // onto the front of the path string.
+        status("primary: dispatching LOAD ARRANGEMENT on " + pickedSource.path);
+        loadArrangementFromManifest(pickedSource.path);
         return;
     }
     if (pickedSource.type === "curation") {
@@ -3760,45 +3960,61 @@ function _getAlsPath() {
     if (_alsPathOverrideForTest != null) {
         return String(_alsPathOverrideForTest || "");
     }
-    // Try the documented LOM verb first.
-    try {
-        var appView = new LiveAPI("live_app view");
-        var got = appView.get("path_to_set_file");
-        if (got && got.length) {
-            var path1 = String(got[0] == null ? "" : got[0]);
-            if (path1) return path1;
-        }
-    } catch (_e1) { /* fall through */ }
-    // Newer-build fallback: live_set carries the path directly.
+    // Live 12's actual LOM attribute names (verified empirically; the
+    // earlier probes `live_app view path_to_set_file` and `live_set path`
+    // raised "no attribute" errors on every device load).
+    //
+    //   1. Song (`live_set`) → `file_path` — the absolute path of the
+    //      currently-open .als, or empty for an untitled set.
+    //   2. Song (`live_set`) → `name` — the filename without the dir,
+    //      empty for an untitled set. Lets the server fall back to
+    //      "best-effort" key lookup even when full path is missing.
+    //
+    // jsliveapi emits its own error if an attribute doesn't exist, even
+    // when wrapped in try/catch on the JS side. We probe ONLY attributes
+    // that definitely exist on the host class to keep the console quiet.
     try {
         var liveSet = new LiveAPI("live_set");
-        var gotPath = liveSet.get("path");
-        if (gotPath && gotPath.length) {
-            var path2 = String(gotPath[0] == null ? "" : gotPath[0]);
-            if (path2) return path2;
+        var got = liveSet.get("file_path");
+        if (got && got.length) {
+            var path = String(got[0] == null ? "" : got[0]);
+            if (path) return path;
         }
-    } catch (_e2) { /* fall through */ }
-    // Last-resort fallback: at least return the filename so the server
-    // can still attempt a lookup.
+    } catch (_e1) { /* fall through */ }
     try {
         var liveSet2 = new LiveAPI("live_set");
         var gotName = liveSet2.get("name");
         if (gotName && gotName.length) {
             return String(gotName[0] == null ? "" : gotName[0]);
         }
-    } catch (_e3) { /* fall through */ }
+    } catch (_e2) { /* fall through */ }
     return "";
 }
 
 /**
  * loadbang() — Max entry point fired when this [js] object finishes
- * loading. Sends the current .als path to the server so it can ack
- * back with the active curation (if any) and we auto-load it.
+ * loading. INTENTIONALLY a noop: at [js]-box-load time Live's LOM hasn't
+ * been initialized yet, so calling LiveAPI here produces a stream of
+ * "Live API is not initialized" warnings + an empty .als path.
  *
- * Idempotent within a single device-open event: a second loadbang
- * (which Max fires on some [js] reloads) is a no-op.
+ * The real bootstrap fires from the patcher's `[live.thisdevice]` outlet
+ * 3 (the "Live API ready" bang) via `[message liveApiReady]` → here.
  */
 function loadbang() {
+    // No-op — see `liveApiReady` below. Logging suppressed since Max
+    // sometimes fires `loadbang` multiple times during script reload and
+    // we don't want noise.
+}
+
+/**
+ * liveApiReady() — driven by `[live.thisdevice]` outlet 3 in the
+ * patcher. Now safe to read LiveAPI verbs because Live has finished
+ * initializing the LOM. Sends the current .als path to the server so
+ * it can ack back with the active curation (if any) and we auto-load.
+ *
+ * Idempotent within a single device-open event.
+ */
+function liveApiReady() {
     if (_alsOpenedFired) {
         status("als-opened: skipping (already fired)");
         return;
@@ -4002,8 +4218,12 @@ if (typeof module !== "undefined" && module.exports) {
                 groupLetters: (letters || []).slice()
             };
         },
+        // LOAD FORGE — internal path-handling helper (bypasses Max-message wrap).
+        _loadManifestPath: _loadManifestPath,
+        loadManifest: loadManifest,
         // Configurator v1 Phase 4A — als-opened bootstrap.
         loadbang: loadbang,
+        liveApiReady: liveApiReady,
         alsOpenedAck: alsOpenedAck,
         _getAlsPath: _getAlsPath,
         ALS_OPENED_SEND: ALS_OPENED_SEND,

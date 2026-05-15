@@ -415,7 +415,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             numoutlets=0,
             extras={
                 "varname": txt_cfg["id"],
-                "text": "waiting — pick a preset and source",
+                "text": "waiting — pick a source",
                 "fontsize": 9.0,
                 "textcolor": COLORS["dim"],
                 # Display-only — opt out of M4L parameter enrollment so Live's
@@ -875,35 +875,30 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     lines.append(_line(OBJ_PICK_SOURCE_MSG, 0, OBJ_SF_LOM_LOADER, 0))
 
     # ── Status text (below picker, driven by [r sf-status]) ─────────────
-    # The loader's status() helper currently posts via Max's [post] surface;
-    # but the new contract publishes a structured prefix that this UI label
-    # listens for via [r sf-status] → set $1 → live.text @text.
+    # The loader's status() helper emits `outlet(0, "set", <text>)` which
+    # arrives here as `set <text>`. We use live.comment (not live.text)
+    # because live.text in mode 0 is a momentary BUTTON — it rejects
+    # `set <text>` with "bad arguments for message set" and any non-
+    # toggle modes vary by Max version. live.comment is the canonical
+    # M4L widget for dynamic text labels driven by `set` messages.
     status_rect = (LEFT_X, 48.0, STATUS_W, 28.0)
     boxes.append(
         _box(
             OBJ_STATUS_PICKER_TEXT,
-            "live.text",
+            "live.comment",
             status_rect,
             presentation=True,
             presentation_rect=status_rect,
             numinlets=1,
-            numoutlets=2,
-            outlettype=["", ""],
+            numoutlets=0,
+            outlettype=[],
             extras={
                 "varname": "sf_status_picker_text",
-                # mode 0 = display-only (not a button — no click behaviour).
-                "mode": 0,
                 "text": "",
                 "fontname": "Ableton Sans Medium",
                 "fontsize": 10.0,
                 "textcolor": COLORS["text"],
                 "bgcolor": COLORS["status_bg"],
-                "activebgcolor": COLORS["status_bg"],
-                "bgoncolor": COLORS["status_bg"],
-                "activebgoncolor": COLORS["status_bg"],
-                "bordercolor": COLORS["dim"],
-                "activebordercolor": COLORS["dim"],
-                "activebordercoloroff": COLORS["dim"],
                 "rounded": 4.0,
                 "parameter_enable": 0,
             },
@@ -999,7 +994,12 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             numinlets=1,
             numoutlets=1,
             outlettype=[""],
-            extras={"text": "prepend set"},
+            # `set <text>` is REJECTED by live.text in mode 1 (toggle button)
+            # — Max emits "bad arguments for message set". The supported
+            # way to update the displayed label on a live.text widget is
+            # the `text <symbol>` message, which writes to the @text
+            # attribute. Caught during second UAT round.
+            extras={"text": "prepend text"},
         )
     )
     lines.append(_line(OBJ_PRIMARY_LABEL_RECV, 0, OBJ_PRIMARY_LABEL_PREPEND, 0))
@@ -1135,18 +1135,18 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         )
     )
     lines.append(_line(OBJ_PICKER_DIALOG_RECV, 0, OBJ_PICKER_DIALOG, 0))
-    boxes.append(
-        _box(
-            OBJ_PICKER_DIALOG_REGEX,
-            "newobj",
-            (LEFT_X + 340.0, 110.0, 240.0, 22.0),
-            numinlets=1,
-            numoutlets=5,
-            outlettype=["", "", "", "", ""],
-            extras={"text": "regexp (.+):(/.*) @substitute %2"},
-        )
-    )
-    lines.append(_line(OBJ_PICKER_DIALOG, 0, OBJ_PICKER_DIALOG_REGEX, 0))
+    # opendialog → [prepend applyPickedSource] → js sf_lom_loader.
+    #
+    # Note: the previous design routed opendialog through a [regexp] that
+    # stripped a Macintosh-HFS volume prefix (e.g. "Macintosh HD:/Users/...")
+    # before prepending. That regex never matched on POSIX-emitting Live
+    # builds and was a load-time race surface — Max instantiated [regexp]
+    # with 5 outlets declared in JSON vs. the dynamic outlet count [regexp]
+    # actually exposes given a single pattern, and on some Live versions the
+    # mismatch fired "patchcord outlet out of range" during cord
+    # restoration. The fix is to skip the regex entirely; the loader's
+    # applyPickedSource() handles HFS→POSIX conversion in JS where it can be
+    # unit-tested and isn't subject to Max-engine quirks.
     boxes.append(
         _box(
             OBJ_PICKER_DIALOG_PREPEND,
@@ -1158,7 +1158,8 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             extras={"text": "prepend applyPickedSource"},
         )
     )
-    lines.append(_line(OBJ_PICKER_DIALOG_REGEX, 0, OBJ_PICKER_DIALOG_PREPEND, 0))
+    # opendialog → prepend → loader (regex box removed — see comment above).
+    lines.append(_line(OBJ_PICKER_DIALOG, 0, OBJ_PICKER_DIALOG_PREPEND, 0))
     lines.append(_line(OBJ_PICKER_DIALOG_PREPEND, 0, OBJ_SF_LOM_LOADER, 0))
 
     # sf_lom_loader outlet 0 = status (loader's status() emits via
@@ -1439,11 +1440,16 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
         _box(
             OBJ_LOADBANG,
             "newobj",
-            (500.0, 20.0, 80.0, 22.0),
+            (500.0, 20.0, 120.0, 22.0),
             numinlets=1,
-            numoutlets=1,
-            outlettype=["bang"],
-            extras={"text": "loadbang"},
+            # [live.thisdevice] in Max 9 has 3 outlets:
+            #   outlet 0 = loadbang   (fired at patcher load; LOM NOT ready)
+            #   outlet 1 = initialized (fired when Live API IS ready) ← use this
+            #   outlet 2 = patcher attribute dumpout
+            # We wire EVERYTHING that needs LiveAPI through outlet 1.
+            numoutlets=3,
+            outlettype=["bang", "bang", ""],
+            extras={"text": "live.thisdevice"},
         )
     )
     boxes.append(
@@ -1457,7 +1463,26 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             extras={"text": "deferlow"},
         )
     )
-    lines.append(_line(OBJ_LOADBANG, 0, OBJ_LOAD_DEFERLOW, 0))
+    # live.thisdevice outlet 1 is the "Live API ready" bang.
+    lines.append(_line(OBJ_LOADBANG, 1, OBJ_LOAD_DEFERLOW, 0))
+    # ALSO fire `[message liveApiReady]` → loader when Live's API is ready.
+    # The loader's liveApiReady() reads the .als path via LiveAPI (which
+    # would have warned-and-returned-empty if called from the JS-box-level
+    # `loadbang` at script-init time — see Phase 4A's bootstrap design).
+    OBJ_LIVE_API_READY_MSG = "obj-live-api-ready-msg"
+    boxes.append(
+        _box(
+            OBJ_LIVE_API_READY_MSG,
+            "message",
+            (640.0, 50.0, 110.0, 22.0),
+            numinlets=2,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "liveApiReady"},
+        )
+    )
+    lines.append(_line(OBJ_LOADBANG, 1, OBJ_LIVE_API_READY_MSG, 0))
+    lines.append(_line(OBJ_LIVE_API_READY_MSG, 0, OBJ_SF_LOM_LOADER, 0))
     boxes.append(
         _box(
             OBJ_LOAD_SEQ,

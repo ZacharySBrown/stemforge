@@ -166,16 +166,23 @@ def test_primary_click_wired_to_loader(boxes, line_pairs):
 
 
 def test_status_picker_text_receives_sf_status(boxes, line_pairs):
-    """The picker's status live.text reads from [r sf-status]; the bus is
+    """The picker's status display reads from [r sf-status]; the bus is
     driven by a [s sf-status] send fed from the loader's outlet 0 (which
-    is where status() emits `set <text>` messages — live.text consumes
-    those natively, no `prepend set` needed)."""
+    is where status() emits `set <text>` messages).
+
+    NB: this must be `live.comment`, not `live.text`. live.text mode 0
+    is a momentary BUTTON that rejects `set <text>` with
+    `bad arguments for message "set"` (caught during first UAT round).
+    live.comment is the canonical M4L widget for dynamic text labels.
+    """
     txt = next(
         (b for b in boxes if b.get("varname") == "sf_status_picker_text"), None
     )
     assert txt is not None, "missing sf_status_picker_text"
-    assert txt["maxclass"] == "live.text"
-    assert txt.get("mode") == 0, "status text must be display-only (mode 0)"
+    assert txt["maxclass"] == "live.comment", (
+        "status widget must be live.comment — live.text rejects `set <text>` "
+        "and emits 'bad arguments for message set' (regression for first-UAT bug)"
+    )
 
     recv = next((b for b in boxes if b.get("text") == "r sf-status"), None)
     assert recv is not None, "missing [r sf-status]"
@@ -189,21 +196,34 @@ def test_status_picker_text_receives_sf_status(boxes, line_pairs):
 
 def test_picker_dialog_wired_from_messnamed_receiver(boxes, line_pairs):
     """pickSource() in the loader fires messnamed("sf-open-source-dialog","bang").
-    The patcher must have `[r sf-open-source-dialog]` → [opendialog] → regex
-    strip HFS → [prepend applyPickedSource] → js sf_lom_loader."""
+
+    The patcher must wire `[r sf-open-source-dialog]` → [opendialog] →
+    [prepend applyPickedSource] → js sf_lom_loader. The previous design
+    routed through a [regexp] box that stripped Macintosh-HFS prefixes;
+    we removed it after the first UAT round because [regexp] with
+    multi-pattern @substitute arguments has a load-time outlet-count
+    quirk that triggered `patchcord outlet out of range`. The HFS→POSIX
+    conversion now happens in applyPickedSource() in JS.
+    """
     recv = next(
         (b for b in boxes if b.get("text") == "r sf-open-source-dialog"), None
     )
     assert recv is not None, "missing [r sf-open-source-dialog]"
     assert (recv["id"], "obj-sf-picker-dialog") in line_pairs
-    assert ("obj-sf-picker-dialog", "obj-sf-picker-dialog-regex") in line_pairs
-    assert ("obj-sf-picker-dialog-regex", "obj-sf-picker-dialog-prepend") in line_pairs
+    # opendialog wires directly to [prepend applyPickedSource] — no regex.
+    assert ("obj-sf-picker-dialog", "obj-sf-picker-dialog-prepend") in line_pairs
     prep = next(
         (b for b in boxes if b.get("id") == "obj-sf-picker-dialog-prepend"), None
     )
     assert prep is not None
     assert prep.get("text") == "prepend applyPickedSource"
     assert ("obj-sf-picker-dialog-prepend", "obj-sf-lom-loader") in line_pairs
+    # And there must be NO [regexp] in the patcher (regression guard for
+    # the outlet-count-race fix).
+    assert not any("regexp" in (b.get("text") or "") for b in boxes), (
+        "regexp box must not reappear in the picker chain — it caused a "
+        "load-time `patchcord outlet out of range` race. Strip HFS in JS."
+    )
 
 
 # ── Verb buttons (COMMIT / BOUNCE / EXPORT) — spec §3.1 right column ─────────
@@ -289,7 +309,8 @@ def test_picker_and_verb_layout_snapshot(boxes):
     deliberate move, update the expected dict here."""
     expected = {
         "sf_pick_source_btn": {"x": 8.0, "y": 8.0, "w": 360.0, "h": 32.0, "mode": 1},
-        "sf_status_picker_text": {"x": 8.0, "y": 48.0, "w": 700.0, "h": 28.0, "mode": 0},
+        # live.comment has no mode; absent key signals comment-widget.
+        "sf_status_picker_text": {"x": 8.0, "y": 48.0, "w": 700.0, "h": 28.0, "mode": None},
         "sf_primary_btn": {"x": 720.0, "y": 8.0, "w": 92.0, "h": 44.0, "mode": 1},
         "sf_commit_btn": {"x": 720.0, "y": 58.0, "mode": 1, "text": "COMMIT"},
         "sf_bounce_btn": {"mode": 1, "text": "BOUNCE"},

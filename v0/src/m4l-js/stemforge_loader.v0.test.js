@@ -22,6 +22,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 
 require("../../../tools/test-harness/max-stub.js");
@@ -37,6 +38,8 @@ const REPO_ROOT = path.resolve(__dirname, "../../../..");
 const FIXTURES_ROOT = path.resolve(__dirname, "../../../tests/fixtures");
 const LOM_SNAPSHOT = (name) => path.join(FIXTURES_ROOT, "lom_snapshots", name);
 const CURATION = (name) => path.join(FIXTURES_ROOT, "curations", name);
+const FORGE = (slug, ...rest) =>
+  path.join(FIXTURES_ROOT, "forges", slug, ...rest);
 const readCuration = (name) => fs.readFileSync(CURATION(name), "utf-8");
 
 beforeEach(() => {
@@ -101,6 +104,32 @@ describe("sniffer", () => {
     expect(result.type).toBe("curation");
     expect(result.validated).toBe(true);
     expect(result.detail).toMatch(/curation_version=1/);
+  });
+
+  test("accepts a legacy prechop_manifest.json (no schema_version)", () => {
+    // Pre-rebuild manifest shape: bpm + bars + stems[], no schema_version.
+    // Still loadable via loadArrangementFromManifest() (Phase 2 LOM
+    // behavior preserved per spec §11 migration plan).
+    const tmpFile = path.join(__dirname, "__tmp_prechop.json");
+    fs.writeFileSync(
+      tmpFile,
+      JSON.stringify({
+        bpm: 95.0,
+        bars: 32,
+        pad_bars: 4,
+        beats_per_bar: 4,
+        first_downbeat_sec: 1.234,
+        stems: [{ name: "drums", path: "drums.wav" }],
+      })
+    );
+    try {
+      const result = T._snifferInspect(tmpFile);
+      expect(result.type).toBe("prechop_manifest");
+      expect(result.validated).toBe(true);
+      expect(result.detail).toMatch(/bpm=95/);
+    } finally {
+      fs.unlinkSync(tmpFile);
+    }
   });
 
   test("rejects an unknown file type cleanly", () => {
@@ -211,12 +240,14 @@ describe("loadCuration() on empty-set snapshot", () => {
     expect(statusLines()).toContain("staging: created STG-A through STG-D");
   });
 
-  test("partial.yaml populates the right pads via create_clip", () => {
+  test("partial.yaml populates the right pads via create_audio_clip", () => {
     loadLomSnapshot(LOM_SNAPSHOT("empty-set.json"));
     const yaml = readCuration("partial.yaml");
     T.loadCuration(yaml, CURATION("partial.yaml"));
     // partial.yaml: A01, A02 populated; B01; C01; D01, D02, D03. Total 7.
-    const createClips = liveApiCallsOfVerb("create_clip");
+    // Loader uses create_audio_clip (NOT create_clip — that's MIDI-only
+    // and silently failed on audio tracks). See 2026-05-15 C5 fix.
+    const createClips = liveApiCallsOfVerb("create_audio_clip");
     expect(createClips.length).toBe(7);
     // Each create_clip happens against a specific clip_slots N path.
     const paths = createClips.map((c) => c.path).sort();
@@ -304,8 +335,11 @@ describe("loadCuration() forward-compat behaviour", () => {
     const yaml = readCuration("bounced.yaml");
     const result = T.loadCuration(yaml, CURATION("bounced.yaml"));
     expect(result).not.toBeNull();
-    // bounced.yaml populates A01, B01, D01.
-    const creates = liveApiCallsOfVerb("create_clip");
+    // bounced.yaml populates A01, B01, D01. Loader now uses
+    // create_audio_clip(path) on session-view audio tracks (the earlier
+    // create_clip(length) was MIDI-only and silently failed on AUDIO
+    // tracks — see the 2026-05-15 C5 fix commit).
+    const creates = liveApiCallsOfVerb("create_audio_clip");
     expect(creates.length).toBe(3);
     // The complete-line should not mention bounce.
     const completeLine = statusLines().find((l) =>
@@ -337,6 +371,142 @@ describe("status-line count matches populated pads", () => {
       l.startsWith("staging: populated")
     );
     expect(populated.length).toBe(7);
+  });
+});
+
+// Regression: real curations on disk (written by the server's PyYAML
+// safe_dump) emit a *flush-with-key* sequence style — the dash sits at
+// the SAME column as the parent key:
+//
+//     pads:
+//     - pad_id: A01      ← dash flush with `pads:`
+//       source: ...
+//
+// The existing fixtures use the *indented* style (`      - pad_id:` two
+// spaces deeper). Both are valid YAML, but the parser's `parseMapping`
+// branch that handles `kv with empty value → child node` required
+// `nextChild.indent > myIndent` and set `node[key] = null` otherwise.
+// Real curations loaded as `pads: null`, so `for pad in pads` was a
+// no-op and the device reported "loadCuration: complete (4 groups,
+// 0/48 pads populated)". Caught driving Live against
+// ~/stemforge/curations/bounced.yaml after a manual curl POST commit.
+describe("_yamlParseCuration: flush-with-key sequence style (PyYAML default)", () => {
+  test("pads sequence at the same indent as parent key parses correctly", () => {
+    // Real-world YAML shape — dash flush with parent key.
+    const yamlText = [
+      "curation_version: 1",
+      "name: flush-fixture",
+      "type: deck",
+      "target:",
+      "  device: ep133",
+      "  groups: 4",
+      "  pads_per_group: 12",
+      "groups:",
+      "  A:",
+      "    label: Vocals",
+      "    pads:",
+      "    - pad_id: A01",
+      "      source:",
+      "        forge: sample-forge",
+      "        clip_id: vocal-bar0-4",
+      "        audio_path: curated_audio/vocal-bar0-4.wav",
+      "      clip_settings:",
+      "        warp_bpm: 120.0",
+      "        loop_start_bar: 0.0",
+      "        loop_end_bar: 4.0",
+      "        looping: true",
+      "    - pad_id: A02",
+      "      source: null",
+      "    - pad_id: A03",
+      "      source: null",
+      "",
+    ].join("\n");
+    const result = T._yamlParseCuration(yamlText);
+    expect(result.ok).toBe(true);
+    const padsA = result.data.groups.A.pads;
+    expect(Array.isArray(padsA)).toBe(true);
+    expect(padsA.length).toBe(3);
+    expect(padsA[0].pad_id).toBe("A01");
+    expect(padsA[0].source.forge).toBe("sample-forge");
+    expect(padsA[0].clip_settings.warp_bpm).toBe(120.0);
+    expect(padsA[1].pad_id).toBe("A02");
+    expect(padsA[2].pad_id).toBe("A03");
+  });
+
+  test("referenced_forges flush sequence also parses", () => {
+    // The bounced.yaml on disk also uses flush-style for referenced_forges:
+    //     referenced_forges:
+    //     - slug: sample-forge
+    //       manifest_hash: ...
+    const yamlText = [
+      "curation_version: 1",
+      "name: flush-refs",
+      "type: deck",
+      "referenced_forges:",
+      "- slug: sample-forge",
+      "  manifest_hash: deadbeef",
+      "- slug: other-forge",
+      "  manifest_hash: cafe1234",
+      "groups: {}",
+      "",
+    ].join("\n");
+    const result = T._yamlParseCuration(yamlText);
+    expect(result.ok).toBe(true);
+    expect(Array.isArray(result.data.referenced_forges)).toBe(true);
+    expect(result.data.referenced_forges.length).toBe(2);
+    expect(result.data.referenced_forges[0].slug).toBe("sample-forge");
+    expect(result.data.referenced_forges[1].manifest_hash).toBe("cafe1234");
+  });
+
+  test("end-to-end loadCuration on flush-style YAML walks all pads", () => {
+    loadLomSnapshot(LOM_SNAPSHOT("empty-set.json"));
+    // Same shape as ~/stemforge/curations/bounced.yaml but trimmed for the test.
+    const yamlText = [
+      "curation_version: 1",
+      "name: flush-bounced",
+      "type: deck",
+      "target:",
+      "  device: ep133",
+      "  groups: 4",
+      "  pads_per_group: 12",
+      "groups:",
+      "  A:",
+      "    pads:",
+      "    - pad_id: A01",
+      "      source:",
+      "        forge: sample-forge",
+      "        clip_id: vocal-bar0-4",
+      "        audio_path: curated_audio/vocal-bar0-4.wav",
+      "      clip_settings:",
+      "        warp_bpm: 120.0",
+      "        loop_start_bar: 0.0",
+      "        loop_end_bar: 4.0",
+      "        looping: true",
+      "    - pad_id: A02",
+      "      source: null",
+      "  B:",
+      "    pads:",
+      "    - pad_id: B01",
+      "      source:",
+      "        forge: sample-forge",
+      "        clip_id: drum-bar0-4",
+      "        audio_path: curated_audio/drum-bar0-4.wav",
+      "      clip_settings:",
+      "        warp_bpm: 120.0",
+      "        loop_start_bar: 0.0",
+      "        loop_end_bar: 4.0",
+      "        looping: true",
+      "",
+    ].join("\n");
+    const result = T.loadCuration(yamlText, "/tmp/flush-fixture.yaml");
+    expect(result).not.toBeNull();
+    const completeLine = global.outletEmissions
+      .filter((e) => e.idx === 0 && e.args[0] === "set")
+      .map((e) => String(e.args[1]))
+      .find((s) => s.startsWith("loadCuration: complete"));
+    expect(completeLine).toBeTruthy();
+    // 2 populated pads (A01, B01) out of 3 total walked.
+    expect(completeLine).toMatch(/2\/3 pads populated/);
   });
 });
 
@@ -933,16 +1103,16 @@ describe("Phase 4A — als-opened bootstrap", () => {
     T.setAlsPathForTest(null);
   });
 
-  test("loadbang emits sf-als-opened with the LOM-reported absolute path", () => {
-    // Seed the snapshot with a `live_app view` node carrying the
-    // documented `path_to_set_file` property. The loader's first-choice
-    // probe should hit this and emit the path verbatim.
+  test("liveApiReady emits sf-als-opened with live_set.file_path", () => {
+    // Live 12 exposes the absolute .als path via `live_set.file_path` (the
+    // earlier `live_app view path_to_set_file` and `live_set path` probes
+    // raised "no attribute" jsliveapi errors on every device load). Seed
+    // file_path; the loader's primary probe should hit it.
     loadLomSnapshotObject({
-      live_app: { view: { path_to_set_file: "/Users/zak/projects/song.als" } },
-      live_set: { tracks: [], path: "", name: "song.als" },
+      live_set: { tracks: [], file_path: "/Users/zak/projects/song.als", name: "song.als" },
     });
 
-    T.loadbang();
+    T.liveApiReady();
 
     const sends = global.messnamedCalls.filter((c) => c.name === T.ALS_OPENED_SEND);
     expect(sends).toHaveLength(1);
@@ -987,18 +1157,19 @@ describe("Phase 4A — als-opened bootstrap", () => {
     expect(status.some((s) => s.includes("als-opened: ack <none>"))).toBe(true);
   });
 
-  test("LOM fallback chain — uses live_set.path when path_to_set_file is missing", () => {
-    // No `live_app.view.path_to_set_file` — the loader must fall through to
-    // `live_set.path`. We seed only the second probe target.
+  test("LOM fallback chain — degrades to live_set.name when file_path is missing", () => {
+    // For untitled Live sets `file_path` is empty; the loader falls back
+    // to `live_set.name` so the server at least gets a filename-only
+    // best-effort lookup key.
     loadLomSnapshotObject({
-      live_set: { tracks: [], path: "/secondary/probe.als", name: "probe.als" },
+      live_set: { tracks: [], file_path: "", name: "probe.als" },
     });
 
-    T.loadbang();
+    T.liveApiReady();
 
     const sends = global.messnamedCalls.filter((c) => c.name === T.ALS_OPENED_SEND);
     expect(sends).toHaveLength(1);
-    expect(sends[0].args[0]).toBe("/secondary/probe.als");
+    expect(sends[0].args[0]).toBe("probe.als");
   });
 
   test("LOM fallback chain — degrades to live_set.name when no path is available", () => {
@@ -1010,7 +1181,7 @@ describe("Phase 4A — als-opened bootstrap", () => {
       live_set: { tracks: [], name: "fallback.als" },
     });
 
-    T.loadbang();
+    T.liveApiReady();
 
     const sends = global.messnamedCalls.filter((c) => c.name === T.ALS_OPENED_SEND);
     expect(sends).toHaveLength(1);
@@ -1027,7 +1198,7 @@ describe("Phase 4A — als-opened bootstrap", () => {
     });
     T.setAlsPathForTest("/override/wins.als");
 
-    T.loadbang();
+    T.liveApiReady();
 
     const sends = global.messnamedCalls.filter((c) => c.name === T.ALS_OPENED_SEND);
     expect(sends).toHaveLength(1);
@@ -1039,8 +1210,8 @@ describe("Phase 4A — als-opened bootstrap", () => {
     // /als-opened twice or the server will see duplicate bootstrap
     // events. The fired-flag guard short-circuits the second call.
     T.setAlsPathForTest("/once.als");
-    T.loadbang();
-    T.loadbang(); // second call — should be a no-op
+    T.liveApiReady();
+    T.liveApiReady(); // second call — should be a no-op
 
     const sends = global.messnamedCalls.filter((c) => c.name === T.ALS_OPENED_SEND);
     expect(sends).toHaveLength(1);
@@ -1060,7 +1231,7 @@ describe("Phase 4A — als-opened bootstrap", () => {
     // device just booted.
     loadLomSnapshotObject({ live_set: { tracks: [] } });
 
-    T.loadbang();
+    T.liveApiReady();
 
     const sends = global.messnamedCalls.filter((c) => c.name === T.ALS_OPENED_SEND);
     expect(sends).toHaveLength(1);
@@ -1069,5 +1240,187 @@ describe("Phase 4A — als-opened bootstrap", () => {
       .filter((e) => Array.isArray(e.args) && e.args[0] === "set")
       .map((e) => e.args.slice(1).join(" "));
     expect(status.some((s) => s.includes("als-opened: sent <unknown>"))).toBe(true);
+  });
+});
+
+// ─── LOAD FORGE — auto_curation_manifest.json (new shape) ─────────────────────
+//
+// Regression for the "manifest has no stems" bug surfaced in the third UAT
+// console: `primary()` correctly dispatched LOAD FORGE on
+// `~/stemforge/processed/express_yourself/auto_curation_manifest.json`, but
+// the legacy loadManifest() walked `mf.stems[]` while the new shape stores
+// bar clips under `mf.clips[]`. Resulting in "manifest has no stems" for
+// every new-shape manifest. The loader now adapts clips[] → a synthetic
+// stems[] (one entry per stem, representative wav from the first matching
+// clip) so LOAD FORGE drops one wav per stem track.
+
+describe("_loadManifestPath — new auto_curation_manifest shape", () => {
+  test("adapts clips[] into stems[] when stems[] is absent", () => {
+    loadLomSnapshotObject({ live_set: { tracks: [] } });
+    const manifestPath = FORGE("sample-forge", "auto_curation_manifest.json");
+    T._loadManifestPath(manifestPath);
+
+    const status = global.outletEmissions
+      .filter((e) => Array.isArray(e.args) && e.args[0] === "set")
+      .map((e) => e.args.slice(1).join(" "));
+    // The "no stems" rejection must NOT fire.
+    expect(status.some((s) => s.includes("manifest has no stems"))).toBe(false);
+    // We must see the adapter status line.
+    expect(
+      status.some((s) => /adapted \d+ clips → \d+ stems/.test(s))
+    ).toBe(true);
+  });
+
+  test("clip→stem mapping renames singular ('drum') to legacy plural ('drums')", () => {
+    // Seed the LOM with the standard StemForge template tracks. With
+    // singular→plural rename, all four stems should hit their respective
+    // STEM_TARGETS entries (drums/bass/vocals/other) AND find a matching
+    // track in the seeded set.
+    loadLomSnapshotObject({
+      live_set: {
+        tracks: [
+          { name: "SF | Drums Raw", clip_slots: [{ clip: null }] },
+          { name: "SF | Bass", clip_slots: [{ clip: null }] },
+          { name: "SF | Vocals", clip_slots: [{ clip: null }] },
+          { name: "SF | Texture Verb", clip_slots: [{ clip: null }] },
+        ],
+      },
+    });
+    const manifestPath = FORGE("sample-forge", "auto_curation_manifest.json");
+    T._loadManifestPath(manifestPath);
+
+    const status = global.outletEmissions
+      .filter((e) => Array.isArray(e.args) && e.args[0] === "set")
+      .map((e) => e.args.slice(1).join(" "));
+    // Loader emits per-stem placement updates; we don't need full
+    // semantic verification (that's L4 smoke). What we DO need:
+    // - no "no target track" misses for drums/vocals (the renamed stems).
+    //   If the rename failed, drums/vocals would emit it.
+    const drumsMiss = status.find((s) => /^\s*drums: no target track/.test(s));
+    const vocalsMiss = status.find((s) => /^\s*vocals: no target track/.test(s));
+    expect(drumsMiss).toBeUndefined();
+    expect(vocalsMiss).toBeUndefined();
+  });
+
+  test("missing path produces a clean error, not a crash", () => {
+    loadLomSnapshotObject({ live_set: { tracks: [] } });
+    T._loadManifestPath("");
+    const status = global.outletEmissions
+      .filter((e) => Array.isArray(e.args) && e.args[0] === "set")
+      .map((e) => e.args.slice(1).join(" "));
+    expect(status.some((s) => s.includes("missing path"))).toBe(true);
+  });
+
+  // Regression: real forge manifests (~/stemforge/processed/*/auto_curation_manifest.json)
+  // write absolute `audio_path` values. The first adapter implementation
+  // unconditionally prepended forgeDir, producing doubled paths like
+  // `/Users/.../definition//Users/.../bar_001.wav`. `create_audio_clip` then
+  // silently failed and `loadClip` still returned true → false-positive
+  // "4/4 stems placed" with empty clip slots in Live. Caught 2026-05-15 driving
+  // Live via Computer Use against /Users/zak/stemforge/processed/definition/.
+  test("adapter preserves absolute audio_path (does not double-prepend forgeDir)", () => {
+    loadLomSnapshotObject({
+      live_set: {
+        tracks: [
+          { name: "SF | Drums Raw", clip_slots: [{ clip: null }] },
+          { name: "SF | Bass", clip_slots: [{ clip: null }] },
+          { name: "SF | Vocals", clip_slots: [{ clip: null }] },
+          { name: "SF | Texture Verb", clip_slots: [{ clip: null }] },
+        ],
+      },
+    });
+    const forgeDir = fs.mkdtempSync(path.join(os.tmpdir(), "sf-absolute-forge-"));
+    const drumWav = forgeDir + "/curated/drums/bar_001.wav";
+    const manifestPath = path.join(forgeDir, "auto_curation_manifest.json");
+    fs.writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        schema_version: 2,
+        forge_slug: "absolute-forge",
+        clips: [
+          { stem: "drum",  audio_path: drumWav, clip_id: "d0", source_bar_range: [0, 4] },
+          { stem: "bass",  audio_path: forgeDir + "/curated/bass/bar_001.wav",  clip_id: "b0", source_bar_range: [0, 4] },
+          { stem: "vocal", audio_path: forgeDir + "/curated/vocals/bar_001.wav", clip_id: "v0", source_bar_range: [0, 4] },
+          { stem: "other", audio_path: forgeDir + "/curated/other/bar_001.wav",  clip_id: "o0", source_bar_range: [0, 4] },
+        ],
+      })
+    );
+    try {
+      T._loadManifestPath(manifestPath);
+      const audioClipPaths = global.liveApiCalls
+        .filter((c) => c.verb === "create_audio_clip")
+        .map((c) => String(c.args[0]));
+      expect(audioClipPaths.length).toBe(4);
+      audioClipPaths.forEach((p) => {
+        expect(p).not.toMatch(/\/\//); // no doubled slash from concat
+        expect(p.indexOf(forgeDir, 1)).toBe(-1); // forgeDir appears at most once, at start
+        expect(p.startsWith(forgeDir + "/curated/")).toBe(true);
+      });
+    } finally {
+      fs.rmSync(forgeDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// Regression: arrangement_manifest must NOT route to the auto_curation forge
+// path. Sniffer detection was correct ("sniffer: detected arrangement
+// manifest") but `primary()` lumped arrangement_manifest in with forge_manifest
+// and called `_loadManifestPath`, which only handles clips[]/stems[] — so the
+// device emitted "manifest has no stems" and zero clips landed in arrangement
+// view. Fix splits the dispatch so arrangement_manifest goes through
+// `loadArrangementFromManifest` (which delegates to sf_arrangement_loader.js).
+// Caught 2026-05-15 driving Live via Computer Use against
+// /Users/zak/stemforge/processed/breaks-n-beats-deck/arrangement_manifest.json.
+
+describe("primary() dispatch — arrangement_manifest", () => {
+  test("arrangement_manifest routes to LOAD ARRANGEMENT, not LOAD FORGE", () => {
+    const arrangementPath = FORGE("sample-forge", "arrangement_manifest.json");
+    // Sanity: the fixture really is an arrangement-shape manifest (has chunks).
+    const mf = JSON.parse(fs.readFileSync(arrangementPath, "utf-8"));
+    expect(Array.isArray(mf.chunks)).toBe(true);
+
+    // Stub runArrangementLoad so `loadArrangementFromManifest` finds it after
+    // its (no-op stubbed) include() — and so we can prove the dispatch reached
+    // the arrangement branch with the right path.
+    const calls = [];
+    global.runArrangementLoad = (manifestPath, shiftBeats) => {
+      calls.push({ manifestPath, shiftBeats });
+      return true;
+    };
+    try {
+      global.messagename = "applyPickedSource";
+      T.applyPickedSource(arrangementPath);
+      const picked = T.getPickedSource();
+      expect(picked).not.toBeNull();
+      expect(picked.type).toBe("arrangement_manifest");
+      expect(picked.validated).toBe(true);
+
+      // Drive the primary button.
+      global.messagename = "primary";
+      T.primary();
+
+      const statuses = global.outletEmissions
+        .filter((e) => e.idx === 0 && e.args[0] === "set")
+        .map((e) => String(e.args[1]));
+      // The dispatch line must be LOAD ARRANGEMENT, not LOAD FORGE.
+      expect(
+        statuses.some((s) =>
+          /^primary: dispatching LOAD ARRANGEMENT on /.test(s)
+        )
+      ).toBe(true);
+      expect(
+        statuses.some((s) => /^primary: dispatching LOAD FORGE on /.test(s))
+      ).toBe(false);
+      // The forge-path failure must NOT fire — that's the bug we're guarding.
+      expect(statuses.some((s) => s.includes("manifest has no stems"))).toBe(
+        false
+      );
+
+      // And runArrangementLoad must have been invoked with this manifest.
+      expect(calls.length).toBe(1);
+      expect(calls[0].manifestPath).toBe(arrangementPath);
+    } finally {
+      delete global.runArrangementLoad;
+    }
   });
 });

@@ -114,15 +114,22 @@ export function useProjectState(
     }
 
     // Phase 4B broadcaster shape: `{kind: "curations", active_curations: {...}}`.
-    // Resolve the popup's curation by sentinel first, then fall back to any
-    // host that has an active curation set (covers the single-Live-host
-    // case). When nothing is active, clear local state.
+    //
+    // Resolution rule: the popup is its OWN host (keyed by POPUP_ALS_SENTINEL).
+    // We ONLY honor the sentinel slot — never fall back to other hosts'
+    // entries. Falling back caused an "explicit close doesn't clear" bug:
+    // when the user closed the popup's active curation, the sentinel entry
+    // was removed but stale entries from other `.als` hosts (or leftover
+    // dev/test fixtures like `/tmp/demo.als`) still sat in the map, so the
+    // popup re-bound to whatever it found and the close looked like a noop.
+    //
+    // Real Live hosts have their own popup instance (Phase 4A's bootstrap
+    // pushes `als-opened` for each `.als`), so cross-host visibility isn't
+    // useful here.
     if (payload.kind === "curations") {
       const active = payload.active_curations ?? {};
-      const name =
-        active[POPUP_ALS_SENTINEL] ??
-        Object.values(active).find((v) => typeof v === "string") ??
-        null;
+      const raw = active[POPUP_ALS_SENTINEL];
+      const name = typeof raw === "string" ? raw : null;
       if (!name) {
         setCuration(null);
         setActiveCurationName(null);
