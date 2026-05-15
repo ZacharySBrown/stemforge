@@ -1168,4 +1168,55 @@ describe("_loadManifestPath — new auto_curation_manifest shape", () => {
       .map((e) => e.args.slice(1).join(" "));
     expect(status.some((s) => s.includes("missing path"))).toBe(true);
   });
+
+  // Regression: real forge manifests (~/stemforge/processed/*/auto_curation_manifest.json)
+  // write absolute `audio_path` values. The first adapter implementation
+  // unconditionally prepended forgeDir, producing doubled paths like
+  // `/Users/.../definition//Users/.../bar_001.wav`. `create_audio_clip` then
+  // silently failed and `loadClip` still returned true → false-positive
+  // "4/4 stems placed" with empty clip slots in Live. Caught 2026-05-15 driving
+  // Live via Computer Use against /Users/zak/stemforge/processed/definition/.
+  test("adapter preserves absolute audio_path (does not double-prepend forgeDir)", () => {
+    loadLomSnapshotObject({
+      live_set: {
+        tracks: [
+          { name: "SF | Drums Raw", clip_slots: [{ clip: null }] },
+          { name: "SF | Bass", clip_slots: [{ clip: null }] },
+          { name: "SF | Vocals", clip_slots: [{ clip: null }] },
+          { name: "SF | Texture Verb", clip_slots: [{ clip: null }] },
+        ],
+      },
+    });
+    const forgeDir = "/private/tmp/sf-absolute-forge";
+    const drumWav = forgeDir + "/curated/drums/bar_001.wav";
+    fs.mkdirSync(forgeDir, { recursive: true });
+    const manifestPath = path.join(forgeDir, "auto_curation_manifest.json");
+    fs.writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        schema_version: 2,
+        forge_slug: "absolute-forge",
+        clips: [
+          { stem: "drum",  audio_path: drumWav, clip_id: "d0", source_bar_range: [0, 4] },
+          { stem: "bass",  audio_path: forgeDir + "/curated/bass/bar_001.wav",  clip_id: "b0", source_bar_range: [0, 4] },
+          { stem: "vocal", audio_path: forgeDir + "/curated/vocals/bar_001.wav", clip_id: "v0", source_bar_range: [0, 4] },
+          { stem: "other", audio_path: forgeDir + "/curated/other/bar_001.wav",  clip_id: "o0", source_bar_range: [0, 4] },
+        ],
+      })
+    );
+    try {
+      T._loadManifestPath(manifestPath);
+      const audioClipPaths = global.liveApiCalls
+        .filter((c) => c.verb === "create_audio_clip")
+        .map((c) => String(c.args[0]));
+      expect(audioClipPaths.length).toBe(4);
+      audioClipPaths.forEach((p) => {
+        expect(p).not.toMatch(/\/\//); // no doubled slash from concat
+        expect(p.indexOf(forgeDir, 1)).toBe(-1); // forgeDir appears at most once, at start
+        expect(p.startsWith(forgeDir + "/curated/")).toBe(true);
+      });
+    } finally {
+      fs.rmSync(forgeDir, { recursive: true, force: true });
+    }
+  });
 });
