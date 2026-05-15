@@ -30,21 +30,23 @@ autowatch = 1;
 inlets = 1;
 outlets = 4;   // 0: status text  1: bang  2: preset umenu  3: [shell] (mkdir-p)
 
-// ── Boot version banner (SAFE — no file IO) ──────────────────────────────────
+// ── Boot version banner ──────────────────────────────────────────────────────
 //
-// Emits a one-line build identifier on every script load (autowatch reload
-// included). The version literal is updated by hand or by a build hook on
-// each commit; the user can grep for it to confirm the edit they just
-// pushed is actually live in Max.
+// SF_BUILD_MANIFEST is REWRITTEN at build time by
+// `tools/inject_build_manifest.py`. The script computes SHA-256[:8] of
+// every JS file in the Max Package + the built .amxd, joins them into a
+// single line, and replaces the literal below. The loader then `post()`s
+// it at every script load (including autowatch reloads), so the Max
+// console always tells you which exact bytes are running.
 //
-// IMPORTANT: do NOT read sibling files here. Reading binary .amxd via
-// File.readstring crashes Max's JS engine (caught during second-UAT run);
-// the only safe diagnostic is a static literal.
+// Do NOT read files at runtime here — Max's JS engine crashes on binary
+// File.readstring loops (caught during second-UAT run).
 
-var SF_LOADER_VERSION = "2026-05-15-prechop-sniffer";
+// Build fingerprint, injected by tools/inject_build_manifest.py.
+var SF_BUILD_MANIFEST = "build=2026-05-15T10:52 amxd=3fa393f2 js={sf_arrangement_loader=b6ee853f,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=66c87b44,stemforge_loader.test=d411427e,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
 
 try {
-    post("[sf_loader] version=" + SF_LOADER_VERSION + "\n");
+    post("[sf_loader] " + SF_BUILD_MANIFEST + "\n");
 } catch (_) {}
 
 var STEM_TARGETS = {

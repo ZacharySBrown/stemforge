@@ -50,6 +50,33 @@ def main(argv: list[str] | None = None) -> int:
     path = pack_amxd(patcher, args.out, device_type=args.device_type)
     size = path.stat().st_size
     print(f"wrote {path} ({size} bytes)")
+
+    # Re-inject the build manifest into the loader JS so its in-Max
+    # version banner reflects this rebuild. The injector is best-effort —
+    # if it fails (e.g. running in a stripped repo), we still ship a
+    # valid .amxd; the loader just shows the stale-or-default literal.
+    try:
+        import subprocess
+
+        injector = (
+            Path(__file__).resolve().parents[2]
+            / ".." / "tools" / "inject_build_manifest.py"
+        ).resolve()
+        if injector.is_file():
+            cp = subprocess.run(
+                ["uv", "run", "python", str(injector)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if cp.returncode == 0:
+                # Echo the injector's one-liner so build logs stay informative.
+                print(cp.stdout.strip())
+            else:
+                print(f"  (manifest inject skipped: {cp.stderr.strip()})")
+    except Exception as e:  # noqa: BLE001 - non-fatal best-effort hook
+        print(f"  (manifest inject hook failed: {e})")
+
     return 0
 
 
