@@ -239,12 +239,14 @@ describe("loadCuration() on empty-set snapshot", () => {
     expect(statusLines()).toContain("staging: created STG-A through STG-D");
   });
 
-  test("partial.yaml populates the right pads via create_clip", () => {
+  test("partial.yaml populates the right pads via create_audio_clip", () => {
     loadLomSnapshot(LOM_SNAPSHOT("empty-set.json"));
     const yaml = readCuration("partial.yaml");
     T.loadCuration(yaml, CURATION("partial.yaml"));
     // partial.yaml: A01, A02 populated; B01; C01; D01, D02, D03. Total 7.
-    const createClips = liveApiCallsOfVerb("create_clip");
+    // Loader uses create_audio_clip (NOT create_clip — that's MIDI-only
+    // and silently failed on audio tracks). See 2026-05-15 C5 fix.
+    const createClips = liveApiCallsOfVerb("create_audio_clip");
     expect(createClips.length).toBe(7);
     // Each create_clip happens against a specific clip_slots N path.
     const paths = createClips.map((c) => c.path).sort();
@@ -332,8 +334,11 @@ describe("loadCuration() forward-compat behaviour", () => {
     const yaml = readCuration("bounced.yaml");
     const result = T.loadCuration(yaml, CURATION("bounced.yaml"));
     expect(result).not.toBeNull();
-    // bounced.yaml populates A01, B01, D01.
-    const creates = liveApiCallsOfVerb("create_clip");
+    // bounced.yaml populates A01, B01, D01. Loader now uses
+    // create_audio_clip(path) on session-view audio tracks (the earlier
+    // create_clip(length) was MIDI-only and silently failed on AUDIO
+    // tracks — see the 2026-05-15 C5 fix commit).
+    const creates = liveApiCallsOfVerb("create_audio_clip");
     expect(creates.length).toBe(3);
     // The complete-line should not mention bounce.
     const completeLine = statusLines().find((l) =>

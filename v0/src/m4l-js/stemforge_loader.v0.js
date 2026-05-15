@@ -43,7 +43,7 @@ outlets = 4;   // 0: status text  1: bang  2: preset umenu  3: [shell] (mkdir-p)
 // File.readstring loops (caught during second-UAT run).
 
 // Build fingerprint, injected by tools/inject_build_manifest.py.
-var SF_BUILD_MANIFEST = "build=2026-05-15T16:26 amxd=05fdba64 js={sf_arrangement_loader=70c939e5,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=9667b45b,stemforge_loader.test=d411427e,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
+var SF_BUILD_MANIFEST = "build=2026-05-15T16:57 amxd=05fdba64 js={sf_arrangement_loader=70c939e5,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=70137835,stemforge_loader.test=d411427e,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
 
 try {
     post("[sf_loader] " + SF_BUILD_MANIFEST + "\n");
@@ -3408,15 +3408,61 @@ function loadCuration(yamlText, curationFilePath) {
                 continue;
             }
             var slotIdx = parsedPad.slot;
-            var clipLength = _curationClipLengthBeats(pad);
+            // Resolve audio path BEFORE creating the clip. Three shapes:
+            //   1. source.external_path → absolute, use verbatim.
+            //   2. source.audio_path + source.forge → forge-owned; try the
+            //      ~/stemforge/{curations,processed} convention by walking up
+            //      one dir from curationFilePath. Falls through to legacy
+            //      resolution when the structure does not match (tests).
+            //   3. source.audio_path alone → resolve relative to the YAML dir.
+            var audioPath = null;
+            if (pad.source.external_path) {
+                audioPath = String(pad.source.external_path);
+            } else if (pad.source.audio_path && pad.source.forge) {
+                var normCurationPath = _sfNormalizePath(curationFilePath || "");
+                var curSlash = normCurationPath.lastIndexOf("/");
+                var curationsDir = curSlash < 0 ? "" : normCurationPath.substring(0, curSlash);
+                var rootSlash = curationsDir.lastIndexOf("/");
+                var stemforgeRoot = rootSlash > 0 ? curationsDir.substring(0, rootSlash) : "";
+                if (stemforgeRoot) {
+                    audioPath = stemforgeRoot + "/processed/"
+                        + pad.source.forge + "/" + pad.source.audio_path;
+                } else {
+                    // No parent dir derivable (e.g. curationFilePath="/tmp/x.yaml").
+                    // Fall back to legacy: resolve against the YAML dir.
+                    audioPath = _resolvePadAudioPath(
+                        pad.source.audio_path, curationFilePath);
+                }
+            } else if (pad.source.audio_path) {
+                audioPath = _resolvePadAudioPath(pad.source.audio_path, curationFilePath);
+            }
+            if (!audioPath) {
+                status("staging: skipped " + displayId + " (audio_path unresolvable)");
+                continue;
+            }
+            // Use create_audio_clip with the path — NOT create_clip(length).
+            // create_clip is MIDI-only ("MIDI clips can only be created on
+            // MIDI tracks") and the previous call to it raised a silent Live
+            // error while `populated += 1` fired unconditionally, falsely
+            // reporting "staging: populated" while STG-* slots stayed empty.
+            // Mirrors loadClip() at line 244 which the LOAD FORGE path uses
+            // correctly. Caught 2026-05-15 by driving BOUN in Live: bounce
+            // walked STG-* and found 0 pads despite loadCuration claiming
+            // 3/48 populated.
             var slotPath = "live_set tracks " + trackIdx + " clip_slots " + slotIdx;
             var slotApi = new LiveAPI(slotPath);
-            slotApi.call("create_clip", clipLength);
+            try {
+                slotApi.call("create_audio_clip", String(audioPath));
+            } catch (eCreate) {
+                status("staging: create_audio_clip failed for " + displayId
+                    + ": " + eCreate);
+                continue;
+            }
             var clipApi = new LiveAPI(slotPath + " clip");
-            // Resolve audio_path (may be relative to curation YAML dir).
-            var audioPath = _resolvePadAudioPath(pad.source.audio_path, curationFilePath);
-            if (audioPath) {
-                try { clipApi.set("file_path", audioPath); } catch (_) {}
+            if (!clipApi || clipApi.id === "0") {
+                status("staging: clip handle missing after create for "
+                    + displayId);
+                continue;
             }
             // Clip name = source.clip_id when present, else the pad id.
             var clipName = pad.source.clip_id || padId;
