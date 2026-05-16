@@ -470,10 +470,12 @@ def test_split_path_invokes_refine_bpm():
     assert "from .tempo_reconciler import refine_bpm" in cli_src, (
         "refine_bpm must be imported in stemforge/cli.py — wiring removed?"
     )
-    # The split path's refine_bpm call uses audio_file (mix). The re-anchor
-    # path uses drums_path. Both call sites must be present.
-    assert cli_src.count("refine_bpm(audio_file") == 1, (
-        "split path must call refine_bpm(audio_file, ...) exactly once"
+    # `split` does `refined_bpm = refine_bpm(audio_file, ...)`. The forge
+    # tempo path also refines BPM off the mix (`bpm = refine_bpm(audio_file,
+    # ...)`), so pin the split call by its exact LHS rather than counting
+    # `refine_bpm(audio_file` globally.
+    assert "refined_bpm = refine_bpm(audio_file" in cli_src, (
+        "split path must call refine_bpm(audio_file, ...) — wiring removed?"
     )
 
 
