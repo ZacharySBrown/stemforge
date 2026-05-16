@@ -1537,12 +1537,20 @@ def _forge_run_prechop(track_out, stem_paths, bpm, first_downbeat_sec, emit):
     try:
         pipeline_cfg = load_pipeline("arrangement")
     except Exception as e:  # noqa: BLE001 — non-fatal; arrangement just stays empty
-        emit("progress", phase="prechop", pct=100,
-             message=f"prechop skipped — arrangement pipeline load failed: {e}")
+        emit(
+            "progress",
+            phase="prechop",
+            pct=100,
+            message=f"prechop skipped — arrangement pipeline load failed: {e}",
+        )
         return
     if pipeline_cfg is None or pipeline_cfg.prechop is None:
-        emit("progress", phase="prechop", pct=100,
-             message="prechop skipped — no prechop config in arrangement pipeline")
+        emit(
+            "progress",
+            phase="prechop",
+            pct=100,
+            message="prechop skipped — no prechop config in arrangement pipeline",
+        )
         return
 
     # Auto-fill the intro: round down to a whole-chunk count of pre-bars so
@@ -1626,7 +1634,9 @@ def _forge_reconcile_tempo(audio_file, stem_paths, track_out, track_name, backen
         tempo=tempo_provenance,
     )
     emit(
-        "progress", phase="tempo", pct=100,
+        "progress",
+        phase="tempo",
+        pct=100,
         bpm=round(float(bpm), 3),
         first_downbeat_sec=round(first_downbeat_sec, 4),
         source=reconciled.source,
@@ -1634,7 +1644,9 @@ def _forge_reconcile_tempo(audio_file, stem_paths, track_out, track_name, backen
     )
     if (reconciled.warning or "").startswith("beat-this unavailable"):
         emit(
-            "progress", phase="tempo", pct=100,
+            "progress",
+            phase="tempo",
+            pct=100,
             message="WARNING: beat-this unavailable — BPM may be wrong on "
             "half-time material; install with `uv sync --extra beat`",
         )

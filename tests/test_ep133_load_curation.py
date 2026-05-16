@@ -31,10 +31,7 @@ def _spec(groups: dict[str, list[dict]]) -> dict:
         "songs": [
             {
                 "song_id": "kit",
-                "groups": [
-                    {"group_id": gid, "pads": pads}
-                    for gid, pads in groups.items()
-                ],
+                "groups": [{"group_id": gid, "pads": pads} for gid, pads in groups.items()],
             }
         ],
     }
@@ -96,9 +93,7 @@ def test_missing_bpm_leaves_source_bpm_none() -> None:
 
 
 def test_non_bpm_stretch_mode_maps_to_off() -> None:
-    spec = _spec(
-        {"A": [{"pad_id": "1", "clip": {"path": "/x.wav"}, "stretch_mode": "none"}]}
-    )
+    spec = _spec({"A": [{"pad_id": "1", "clip": {"path": "/x.wav"}, "stretch_mode": "none"}]})
     (op,) = plan_from_projectspec(spec)
     assert op.time_mode == "off"
 

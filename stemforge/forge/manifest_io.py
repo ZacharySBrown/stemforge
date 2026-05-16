@@ -373,9 +373,7 @@ def _legacy_extract(
             # n_bars only when neither is present. (n_bars is the COUNT of
             # curated bars, not each clip's length — using it as the per-clip
             # duration produced bogus 14-bar source_bar_ranges.)
-            duration_bars = int(
-                entry.get("duration_bars") or entry.get("phrase_bars") or n_bars
-            )
+            duration_bars = int(entry.get("duration_bars") or entry.get("phrase_bars") or n_bars)
             start_bar = (position - 1) * duration_bars
             end_bar = start_bar + duration_bars
             # Keep the legacy `file` value verbatim — it is already relative
