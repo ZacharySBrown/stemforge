@@ -24,6 +24,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { fetchCuration, streamUrl } from "@/lib/api";
 import type { Curation } from "@/lib/api-types.generated";
 import type {
@@ -100,6 +101,7 @@ export function useProjectState(
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const esRef = useRef<EventSource | null>(null);
   const reconnectTokenRef = useRef(0);
+  const qc = useQueryClient();
 
   const handleStateEvent = useCallback((evt: MessageEvent<string>) => {
     const payload = safeParse<
@@ -127,6 +129,15 @@ export function useProjectState(
     // pushes `als-opened` for each `.als`), so cross-host visibility isn't
     // useful here.
     if (payload.kind === "curations") {
+      // A `curations` broadcast means a curation file changed on disk —
+      // create / open / delete / rename, AND the device's COMMIT (which
+      // POSTs the staged pads and the server re-broadcasts). The TanStack
+      // queries that back the right-rail list and center-panel detail are
+      // NOT auto-refreshed by SSE, so a device COMMIT would leave them
+      // stale ("commit doesn't sync to the popup"). Invalidate them here.
+      qc.invalidateQueries({ queryKey: ["curations"] });
+      qc.invalidateQueries({ queryKey: ["curation"] });
+
       const active = payload.active_curations ?? {};
       const raw = active[POPUP_ALS_SENTINEL];
       const name = typeof raw === "string" ? raw : null;
@@ -147,7 +158,7 @@ export function useProjectState(
     setActiveCurationName(
       payload.active_curation_name ?? payload.curation?.name ?? null,
     );
-  }, []);
+  }, [qc]);
 
   const handleProgressEvent = useCallback((evt: MessageEvent<string>) => {
     const payload = safeParse<SseProgressPayload>(evt.data);
