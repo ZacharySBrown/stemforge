@@ -3321,6 +3321,26 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+all = [
+    { name = "beat-this" },
+    { name = "demucs" },
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "laion-clap" },
+    { name = "mido" },
+    { name = "mypy" },
+    { name = "playwright" },
+    { name = "pre-commit" },
+    { name = "pyinstaller" },
+    { name = "pytest" },
+    { name = "python-rtmidi" },
+    { name = "ruff" },
+    { name = "soundfile" },
+    { name = "torch" },
+    { name = "torchaudio" },
+    { name = "transformers" },
+    { name = "uvicorn" },
+]
 analyzer = [
     { name = "laion-clap" },
     { name = "transformers" },
@@ -3399,6 +3419,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5" },
     { name = "soundfile", specifier = ">=0.12.1" },
     { name = "soundfile", marker = "extra == 'configurator'", specifier = ">=0.12" },
+    { name = "stemforge", extras = ["native", "beat", "analyzer", "configurator", "ep133", "dev"], marker = "extra == 'all'" },
     { name = "torch", marker = "extra == 'beat'", specifier = ">=2.1.0" },
     { name = "torch", marker = "extra == 'local'", specifier = ">=2.1.0" },
     { name = "torch", marker = "extra == 'native'", specifier = ">=2.1.0" },
@@ -3407,7 +3428,7 @@ requires-dist = [
     { name = "transformers", marker = "extra == 'analyzer'", specifier = ">=4.40" },
     { name = "uvicorn", marker = "extra == 'configurator'", specifier = ">=0.27" },
 ]
-provides-extras = ["native", "beat", "analyzer", "modal", "ep133", "configurator", "onnx", "dev", "local"]
+provides-extras = ["native", "beat", "analyzer", "modal", "ep133", "configurator", "onnx", "dev", "local", "all"]
 
 [[package]]
 name = "submitit"

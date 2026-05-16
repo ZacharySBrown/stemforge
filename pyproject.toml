@@ -80,6 +80,16 @@ local = [
     "torchaudio>=2.1.0",
     "demucs>=4.0.1",
 ]
+# One-shot "install everything we actually use" extra. Pulls the full
+# day-to-day surface: local Demucs (native), neural tempo (beat), audio
+# classification (analyzer), the configurator server, the EP-133 SysEx
+# exporter, and the test/lint/build toolchain (dev). Run `scripts/setup.sh`
+# or `uv sync --extra all`. Deliberately omits `modal` (cloud-GPU backend —
+# an alternative to `native`, not used alongside it) and `onnx` (only for
+# building the native M4L binary). Headless CI still installs lean extras.
+all = [
+    "stemforge[native,beat,analyzer,configurator,ep133,dev]",
+]
 
 [project.scripts]
 stemforge = "stemforge.cli:cli"

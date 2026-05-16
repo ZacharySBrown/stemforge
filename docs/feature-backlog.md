@@ -47,7 +47,7 @@ Captured 2026-04-25. Source: user brainstorm. Implementation note for **all** it
 |------|------|
 | `/forge-launch` | Launch Ableton Live; open the StemForge default set if no set is already open. |
 | `/forge-pick` | Pick patch + source via the M4L device (LOM script or device-bridge call). |
-| `/forge-run` | Run `stemforge forge <source>` with current pipeline. Streams progress. |
+| `/forge-default` | Run `stemforge forge <source>` with the standard defaults — produces both the auto-curation and the arrangement manifests. Streams progress. |
 | `/forge-commit` | Trigger the device's COMMIT action (writes track templates / pads to Live). |
 | `/forge-all` | Composed skill: launch → pick → run → commit. One-shot. |
 
@@ -56,7 +56,7 @@ Captured 2026-04-25. Source: user brainstorm. Implementation note for **all** it
 - Skills should pass **CLI flags as the highest-priority overrides** per the resolution order in the spec — never bake field values into the skill that conflict with what a user could pass through.
 
 **Status (2026-04-25).**
-- ✅ **Shipped:** `/forge-launch`, `/forge-run`, `/forge-all` (launch + run composition). Skills live at `.claude/skills/forge-{launch,run,all}/SKILL.md`.
+- ✅ **Shipped:** `/forge-launch`, `/forge-default`, `/forge-all` (launch + run composition). Skills live at `.claude/skills/forge-{launch,default,all}/SKILL.md`. (`/forge-default` replaced the original `/forge-run` once `stemforge forge` started producing auto-curation + arrangement.)
 - ⛔ **Blocked:** `/forge-pick` and `/forge-commit`. The M4L device has **no external control surface today** — all triggers come from UI buttons routed through `sf_forge.js` / `stemforge_bridge.v0.js` inlets. To make these skills work, the device needs an externally-pokeable input (cheapest path: add a `[fswatcher]` on a control file like `~/.stemforge/cmd.json`; the device JS reads + dispatches the command on file change). Until that lands, the user has to hit the buttons inside Live by hand.
 
 **Open questions.**

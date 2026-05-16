@@ -27,8 +27,8 @@ order or jump between them manually.
 
 Before you start, you need:
 
-1. **A forged manifest**. Run `uv run stemforge forge <track.wav>` (or
-   `/forge-run` skill) to produce a `stems.json` with stem groupings.
+1. **A forged manifest**. Run `uv run stemforge forge <track.wav>` (or the
+   `/forge-default` skill) to produce a `stems.json` with stem groupings.
 2. **A populated Session view**. The StemForge M4L loader has placed the
    curated bar-loops into A/B/C/D session-view clip slots. Verify the
    manifest's `session_tracks` map matches what you see in Live.
