@@ -166,6 +166,7 @@ def create_app(
     templates_dir: Path | None = None,
     subprocess_runner: Any | None = None,
     device_notifier: Any | None = None,
+    port_file: Path | None = None,
 ) -> FastAPI:
     """Construct a fresh :class:`FastAPI` app and bind an :class:`AppState`.
 
@@ -190,6 +191,11 @@ def create_app(
     notification at the strip device. Production uses a UDP datagram to
     ``localhost:7420`` (matches the device's existing ``[udpreceive]``
     port). Tests inject a list-appending stub for assertion.
+
+    ``port_file`` overrides the path the first-request self-heal
+    middleware rewrites (defaults to :data:`PORT_FILE`); tests point it
+    at ``tmp_path`` so the real ``~/stemforge/.configurator_port`` is
+    never touched.
     """
     state = AppState()
     resolved_curations = (
@@ -260,6 +266,31 @@ def create_app(
     app.state.device_notifier = device_notifier or _default_device_notifier()
 
     _register_routes(app, state)
+
+    # Port-file self-heal. The M4L device discovers us by reading the port
+    # from ``~/stemforge/.configurator_port``. ``run()`` writes that file at
+    # launch — but uvicorn ``--factory`` / import-string launches bypass
+    # ``run()`` and leave whatever port a *previous* server wrote, pointing
+    # the device at a dead port. Rewrite the file on the first request,
+    # when ``request.url.port`` tells us the port we actually bound. The
+    # write is one-shot (guarded by ``app.state.port_file_synced``) so it
+    # costs nothing after the first hit.
+    app.state.port_file_synced = False
+    app.state.port_file = Path(port_file) if port_file is not None else PORT_FILE
+
+    @app.middleware("http")
+    async def _sync_port_file(  # type: ignore[no-untyped-def]
+        request: Request, call_next
+    ):
+        if not app.state.port_file_synced:
+            app.state.port_file_synced = True
+            port = request.url.port
+            if port:
+                try:
+                    write_port_file(int(port), app.state.port_file)
+                except OSError:
+                    pass  # non-fatal: device can still fall back to scan
+        return await call_next(request)
 
     # Static mount: serve the popup's build output (or the placeholder)
     # at ``/``. Done last so explicit routes take precedence.
@@ -520,7 +551,14 @@ def _register_routes(app: FastAPI, state: AppState) -> None:
 
     @app.post("/curations/{name}/open")
     async def open_curation_route(name: str, body: OpenCurationBody) -> dict[str, Any]:
-        return await intents.handle_open_curation(state, name, body)
+        # Hand the notifier down so opening a curation in the popup also
+        # tells the strip device to load it (UDP ``curation-opened``).
+        return await intents.handle_open_curation(
+            state,
+            name,
+            body,
+            device_notifier=app.state.device_notifier,
+        )
 
     @app.post("/curations/{name}/save-as", response_model=Curation)
     async def save_as_route(name: str, body: SaveAsBody) -> Curation:
