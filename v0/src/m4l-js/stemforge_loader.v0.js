@@ -43,7 +43,7 @@ outlets = 4;   // 0: status text  1: bang  2: preset umenu  3: [shell] (mkdir-p)
 // File.readstring loops (caught during second-UAT run).
 
 // Build fingerprint, injected by tools/inject_build_manifest.py.
-var SF_BUILD_MANIFEST = "build=2026-05-16T14:31 amxd=967a3f8d js={sf_arrangement_loader=4bcd599d,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=a0b9d7e7,stemforge_loader.test=7086de36,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
+var SF_BUILD_MANIFEST = "build=2026-05-16T19:43 amxd=967a3f8d js={sf_arrangement_loader=4bcd599d,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=77345a73,stemforge_loader.test=d15bbb07,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
 
 try {
     post("[sf_loader] " + SF_BUILD_MANIFEST + "\n");
@@ -4520,17 +4520,27 @@ function curationOpened(name) {
  * patcher's `[r sf-open-editor]` receiver.
  *
  * Resolves the configurator server's port from disk (or falls back to
- * 7430 — the start of the server's PORT_RANGE) and asks Max to open the
- * popup URL via the documented `messnamed("max", "launchbrowser", url)`
- * verb. Returns the URL so tests can assert against it without driving
- * `messnamed` through a real Max.
+ * 7430 — the start of the server's PORT_RANGE) and opens the popup as a
+ * Chrome **app window** — a dedicated standalone window, NOT a tab in the
+ * user's main browser. The old `messnamed("max", "launchbrowser", url)`
+ * piled up a fresh tab in the working browser on every click (#129).
+ *
+ * Shelled via outlet 3 → `[shell]` (the same wire bounce uses):
+ *   open -n -a "Google Chrome" --args --app=<url>
+ * `-n` forces a new instance so `--args` actually reaches Chrome — macOS
+ * `open` silently drops `--args` when the target app is already running.
+ *
+ * Returns the URL so tests can assert against it.
  */
 function openEditor() {
     var port = _readConfiguratorPort();
     if (port == null) port = CONFIGURATOR_DEFAULT_PORT;
     var url = "http://" + CONFIGURATOR_HOST + ":" + port + "/";
-    try { messnamed("max", "launchbrowser", url); } catch (e) {
-        try { post("[sf_loader] openEditor messnamed failed: " + e + "\n"); } catch (_) {}
+    try {
+        outlet(3, "/usr/bin/open", "-n", "-a", "Google Chrome",
+            "--args", "--app=" + url);
+    } catch (e) {
+        try { post("[sf_loader] openEditor outlet failed: " + e + "\n"); } catch (_) {}
     }
     status("editor → " + url);
     return url;

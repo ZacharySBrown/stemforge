@@ -1722,3 +1722,32 @@ describe("reAnchor() — ANCH button entry", () => {
   });
 });
 
+// ─── openEditor — Chrome app window, not a browser tab (#129) ─────────────────
+//
+// The old openEditor did `messnamed("max", "launchbrowser", url)`, which
+// opened a fresh tab in the user's main browser on every click. It now
+// shells `open -n -a "Google Chrome" --args --app=<url>` via outlet 3 → a
+// dedicated app window, never a tab.
+
+describe("openEditor — opens the popup as a Chrome app window", () => {
+  test("shells an app-mode Chrome open, not a launchbrowser tab", () => {
+    const url = T.openEditor();
+    expect(url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/$/);
+
+    const shellEmits = outletEmissions.filter((e) => e.idx === 3);
+    expect(shellEmits.length).toBe(1);
+    const args = shellEmits[0].args.map(String);
+    expect(args[0]).toMatch(/\/open$/);
+    expect(args).toContain("-n");
+    expect(args).toContain("--args");
+    expect(args.some((a) => a === "--app=" + url)).toBe(true);
+
+    // Must NOT fall back to launchbrowser (the old new-tab behavior).
+    expect(
+      messnamedCalls.some(
+        (c) => (c.args || []).indexOf("launchbrowser") !== -1
+      )
+    ).toBe(false);
+  });
+});
+
