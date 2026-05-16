@@ -367,7 +367,12 @@ def _normalize_clip_settings(raw: dict[str, Any]) -> dict[str, Any]:
     raw LOM names are present (4 beats/bar in 4/4).
     """
     out = dict(raw)
-    if "warp_bpm" in out:
+    # warp_bpm is nullable — the Live Clip LOM exposes no `warp_bpm`
+    # property, so the device derives it from warp markers and sends
+    # null for unwarped / unreadable clips. `float(None)` would raise
+    # TypeError → HTTP 422; leave a null value untouched (ClipSettings
+    # accepts it).
+    if out.get("warp_bpm") is not None:
         out["warp_bpm"] = float(out["warp_bpm"])
     if "loop_start_bar" not in out and "loop_start" in out:
         out["loop_start_bar"] = float(out["loop_start"]) / 4.0

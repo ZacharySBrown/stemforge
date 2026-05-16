@@ -32,7 +32,15 @@ class ClipSettings(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=False)
 
-    warp_bpm: float = Field(..., description="Clip's warp BPM in Live at commit time")
+    warp_bpm: float | None = Field(
+        default=None,
+        description=(
+            "Clip's warp BPM in Live at commit time. Null when the clip is "
+            "unwarped or the LOM doesn't expose a derivable tempo — the Live "
+            "Clip class has no `warp_bpm` property, so the device derives it "
+            "from warp markers and may legitimately have none."
+        ),
+    )
     loop_start_bar: float = Field(0.0, description="Loop start in bars (clip-relative)")
     loop_end_bar: float = Field(..., description="Loop end in bars (clip-relative)")
     looping: bool = Field(default=True, description="Whether the clip is looping in Live")

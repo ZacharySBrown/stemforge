@@ -44,8 +44,8 @@ export interface ClipSettings {
   loop_start_bar?: number;
   /** Whether the clip is looping in Live */
   looping?: boolean;
-  /** Clip's warp BPM in Live at commit time */
-  warp_bpm: number;
+  /** Clip's warp BPM in Live at commit time. Null when the clip is unwarped or the LOM doesn't expose a derivable tempo — the Live Clip class has no `warp_bpm` property, so the device derives it from warp markers and may legitimately have none. */
+  warp_bpm?: number | null;
 }
 
 /**

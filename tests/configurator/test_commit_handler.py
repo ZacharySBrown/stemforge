@@ -287,6 +287,47 @@ def test_merge_rejects_malformed_clip_settings(
         )
 
 
+def test_merge_accepts_null_warp_bpm(
+    processed_dir: Path,
+    empty_curation: Curation,
+) -> None:
+    """A null warp_bpm must NOT 422 the commit.
+
+    Regression: the Live Clip LOM exposes no `warp_bpm` property, so the
+    device sends `warp_bpm: null` for clips it can't derive a tempo for.
+    `_normalize_clip_settings` used to call `float(None)` → TypeError →
+    HTTP 422, and the device's COMMIT silently failed.
+    """
+    clip_path = processed_dir / "sample-forge" / "curated_audio" / "drum-bar0-4.wav"
+    body = DeviceCommitBody(
+        groups={
+            "A": DeviceGroupSnapshot(
+                pads=[
+                    DevicePadSnapshot(
+                        pad_id="A01",
+                        audio_path=str(clip_path),
+                        clip_settings={
+                            "warp_bpm": None,
+                            "loop_start_bar": 0,
+                            "loop_end_bar": 1,
+                            "looping": True,
+                        },
+                    )
+                ]
+            )
+        }
+    )
+    merged = merge_device_snapshot(
+        existing=empty_curation,
+        body=body,
+        processed_dir=processed_dir,
+    )
+    pad = merged.groups["A"].pads[0]
+    assert pad.clip_settings is not None
+    assert pad.clip_settings.warp_bpm is None
+    assert pad.clip_settings.loop_end_bar == 1.0
+
+
 def test_merge_converts_lom_units_to_bar_units(
     processed_dir: Path,
     empty_curation: Curation,
