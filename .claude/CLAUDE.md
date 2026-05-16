@@ -31,10 +31,13 @@ Dual-mode audio production system: Python CLI for stem splitting + beat slicing,
 ## Key Commands
 
 ```bash
+# First-time setup — installs EVERYTHING (the `all` extra) + popup deps.
+./scripts/setup.sh                         # ≡ uv sync --extra all  (+ npm ci)
+
 # Python
 uv run pytest                              # Run tests
-uv run ruff check .                        # Lint
-uv run ruff format --check .               # Format check
+uv run ruff check stemforge tests          # Lint (CI scope)
+uv run ruff format --check stemforge tests # Format check (CI scope)
 
 # StemForge CLI
 uv run stemforge split <audio_file>        # Full stem + slice pipeline
