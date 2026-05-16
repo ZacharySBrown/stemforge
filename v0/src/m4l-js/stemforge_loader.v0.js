@@ -43,7 +43,7 @@ outlets = 4;   // 0: status text  1: bang  2: preset umenu  3: [shell] (mkdir-p)
 // File.readstring loops (caught during second-UAT run).
 
 // Build fingerprint, injected by tools/inject_build_manifest.py.
-var SF_BUILD_MANIFEST = "build=2026-05-15T20:45 amxd=fe06fcda js={sf_arrangement_loader=70c939e5,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=bc50eab2,stemforge_loader.test=d411427e,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
+var SF_BUILD_MANIFEST = "build=2026-05-15T22:20 amxd=07ba8a3f js={sf_arrangement_loader=4bcd599d,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=1ba2a880,stemforge_loader.test=d411427e,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
 
 try {
     post("[sf_loader] " + SF_BUILD_MANIFEST + "\n");
@@ -472,6 +472,121 @@ function loadManifest() {
     _loadManifestPath(manifestPath);
 }
 
+// Color lookup for stem tracks. Schema stem names are singular ("drum",
+// "vocal"); the STEM_TARGETS table is keyed by the legacy plural form,
+// so this maps singular → plural for the cfg lookup.
+var _STEM_SINGULAR_TO_LEGACY = {
+    drum: "drums",
+    vocal: "vocals",
+    bass: "bass",
+    other: "other"
+};
+
+// Sort key: prefer source_bar_range[0] (where the bar starts in the
+// original audio); fall back to clip_id ordering when absent.
+function _curationClipSortKey(clip) {
+    if (clip && clip.source_bar_range && clip.source_bar_range.length) {
+        var n = Number(clip.source_bar_range[0]);
+        if (!isNaN(n)) return n;
+    }
+    return 1e9;  // unknown → land at the end
+}
+
+// Resolve a track for a given stem name. Tries exact name match, then
+// substring match (so existing "definition | drum" tracks are reused
+// rather than duplicated), then creates a fresh audio track. Mirrors
+// the resolution sf_arrangement_loader.js does for arrangement-view
+// clip placement.
+function _resolveOrCreateStemTrack(stem) {
+    var trackIdx = findTrackByName(stem);
+    if (trackIdx < 0) trackIdx = findTrackBySuffix(stem);
+    if (trackIdx >= 0) return trackIdx;
+
+    var preCount = trackCount();
+    try { createAudioTrack(-1); }
+    catch (eCreate) {
+        status("  " + stem + ": create track failed: " + eCreate);
+        return -1;
+    }
+    if (trackCount() <= preCount) {
+        status("  " + stem + ": create track returned no new track");
+        return -1;
+    }
+    var newIdx = preCount;
+    var legacy = _STEM_SINGULAR_TO_LEGACY[stem] || stem;
+    var cfg = STEM_TARGETS[legacy];
+    renameTrack(newIdx, stem, cfg ? cfg.color : null);
+    return newIdx;
+}
+
+// Load every curated bar in `mf.clips[]` onto its stem track. Each clip
+// lands in a successive clip_slot (sorted by source_bar_range[0]). The
+// stem track is named after the schema-singular stem name (drum / bass
+// / vocal / other) so this loader and sf_arrangement_loader target the
+// same tracks.
+function _loadCurationClips(manifestPath, mf) {
+    var forgeDir = manifestPath.replace(/\/[^/]+$/, "");
+
+    // Group clips by stem.
+    var byStem = {};
+    for (var ci = 0; ci < mf.clips.length; ci += 1) {
+        var c = mf.clips[ci];
+        if (!c || !c.stem || !c.audio_path) continue;
+        if (!byStem[c.stem]) byStem[c.stem] = [];
+        byStem[c.stem].push(c);
+    }
+
+    // Find the max bar count across stems so we ensure enough scenes.
+    var maxClipsPerStem = 0;
+    for (var s in byStem) {
+        if (!Object.prototype.hasOwnProperty.call(byStem, s)) continue;
+        if (byStem[s].length > maxClipsPerStem) {
+            maxClipsPerStem = byStem[s].length;
+        }
+    }
+    if (maxClipsPerStem > 0) {
+        try { ensureScenes(maxClipsPerStem); } catch (_eSc) { /* best-effort */ }
+    }
+
+    var totalLoaded = 0;
+    var totalClips = 0;
+    var stemsSeen = 0;
+    for (var stem in byStem) {
+        if (!Object.prototype.hasOwnProperty.call(byStem, stem)) continue;
+        if (stem === "residual") continue;
+        stemsSeen += 1;
+        var clips = byStem[stem];
+        clips.sort(function (a, b) {
+            return _curationClipSortKey(a) - _curationClipSortKey(b);
+        });
+        totalClips += clips.length;
+
+        var trackIdx = _resolveOrCreateStemTrack(stem);
+        if (trackIdx < 0) continue;
+
+        var placed = 0;
+        for (var i = 0; i < clips.length; i += 1) {
+            var clip = clips[i];
+            var ap = String(clip.audio_path);
+            // Real forges write absolute audio_path; relative fallback for
+            // fixture forges. The "starts with /" check prevents the
+            // doubled-path bug from the previous adapter (caught 2026-05-15
+            // against /Users/zak/stemforge/processed/definition).
+            var resolved = ap.charAt(0) === "/" ? ap : forgeDir + "/" + ap;
+            var clipName = clip.clip_id || (stem + "-" + i);
+            if (loadClip(trackIdx, i, resolved, clipName)) {
+                placed += 1;
+                totalLoaded += 1;
+            }
+        }
+        status("  " + stem + ": " + placed + "/" + clips.length + " bars → track " + trackIdx);
+    }
+
+    status("loadManifest: placed " + totalLoaded + "/" + totalClips
+         + " curated bars across " + stemsSeen + " stems");
+    outlet(1, "bang");
+}
+
 function _loadManifestPath(manifestPath) {
     if (!manifestPath) { status("loadManifest: missing path"); return; }
 
@@ -485,51 +600,17 @@ function _loadManifestPath(manifestPath) {
         try { new LiveAPI("live_set").set("tempo", Number(mf.bpm)); } catch (_) {}
     }
 
-    // Adapt the new auto_curation_manifest.json shape (clips[]) into the
-    // legacy stems[] shape this loader was built for. Each stem keeps its
-    // first clip's audio as the representative wav so LOAD FORGE drops
-    // one usable file per stem track. Full bar-level loading is a separate
-    // path; this is the minimum to make the new manifest shape do something
-    // sensible from the device's LOAD FORGE button.
-    if ((!mf.stems || mf.stems.length === 0) && mf.clips && mf.clips.length) {
-        var forgeDir = manifestPath.replace(/\/[^/]+$/, "");
-        // New shape uses singular stem names; legacy STEM_TARGETS uses plural.
-        var STEM_RENAME = {
-            drum: "drums",
-            vocal: "vocals",
-            bass: "bass",
-            other: "other"
-        };
-        var byStem = {};
-        for (var ci = 0; ci < mf.clips.length; ci += 1) {
-            var c = mf.clips[ci];
-            if (!c || !c.stem || !c.audio_path) continue;
-            var legacyName = STEM_RENAME[c.stem] || c.stem;
-            if (!byStem[legacyName]) {
-                // Real forges write absolute audio_path; the legacy sample-forge
-                // fixture writes relative paths. Only prepend forgeDir for the
-                // relative case — otherwise we end up with a doubled path like
-                // /Users/.../definition//Users/.../bar_001.wav and create_audio_clip
-                // silently fails (loadClip still returns true → false-positive
-                // "N/N stems placed").
-                var ap = String(c.audio_path);
-                var resolved = ap.charAt(0) === "/" ? ap : forgeDir + "/" + ap;
-                byStem[legacyName] = {
-                    name: legacyName,
-                    wav_path: resolved
-                };
-            }
-        }
-        var stemsAdapted = [];
-        for (var k in byStem) {
-            if (Object.prototype.hasOwnProperty.call(byStem, k)) {
-                stemsAdapted.push(byStem[k]);
-            }
-        }
-        mf.stems = stemsAdapted;
-        mf.track_name = mf.forge_slug || mf.track_name;
-        status("loadManifest: adapted " + mf.clips.length
-             + " clips → " + stemsAdapted.length + " stems (new auto_curation shape)");
+    // New auto_curation_manifest shape — `clips[]` array where each entry
+    // is one curated bar of one stem. Walk it directly: group by stem,
+    // place each clip in successive slot indices. Tracks are named after
+    // the stem (singular: "drum"/"bass"/"vocal"/"other") so both this
+    // loader AND sf_arrangement_loader target the same set of tracks
+    // (previous behavior diverged: LOAD FORGE made "definition | drums"
+    // while LOAD ARRANGEMENT made "drum" — the user ended up with two
+    // parallel track sets).
+    if (mf.clips && mf.clips.length) {
+        _loadCurationClips(manifestPath, mf);
+        return;
     }
 
     if (!mf.stems || !mf.stems.length) { status("manifest has no stems"); return; }
@@ -3729,6 +3810,39 @@ function commitAck() {
     status("commit: complete");
 }
 
+/**
+ * reAnchor() — bound to the ANCH button in the right column.
+ *
+ * Resolves the forge dir from the last-picked source and fires
+ * `messnamed("sf-anchor-go", forgeDir)`. The patcher routes that
+ * receiver into `[js sf_locator_anchor].anchor(forgeDir)`, which
+ * reads `<forge_dir>/prechop_manifest.json`, picks an Ableton
+ * locator, and shells `stemforge re-anchor` to re-cut the bar grid.
+ *
+ * Without the ANCH button (gone since 999ee1d's right-column refactor),
+ * the only way to drive re-anchoring was the legacy v8ui canvas
+ * (out of presentation) or shelling the CLI directly. This restores
+ * the in-presentation entry point.
+ */
+function reAnchor() {
+    if (!pickedSource || !pickedSource.path) {
+        status("re-anchor: no source picked — pick a forge manifest first");
+        return;
+    }
+    var path = String(pickedSource.path);
+    // Forge dir = parent of the manifest file. For
+    // `/Users/zak/stemforge/processed/definition/auto_curation_manifest.json`
+    // we want `/Users/zak/stemforge/processed/definition`.
+    var forgeDir = path.replace(/\/[^/]+$/, "");
+    if (!forgeDir || forgeDir === path) {
+        status("re-anchor: cannot resolve forge dir from " + path);
+        return;
+    }
+    status("re-anchor: dispatching on " + forgeDir);
+    try { messnamed("sf-anchor-go", forgeDir); }
+    catch (e) { status("re-anchor: messnamed failed: " + e); }
+}
+
 // `primary` — fired by the patcher's single primary button. Dispatches to
 // the right verb based on pickedSource.type. Status emissions cover the
 // "nothing picked" path so the user sees feedback even when the button is
@@ -4299,6 +4413,8 @@ if (typeof module !== "undefined" && module.exports) {
         // Configurator v1 Phase 2 — COMMIT keystone (device walker).
         commit: commit,
         commitAck: commitAck,
+        // Right-column ANCH button — re-anchor entry point.
+        reAnchor: reAnchor,
         _commitBuildPayload: _commitBuildPayload,
         _commitWalkGroup: _commitWalkGroup,
         _commitReadClipSettings: _commitReadClipSettings,

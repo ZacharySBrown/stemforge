@@ -1263,7 +1263,7 @@ describe("Phase 4A — als-opened bootstrap", () => {
 // clip) so LOAD FORGE drops one wav per stem track.
 
 describe("_loadManifestPath — new auto_curation_manifest shape", () => {
-  test("adapts clips[] into stems[] when stems[] is absent", () => {
+  test("walks clips[] and places every curated bar (not just the first per stem)", () => {
     loadLomSnapshotObject({ live_set: { tracks: [] } });
     const manifestPath = FORGE("sample-forge", "auto_curation_manifest.json");
     T._loadManifestPath(manifestPath);
@@ -1271,43 +1271,49 @@ describe("_loadManifestPath — new auto_curation_manifest shape", () => {
     const status = global.outletEmissions
       .filter((e) => Array.isArray(e.args) && e.args[0] === "set")
       .map((e) => e.args.slice(1).join(" "));
-    // The "no stems" rejection must NOT fire.
+
+    // The "no stems" rejection must NOT fire on the clips[] path.
     expect(status.some((s) => s.includes("manifest has no stems"))).toBe(false);
-    // We must see the adapter status line.
-    expect(
-      status.some((s) => /adapted \d+ clips → \d+ stems/.test(s))
-    ).toBe(true);
+
+    // Final summary line: "loadManifest: placed N/M curated bars across S stems".
+    const summary = status.find((s) =>
+      /^loadManifest: placed \d+\/\d+ curated bars/.test(s)
+    );
+    expect(summary).toBeDefined();
+    const m = summary.match(
+      /placed (\d+)\/(\d+) curated bars across (\d+) stems/
+    );
+    // sample-forge fixture has 4 clips, one per stem. Total placed should
+    // match total clips, across 4 stems.
+    expect(Number(m[1])).toBe(4);
+    expect(Number(m[2])).toBe(4);
+    expect(Number(m[3])).toBe(4);
   });
 
-  test("clip→stem mapping renames singular ('drum') to legacy plural ('drums')", () => {
-    // Seed the LOM with the standard StemForge template tracks. With
-    // singular→plural rename, all four stems should hit their respective
-    // STEM_TARGETS entries (drums/bass/vocals/other) AND find a matching
-    // track in the seeded set.
-    loadLomSnapshotObject({
-      live_set: {
-        tracks: [
-          { name: "SF | Drums Raw", clip_slots: [{ clip: null }] },
-          { name: "SF | Bass", clip_slots: [{ clip: null }] },
-          { name: "SF | Vocals", clip_slots: [{ clip: null }] },
-          { name: "SF | Texture Verb", clip_slots: [{ clip: null }] },
-        ],
-      },
-    });
+  test("track names match sf_arrangement_loader's (singular stem, no song prefix)", () => {
+    // Regression for the user-reported "LOAD FORGE creates tracks prefixed
+    // with the song name (which doesn't match what arrangement view
+    // produces)". Previously: `definition | drums`, `definition | vocals`.
+    // Now: `drum`, `bass`, `vocal`, `other` — same as the arrangement
+    // loader uses, so both loaders target the same tracks.
+    loadLomSnapshotObject({ live_set: { tracks: [] } });
     const manifestPath = FORGE("sample-forge", "auto_curation_manifest.json");
     T._loadManifestPath(manifestPath);
 
-    const status = global.outletEmissions
-      .filter((e) => Array.isArray(e.args) && e.args[0] === "set")
-      .map((e) => e.args.slice(1).join(" "));
-    // Loader emits per-stem placement updates; we don't need full
-    // semantic verification (that's L4 smoke). What we DO need:
-    // - no "no target track" misses for drums/vocals (the renamed stems).
-    //   If the rename failed, drums/vocals would emit it.
-    const drumsMiss = status.find((s) => /^\s*drums: no target track/.test(s));
-    const vocalsMiss = status.find((s) => /^\s*vocals: no target track/.test(s));
-    expect(drumsMiss).toBeUndefined();
-    expect(vocalsMiss).toBeUndefined();
+    // Inspect the LOM snapshot after the load: each created track should
+    // carry the schema-singular stem name. Read back via LiveAPI so we
+    // exercise the same getter the device uses in production.
+    const n = new LiveAPI("live_set").getcount("tracks");
+    const names = [];
+    for (let i = 0; i < n; i += 1) {
+      const raw = new LiveAPI("live_set tracks " + i).get("name");
+      names.push(Array.isArray(raw) ? String(raw[0]) : String(raw));
+    }
+    for (const stem of ["drum", "bass", "vocal", "other"]) {
+      expect(names).toContain(stem);
+    }
+    // No `… | …` prefix form (legacy "definition | drums" shape).
+    expect(names.some((s) => /\|/.test(s))).toBe(false);
   });
 
   test("missing path produces a clean error, not a crash", () => {
@@ -1319,11 +1325,9 @@ describe("_loadManifestPath — new auto_curation_manifest shape", () => {
     expect(status.some((s) => s.includes("missing path"))).toBe(true);
   });
 
-  // Regression: with the SF | * template tracks missing, LOAD FORGE used to
-  // emit "<stem>: no target track — dragging required" for every stem and
-  // place 0/4. The loader now mirrors sf_arrangement_loader.js and creates
-  // a fresh audio track per stem so the load is self-contained.
-  test("creates a fresh audio track when no template/match exists", () => {
+  // Regression: empty LOM → loader creates fresh stem tracks rather than
+  // falling through to "no target track — dragging required".
+  test("creates fresh audio tracks when no existing tracks match", () => {
     loadLomSnapshotObject({ live_set: { tracks: [] } });
     const manifestPath = FORGE("sample-forge", "auto_curation_manifest.json");
     T._loadManifestPath(manifestPath);
@@ -1332,20 +1336,47 @@ describe("_loadManifestPath — new auto_curation_manifest shape", () => {
       .filter((e) => Array.isArray(e.args) && e.args[0] === "set")
       .map((e) => e.args.slice(1).join(" "));
 
-    // The fail-mode message must NOT appear for any stem.
+    // The legacy "no target track" message must NOT appear.
     expect(status.some((s) => /no target track/.test(s))).toBe(false);
 
-    // create_audio_track should have been called once per adapted stem.
+    // create_audio_track should have been called once per stem (4 here).
     const creates = global.liveApiCalls
       .filter((c) => c.verb === "create_audio_track")
       .length;
     expect(creates).toBeGreaterThanOrEqual(1);
 
-    // Final "loader: N/M stems placed" should show N>=1 (matching create count).
-    const placed = status.find((s) => /^loader: \d+\/\d+ stems placed/.test(s));
-    expect(placed).toBeDefined();
-    const m = placed.match(/loader: (\d+)\/(\d+) stems placed/);
+    // Summary should show >=1 bars placed.
+    const summary = status.find((s) =>
+      /^loadManifest: placed \d+\/\d+ curated bars/.test(s)
+    );
+    expect(summary).toBeDefined();
+    const m = summary.match(/placed (\d+)\/\d+ curated bars/);
     expect(Number(m[1])).toBeGreaterThanOrEqual(1);
+  });
+
+  test("reuses existing singular-named stem tracks (no duplicates)", () => {
+    // Regression for the user-reported "creates new tracks prefixed with
+    // the song name" — even when stem-named tracks already exist (e.g.
+    // because sf_arrangement_loader created them), the curation loader
+    // should reuse them rather than make parallel ones.
+    loadLomSnapshotObject({
+      live_set: {
+        tracks: [
+          { name: "drum",  clip_slots: [{ clip: null }, { clip: null }, { clip: null }, { clip: null }] },
+          { name: "bass",  clip_slots: [{ clip: null }, { clip: null }, { clip: null }, { clip: null }] },
+          { name: "vocal", clip_slots: [{ clip: null }, { clip: null }, { clip: null }, { clip: null }] },
+          { name: "other", clip_slots: [{ clip: null }, { clip: null }, { clip: null }, { clip: null }] },
+        ],
+      },
+    });
+    const manifestPath = FORGE("sample-forge", "auto_curation_manifest.json");
+    T._loadManifestPath(manifestPath);
+
+    // No create_audio_track calls — all stems matched existing tracks.
+    const creates = global.liveApiCalls
+      .filter((c) => c.verb === "create_audio_track")
+      .length;
+    expect(creates).toBe(0);
   });
 
   // Regression: real forge manifests (~/stemforge/processed/*/auto_curation_manifest.json)
@@ -1550,6 +1581,37 @@ describe("HTTP wire (Phase 3B C2)", () => {
 
     const lines = statusLines();
     expect(lines).toContain("commit: complete");
+  });
+});
+
+// ─── ANCH button — reAnchor() entry point ───────────────────────────────────
+describe("reAnchor() — ANCH button entry", () => {
+  test("no source picked → status only, no messnamed", () => {
+    T.resetPickedSource();
+    T.reAnchor();
+    const lines = statusLines();
+    expect(lines.some((l) => l.indexOf("re-anchor: no source picked") === 0))
+      .toBe(true);
+    expect(messnamedCalls.filter((c) => c.name === "sf-anchor-go").length)
+      .toBe(0);
+  });
+
+  test("forge_manifest source → fires sf-anchor-go with the forge dir", () => {
+    // Seed pickedSource manually via the helper the loader exposes.
+    // applyPickedSource normalizes a path; we just need the .path field.
+    global.messagename = "applyPickedSource";
+    T.applyPickedSource(
+      "/Users/zak/stemforge/processed/definition/auto_curation_manifest.json"
+    );
+
+    T.reAnchor();
+
+    const sends = messnamedCalls.filter((c) => c.name === "sf-anchor-go");
+    expect(sends.length).toBe(1);
+    // The arg is the forge dir — parent of the manifest file.
+    expect(sends[0].args[0]).toBe(
+      "/Users/zak/stemforge/processed/definition"
+    );
   });
 });
 
