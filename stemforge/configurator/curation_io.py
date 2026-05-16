@@ -115,8 +115,22 @@ def _dump_yaml(curation: Curation) -> str:
     # ``model_dump(mode="json")`` collapses datetimes to ISO strings which
     # is what we want on disk. ``yaml.safe_dump`` then renders that
     # plain-Python tree.
+    #
+    # ``width`` is set huge to DISABLE line-wrapping. PyYAML's default
+    # (width=80) folds long plain scalars across multiple indented lines
+    # — valid YAML, but the M4L device's hand-rolled line-based parser
+    # (``_yamlParseCuration``) can't follow a folded scalar and rejects
+    # the file. Long ``external_path`` values (Ableton's deep
+    # ``Samples/Processed/Crop/...`` paths) tripped exactly this. One
+    # scalar per line keeps the device parser — and humans — happy.
     payload = curation.model_dump(mode="json")
-    return yaml.safe_dump(payload, sort_keys=False, default_flow_style=False, allow_unicode=True)
+    return yaml.safe_dump(
+        payload,
+        sort_keys=False,
+        default_flow_style=False,
+        allow_unicode=True,
+        width=1_000_000,
+    )
 
 
 def write_curation_atomic(path: Path, curation: Curation) -> None:

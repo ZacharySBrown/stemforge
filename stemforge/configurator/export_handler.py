@@ -195,6 +195,57 @@ def _resolve_pad_path(source: Any, forges_dir: Path) -> str | None:
     return str(forges_dir / forge / audio_path)
 
 
+# Audio extensions the EP-133 export pipeline (libsndfile-backed) can read.
+# `.rx2` (ReCycle/REX) and other Live-only formats are rejected up front —
+# only Ableton can decode them, so the StemForge pipeline never sees a
+# usable PCM stream and `build-deck` would crash deep in the hash step.
+# BOUNCE in the device crops staged clips in place, so by COMMIT time a
+# pad's `source` already points at a Live-materialized WAV.
+_EXPORTABLE_AUDIO_EXTS: frozenset[str] = frozenset({".wav", ".aif", ".aiff", ".flac"})
+
+
+def _check_pad_audio(path: str) -> str | None:
+    """Return a human-readable reason ``path`` can't be exported, or None.
+
+    Catches the failure modes seen in the field:
+      * non-PCM source (``.rx2`` & friends — only Live can decode them);
+      * unreadable path (iCloud Drive placeholders / TCC sandbox → EPERM);
+      * missing or zero-byte file (e.g. a stub from an unfinished bounce).
+    """
+    p = Path(path)
+    ext = p.suffix.lower()
+    if ext not in _EXPORTABLE_AUDIO_EXTS:
+        return f"{p.name}: unsupported format '{ext or '(none)'}' — export needs WAV/AIFF/FLAC"
+    try:
+        if not p.is_file():
+            return f"{p.name}: file not found"
+        if p.stat().st_size == 0:
+            return f"{p.name}: file is empty"
+        with p.open("rb") as fh:
+            fh.read(1)
+    except PermissionError:
+        return f"{p.name}: not readable (iCloud Drive / sandbox) — keep the file local"
+    except OSError as exc:
+        return f"{p.name}: not readable ({exc})"
+    return None
+
+
+def _preflight_pad_audio(curation: Curation, *, forges_dir: Path) -> list[str]:
+    """Pre-export audio check — one error string per unexportable pad."""
+    errors: list[str] = []
+    for group in (curation.groups or {}).values():
+        for pad in group.pads or []:
+            if getattr(pad, "source", None) is None:
+                continue
+            resolved = _resolve_pad_path(pad.source, forges_dir=forges_dir)
+            if resolved is None:
+                continue
+            reason = _check_pad_audio(resolved)
+            if reason:
+                errors.append(f"pad {pad.pad_id}: {reason}")
+    return errors
+
+
 def curation_to_deck_plan(
     curation: Curation,
     *,
@@ -417,6 +468,22 @@ def perform_export(
 
     curation = read_curation(path)
     forges_root = forges_dir if forges_dir is not None else curations_dir.parent / "processed"
+
+    # Pre-flight the pad audio so an unexportable source (a .rx2 loop, an
+    # iCloud-Drive placeholder, an empty file) surfaces as a clean 400 with
+    # per-pad guidance — not a PermissionError traceback out of
+    # `build-deck`'s hash step. After an in-place BOUNCE + re-COMMIT a pad's
+    # `source` points at the cropped WAV, which passes this check.
+    audio_errors = _preflight_pad_audio(curation, forges_dir=forges_root)
+    if audio_errors:
+        raise ExportValidationError(
+            "curation has pads with no exportable audio:\n  - "
+            + "\n  - ".join(audio_errors)
+            + "\n\nFix: BOUNCE the staging clips in the device (crops each "
+            "clip in place to a WAV), then re-COMMIT before exporting. "
+            "Live-only formats like .rx2 can't be packed into a .ppak."
+        )
+
     plan = curation_to_deck_plan(curation, forges_dir=forges_root)
 
     # Write the plan to a tempfile so the CLI can mmap it. Keep the file

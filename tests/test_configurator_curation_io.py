@@ -100,6 +100,35 @@ def test_atomic_write_then_read_round_trips(tmp_path: Path) -> None:
     assert restored == curation
 
 
+def test_long_external_path_is_not_line_wrapped(tmp_path: Path) -> None:
+    """A long external_path must stay on ONE line.
+
+    PyYAML's default width (80) folds long plain scalars across indented
+    continuation lines. That's valid YAML, but the M4L device's
+    hand-rolled line-based parser can't follow a folded scalar and
+    rejects the whole curation. Deep Ableton crop paths trip this.
+    """
+    from stemforge.configurator.schemas.curation import PadSource
+
+    long_path = (
+        "/Users/zak/Music/Ableton/Live Recordings/2026-05-15 065129 "
+        "Temp Project/Samples/Processed/Crop/Soul Pride 162 [2026-05-15 223746].wav"
+    )
+    curation = _make_curation("wrappy")
+    curation.groups["A"].pads[0] = Pad(
+        pad_id="A01",
+        source=PadSource.for_external(external_path=long_path),
+    )
+    path = curation_path(tmp_path, "wrappy")
+    write_curation_atomic(path, curation)
+
+    text = path.read_text()
+    # The path appears verbatim on a single line — no folding.
+    assert f"external_path: {long_path}" in text
+    # And it still round-trips.
+    assert read_curation(path).groups["A"].pads[0].source.external_path == long_path
+
+
 def test_atomic_write_creates_parent_dir(tmp_path: Path) -> None:
     nested = tmp_path / "deeper" / "still" / "curations"
     curation = _make_curation("c")
