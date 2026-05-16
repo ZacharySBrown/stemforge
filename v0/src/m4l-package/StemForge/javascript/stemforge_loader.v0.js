@@ -43,7 +43,7 @@ outlets = 4;   // 0: status text  1: bang  2: preset umenu  3: [shell] (mkdir-p)
 // File.readstring loops (caught during second-UAT run).
 
 // Build fingerprint, injected by tools/inject_build_manifest.py.
-var SF_BUILD_MANIFEST = "build=2026-05-15T17:51 amxd=05fdba64 js={sf_arrangement_loader=70c939e5,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=fe560799,stemforge_loader.test=d411427e,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
+var SF_BUILD_MANIFEST = "build=2026-05-16T03:27 amxd=967a3f8d js={sf_arrangement_loader=4bcd599d,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=91ffb457,stemforge_loader.test=3548a411,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
 
 try {
     post("[sf_loader] " + SF_BUILD_MANIFEST + "\n");
@@ -136,6 +136,20 @@ function readFileContents(p) {
     } catch (e) {
         status("readFile error: " + e);
         return null;
+    }
+}
+
+// True when `p` names a readable file. Used by the bundle loader to probe
+// for the curation / arrangement manifest siblings without emitting the
+// noisy "cannot read manifest" error path when one is simply absent.
+function _sfFileExists(p) {
+    try {
+        var f = new File(toMaxPath(p), "read");
+        var ok = !!f.isopen;
+        if (ok) f.close();
+        return ok;
+    } catch (_) {
+        return false;
     }
 }
 
@@ -244,23 +258,47 @@ function renameTrack(idx, name, color) {
 function loadClip(trackIdx, slotIdx, wavPath, clipName, startMarkerBeats) {
     var csPath = "live_set tracks " + trackIdx + " clip_slots " + slotIdx;
     var cs = new LiveAPI(csPath);
+    // Clear any clip already in this slot. create_audio_clip fails on a
+    // non-empty slot, so a re-load (re-anchor refresh, or a second LOAD
+    // FORGE) would otherwise silently leave the stale clip in place.
+    try {
+        var existing = new LiveAPI(csPath + " clip");
+        if (existing && existing.id !== "0") cs.call("delete_clip");
+    } catch (_) {}
     try {
         cs.call("create_audio_clip", String(wavPath));
     } catch (e) {
         status("create_audio_clip failed: " + e);
         return false;
     }
+    // create_audio_clip does NOT throw when Live rejects the call (missing
+    // file, non-audio track, bad slot path → Max posts "jsliveapi: Invalid
+    // syntax" to the console but raises no JS exception). Probe the slot's
+    // clip handle: id "0" means nothing landed. Returning true here would
+    // inflate the "N/N placed" counter while session slots stay empty —
+    // exactly the false-positive caught 2026-05-15 on ooh_la_la.
+    var clip;
     try {
-        var clip = new LiveAPI(csPath + " clip");
-        if (clip.id !== "0" && clipName) {
+        clip = new LiveAPI(csPath + " clip");
+    } catch (eProbe) {
+        status("create_audio_clip: clip handle unreadable for slot " + slotIdx);
+        return false;
+    }
+    if (!clip || clip.id === "0") {
+        status("create_audio_clip: slot " + slotIdx
+            + " empty after create (missing file? " + wavPath + ")");
+        return false;
+    }
+    if (clipName) {
+        try {
             clip.set("name", String(clipName));
             clip.set("warping", 1);
             clip.set("looping", 1);
             // Note: start_marker adjustment removed — shifting clip start
             // breaks sync. Instead, the curator now boosts bars with early
             // transients during selection (prefer bars that start with a hit).
-        }
-    } catch (_) {}
+        } catch (_) {}
+    }
     return true;
 }
 
@@ -472,6 +510,121 @@ function loadManifest() {
     _loadManifestPath(manifestPath);
 }
 
+// Color lookup for stem tracks. Schema stem names are singular ("drum",
+// "vocal"); the STEM_TARGETS table is keyed by the legacy plural form,
+// so this maps singular → plural for the cfg lookup.
+var _STEM_SINGULAR_TO_LEGACY = {
+    drum: "drums",
+    vocal: "vocals",
+    bass: "bass",
+    other: "other"
+};
+
+// Sort key: prefer source_bar_range[0] (where the bar starts in the
+// original audio); fall back to clip_id ordering when absent.
+function _curationClipSortKey(clip) {
+    if (clip && clip.source_bar_range && clip.source_bar_range.length) {
+        var n = Number(clip.source_bar_range[0]);
+        if (!isNaN(n)) return n;
+    }
+    return 1e9;  // unknown → land at the end
+}
+
+// Resolve a track for a given stem name. Tries exact name match, then
+// substring match (so existing "definition | drum" tracks are reused
+// rather than duplicated), then creates a fresh audio track. Mirrors
+// the resolution sf_arrangement_loader.js does for arrangement-view
+// clip placement.
+function _resolveOrCreateStemTrack(stem) {
+    var trackIdx = findTrackByName(stem);
+    if (trackIdx < 0) trackIdx = findTrackBySuffix(stem);
+    if (trackIdx >= 0) return trackIdx;
+
+    var preCount = trackCount();
+    try { createAudioTrack(-1); }
+    catch (eCreate) {
+        status("  " + stem + ": create track failed: " + eCreate);
+        return -1;
+    }
+    if (trackCount() <= preCount) {
+        status("  " + stem + ": create track returned no new track");
+        return -1;
+    }
+    var newIdx = preCount;
+    var legacy = _STEM_SINGULAR_TO_LEGACY[stem] || stem;
+    var cfg = STEM_TARGETS[legacy];
+    renameTrack(newIdx, stem, cfg ? cfg.color : null);
+    return newIdx;
+}
+
+// Load every curated bar in `mf.clips[]` onto its stem track. Each clip
+// lands in a successive clip_slot (sorted by source_bar_range[0]). The
+// stem track is named after the schema-singular stem name (drum / bass
+// / vocal / other) so this loader and sf_arrangement_loader target the
+// same tracks.
+function _loadCurationClips(manifestPath, mf) {
+    var forgeDir = manifestPath.replace(/\/[^/]+$/, "");
+
+    // Group clips by stem.
+    var byStem = {};
+    for (var ci = 0; ci < mf.clips.length; ci += 1) {
+        var c = mf.clips[ci];
+        if (!c || !c.stem || !c.audio_path) continue;
+        if (!byStem[c.stem]) byStem[c.stem] = [];
+        byStem[c.stem].push(c);
+    }
+
+    // Find the max bar count across stems so we ensure enough scenes.
+    var maxClipsPerStem = 0;
+    for (var s in byStem) {
+        if (!Object.prototype.hasOwnProperty.call(byStem, s)) continue;
+        if (byStem[s].length > maxClipsPerStem) {
+            maxClipsPerStem = byStem[s].length;
+        }
+    }
+    if (maxClipsPerStem > 0) {
+        try { ensureScenes(maxClipsPerStem); } catch (_eSc) { /* best-effort */ }
+    }
+
+    var totalLoaded = 0;
+    var totalClips = 0;
+    var stemsSeen = 0;
+    for (var stem in byStem) {
+        if (!Object.prototype.hasOwnProperty.call(byStem, stem)) continue;
+        if (stem === "residual") continue;
+        stemsSeen += 1;
+        var clips = byStem[stem];
+        clips.sort(function (a, b) {
+            return _curationClipSortKey(a) - _curationClipSortKey(b);
+        });
+        totalClips += clips.length;
+
+        var trackIdx = _resolveOrCreateStemTrack(stem);
+        if (trackIdx < 0) continue;
+
+        var placed = 0;
+        for (var i = 0; i < clips.length; i += 1) {
+            var clip = clips[i];
+            var ap = String(clip.audio_path);
+            // Real forges write absolute audio_path; relative fallback for
+            // fixture forges. The "starts with /" check prevents the
+            // doubled-path bug from the previous adapter (caught 2026-05-15
+            // against /Users/zak/stemforge/processed/definition).
+            var resolved = ap.charAt(0) === "/" ? ap : forgeDir + "/" + ap;
+            var clipName = clip.clip_id || (stem + "-" + i);
+            if (loadClip(trackIdx, i, resolved, clipName)) {
+                placed += 1;
+                totalLoaded += 1;
+            }
+        }
+        status("  " + stem + ": " + placed + "/" + clips.length + " bars → track " + trackIdx);
+    }
+
+    status("loadManifest: placed " + totalLoaded + "/" + totalClips
+         + " curated bars across " + stemsSeen + " stems");
+    outlet(1, "bang");
+}
+
 function _loadManifestPath(manifestPath) {
     if (!manifestPath) { status("loadManifest: missing path"); return; }
 
@@ -485,51 +638,17 @@ function _loadManifestPath(manifestPath) {
         try { new LiveAPI("live_set").set("tempo", Number(mf.bpm)); } catch (_) {}
     }
 
-    // Adapt the new auto_curation_manifest.json shape (clips[]) into the
-    // legacy stems[] shape this loader was built for. Each stem keeps its
-    // first clip's audio as the representative wav so LOAD FORGE drops
-    // one usable file per stem track. Full bar-level loading is a separate
-    // path; this is the minimum to make the new manifest shape do something
-    // sensible from the device's LOAD FORGE button.
-    if ((!mf.stems || mf.stems.length === 0) && mf.clips && mf.clips.length) {
-        var forgeDir = manifestPath.replace(/\/[^/]+$/, "");
-        // New shape uses singular stem names; legacy STEM_TARGETS uses plural.
-        var STEM_RENAME = {
-            drum: "drums",
-            vocal: "vocals",
-            bass: "bass",
-            other: "other"
-        };
-        var byStem = {};
-        for (var ci = 0; ci < mf.clips.length; ci += 1) {
-            var c = mf.clips[ci];
-            if (!c || !c.stem || !c.audio_path) continue;
-            var legacyName = STEM_RENAME[c.stem] || c.stem;
-            if (!byStem[legacyName]) {
-                // Real forges write absolute audio_path; the legacy sample-forge
-                // fixture writes relative paths. Only prepend forgeDir for the
-                // relative case — otherwise we end up with a doubled path like
-                // /Users/.../definition//Users/.../bar_001.wav and create_audio_clip
-                // silently fails (loadClip still returns true → false-positive
-                // "N/N stems placed").
-                var ap = String(c.audio_path);
-                var resolved = ap.charAt(0) === "/" ? ap : forgeDir + "/" + ap;
-                byStem[legacyName] = {
-                    name: legacyName,
-                    wav_path: resolved
-                };
-            }
-        }
-        var stemsAdapted = [];
-        for (var k in byStem) {
-            if (Object.prototype.hasOwnProperty.call(byStem, k)) {
-                stemsAdapted.push(byStem[k]);
-            }
-        }
-        mf.stems = stemsAdapted;
-        mf.track_name = mf.forge_slug || mf.track_name;
-        status("loadManifest: adapted " + mf.clips.length
-             + " clips → " + stemsAdapted.length + " stems (new auto_curation shape)");
+    // New auto_curation_manifest shape — `clips[]` array where each entry
+    // is one curated bar of one stem. Walk it directly: group by stem,
+    // place each clip in successive slot indices. Tracks are named after
+    // the stem (singular: "drum"/"bass"/"vocal"/"other") so both this
+    // loader AND sf_arrangement_loader target the same set of tracks
+    // (previous behavior diverged: LOAD FORGE made "definition | drums"
+    // while LOAD ARRANGEMENT made "drum" — the user ended up with two
+    // parallel track sets).
+    if (mf.clips && mf.clips.length) {
+        _loadCurationClips(manifestPath, mf);
+        return;
     }
 
     if (!mf.stems || !mf.stems.length) { status("manifest has no stems"); return; }
@@ -540,23 +659,40 @@ function _loadManifestPath(manifestPath) {
         if (!s || !s.name) continue;
         if (s.name === "residual") continue;
 
-        // Decide source template to duplicate from.
+        // Decide source template to duplicate from. If no template/match
+        // exists we create a fresh audio track at the end of the set —
+        // mirrors sf_arrangement_loader.js so LOAD FORGE works on bare
+        // sets without the user dragging the SF | * templates in first.
         var cfg = STEM_TARGETS[s.name];
         var templateName = cfg && cfg.track ? cfg.track : null;
         var templateIdx = templateName ? findTrackByName(templateName) : -1;
 
         if (templateIdx < 0) {
-            // No template for this stem. Try to at least find a matching
-            // existing track by suffix (user's custom template) or create a
-            // fresh audio track at the end of the set.
             templateIdx = findTrackBySuffix(s.name);
         }
-        if (templateIdx < 0) {
-            status("  " + s.name + ": no target track — dragging required");
-            continue;
+
+        var newIdx;
+        if (templateIdx >= 0) {
+            newIdx = duplicateTrack(templateIdx);
+        } else {
+            // Self-contained fallback: append a fresh audio track. The
+            // newly-created track lands at index = trackCount()-1; we
+            // rescan rather than trust the LiveAPI return value (the
+            // arrangement loader does the same — Live's return is not
+            // always reliable here).
+            var preCount = trackCount();
+            try { createAudioTrack(-1); }
+            catch (eCreate) {
+                status("  " + s.name + ": create track failed: " + eCreate);
+                continue;
+            }
+            if (trackCount() <= preCount) {
+                status("  " + s.name + ": create track returned no new track");
+                continue;
+            }
+            newIdx = preCount;
         }
 
-        var newIdx = duplicateTrack(templateIdx);
         var clipName = (mf.track_name || "stemforge") + " | " + s.name;
         renameTrack(newIdx, clipName, cfg ? cfg.color : null);
 
@@ -2474,19 +2610,23 @@ function bounceCuration(curationName, padIdsJson) {
             status("bounce: failed " + item.pad_id + ": " + cropResult.reason);
             continue;
         }
-        // 4. Write the rendered WAV. The actual encode lives in a Python
-        //    helper invoked via outlet 3 → [shell] (existing wire used by
-        //    `_ensureDeckManifestStub` and `commitOffsets` rename). The
-        //    helper receives (output_path, source_clip_path, warp_bpm).
-        //    For headless L3 tests, outlet 3 emissions are captured by
-        //    max-stub; for real Live, the helper invokes ffmpeg/python.
-        var outPath = bounceDir + "/" + item.pad_id + ".wav";
-        try {
-            outlet(3, "/usr/bin/env", "python3", "-c",
-                "import sys, os; os.makedirs(os.path.dirname(sys.argv[1]), exist_ok=True); open(sys.argv[1], 'w').close()",
-                outPath);
-        } catch (e) {
-            status("bounce: outlet 3 write error for " + item.pad_id + ": " + e);
+        // 4. BOUNCE is in-place. `clip.call("crop")` (in _bounceCropOnePad
+        //    above) already materialized the staged clip as a fresh WAV in
+        //    Live's project Samples folder — the clip's `file_path` now
+        //    points at that cropped WAV. There is nothing to write: COMMIT
+        //    reads `file_path`, so the cropped audio flows straight into
+        //    the curation and on to EP-133 export.
+        //
+        //    The old code touched an empty stub file under
+        //    ~/stemforge/bounced/ (dead "Phase 5" scaffolding) which left
+        //    0-byte WAVs and made export choke on the raw source. Removed.
+        var croppedClip = new LiveAPI(
+            "live_set tracks " + item.track_idx
+            + " clip_slots " + item.slot + " clip"
+        );
+        var outPath = _commitReadAudioPath(croppedClip);
+        if (!outPath) {
+            status("bounce: warning — no file_path after crop for " + item.pad_id);
         }
         rendered += 1;
         padOutputs.push({
@@ -2497,20 +2637,15 @@ function bounceCuration(curationName, padIdsJson) {
         });
         status("bounce: rendered " + item.pad_id);
         // 5. Per-pad progress beacon so the popup can render a bar.
-        try {
-            messnamed(
-                BOUNCE_PROGRESS_SEND,
-                name,
-                JSON.stringify({
-                    pad_id: item.pad_id,
-                    rendered_count: rendered,
-                    total_count: workList.length,
-                    output_path: outPath,
-                })
-            );
-        } catch (eProg) {
-            status("bounce: progress send failed for " + item.pad_id + ": " + eProg);
-        }
+        var progressUrl = _buildPostUrl(
+            "/curations/" + encodeURIComponent(name) + "/bounce-progress"
+        );
+        _sendHttpPost(BOUNCE_PROGRESS_SEND, progressUrl, {
+            pad_id: item.pad_id,
+            rendered_count: rendered,
+            total_count: workList.length,
+            output_path: outPath,
+        });
     }
 
     // Unmute every STG-* track at end — both on success and any partial
@@ -2519,19 +2654,14 @@ function bounceCuration(curationName, padIdsJson) {
 
     // Final completion POST. The server merges this into
     // curation.last_bounce + broadcasts SSE.
-    try {
-        messnamed(
-            BOUNCE_COMPLETE_SEND,
-            name,
-            JSON.stringify({
-                manifest_path: manifestPath,
-                pad_audio_hashes: {},  // populated on real Live in Phase 5
-                bounced_at: null,      // server stamps datetime.now(UTC)
-            })
-        );
-    } catch (eDone) {
-        status("bounce: complete send failed: " + eDone);
-    }
+    var completeUrl = _buildPostUrl(
+        "/curations/" + encodeURIComponent(name) + "/bounce-complete"
+    );
+    _sendHttpPost(BOUNCE_COMPLETE_SEND, completeUrl, {
+        manifest_path: manifestPath,
+        pad_audio_hashes: {},  // populated on real Live in Phase 5
+        bounced_at: null,      // server stamps datetime.now(UTC)
+    });
     status("bounce: complete (" + rendered + "/" + workList.length + " OK)");
     return {
         curation_name: name,
@@ -2628,31 +2758,88 @@ function loadArrangementFromManifest() {
         status("loadArrangementFromManifest: missing manifest path");
         return;
     }
-    var ok = false;
+    // Both forge views load together — the patcher routes the post-anchor
+    // reload here, so re-anchoring now refreshes the curated session clips
+    // as well as the arrangement chunks. _loadForgeBundle resolves the
+    // sibling manifests from the forge dir.
+    _loadForgeBundle(manifestPath, shiftBeats);
+}
+
+// Run the arrangement-view loader for one manifest. include()s
+// sf_arrangement_loader.js into this [js]'s scope so runArrangementLoad()
+// is callable directly. Returns true on success.
+function _runArrangementLoad(manifestPath, shiftBeats) {
     try {
-        // include() pulls sf_arrangement_loader.js into this [js]'s scope so
-        // we can call runArrangementLoad() directly. Same pattern as the
-        // arrangement-snapshot reader; the loader function is intentionally
-        // named differently so include() doesn't clobber this wrapper.
         include("sf_arrangement_loader.js");
         var fn = (typeof runArrangementLoad === "function")
             ? runArrangementLoad : null;
         if (!fn) {
-            status("loadArrangementFromManifest: loader loaded but "
-                + "runArrangementLoad not in scope");
-            return;
+            status("arrangement: loader loaded but runArrangementLoad "
+                + "not in scope");
+            return false;
         }
-        ok = !!fn(manifestPath, shiftBeats);
+        return !!fn(manifestPath, shiftBeats || 0);
     } catch (e) {
-        status("loadArrangementFromManifest: include/dispatch failed: " + e);
+        status("arrangement: include/dispatch failed: " + e);
+        return false;
+    }
+}
+
+// Load BOTH forge views from a single forge dir: the curated session-view
+// clips (auto_curation_manifest.json) AND the arrangement-view chunks
+// (arrangement_manifest.json). `anyManifestPath` may point at either
+// sibling — the forge dir is its parent. `arrangementShift` (beats) is
+// forwarded to the arrangement loader for the re-anchor reload case
+// (session clip slots have no timeline position, so it is ignored there).
+function _loadForgeBundle(anyManifestPath, arrangementShift) {
+    if (!anyManifestPath) { status("bundle: no manifest path"); return; }
+    var forgeDir = String(anyManifestPath).replace(/\/[^/]+$/, "");
+    if (!forgeDir || forgeDir === String(anyManifestPath)) {
+        status("bundle: cannot resolve forge dir from " + anyManifestPath);
         return;
     }
-    if (ok) {
-        status("Arrangement loaded from " + manifestPath);
+    var curationPath = forgeDir + "/auto_curation_manifest.json";
+    var arrangementPath = forgeDir + "/arrangement_manifest.json";
+    var loadedAny = false;
+
+    if (_sfFileExists(curationPath)) {
+        status("bundle: loading curated clips → session view");
+        _loadManifestPath(curationPath);
+        loadedAny = true;
+    } else {
+        status("bundle: no auto_curation_manifest.json in " + forgeDir);
+    }
+
+    if (_sfFileExists(arrangementPath)) {
+        status("bundle: loading arrangement chunks → arrangement view");
+        if (_runArrangementLoad(arrangementPath, arrangementShift || 0)) {
+            status("Arrangement loaded from " + arrangementPath);
+            outlet(0, "set", "Arrangement loaded");
+        } else {
+            status("bundle: arrangement load failed for " + arrangementPath);
+            outlet(0, "set", "Arrangement load failed");
+        }
+        loadedAny = true;
+    } else {
+        status("bundle: no arrangement_manifest.json in " + forgeDir);
+    }
+
+    if (loadedAny) {
+        outlet(1, "bang");
+        return;
+    }
+
+    // Neither canonical sibling is present (e.g. a legacy forge dir with
+    // only prechop_manifest.json). Fall back to loading the picked file
+    // itself through the arrangement loader, which knows the prechop shape.
+    status("bundle: no canonical manifests — falling back to "
+        + anyManifestPath);
+    if (_runArrangementLoad(anyManifestPath, arrangementShift || 0)) {
+        status("Arrangement loaded from " + anyManifestPath);
         outlet(0, "set", "Arrangement loaded");
         outlet(1, "bang");
     } else {
-        status("loadArrangementFromManifest: load failed for " + manifestPath);
+        status("bundle: load failed for " + anyManifestPath);
         outlet(0, "set", "Arrangement load failed");
     }
 }
@@ -3562,8 +3749,26 @@ var COMMIT_ACK_RECV = "sf-commit-ack";
 // Returns null when the slot is empty (no clip → LiveAPI id "0").
 function _commitReadClipSettings(clipApi) {
     if (!clipApi || clipApi.id === "0") return null;
-    var rawWarp = clipApi.get("warp_bpm");
-    var warpBpm = (rawWarp && rawWarp.length) ? Number(rawWarp[0]) : null;
+    // warp_bpm: the Live Clip LOM exposes NO `warp_bpm` property —
+    // reading it raises "'Clip' object has no attribute 'warp_bpm'" and
+    // the device used to ship `warp_bpm: null`, which the server's
+    // `float(None)` then rejected with HTTP 422 (commit silently failed).
+    // Try the direct read anyway (older Max/Live combos + the L3 test
+    // stub do surface it), then fall back to deriving the BPM from the
+    // warp_markers slope — the same source the bounce path uses. A
+    // 0/unreadable result stays null; the server schema + LOAD both
+    // tolerate a null warp_bpm (unwarped clips legitimately have none).
+    var warpBpm = null;
+    try {
+        var rawWarp = clipApi.get("warp_bpm");
+        if (rawWarp && rawWarp.length && Number(rawWarp[0]) > 0) {
+            warpBpm = Number(rawWarp[0]);
+        }
+    } catch (_eWarp) {}
+    if (warpBpm == null) {
+        var bpmFromMarkers = _warpBpmFromMarkers(clipApi);
+        if (bpmFromMarkers > 0) warpBpm = bpmFromMarkers;
+    }
     var rawLoopStart = clipApi.get("loop_start");
     var rawLoopEnd = clipApi.get("loop_end");
     var loopStartBeats = (rawLoopStart && rawLoopStart.length) ? Number(rawLoopStart[0]) : 0;
@@ -3695,10 +3900,10 @@ function commit() {
         status("commit: stringify failed: " + e);
         return null;
     }
-    try {
-        messnamed(COMMIT_SEND_RECV, activeCuration.name, jsonText);
-    } catch (e2) {
-        status("commit: messnamed send failed: " + e2);
+    var url = _buildPostUrl(
+        "/curations/" + encodeURIComponent(activeCuration.name) + "/commit"
+    );
+    if (!_sendHttpPost(COMMIT_SEND_RECV, url, payload)) {
         return payload;
     }
     status("commit: sent " + activeCuration.name + " ("
@@ -3722,6 +3927,39 @@ function commitAck() {
     status("commit: complete");
 }
 
+/**
+ * reAnchor() — bound to the ANCH button in the right column.
+ *
+ * Resolves the forge dir from the last-picked source and fires
+ * `messnamed("sf-anchor-go", forgeDir)`. The patcher routes that
+ * receiver into `[js sf_locator_anchor].anchor(forgeDir)`, which
+ * reads `<forge_dir>/prechop_manifest.json`, picks an Ableton
+ * locator, and shells `stemforge re-anchor` to re-cut the bar grid.
+ *
+ * Without the ANCH button (gone since 999ee1d's right-column refactor),
+ * the only way to drive re-anchoring was the legacy v8ui canvas
+ * (out of presentation) or shelling the CLI directly. This restores
+ * the in-presentation entry point.
+ */
+function reAnchor() {
+    if (!pickedSource || !pickedSource.path) {
+        status("re-anchor: no source picked — pick a forge manifest first");
+        return;
+    }
+    var path = String(pickedSource.path);
+    // Forge dir = parent of the manifest file. For
+    // `/Users/zak/stemforge/processed/definition/auto_curation_manifest.json`
+    // we want `/Users/zak/stemforge/processed/definition`.
+    var forgeDir = path.replace(/\/[^/]+$/, "");
+    if (!forgeDir || forgeDir === path) {
+        status("re-anchor: cannot resolve forge dir from " + path);
+        return;
+    }
+    status("re-anchor: dispatching on " + forgeDir);
+    try { messnamed("sf-anchor-go", forgeDir); }
+    catch (e) { status("re-anchor: messnamed failed: " + e); }
+}
+
 // `primary` — fired by the patcher's single primary button. Dispatches to
 // the right verb based on pickedSource.type. Status emissions cover the
 // "nothing picked" path so the user sees feedback even when the button is
@@ -3738,32 +3976,18 @@ function primary() {
         try { messnamed("sf-run-forge", pickedSource.path); } catch (_) {}
         return;
     }
-    if (pickedSource.type === "forge_manifest") {
-        status("primary: dispatching LOAD FORGE on " + pickedSource.path);
-        // Internal dispatch — DO NOT route through the Max-message wrapper.
-        // Passing "loadManifest" as a positional arg made the wrapper's
-        // `arrayfromargs(messagename, arguments).slice(1).join(" ")`
-        // pattern prefix the real path with the string "loadManifest "
-        // → "cannot read manifest". Call the helper directly.
-        _loadManifestPath(pickedSource.path);
-        return;
-    }
-    if (pickedSource.type === "arrangement_manifest"
+    if (pickedSource.type === "forge_manifest"
+            || pickedSource.type === "arrangement_manifest"
             || pickedSource.type === "prechop_manifest") {
-        // Arrangement-shape manifests (chunks[]) target Live's arrangement
-        // view, not session view. Route to the dedicated arrangement loader
-        // — `_loadManifestPath` only knows the forge clips[]/stems[] shape
-        // and would emit "manifest has no stems". The legacy prechop alias
-        // is kept for back-compat (spec §11).
-        //
-        // Path is the ONLY positional arg. Do NOT pass "loadArrangementFromManifest"
-        // as a leading arg — same trap as the legacy `_loadManifestPath` dispatch
-        // (see the comment in the forge_manifest branch above). Internally the
-        // wrapper does `arrayfromargs(messagename, arguments).slice(1)` then
-        // `.join(" ")` to recompose the path; an extra leading atom gets glued
-        // onto the front of the path string.
-        status("primary: dispatching LOAD ARRANGEMENT on " + pickedSource.path);
-        loadArrangementFromManifest(pickedSource.path);
+        // LOAD FORGE loads BOTH views in one shot: curated session clips
+        // (auto_curation_manifest.json) and arrangement chunks
+        // (arrangement_manifest.json). The picked source may be either
+        // sibling — _loadForgeBundle resolves both from the forge dir, so
+        // it no longer matters which manifest the sniffer landed on.
+        // Direct call — no Max-message wrapper (a positional leading atom
+        // would get glued onto the front of the path string).
+        status("primary: dispatching LOAD FORGE on " + pickedSource.path);
+        _loadForgeBundle(pickedSource.path, 0);
         return;
     }
     if (pickedSource.type === "curation") {
@@ -4088,6 +4312,111 @@ function _readConfiguratorPort() {
     }
 }
 
+// ─── HTTP wire (Phase 3B — C2) ────────────────────────────────────────────────
+//
+// Patcher wires three `[r sf-…]` receivers to a shared `[maxurl 4]` via the
+// dictionary input form. JS owns request building: it populates a per-verb
+// request Dict (`sf_http_req_<verb_underscored>`) with maxurl's expected
+// shape (url, http_method, post_data dict, headers, response_dict), then
+// fires `messnamed(verb, url, jsonText)`. The patcher's `[r]` ignores its
+// inlet atoms and re-fires the already-populated dict by name into maxurl.
+//
+// The url+jsonText on the messnamed wire is for L3 test capture; the
+// patcher side does not consume it. Keeping it lets vitest assert the
+// exact endpoint URL + payload without driving real Max.
+//
+// Response side: maxurl outlet 0 emits `dictionary sf_http_res_<verb>`,
+// which the patcher routes back into [js] via `[route dictionary]` +
+// `[prepend onHttpResponse]`. onHttpResponse reads status_code and, on a
+// 2xx response for the commit dict, calls commitAck(). Bounce responses
+// are fire-and-forget — the popup gets state via SSE.
+
+function _httpDictKeyFor(verbName) {
+    return String(verbName).replace(/-/g, "_");
+}
+
+function _httpRequestDictNameFor(verbName) {
+    return "sf_http_req_" + _httpDictKeyFor(verbName);
+}
+
+function _httpResponseDictNameFor(verbName) {
+    return "sf_http_res_" + _httpDictKeyFor(verbName);
+}
+
+function _buildPostUrl(pathSuffix) {
+    var port = _readConfiguratorPort();
+    if (port == null) port = CONFIGURATOR_DEFAULT_PORT;
+    return "http://" + CONFIGURATOR_HOST + ":" + port + pathSuffix;
+}
+
+// Populate the per-verb request Dict for [maxurl] and fire the verb so
+// the patcher's `[r <verb>]` activates the wire. Returns true on send.
+// Status emissions on the various failure modes keep the device's UI
+// honest even when the wire never leaves JS.
+function _sendHttpPost(verbName, url, payloadObj) {
+    var reqDictName = _httpRequestDictNameFor(verbName);
+    var responseDictName = _httpResponseDictNameFor(verbName);
+    var reqShape = {
+        url: url,
+        http_method: "post",
+        post_data: payloadObj,
+        // maxurl wants "Name: value" (colon-space), per the help patch
+        // (maxurl.maxhelp). The maxref XML's "Name=value" example is misleading
+        // and gets silently ignored — maxurl defaults to
+        // application/x-www-form-urlencoded and pydantic rejects the JSON body
+        // with 422.
+        headers: ["Content-Type: application/json"],
+        response_dict: responseDictName
+    };
+    try {
+        var d = new Dict(reqDictName);
+        d.clear();
+        d.parse(JSON.stringify(reqShape));
+    } catch (eDict) {
+        status(verbName + ": dict build failed: " + eDict);
+        return false;
+    }
+    var jsonText;
+    try { jsonText = JSON.stringify(payloadObj); }
+    catch (eS) { status(verbName + ": stringify failed: " + eS); return false; }
+    try { messnamed(verbName, url, jsonText); }
+    catch (eM) { status(verbName + ": messnamed send failed: " + eM); return false; }
+    return true;
+}
+
+// onHttpResponse — called by the patcher when [maxurl] emits a response
+// dictionary. The patcher prepends "onHttpResponse" to the dict name so
+// classic [js] dispatches here. Reads the response dict's status_code and
+// fires commitAck() on a 2xx response for the commit verb; bounce
+// responses are silent on 2xx (the popup uses SSE for state).
+function onHttpResponse(responseDictName) {
+    if (responseDictName == null) return;
+    var name = String(responseDictName);
+    if (!name) return;
+    var code = 0;
+    try {
+        var rd = new Dict(name);
+        // maxurl's response-dict key for HTTP status varies by version/usage;
+        // probe the common names so we don't depend on a single one.
+        var probed = rd.get("status");
+        if (probed == null) probed = rd.get("code");
+        if (probed == null) probed = rd.get("status_code");
+        code = Number(probed) || 0;
+    } catch (eR) {
+        status("http: response read failed for " + name + ": " + eR);
+        return;
+    }
+    if (code < 200 || code >= 300) {
+        status("http: " + name + " → " + code);
+        return;
+    }
+    if (name === _httpResponseDictNameFor(COMMIT_SEND_RECV)) {
+        commitAck();
+    }
+    // Bounce-progress / bounce-complete: nothing to do — local status
+    // emissions already reflect render progress; SSE updates the popup.
+}
+
 /**
  * alsOpenedAck(curationOrSentinel) — message handler bound to the
  * patcher's `[r sf-als-opened-ack]`. The HTTP shim parses the
@@ -4133,6 +4462,54 @@ function alsOpenedAck(curationOrSentinel) {
     }
     if (!text) {
         status("als-opened: curation file not found: " + curationPath);
+        return;
+    }
+    loadCuration(text, curationPath);
+}
+
+/**
+ * curationOpened(name) — message handler bound to the patcher's
+ * `[route /curation-opened]` table off `[udpreceive 7420]`.
+ *
+ * Fired by the configurator server when a curation is opened in the web
+ * editor (`POST /curations/{name}/open` → UDP `curation-opened <name>`).
+ * Loads that curation's YAML from `~/stemforge/curations/<name>.yaml` so
+ * the device's `activeCuration` is set and COMMIT can run — without the
+ * user having to manually re-pick the YAML on the device after opening
+ * it in the popup. Mirrors `alsOpenedAck`'s resolution, minus the
+ * sentinel/no-host branch (the server only fires this with a real name).
+ *
+ * Status lines (greppable by L3 tests):
+ *   "curation-opened: <name>"
+ *   "curation-opened: home resolution failed"
+ *   "curation-opened: file not found: <path>"
+ */
+function curationOpened(name) {
+    var curName = String(name == null ? "" : name);
+    if (!curName || curName === TEMPLATE_CLEAR_SENTINEL) {
+        status("curation-opened: <none>");
+        return;
+    }
+    status("curation-opened: " + curName);
+    var home = "";
+    try {
+        home = _getHomePath();
+    } catch (_e) {
+        home = "";
+    }
+    if (!home) {
+        status("curation-opened: home resolution failed");
+        return;
+    }
+    var curationPath = home + "/stemforge/curations/" + curName + ".yaml";
+    var text = "";
+    try {
+        text = readFileContents(curationPath);
+    } catch (_e2) {
+        text = "";
+    }
+    if (!text) {
+        status("curation-opened: file not found: " + curationPath);
         return;
     }
     loadCuration(text, curationPath);
@@ -4187,6 +4564,8 @@ if (typeof module !== "undefined" && module.exports) {
         // Configurator v1 Phase 2 — COMMIT keystone (device walker).
         commit: commit,
         commitAck: commitAck,
+        // Right-column ANCH button — re-anchor entry point.
+        reAnchor: reAnchor,
         _commitBuildPayload: _commitBuildPayload,
         _commitWalkGroup: _commitWalkGroup,
         _commitReadClipSettings: _commitReadClipSettings,
@@ -4194,6 +4573,8 @@ if (typeof module !== "undefined" && module.exports) {
         // Configurator v1 Phase 3A — template hot-apply (server→device).
         applyGroupTemplate: applyGroupTemplate,
         templateChanged: templateChanged,
+        // Server→device: curation opened in the web editor.
+        curationOpened: curationOpened,
         _templatePathFor: _templatePathFor,
         TEMPLATE_CLEAR_SENTINEL: TEMPLATE_CLEAR_SENTINEL,
         setTemplateDirForTest: function (dir) {
@@ -4204,6 +4585,12 @@ if (typeof module !== "undefined" && module.exports) {
         _readConfiguratorPort: _readConfiguratorPort,
         CONFIGURATOR_DEFAULT_PORT: CONFIGURATOR_DEFAULT_PORT,
         CONFIGURATOR_HOST: CONFIGURATOR_HOST,
+        // Phase 3B C2 — Device → Server HTTP wire (commit + bounce).
+        _sendHttpPost: _sendHttpPost,
+        _buildPostUrl: _buildPostUrl,
+        _httpRequestDictNameFor: _httpRequestDictNameFor,
+        _httpResponseDictNameFor: _httpResponseDictNameFor,
+        onHttpResponse: onHttpResponse,
         // Configurator v1 Phase 3B — BOUNCE refactor (curation-driven render).
         bounceCuration: bounceCuration,
         _bounceCropOnePad: _bounceCropOnePad,

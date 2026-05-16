@@ -139,7 +139,6 @@ OBJ_DICT_SETTINGS = "obj-dict-sf-settings"
 # moves to these native widgets in presentation mode.
 OBJ_PICK_SOURCE_BTN = "obj-sf-pick-source-btn"
 OBJ_PICK_SOURCE_MSG = "obj-sf-pick-source-msg"
-OBJ_STATUS_PICKER_TEXT = "obj-sf-status-picker-text"
 OBJ_STATUS_RECV = "obj-sf-status-recv"
 
 OBJ_PRIMARY_BTN = "obj-sf-primary-btn"
@@ -155,6 +154,12 @@ OBJ_BOUNCE_BTN = "obj-sf-bounce-btn"
 OBJ_BOUNCE_MSG = "obj-sf-bounce-msg"
 OBJ_EXPORT_BTN = "obj-sf-export-btn"
 OBJ_EXPORT_MSG = "obj-sf-export-msg"
+OBJ_ANCHOR_BTN = "obj-sf-anchor-btn"
+OBJ_ANCHOR_MSG = "obj-sf-anchor-msg"
+# Anchor wire — JS reAnchor() fires messnamed("sf-anchor-go", forgeDir);
+# the patcher routes that into [js sf_locator_anchor].anchor(forgeDir).
+OBJ_ANCHOR_GO_RECV = "obj-sf-anchor-go-recv"
+OBJ_ANCHOR_GO_PREPEND = "obj-sf-anchor-go-prepend"
 
 # Picker dialog (driven by sf-open-source-dialog messnamed from js.pickSource).
 OBJ_PICKER_DIALOG_RECV = "obj-sf-picker-dialog-recv"
@@ -216,6 +221,28 @@ OBJ_PLUGIN_IN = "obj-plugin-in"
 OBJ_PLUGOUT = "obj-plugout"
 
 OBJ_FILELOG_PREPEND = "obj-filelog-prepend"
+
+# Phase 3B C2 — Device → Server HTTP wire ([maxurl] dictionary form).
+# JS populates per-verb request Dicts (`sf_http_req_<verb_underscored>`) then
+# fires `messnamed(verb, url, jsonText)`. The receivers below ignore the
+# inlet atoms and re-fire the already-populated dict by name into a shared
+# [maxurl 4]. The response side routes [maxurl]'s `dictionary <name>` output
+# back into [js] via `[prepend onHttpResponse]`.
+OBJ_HTTP_MAXURL = "obj-sf-http-maxurl"
+OBJ_HTTP_COMMIT_RECV = "obj-sf-http-commit-recv"
+OBJ_HTTP_COMMIT_MSG = "obj-sf-http-commit-msg"
+OBJ_HTTP_BOUNCE_PROG_RECV = "obj-sf-http-bounce-progress-recv"
+OBJ_HTTP_BOUNCE_PROG_MSG = "obj-sf-http-bounce-progress-msg"
+OBJ_HTTP_BOUNCE_COMP_RECV = "obj-sf-http-bounce-complete-recv"
+OBJ_HTTP_BOUNCE_COMP_MSG = "obj-sf-http-bounce-complete-msg"
+OBJ_HTTP_RESP_ROUTE = "obj-sf-http-resp-route"
+OBJ_HTTP_RESP_PREPEND = "obj-sf-http-resp-prepend"
+
+# Dict-name conventions — MUST match `_httpRequestDictNameFor()` in
+# stemforge_loader.v0.js. Hyphens in verb names become underscores.
+HTTP_REQ_DICT_COMMIT = "sf_http_req_sf_commit_send"
+HTTP_REQ_DICT_BOUNCE_PROG = "sf_http_req_sf_bounce_progress"
+HTTP_REQ_DICT_BOUNCE_COMP = "sf_http_req_sf_bounce_complete"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -461,12 +488,11 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     # [message openEditor] → [js sf_lom_loader].openEditor(), which asks
     # Max to `launchbrowser` the popup URL.
     #
-    # Position: anchored right of the status text, left of the version stamp.
-    # The status_text at x=24 is 600 wide → ends at x=624. The version_text
-    # starts at x=720. We use the 96-px gap for the Open Editor button.
-    btn_x = 632.0
+    # Position: in the footer gap between status_text (ends ~x=314) and
+    # version_text (starts at x=422 per the slimmed device.yaml).
+    btn_x = 322.0
     btn_y = status_bar["status_dot"]["pos"]["y"]
-    btn_w = 80.0
+    btn_w = 92.0
     btn_h = status_bar["status_dot"]["size"]["height"]
     open_editor_rect = (btn_x, btn_y, btn_w, btn_h)
     boxes.append(
@@ -735,14 +761,19 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     # configurator HTTP server's PATCH /curations/{name}/template fires this
     # datagram). Args: `<letter> <template-or-dash>`; routed into
     # sf_lom_loader's `templateChanged(letter, name)` via a [prepend].
+    #
+    # `/curation-opened` (added 2026-05-15) carries `<curation-name>` — the
+    # configurator's POST /curations/{name}/open fires it so opening a
+    # curation in the web editor loads it on the device. Routed into
+    # sf_lom_loader's `curationOpened(name)` via a [prepend].
     boxes.append(
         _box(
             OBJ_ROUTE_UDP,
             "newobj",
             (16.0, udp_y + 26, 600.0, 22.0),
             numinlets=1,
-            numoutlets=9,  # 8 routed targets + 1 unmatched fallthrough
-            outlettype=["", "", "", "", "", "", "", "", ""],
+            numoutlets=10,  # 9 routed targets + 1 unmatched fallthrough
+            outlettype=["", "", "", "", "", "", "", "", "", ""],
             extras={
                 "text": (
                     # Match slash-prefixed OSC addresses. Verified empirically
@@ -751,7 +782,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
                     # slash preserved (NOT tokenized on `/`). So we match
                     # `/forge` not `forge`. sf_remote.py encodes accordingly.
                     "route /state /forge /preset-loader /manifest-loader "
-                    "/settings /ui /logger /template-changed"
+                    "/settings /ui /logger /template-changed /curation-opened"
                 ),
             },
         )
@@ -795,7 +826,24 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     )
     lines.append(_line(OBJ_ROUTE_UDP, 7, "obj-prepend-template-changed", 0))
     lines.append(_line("obj-prepend-template-changed", 0, OBJ_SF_LOM_LOADER, 0))
-    # Outlet 8 is the unmatched fallthrough — intentionally unwired.
+    # Outlet 8 = `/curation-opened <name>`. Prepend the message name
+    # `curationOpened` so the classic [js] loader dispatches to its
+    # top-level `curationOpened(name)` (which reads the curation YAML and
+    # calls loadCuration → sets activeCuration so COMMIT can run).
+    boxes.append(
+        _box(
+            "obj-prepend-curation-opened",
+            "newobj",
+            (16.0, udp_y + 82, 220.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "prepend curationOpened"},
+        )
+    )
+    lines.append(_line(OBJ_ROUTE_UDP, 8, "obj-prepend-curation-opened", 0))
+    lines.append(_line("obj-prepend-curation-opened", 0, OBJ_SF_LOM_LOADER, 0))
+    # Outlet 9 is the unmatched fallthrough — intentionally unwired.
 
     # 7421 → sf_state_mgr (direct, dumpDict only)
     lines.append(_line(OBJ_UDP_DUMP, 0, OBJ_SF_STATE, 0))
@@ -818,17 +866,26 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     # a bang, and a [message <verb>] box names the JS handler that
     # stemforge_loader.v0.js resolves on its [js] inlet.
 
-    # Picker geometry — two columns, generous gap so the v8ui canvas behind
-    # them is hidden visually by the buttons' opaque backgrounds.
+    # Picker geometry — slim layout for the 480px canvas (was 820 with a
+    # 700-wide status box covering most of the body). Two rows:
+    #
+    #   row 1 (y=8-44):  [ Pick source (256w) ][gap][ Primary (200w) ]
+    #   row 2 (y=52-80): [ COMMIT | BOUNCE | EXPORT | ANCH ] each ~113w
+    #
+    # Status feedback now lives entirely in the footer's `sf_status_text`
+    # live.comment (driven by [r sf-status]), so the body's old big status
+    # surface is gone.
     LEFT_X = 8.0
-    LEFT_W = 360.0  # Pick source… button is wide so long paths still legible.
-    STATUS_W = 700.0  # Status text spans nearly the whole left+center.
-    RIGHT_X = 720.0
-    RIGHT_W = 92.0
-    VERB_W = (RIGHT_W - 4.0) / 3.0  # 3 small buttons in a row of width RIGHT_W.
+    LEFT_W = 256.0  # Pick source button width.
+    RIGHT_X = 272.0  # Primary button x (after Pick source + 8px gap).
+    RIGHT_W = 200.0
+    VERB_W = 113.0  # Each of the 4 verb buttons. 4*113 + 3*3 = 461 < 480.
+    VERB_GAP = 3.0
+    VERB_Y = 52.0
+    VERB_H = 28.0
 
     # ── Pick source button ──────────────────────────────────────────────
-    pick_src_rect = (LEFT_X, 8.0, LEFT_W, 32.0)
+    pick_src_rect = (LEFT_X, 8.0, LEFT_W, 36.0)
     boxes.append(
         _box(
             OBJ_PICK_SOURCE_BTN,
@@ -874,60 +931,30 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     lines.append(_line(OBJ_PICK_SOURCE_BTN, 0, OBJ_PICK_SOURCE_MSG, 0))
     lines.append(_line(OBJ_PICK_SOURCE_MSG, 0, OBJ_SF_LOM_LOADER, 0))
 
-    # ── Status text (below picker, driven by [r sf-status]) ─────────────
-    # The loader's status() helper emits `outlet(0, "set", <text>)` which
-    # arrives here as `set <text>`. We use live.comment (not live.text)
-    # because live.text in mode 0 is a momentary BUTTON — it rejects
-    # `set <text>` with "bad arguments for message set" and any non-
-    # toggle modes vary by Max version. live.comment is the canonical
-    # M4L widget for dynamic text labels driven by `set` messages.
-    status_rect = (LEFT_X, 48.0, STATUS_W, 28.0)
-    boxes.append(
-        _box(
-            OBJ_STATUS_PICKER_TEXT,
-            "live.comment",
-            status_rect,
-            presentation=True,
-            presentation_rect=status_rect,
-            numinlets=1,
-            numoutlets=0,
-            outlettype=[],
-            extras={
-                "varname": "sf_status_picker_text",
-                "text": "",
-                "fontname": "Ableton Sans Medium",
-                "fontsize": 10.0,
-                "textcolor": COLORS["text"],
-                "bgcolor": COLORS["status_bg"],
-                "rounded": 4.0,
-                "parameter_enable": 0,
-            },
-        )
-    )
-    # [r sf-status] → live.text. The loader's status() helper emits
-    # `outlet(0, "set", "<text>")` and the [s sf-status] send (wired
-    # below to the loader's outlet 0) re-broadcasts those `set ...`
-    # messages on the bus. live.text accepts `set <text>` natively
-    # so no prepend is needed — feeding the receiver straight into
-    # the widget's inlet 0 sets the visible text.
+    # ── Status receiver — feeds the footer's sf_status_text live.comment ──
+    # The earlier 700px in-body status box was redundant with the slim
+    # footer status: both displayed the same `set <text>` stream and the
+    # body version covered most of the device. This wires [r sf-status]
+    # straight to the footer widget (live.comment accepts `set <text>`
+    # natively, so no prepend needed).
     boxes.append(
         _box(
             OBJ_STATUS_RECV,
             "newobj",
-            (LEFT_X, 78.0, 100.0, 22.0),
+            (LEFT_X, 86.0, 100.0, 22.0),
             numinlets=1,
             numoutlets=1,
             outlettype=[""],
             extras={"text": "r sf-status"},
         )
     )
-    lines.append(_line(OBJ_STATUS_RECV, 0, OBJ_STATUS_PICKER_TEXT, 0))
+    lines.append(_line(OBJ_STATUS_RECV, 0, OBJ_STATUS_TEXT, 0))
 
-    # ── Primary button (right column, top) ──────────────────────────────
+    # ── Primary button (right of Pick source, same row) ─────────────────
     # Label is driven by [r primary-btn-label] from the loader; active
     # state by [r primary-btn-enabled]. On click, [message primary] →
     # js sf_lom_loader (calls primary(), which dispatches by sniffer type).
-    primary_rect = (RIGHT_X, 8.0, RIGHT_W, 44.0)
+    primary_rect = (RIGHT_X, 8.0, RIGHT_W, 36.0)
     boxes.append(
         _box(
             OBJ_PRIMARY_BTN,
@@ -1032,12 +1059,14 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     lines.append(_line(OBJ_PRIMARY_ENABLED_RECV, 0, OBJ_PRIMARY_ENABLED_PREPEND, 0))
     lines.append(_line(OBJ_PRIMARY_ENABLED_PREPEND, 0, OBJ_PRIMARY_BTN, 0))
 
-    # ── Verb buttons (COMMIT / BOUNCE / EXPORT) in a row ───────────────
+    # ── Verb buttons row — COMMIT / BOUNCE / EXPORT / ANCH ───────────────
     # Each is a live.text mode 1 → [message <verb>] → [js sf_lom_loader].
-    # The loader's `commit()`, `bounceCuration()`, `exportArrangementSnapshot()`
-    # functions are the targets; the message-name matching that Max performs
-    # on classic [js] objects resolves them by top-level function lookup.
-    verb_y = 58.0
+    # The loader's `commit()`, `bounceCuration()`, `exportArrangementSnapshot()`,
+    # `reAnchor()` functions are the targets; the message-name matching that
+    # Max performs on classic [js] objects resolves them by top-level
+    # function lookup. Row spans the device width below the Pick source +
+    # Primary row.
+    verb_y = VERB_Y
     _VERB_BTNS = [
         # (button_obj_id, message_obj_id, varname, label, message_text, x_offset_idx)
         (OBJ_COMMIT_BTN, OBJ_COMMIT_MSG, "sf_commit_btn", "COMMIT", "commit", 0),
@@ -1057,10 +1086,18 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
             "exportArrangementSnapshot ~/Desktop/snapshot.json",
             2,
         ),
+        # ANCH — re-anchor the bar grid of the currently-picked forge. The
+        # button fires `reAnchor` on the loader, which resolves the forge
+        # dir from the last-picked source and emits messnamed("sf-anchor-go",
+        # <dir>) for the patcher to route into sf_locator_anchor.anchor(dir).
+        # The previous v8ui-canvas ANCH button got dropped by 999ee1d's
+        # right-column refactor; this restores the in-presentation entry
+        # point without bringing back the canvas surface.
+        (OBJ_ANCHOR_BTN, OBJ_ANCHOR_MSG, "sf_anchor_btn", "ANCH", "reAnchor", 3),
     ]
     for btn_id, msg_id, varname, label, msg_text, idx in _VERB_BTNS:
-        btn_x = RIGHT_X + idx * (VERB_W + 2.0)
-        btn_rect = (btn_x, verb_y, VERB_W, 22.0)
+        btn_x = LEFT_X + idx * (VERB_W + VERB_GAP)
+        btn_rect = (btn_x, verb_y, VERB_W, VERB_H)
         boxes.append(
             _box(
                 btn_id,
@@ -1076,7 +1113,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
                     "mode": 1,
                     "text": label,
                     "fontname": "Ableton Sans Medium",
-                    "fontsize": 8.0,
+                    "fontsize": 10.0,
                     "textcolor": COLORS["text"],
                     "activebgcolor": COLORS["dim"],
                     "bgcolor": COLORS["status_bg"],
@@ -1085,7 +1122,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
                     "bordercolor": COLORS["dim"],
                     "activebordercolor": COLORS["text"],
                     "activebordercoloroff": COLORS["dim"],
-                    "rounded": 3.0,
+                    "rounded": 4.0,
                     "parameter_enable": 0,
                 },
             )
@@ -1203,12 +1240,183 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     lines.append(_line(OBJ_SF_LOCATOR_ANCHOR, 2, OBJ_LA_RELOAD_PREP, 0))
     lines.append(_line(OBJ_LA_RELOAD_PREP, 0, OBJ_SF_LOM_LOADER, 0))
 
+    # ── ANCH button receive-side: route the loader's resolved forge dir into
+    # sf_locator_anchor.anchor(dir). The button itself fires `reAnchor` on
+    # the loader (declared in _VERB_BTNS); the loader then emits
+    # `messnamed("sf-anchor-go", forgeDir)`. Here we receive that, prepend
+    # the message-name `anchor`, and feed [js sf_locator_anchor] so classic
+    # Max [js] dispatches to `anchor(forgeDir)`.
+    boxes.append(
+        _box(
+            OBJ_ANCHOR_GO_RECV,
+            "newobj",
+            (LEFT_X, 140.0, 180.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "r sf-anchor-go"},
+        )
+    )
+    boxes.append(
+        _box(
+            OBJ_ANCHOR_GO_PREPEND,
+            "newobj",
+            (LEFT_X + 200.0, 140.0, 120.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "prepend anchor"},
+        )
+    )
+    lines.append(_line(OBJ_ANCHOR_GO_RECV, 0, OBJ_ANCHOR_GO_PREPEND, 0))
+    lines.append(_line(OBJ_ANCHOR_GO_PREPEND, 0, OBJ_SF_LOCATOR_ANCHOR, 0))
+
     # ── Phase 4B — Open Editor button wiring ─────────────────────────────
     # [live.text Open Editor] (mode 1) → [t b] → [message openEditor]
     #     → [js sf_lom_loader] (resolves the message-name to openEditor()).
     lines.append(_line(OBJ_OPEN_EDITOR_BTN, 0, OBJ_OPEN_EDITOR_TB, 0))
     lines.append(_line(OBJ_OPEN_EDITOR_TB, 0, OBJ_OPEN_EDITOR_MSG, 0))
     lines.append(_line(OBJ_OPEN_EDITOR_MSG, 0, OBJ_SF_LOM_LOADER, 0))
+
+    # ── Phase 3B C2 — Device → Server HTTP wire ─────────────────────────────
+    # Three `[r sf-…]` receivers feed a shared `[maxurl 4]` via the
+    # dictionary input form. The JS loader populates the per-verb request
+    # dict before firing the messnamed verb (see `_sendHttpPost` in
+    # stemforge_loader.v0.js), so each receiver just re-fires the matching
+    # dict name into maxurl. Response side: maxurl outlet 0 emits
+    # `dictionary <response_name>`, routed back into [js] via
+    # `[prepend onHttpResponse]` — JS reads status_code and calls
+    # commitAck() on a 2xx for the commit response dict.
+    http_x = LEFT_X
+    http_y = 240.0
+    http_row_h = 26.0
+
+    # Receivers (3) — left column.
+    boxes.append(
+        _box(
+            OBJ_HTTP_COMMIT_RECV,
+            "newobj",
+            (http_x, http_y, 160.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "r sf-commit-send"},
+        )
+    )
+    boxes.append(
+        _box(
+            OBJ_HTTP_BOUNCE_PROG_RECV,
+            "newobj",
+            (http_x, http_y + http_row_h, 180.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "r sf-bounce-progress"},
+        )
+    )
+    boxes.append(
+        _box(
+            OBJ_HTTP_BOUNCE_COMP_RECV,
+            "newobj",
+            (http_x, http_y + 2 * http_row_h, 180.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "r sf-bounce-complete"},
+        )
+    )
+
+    # Dict-name message boxes (3) — middle column. Each emits the literal
+    # `dictionary <req_dict_name>` message that [maxurl] interprets as
+    # "execute the request described by this dict". The bang from each
+    # [r] re-fires the message so already-populated dict contents go out.
+    msg_x = http_x + 200.0
+    boxes.append(
+        _box(
+            OBJ_HTTP_COMMIT_MSG,
+            "message",
+            (msg_x, http_y, 280.0, 22.0),
+            numinlets=2,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": f"dictionary {HTTP_REQ_DICT_COMMIT}"},
+        )
+    )
+    boxes.append(
+        _box(
+            OBJ_HTTP_BOUNCE_PROG_MSG,
+            "message",
+            (msg_x, http_y + http_row_h, 280.0, 22.0),
+            numinlets=2,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": f"dictionary {HTTP_REQ_DICT_BOUNCE_PROG}"},
+        )
+    )
+    boxes.append(
+        _box(
+            OBJ_HTTP_BOUNCE_COMP_MSG,
+            "message",
+            (msg_x, http_y + 2 * http_row_h, 280.0, 22.0),
+            numinlets=2,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": f"dictionary {HTTP_REQ_DICT_BOUNCE_COMP}"},
+        )
+    )
+
+    # [maxurl 4] — shared object, thread-count=4 so bounce-progress beacons
+    # don't stack behind a slow commit. verbosity 0 = silent on Max Console.
+    maxurl_x = msg_x + 300.0
+    boxes.append(
+        _box(
+            OBJ_HTTP_MAXURL,
+            "newobj",
+            (maxurl_x, http_y, 140.0, 22.0),
+            numinlets=2,
+            numoutlets=2,
+            outlettype=["", "list"],
+            extras={"text": "maxurl 4 @verbosity 0"},
+        )
+    )
+
+    # Request side: r → msg → maxurl.
+    lines.append(_line(OBJ_HTTP_COMMIT_RECV, 0, OBJ_HTTP_COMMIT_MSG, 0))
+    lines.append(_line(OBJ_HTTP_BOUNCE_PROG_RECV, 0, OBJ_HTTP_BOUNCE_PROG_MSG, 0))
+    lines.append(_line(OBJ_HTTP_BOUNCE_COMP_RECV, 0, OBJ_HTTP_BOUNCE_COMP_MSG, 0))
+    lines.append(_line(OBJ_HTTP_COMMIT_MSG, 0, OBJ_HTTP_MAXURL, 0))
+    lines.append(_line(OBJ_HTTP_BOUNCE_PROG_MSG, 0, OBJ_HTTP_MAXURL, 0))
+    lines.append(_line(OBJ_HTTP_BOUNCE_COMP_MSG, 0, OBJ_HTTP_MAXURL, 0))
+
+    # Response side: maxurl outlet 0 emits `dictionary <response_dict_name>`.
+    # [route dictionary] strips the leading "dictionary" symbol; its outlet
+    # 0 carries the response dict name. We prepend "onHttpResponse" so
+    # classic [js] dispatches to the loader's response handler.
+    boxes.append(
+        _box(
+            OBJ_HTTP_RESP_ROUTE,
+            "newobj",
+            (maxurl_x, http_y + http_row_h, 140.0, 22.0),
+            numinlets=1,
+            numoutlets=2,
+            outlettype=["", ""],
+            extras={"text": "route dictionary"},
+        )
+    )
+    boxes.append(
+        _box(
+            OBJ_HTTP_RESP_PREPEND,
+            "newobj",
+            (maxurl_x, http_y + 2 * http_row_h, 200.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "prepend onHttpResponse"},
+        )
+    )
+    lines.append(_line(OBJ_HTTP_MAXURL, 0, OBJ_HTTP_RESP_ROUTE, 0))
+    lines.append(_line(OBJ_HTTP_RESP_ROUTE, 0, OBJ_HTTP_RESP_PREPEND, 0))
+    lines.append(_line(OBJ_HTTP_RESP_PREPEND, 0, OBJ_SF_LOM_LOADER, 0))
 
     # ── sf_state outlet 0 → v8ui refresh ────────────────────────────────────
     # The state mgr emits `bang` on mutation. We prepend `refresh` so the
