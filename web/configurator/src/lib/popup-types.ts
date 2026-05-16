@@ -141,7 +141,8 @@ export interface SetCurationTargetRequest {
 /** Body for `POST /curations`. */
 export interface CreateCurationRequest {
   name: string;
-  target: {
+  /** Omit to let the server apply its defaults (ep133, 4 groups × 12 pads). */
+  target?: {
     device: string;
     groups: number;
     pads_per_group: number;

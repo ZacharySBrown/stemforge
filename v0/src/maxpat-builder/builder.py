@@ -761,14 +761,19 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     # configurator HTTP server's PATCH /curations/{name}/template fires this
     # datagram). Args: `<letter> <template-or-dash>`; routed into
     # sf_lom_loader's `templateChanged(letter, name)` via a [prepend].
+    #
+    # `/curation-opened` (added 2026-05-15) carries `<curation-name>` — the
+    # configurator's POST /curations/{name}/open fires it so opening a
+    # curation in the web editor loads it on the device. Routed into
+    # sf_lom_loader's `curationOpened(name)` via a [prepend].
     boxes.append(
         _box(
             OBJ_ROUTE_UDP,
             "newobj",
             (16.0, udp_y + 26, 600.0, 22.0),
             numinlets=1,
-            numoutlets=9,  # 8 routed targets + 1 unmatched fallthrough
-            outlettype=["", "", "", "", "", "", "", "", ""],
+            numoutlets=10,  # 9 routed targets + 1 unmatched fallthrough
+            outlettype=["", "", "", "", "", "", "", "", "", ""],
             extras={
                 "text": (
                     # Match slash-prefixed OSC addresses. Verified empirically
@@ -777,7 +782,7 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
                     # slash preserved (NOT tokenized on `/`). So we match
                     # `/forge` not `forge`. sf_remote.py encodes accordingly.
                     "route /state /forge /preset-loader /manifest-loader "
-                    "/settings /ui /logger /template-changed"
+                    "/settings /ui /logger /template-changed /curation-opened"
                 ),
             },
         )
@@ -821,7 +826,24 @@ def build_patcher(device_yaml_path: str | Path) -> dict[str, Any]:
     )
     lines.append(_line(OBJ_ROUTE_UDP, 7, "obj-prepend-template-changed", 0))
     lines.append(_line("obj-prepend-template-changed", 0, OBJ_SF_LOM_LOADER, 0))
-    # Outlet 8 is the unmatched fallthrough — intentionally unwired.
+    # Outlet 8 = `/curation-opened <name>`. Prepend the message name
+    # `curationOpened` so the classic [js] loader dispatches to its
+    # top-level `curationOpened(name)` (which reads the curation YAML and
+    # calls loadCuration → sets activeCuration so COMMIT can run).
+    boxes.append(
+        _box(
+            "obj-prepend-curation-opened",
+            "newobj",
+            (16.0, udp_y + 82, 220.0, 22.0),
+            numinlets=1,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": "prepend curationOpened"},
+        )
+    )
+    lines.append(_line(OBJ_ROUTE_UDP, 8, "obj-prepend-curation-opened", 0))
+    lines.append(_line("obj-prepend-curation-opened", 0, OBJ_SF_LOM_LOADER, 0))
+    # Outlet 9 is the unmatched fallthrough — intentionally unwired.
 
     # 7421 → sf_state_mgr (direct, dumpDict only)
     lines.append(_line(OBJ_UDP_DUMP, 0, OBJ_SF_STATE, 0))

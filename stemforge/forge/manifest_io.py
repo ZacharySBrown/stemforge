@@ -368,19 +368,23 @@ def _legacy_extract(
             if not isinstance(entry, dict) or "file" not in entry:
                 continue
             position = int(entry.get("position") or entry.get("rank") or (len(clips) + 1))
-            duration_bars = int(entry.get("duration_bars", n_bars))
+            # v2 curation entries carry per-loop length as `phrase_bars`;
+            # legacy entries use `duration_bars`. Fall back to the manifest's
+            # n_bars only when neither is present. (n_bars is the COUNT of
+            # curated bars, not each clip's length — using it as the per-clip
+            # duration produced bogus 14-bar source_bar_ranges.)
+            duration_bars = int(entry.get("duration_bars") or entry.get("phrase_bars") or n_bars)
             start_bar = (position - 1) * duration_bars
             end_bar = start_bar + duration_bars
+            # Keep the legacy `file` value verbatim — it is already relative
+            # to the forge root (`curated/<stem>/<file>`) and the real WAVs
+            # live there on disk. An earlier rewrite to `curated_audio/<name>`
+            # pointed at a directory the pipeline never materializes AND
+            # dropped the `<stem>/` subdir via Path(...).name, collapsing all
+            # four stems onto the same bar_NN.wav names. Every create_audio_clip
+            # in the M4L loader then failed ("Invalid syntax" on a missing
+            # file). Caught 2026-05-15 on ooh_la_la.
             audio_path = str(entry["file"])
-            # Strip leading "curated/" so audio_path is relative to the
-            # forge root, matching the new-shape fixtures.
-            if audio_path.startswith("curated/"):
-                audio_path = audio_path[len("curated/") :]
-                # New-shape lives audio under `curated_audio/`; we map
-                # `curated/<stem>/<file>` → `curated_audio/<stem>-bar*-*.wav`
-                # by clip_id below. Preserve the original path on disk;
-                # we only rewrite when there's a deterministic mapping.
-                audio_path = f"curated_audio/{Path(audio_path).name}"
             clip_id = entry.get("clip_id") or _legacy_clip_id(stem_label, position, duration_bars)
             try:
                 clips.append(

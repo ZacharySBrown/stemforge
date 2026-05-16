@@ -73,6 +73,10 @@ export class ApiError extends Error {
 
 async function jsonRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(url(path), {
+    // `no-store` — the configurator is a live-editing tool; a GET issued
+    // right after a device COMMIT must hit the server, never the browser
+    // HTTP cache. POSTs are uncacheable anyway, so this is GET insurance.
+    cache: "no-store",
     ...init,
     headers: {
       "Content-Type": "application/json",

@@ -5,6 +5,7 @@ import {
   FolderPlus,
   Loader2,
   Pencil,
+  Plus,
   Trash2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +17,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
+  useCreateCuration,
   useDeleteCuration,
   useDuplicateCuration,
   useOpenCuration,
@@ -251,7 +253,13 @@ function CurationRow({ entry, active }: CurationRowProps) {
   );
 }
 
-function CurationListEmpty() {
+function CurationListEmpty({
+  onCreate,
+  creating,
+}: {
+  onCreate: () => void;
+  creating: boolean;
+}) {
   return (
     <div
       className="rounded-lg border border-dashed border-border/60 p-6 text-center"
@@ -262,8 +270,24 @@ function CurationListEmpty() {
         no curations yet
       </div>
       <div className="mt-1 text-[11px] leading-relaxed text-muted-foreground/80">
-        commit on the device to create your first curation.
+        create one to start arranging — then COMMIT from the device fills
+        it in.
       </div>
+      <Button
+        size="sm"
+        variant="outline"
+        className="mt-3 w-full"
+        disabled={creating}
+        onClick={onCreate}
+        data-testid="curation-list-empty-create"
+      >
+        {creating ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <Plus className="h-3.5 w-3.5" />
+        )}
+        New curation
+      </Button>
     </div>
   );
 }
@@ -287,8 +311,23 @@ function CurationListSkeleton() {
  */
 export function CurationList({ activeCurationName }: CurationListProps) {
   const { data, isLoading, isError, error, refetch } = useCurations();
+  const create = useCreateCuration();
+  const open = useOpenCuration();
 
   const curations = data?.curations ?? [];
+
+  // New curation = `POST /curations`, then `open` it so it becomes the
+  // active curation the device's COMMIT will write into. Name rules
+  // (server-enforced): 1–64 chars, alphanumeric first char, then
+  // [A-Za-z0-9_.-]. A bad name comes back as a 400 → error toast.
+  function handleCreate() {
+    const name = window.prompt("new curation name");
+    const trimmed = name?.trim();
+    if (!trimmed) return;
+    create.mutate(trimmed, {
+      onSuccess: () => open.mutate(trimmed),
+    });
+  }
 
   return (
     <motion.aside
@@ -299,14 +338,32 @@ export function CurationList({ activeCurationName }: CurationListProps) {
       data-testid="curation-list"
     >
       <div className="flex items-center justify-between px-1 pb-0.5">
-        <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
-          curations
+        <div className="flex items-center gap-1.5">
+          <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+            curations
+          </div>
+          {curations.length > 0 && (
+            <Badge variant="muted" className="!text-[10px]">
+              {curations.length}
+            </Badge>
+          )}
         </div>
-        {curations.length > 0 && (
-          <Badge variant="muted" className="!text-[10px]">
-            {curations.length}
-          </Badge>
-        )}
+        <Button
+          size="sm"
+          variant="ghost"
+          className="!h-6 gap-1 !px-1.5 !text-[10px]"
+          disabled={create.isPending}
+          onClick={handleCreate}
+          data-testid="curation-list-create"
+          aria-label="New curation"
+        >
+          {create.isPending ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <Plus className="h-3 w-3" />
+          )}
+          New
+        </Button>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-0.5">
@@ -333,7 +390,10 @@ export function CurationList({ activeCurationName }: CurationListProps) {
             </Button>
           </div>
         ) : curations.length === 0 ? (
-          <CurationListEmpty />
+          <CurationListEmpty
+            onCreate={handleCreate}
+            creating={create.isPending}
+          />
         ) : (
           curations.map((c) => (
             <CurationRow

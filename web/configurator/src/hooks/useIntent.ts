@@ -135,6 +135,25 @@ export function useDuplicateCuration() {
   return useSaveAsCuration();
 }
 
+/**
+ * useCreateCuration — `POST /curations`.
+ *
+ * Creates a fresh empty curation. This is the missing bootstrap path:
+ * before this hook had a UI entry point, the only way a curation could
+ * exist was COMMIT from the device — but the device's COMMIT requires an
+ * *active* curation, which requires one to already exist. Chicken-and-egg.
+ *
+ * `target` is omitted so the server applies its defaults (ep133, 4×12).
+ */
+export function useCreateCuration() {
+  const qc = useQueryClient();
+  return useMutation<ApiResult, Error, string>({
+    mutationFn: (name) => api.createCuration({ name }),
+    ...buildOptions({ label: "new curation" }),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["curations"] }),
+  });
+}
+
 export function useCloseCuration() {
   const qc = useQueryClient();
   return useMutation<ApiResult, Error, void>({

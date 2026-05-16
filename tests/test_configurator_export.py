@@ -30,6 +30,7 @@ from stemforge.configurator.curation_io import (
 )
 from stemforge.configurator.export_handler import (
     ExportValidationError,
+    _check_pad_audio,
     build_export_command,
     curation_to_deck_plan,
     perform_export,
@@ -396,6 +397,99 @@ def test_curation_to_deck_plan_parses_pad_number_from_pad_id(tmp_path: Path) -> 
     plan = curation_to_deck_plan(curation, forges_dir=tmp_path)
     pad_numbers = sorted(p["pad"] for p in plan["groups"]["A"]["pads"])
     assert pad_numbers == [7, 12]
+
+
+# ── Unexportable-audio pre-flight ───────────────────────────────────────────
+
+
+def _seed_curation_with_external_pad(
+    curations_dir: Path, name: str, *, external_path: str
+) -> Curation:
+    """Curation with one populated A01 pad pointing at ``external_path``."""
+    now = datetime.now(UTC)
+    groups: dict[str, Group] = {}
+    for letter in ("A", "B", "C", "D"):
+        pads = [Pad(pad_id=f"{letter}{i + 1:02d}") for i in range(12)]
+        groups[letter] = Group(label="", template=None, pads=pads)
+    groups["A"].pads[0] = Pad(
+        pad_id="A01",
+        source=PadSource.for_external(external_path=external_path),
+        clip_settings=ClipSettings(warp_bpm=None, loop_end_bar=1.0),
+    )
+    curation = Curation(
+        name=name,
+        type="deck",
+        created_at=now,
+        modified_at=now,
+        target=Target(),
+        referenced_forges=[],
+        groups=groups,
+    )
+    write_curation_atomic(curation_path(curations_dir, name), curation)
+    return curation
+
+
+def test_check_pad_audio_rejects_rx2() -> None:
+    reason = _check_pad_audio("/Users/zak/loops/Amen Version 162.rx2")
+    assert reason is not None
+    assert ".rx2" in reason or "rx2" in reason
+
+
+def test_check_pad_audio_rejects_empty_and_missing(tmp_path: Path) -> None:
+    empty = tmp_path / "stub.wav"
+    empty.touch()  # 0 bytes — mirrors an unfinished bounce
+    assert "empty" in (_check_pad_audio(str(empty)) or "")
+    assert "not found" in (_check_pad_audio(str(tmp_path / "gone.wav")) or "")
+
+
+def test_check_pad_audio_accepts_a_real_wav(tmp_path: Path) -> None:
+    wav = tmp_path / "ok.wav"
+    wav.write_bytes(b"RIFF....WAVEfmt ")  # non-empty, right extension
+    assert _check_pad_audio(str(wav)) is None
+
+
+def test_perform_export_rejects_rx2_source_with_clear_error(
+    configurator_paths: dict[str, Path],
+) -> None:
+    """A .rx2 external pad fails pre-flight — no PermissionError traceback."""
+    _seed_curation_with_external_pad(
+        configurator_paths["curations_dir"],
+        "rexy",
+        external_path="/Users/zak/loops/Amen Version 162.rx2",
+    )
+    runner, calls = _make_runner_stub()
+    with pytest.raises(ExportValidationError, match="A01"):
+        perform_export(
+            curations_dir=configurator_paths["curations_dir"],
+            name="rexy",
+            out_path_raw=str(configurator_paths["desktop"] / "rexy.ppak"),
+            subprocess_runner=runner,
+        )
+    # Pre-flight fails BEFORE the CLI is ever spawned.
+    assert calls == []
+
+
+def test_perform_export_succeeds_when_source_is_a_real_wav(
+    configurator_paths: dict[str, Path],
+) -> None:
+    """After an in-place BOUNCE + re-COMMIT the pad source is a WAV → export runs."""
+    wav = configurator_paths["desktop"] / "cropped-A01.wav"
+    wav.write_bytes(b"RIFF....WAVEfmt ")
+    _seed_curation_with_external_pad(
+        configurator_paths["curations_dir"],
+        "bounced_ok",
+        external_path=str(wav),
+    )
+    runner, calls = _make_runner_stub(returncode=0, artifact_bytes=b"PPAK")
+    result = perform_export(
+        curations_dir=configurator_paths["curations_dir"],
+        name="bounced_ok",
+        out_path_raw=str(configurator_paths["desktop"] / "bounced_ok.ppak"),
+        subprocess_runner=runner,
+    )
+    # Pre-flight passed → the CLI ran.
+    assert result.ok is True
+    assert calls and calls[0]["cmd"][:4] == ["uv", "run", "stemforge", "build-deck"]
 
 
 # ── Unit: perform_export orchestration ──────────────────────────────────────

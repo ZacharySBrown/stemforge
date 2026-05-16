@@ -43,7 +43,7 @@ outlets = 4;   // 0: status text  1: bang  2: preset umenu  3: [shell] (mkdir-p)
 // File.readstring loops (caught during second-UAT run).
 
 // Build fingerprint, injected by tools/inject_build_manifest.py.
-var SF_BUILD_MANIFEST = "build=2026-05-15T22:20 amxd=07ba8a3f js={sf_arrangement_loader=4bcd599d,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=1ba2a880,stemforge_loader.test=d411427e,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
+var SF_BUILD_MANIFEST = "build=2026-05-16T14:31 amxd=967a3f8d js={sf_arrangement_loader=4bcd599d,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=a0b9d7e7,stemforge_loader.test=7086de36,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
 
 try {
     post("[sf_loader] " + SF_BUILD_MANIFEST + "\n");
@@ -136,6 +136,20 @@ function readFileContents(p) {
     } catch (e) {
         status("readFile error: " + e);
         return null;
+    }
+}
+
+// True when `p` names a readable file. Used by the bundle loader to probe
+// for the curation / arrangement manifest siblings without emitting the
+// noisy "cannot read manifest" error path when one is simply absent.
+function _sfFileExists(p) {
+    try {
+        var f = new File(toMaxPath(p), "read");
+        var ok = !!f.isopen;
+        if (ok) f.close();
+        return ok;
+    } catch (_) {
+        return false;
     }
 }
 
@@ -244,23 +258,47 @@ function renameTrack(idx, name, color) {
 function loadClip(trackIdx, slotIdx, wavPath, clipName, startMarkerBeats) {
     var csPath = "live_set tracks " + trackIdx + " clip_slots " + slotIdx;
     var cs = new LiveAPI(csPath);
+    // Clear any clip already in this slot. create_audio_clip fails on a
+    // non-empty slot, so a re-load (re-anchor refresh, or a second LOAD
+    // FORGE) would otherwise silently leave the stale clip in place.
+    try {
+        var existing = new LiveAPI(csPath + " clip");
+        if (existing && existing.id !== "0") cs.call("delete_clip");
+    } catch (_) {}
     try {
         cs.call("create_audio_clip", String(wavPath));
     } catch (e) {
         status("create_audio_clip failed: " + e);
         return false;
     }
+    // create_audio_clip does NOT throw when Live rejects the call (missing
+    // file, non-audio track, bad slot path → Max posts "jsliveapi: Invalid
+    // syntax" to the console but raises no JS exception). Probe the slot's
+    // clip handle: id "0" means nothing landed. Returning true here would
+    // inflate the "N/N placed" counter while session slots stay empty —
+    // exactly the false-positive caught 2026-05-15 on ooh_la_la.
+    var clip;
     try {
-        var clip = new LiveAPI(csPath + " clip");
-        if (clip.id !== "0" && clipName) {
+        clip = new LiveAPI(csPath + " clip");
+    } catch (eProbe) {
+        status("create_audio_clip: clip handle unreadable for slot " + slotIdx);
+        return false;
+    }
+    if (!clip || clip.id === "0") {
+        status("create_audio_clip: slot " + slotIdx
+            + " empty after create (missing file? " + wavPath + ")");
+        return false;
+    }
+    if (clipName) {
+        try {
             clip.set("name", String(clipName));
             clip.set("warping", 1);
             clip.set("looping", 1);
             // Note: start_marker adjustment removed — shifting clip start
             // breaks sync. Instead, the curator now boosts bars with early
             // transients during selection (prefer bars that start with a hit).
-        }
-    } catch (_) {}
+        } catch (_) {}
+    }
     return true;
 }
 
@@ -2572,19 +2610,23 @@ function bounceCuration(curationName, padIdsJson) {
             status("bounce: failed " + item.pad_id + ": " + cropResult.reason);
             continue;
         }
-        // 4. Write the rendered WAV. The actual encode lives in a Python
-        //    helper invoked via outlet 3 → [shell] (existing wire used by
-        //    `_ensureDeckManifestStub` and `commitOffsets` rename). The
-        //    helper receives (output_path, source_clip_path, warp_bpm).
-        //    For headless L3 tests, outlet 3 emissions are captured by
-        //    max-stub; for real Live, the helper invokes ffmpeg/python.
-        var outPath = bounceDir + "/" + item.pad_id + ".wav";
-        try {
-            outlet(3, "/usr/bin/env", "python3", "-c",
-                "import sys, os; os.makedirs(os.path.dirname(sys.argv[1]), exist_ok=True); open(sys.argv[1], 'w').close()",
-                outPath);
-        } catch (e) {
-            status("bounce: outlet 3 write error for " + item.pad_id + ": " + e);
+        // 4. BOUNCE is in-place. `clip.call("crop")` (in _bounceCropOnePad
+        //    above) already materialized the staged clip as a fresh WAV in
+        //    Live's project Samples folder — the clip's `file_path` now
+        //    points at that cropped WAV. There is nothing to write: COMMIT
+        //    reads `file_path`, so the cropped audio flows straight into
+        //    the curation and on to EP-133 export.
+        //
+        //    The old code touched an empty stub file under
+        //    ~/stemforge/bounced/ (dead "Phase 5" scaffolding) which left
+        //    0-byte WAVs and made export choke on the raw source. Removed.
+        var croppedClip = new LiveAPI(
+            "live_set tracks " + item.track_idx
+            + " clip_slots " + item.slot + " clip"
+        );
+        var outPath = _commitReadAudioPath(croppedClip);
+        if (!outPath) {
+            status("bounce: warning — no file_path after crop for " + item.pad_id);
         }
         rendered += 1;
         padOutputs.push({
@@ -2716,31 +2758,88 @@ function loadArrangementFromManifest() {
         status("loadArrangementFromManifest: missing manifest path");
         return;
     }
-    var ok = false;
+    // Both forge views load together — the patcher routes the post-anchor
+    // reload here, so re-anchoring now refreshes the curated session clips
+    // as well as the arrangement chunks. _loadForgeBundle resolves the
+    // sibling manifests from the forge dir.
+    _loadForgeBundle(manifestPath, shiftBeats);
+}
+
+// Run the arrangement-view loader for one manifest. include()s
+// sf_arrangement_loader.js into this [js]'s scope so runArrangementLoad()
+// is callable directly. Returns true on success.
+function _runArrangementLoad(manifestPath, shiftBeats) {
     try {
-        // include() pulls sf_arrangement_loader.js into this [js]'s scope so
-        // we can call runArrangementLoad() directly. Same pattern as the
-        // arrangement-snapshot reader; the loader function is intentionally
-        // named differently so include() doesn't clobber this wrapper.
         include("sf_arrangement_loader.js");
         var fn = (typeof runArrangementLoad === "function")
             ? runArrangementLoad : null;
         if (!fn) {
-            status("loadArrangementFromManifest: loader loaded but "
-                + "runArrangementLoad not in scope");
-            return;
+            status("arrangement: loader loaded but runArrangementLoad "
+                + "not in scope");
+            return false;
         }
-        ok = !!fn(manifestPath, shiftBeats);
+        return !!fn(manifestPath, shiftBeats || 0);
     } catch (e) {
-        status("loadArrangementFromManifest: include/dispatch failed: " + e);
+        status("arrangement: include/dispatch failed: " + e);
+        return false;
+    }
+}
+
+// Load BOTH forge views from a single forge dir: the curated session-view
+// clips (auto_curation_manifest.json) AND the arrangement-view chunks
+// (arrangement_manifest.json). `anyManifestPath` may point at either
+// sibling — the forge dir is its parent. `arrangementShift` (beats) is
+// forwarded to the arrangement loader for the re-anchor reload case
+// (session clip slots have no timeline position, so it is ignored there).
+function _loadForgeBundle(anyManifestPath, arrangementShift) {
+    if (!anyManifestPath) { status("bundle: no manifest path"); return; }
+    var forgeDir = String(anyManifestPath).replace(/\/[^/]+$/, "");
+    if (!forgeDir || forgeDir === String(anyManifestPath)) {
+        status("bundle: cannot resolve forge dir from " + anyManifestPath);
         return;
     }
-    if (ok) {
-        status("Arrangement loaded from " + manifestPath);
+    var curationPath = forgeDir + "/auto_curation_manifest.json";
+    var arrangementPath = forgeDir + "/arrangement_manifest.json";
+    var loadedAny = false;
+
+    if (_sfFileExists(curationPath)) {
+        status("bundle: loading curated clips → session view");
+        _loadManifestPath(curationPath);
+        loadedAny = true;
+    } else {
+        status("bundle: no auto_curation_manifest.json in " + forgeDir);
+    }
+
+    if (_sfFileExists(arrangementPath)) {
+        status("bundle: loading arrangement chunks → arrangement view");
+        if (_runArrangementLoad(arrangementPath, arrangementShift || 0)) {
+            status("Arrangement loaded from " + arrangementPath);
+            outlet(0, "set", "Arrangement loaded");
+        } else {
+            status("bundle: arrangement load failed for " + arrangementPath);
+            outlet(0, "set", "Arrangement load failed");
+        }
+        loadedAny = true;
+    } else {
+        status("bundle: no arrangement_manifest.json in " + forgeDir);
+    }
+
+    if (loadedAny) {
+        outlet(1, "bang");
+        return;
+    }
+
+    // Neither canonical sibling is present (e.g. a legacy forge dir with
+    // only prechop_manifest.json). Fall back to loading the picked file
+    // itself through the arrangement loader, which knows the prechop shape.
+    status("bundle: no canonical manifests — falling back to "
+        + anyManifestPath);
+    if (_runArrangementLoad(anyManifestPath, arrangementShift || 0)) {
+        status("Arrangement loaded from " + anyManifestPath);
         outlet(0, "set", "Arrangement loaded");
         outlet(1, "bang");
     } else {
-        status("loadArrangementFromManifest: load failed for " + manifestPath);
+        status("bundle: load failed for " + anyManifestPath);
         outlet(0, "set", "Arrangement load failed");
     }
 }
@@ -3650,8 +3749,26 @@ var COMMIT_ACK_RECV = "sf-commit-ack";
 // Returns null when the slot is empty (no clip → LiveAPI id "0").
 function _commitReadClipSettings(clipApi) {
     if (!clipApi || clipApi.id === "0") return null;
-    var rawWarp = clipApi.get("warp_bpm");
-    var warpBpm = (rawWarp && rawWarp.length) ? Number(rawWarp[0]) : null;
+    // warp_bpm: the Live Clip LOM exposes NO `warp_bpm` property —
+    // reading it raises "'Clip' object has no attribute 'warp_bpm'" and
+    // the device used to ship `warp_bpm: null`, which the server's
+    // `float(None)` then rejected with HTTP 422 (commit silently failed).
+    // Try the direct read anyway (older Max/Live combos + the L3 test
+    // stub do surface it), then fall back to deriving the BPM from the
+    // warp_markers slope — the same source the bounce path uses. A
+    // 0/unreadable result stays null; the server schema + LOAD both
+    // tolerate a null warp_bpm (unwarped clips legitimately have none).
+    var warpBpm = null;
+    try {
+        var rawWarp = clipApi.get("warp_bpm");
+        if (rawWarp && rawWarp.length && Number(rawWarp[0]) > 0) {
+            warpBpm = Number(rawWarp[0]);
+        }
+    } catch (_eWarp) {}
+    if (warpBpm == null) {
+        var bpmFromMarkers = _warpBpmFromMarkers(clipApi);
+        if (bpmFromMarkers > 0) warpBpm = bpmFromMarkers;
+    }
     var rawLoopStart = clipApi.get("loop_start");
     var rawLoopEnd = clipApi.get("loop_end");
     var loopStartBeats = (rawLoopStart && rawLoopStart.length) ? Number(rawLoopStart[0]) : 0;
@@ -3859,32 +3976,18 @@ function primary() {
         try { messnamed("sf-run-forge", pickedSource.path); } catch (_) {}
         return;
     }
-    if (pickedSource.type === "forge_manifest") {
-        status("primary: dispatching LOAD FORGE on " + pickedSource.path);
-        // Internal dispatch — DO NOT route through the Max-message wrapper.
-        // Passing "loadManifest" as a positional arg made the wrapper's
-        // `arrayfromargs(messagename, arguments).slice(1).join(" ")`
-        // pattern prefix the real path with the string "loadManifest "
-        // → "cannot read manifest". Call the helper directly.
-        _loadManifestPath(pickedSource.path);
-        return;
-    }
-    if (pickedSource.type === "arrangement_manifest"
+    if (pickedSource.type === "forge_manifest"
+            || pickedSource.type === "arrangement_manifest"
             || pickedSource.type === "prechop_manifest") {
-        // Arrangement-shape manifests (chunks[]) target Live's arrangement
-        // view, not session view. Route to the dedicated arrangement loader
-        // — `_loadManifestPath` only knows the forge clips[]/stems[] shape
-        // and would emit "manifest has no stems". The legacy prechop alias
-        // is kept for back-compat (spec §11).
-        //
-        // Path is the ONLY positional arg. Do NOT pass "loadArrangementFromManifest"
-        // as a leading arg — same trap as the legacy `_loadManifestPath` dispatch
-        // (see the comment in the forge_manifest branch above). Internally the
-        // wrapper does `arrayfromargs(messagename, arguments).slice(1)` then
-        // `.join(" ")` to recompose the path; an extra leading atom gets glued
-        // onto the front of the path string.
-        status("primary: dispatching LOAD ARRANGEMENT on " + pickedSource.path);
-        loadArrangementFromManifest(pickedSource.path);
+        // LOAD FORGE loads BOTH views in one shot: curated session clips
+        // (auto_curation_manifest.json) and arrangement chunks
+        // (arrangement_manifest.json). The picked source may be either
+        // sibling — _loadForgeBundle resolves both from the forge dir, so
+        // it no longer matters which manifest the sniffer landed on.
+        // Direct call — no Max-message wrapper (a positional leading atom
+        // would get glued onto the front of the path string).
+        status("primary: dispatching LOAD FORGE on " + pickedSource.path);
+        _loadForgeBundle(pickedSource.path, 0);
         return;
     }
     if (pickedSource.type === "curation") {
@@ -4365,6 +4468,54 @@ function alsOpenedAck(curationOrSentinel) {
 }
 
 /**
+ * curationOpened(name) — message handler bound to the patcher's
+ * `[route /curation-opened]` table off `[udpreceive 7420]`.
+ *
+ * Fired by the configurator server when a curation is opened in the web
+ * editor (`POST /curations/{name}/open` → UDP `curation-opened <name>`).
+ * Loads that curation's YAML from `~/stemforge/curations/<name>.yaml` so
+ * the device's `activeCuration` is set and COMMIT can run — without the
+ * user having to manually re-pick the YAML on the device after opening
+ * it in the popup. Mirrors `alsOpenedAck`'s resolution, minus the
+ * sentinel/no-host branch (the server only fires this with a real name).
+ *
+ * Status lines (greppable by L3 tests):
+ *   "curation-opened: <name>"
+ *   "curation-opened: home resolution failed"
+ *   "curation-opened: file not found: <path>"
+ */
+function curationOpened(name) {
+    var curName = String(name == null ? "" : name);
+    if (!curName || curName === TEMPLATE_CLEAR_SENTINEL) {
+        status("curation-opened: <none>");
+        return;
+    }
+    status("curation-opened: " + curName);
+    var home = "";
+    try {
+        home = _getHomePath();
+    } catch (_e) {
+        home = "";
+    }
+    if (!home) {
+        status("curation-opened: home resolution failed");
+        return;
+    }
+    var curationPath = home + "/stemforge/curations/" + curName + ".yaml";
+    var text = "";
+    try {
+        text = readFileContents(curationPath);
+    } catch (_e2) {
+        text = "";
+    }
+    if (!text) {
+        status("curation-opened: file not found: " + curationPath);
+        return;
+    }
+    loadCuration(text, curationPath);
+}
+
+/**
  * openEditor — bound to the footer's "Open Editor" button via the
  * patcher's `[r sf-open-editor]` receiver.
  *
@@ -4422,6 +4573,8 @@ if (typeof module !== "undefined" && module.exports) {
         // Configurator v1 Phase 3A — template hot-apply (server→device).
         applyGroupTemplate: applyGroupTemplate,
         templateChanged: templateChanged,
+        // Server→device: curation opened in the web editor.
+        curationOpened: curationOpened,
         _templatePathFor: _templatePathFor,
         TEMPLATE_CLEAR_SENTINEL: TEMPLATE_CLEAR_SENTINEL,
         setTemplateDirForTest: function (dir) {

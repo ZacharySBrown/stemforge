@@ -1,7 +1,10 @@
+import { createElement, type ReactNode } from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useProjectState } from "./useProjectState";
 import { MockEventSource } from "../test/mockEventSource";
+import { buildClient } from "../test/render";
 import type { Curation } from "../lib/api-types.generated";
 
 describe("useProjectState", () => {
@@ -10,12 +13,22 @@ describe("useProjectState", () => {
   });
 
   function renderWithMock() {
-    return renderHook(() =>
-      useProjectState({
-        EventSourceCtor: MockEventSource as unknown as typeof EventSource,
-        url: "/state/stream",
-      }),
-    );
+    // useProjectState invalidates the TanStack `curations` queries on a
+    // `kind: "curations"` SSE event, so it needs a QueryClient in scope.
+    const client = buildClient();
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client }, children);
+    return {
+      client,
+      ...renderHook(
+        () =>
+          useProjectState({
+            EventSourceCtor: MockEventSource as unknown as typeof EventSource,
+            url: "/state/stream",
+          }),
+        { wrapper },
+      ),
+    };
   }
 
   it("opens an EventSource and reports connected", async () => {
@@ -140,6 +153,25 @@ describe("useProjectState", () => {
     await waitFor(() =>
       expect(result.current.curation?.name).toBe("verse_swap_v1"),
     );
+  });
+
+  it("invalidates the curations queries on a kind:'curations' event (commit→popup sync)", async () => {
+    // A device COMMIT re-broadcasts `kind: "curations"`; the right-rail
+    // list + center-panel detail are TanStack queries that SSE does not
+    // otherwise refresh. The handler must invalidate them.
+    const { result, client } = renderWithMock();
+    await waitFor(() => expect(result.current.status).toBe("connected"));
+    const spy = vi.spyOn(client, "invalidateQueries");
+
+    act(() =>
+      MockEventSource.instances[0].emit("state", {
+        kind: "curations",
+        active_curations: { __popup__: "verse_swap_v1" },
+      }),
+    );
+
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["curations"] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["curation"] });
   });
 
   it("handles kind:'curations' shape — empty active_curations clears state", async () => {

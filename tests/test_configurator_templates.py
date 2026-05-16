@@ -317,3 +317,50 @@ def test_patch_template_device_notifier_failure_does_not_block_write(
     assert r.status_code == 200
     on_disk = read_curation(curation_path(configurator_dirs["curations_dir"], "c"))
     assert on_disk.groups["A"].template == "drum-rack-classic"
+
+
+# ── POST /open + device-notify behaviour ────────────────────────────────────
+
+
+def test_open_curation_notifies_device(
+    client: TestClient,
+    configurator_dirs: dict[str, Path],
+    device_notifications: list[tuple[str, tuple[str, ...]]],
+) -> None:
+    """Opening a curation in the popup tells the device to load it."""
+    _seed_curation(configurator_dirs["curations_dir"], "verse_swap_v1")
+    r = client.post("/curations/verse_swap_v1/open", json={"als_path": "__popup__"})
+    assert r.status_code == 200
+    # Wire shape: ``curation-opened <name>`` — the device routes this into
+    # curationOpened(name) and loads the YAML so COMMIT can run.
+    assert ("curation-opened", ("verse_swap_v1",)) in device_notifications
+
+
+def test_open_unknown_curation_no_device_notify(
+    client: TestClient,
+    device_notifications: list[tuple[str, tuple[str, ...]]],
+) -> None:
+    """404 fires before notify — no message leaks for a missing curation."""
+    r = client.post("/curations/does-not-exist/open", json={"als_path": "__popup__"})
+    assert r.status_code == 404
+    assert device_notifications == []
+
+
+def test_open_curation_device_notifier_failure_does_not_block(
+    configurator_dirs: dict[str, Path],
+) -> None:
+    """Notifier exception is swallowed; the open must still succeed."""
+    _seed_curation(configurator_dirs["curations_dir"], "c")
+
+    def boom(_route: str, *_args: str) -> None:
+        raise OSError("simulated UDP send failure")
+
+    app = create_app(
+        static_dir=configurator_dirs["static_dir"],
+        curations_dir=configurator_dirs["curations_dir"],
+        state_path=configurator_dirs["state_path"],
+        templates_dir=configurator_dirs["templates_dir"],
+        device_notifier=boom,
+    )
+    r = TestClient(app).post("/curations/c/open", json={"als_path": "__popup__"})
+    assert r.status_code == 200

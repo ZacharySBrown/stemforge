@@ -717,6 +717,8 @@ async def handle_open_curation(
     state: AppState,
     name: str,
     body: OpenCurationBody,
+    *,
+    device_notifier: Any | None = None,
 ) -> dict[str, Any]:
     """``POST /curations/{name}/open`` — set active in state file.
 
@@ -724,6 +726,12 @@ async def handle_open_curation(
     in the absence of device-to-server wiring (Phase 4A). Once the
     device emits its current ``.als`` path on every connection, the
     body can become optional.
+
+    When ``device_notifier`` is supplied, a ``curation-opened <name>``
+    datagram is fired at the strip device so it loads the curation into
+    its JS state (sets ``activeCuration`` so COMMIT can run) — without
+    this the user would have to manually re-pick the YAML on the device
+    after opening it in the popup.
     """
     curation = _load_curation_or_404(state, name)
     async with state.mutation_lock:
@@ -733,6 +741,20 @@ async def handle_open_curation(
         sf_state = set_active_curation_for_host(state, body.als_path, curation.name)
     await state.log(f"opened curation {name} for {body.als_path}", "info")
     await state.broadcast_curations_state()
+
+    if device_notifier is not None:
+        # Wire shape: ``curation-opened <name>``. Mirrors the
+        # ``template-changed`` notify in handle_patch_template. A closed
+        # device socket is non-fatal — the popup's SSE broadcast above
+        # is still the source of truth for browser clients.
+        try:
+            device_notifier("curation-opened", curation.name)
+        except Exception as exc:  # noqa: BLE001
+            await state.error(
+                "device_notify_failed",
+                f"curation-opened notify failed: {exc}",
+            )
+
     return {
         "curation": curation.model_dump(mode="json"),
         "active_curations": sf_state.active_curations,
