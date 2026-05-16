@@ -1991,7 +1991,9 @@ def forge(audio_file, analysis, model, strategy, n_bars, time_sig, output, curat
     _forge_run_prechop(track_out, stem_paths, _fm.bpm, _forge_dn, emit)
     # build_arrangement_from_prechop reads track_out/prechop_manifest.json
     # and flattens its nested stems[].chunks[] into the schema's flat
-    # chunks[]. Falls back to an empty arrangement when no prechop exists.
+    # chunks[]. Falls back to an empty arrangement when no prechop exists
+    # — preserves the previous build_empty_arrangement behavior for
+    # forge runs that skipped the prechop step (e.g. older pipelines).
     _am = build_arrangement_from_prechop(
         slug=track_name,
         forge_dir=track_out,
