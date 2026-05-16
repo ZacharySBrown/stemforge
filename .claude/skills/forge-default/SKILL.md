@@ -40,8 +40,21 @@ uv run --directory /Users/zak/zacharysbrown/stemforge stemforge forge <audio> [o
 | `--output` | (repo `processed/`) | omit the flag |
 
 Auto-curation **and** arrangement are produced unconditionally — no flag
-needed; the current `forge` command always runs both. Override any default
-only if the user says so (see forge-run's override table — same flags).
+needed; the current `forge` command always runs both.
+
+## Override etiquette
+
+Pass a flag only when the user explicitly asks:
+
+| User says | Pass to CLI |
+|-----------|-------------|
+| "use the htdemucs_ft model" | `--model htdemucs_ft` |
+| "rhythm taxonomy" / "by rhythm" | `--strategy rhythm-taxonomy` |
+| "sectional" / "by section" | `--strategy sectional` |
+| "16 bars" / "n=8" | `--n-bars 16` / `--n-bars 8` |
+| "in 3/4" / "waltz time" | `--time-sig 3/4` |
+| "output to ~/forged" | `--output ~/forged` |
+| "use my Ableton analysis at X" | `--analysis X` |
 
 ## Plan-then-confirm
 

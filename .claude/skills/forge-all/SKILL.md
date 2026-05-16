@@ -1,12 +1,12 @@
 ---
 name: forge-all
-description: End-to-end forge: launch Ableton with the StemForge template AND run the forge pipeline on a track. Composes /forge-launch + /forge-run. Use when the user says "do the whole thing" / "launch and forge" / "open StemForge and forge X". Pick + commit (the in-Live device steps) are still manual today — see notes.
+description: End-to-end forge: launch Ableton with the StemForge template AND run the forge pipeline on a track. Composes /forge-launch + /forge-default. Use when the user says "do the whole thing" / "launch and forge" / "open StemForge and forge X". Pick + commit (the in-Live device steps) are still manual today — see notes.
 allowed-tools: Bash(open:*), Bash(pgrep:*), Bash(ls:*), Bash(uv run --directory*:*), Bash(uv run stemforge forge:*), Bash(stemforge forge:*), Bash(jq:*), Read
 ---
 
 # forge-all — launch + forge in one go
 
-Composed skill that runs `/forge-launch` and `/forge-run` back-to-back. Use when the user says:
+Composed skill that runs `/forge-launch` and `/forge-default` back-to-back. Use when the user says:
 
 - *"open StemForge and forge ~/Music/loop.wav"*
 - *"do the whole thing on this track"*
@@ -17,7 +17,7 @@ Composed skill that runs `/forge-launch` and `/forge-run` back-to-back. Use when
 
 1. **Launch Ableton with the StemForge template** — follow `/forge-launch` behavior. If Ableton is already running, just open the template (or skip if user said "no template"). Don't block on it — Live takes a few seconds to fully boot but forge can start in parallel.
 
-2. **Run forge on the audio file** — follow `/forge-run` behavior. Plan-then-confirm (combined with the launch plan), model/strategy/n_bars defaults the same.
+2. **Run forge on the audio file** — follow `/forge-default` behavior. Plan-then-confirm (combined with the launch plan), model/strategy/n_bars defaults the same.
 
 3. **Report what's next** — the in-Live "pick patch & source" and "COMMIT" steps still have to be done by the user inside the device UI today (see "Manual steps" below).
 
@@ -50,7 +50,7 @@ Ableton boot is slow (5–10s). Forge with Demucs takes 30s–several minutes. *
 # Forge in the foreground (so the user sees streaming progress)
 uv run --directory /Users/zak/zacharysbrown/stemforge stemforge forge "$AUDIO" \
   --strategy "$STRATEGY" --n-bars "$N_BARS" \
-  | jq -rc '...'  # see /forge-run for the streaming snippet
+  | jq -rc '...'  # see /forge-default for the streaming snippet
 ```
 
 If the user wants forge to **wait** for Live (e.g. "boot Live first, then forge"), run sequentially.
@@ -67,14 +67,14 @@ These steps need an external control surface on the M4L device that **does not e
 
 ## Override etiquette
 
-Inherits everything from `/forge-launch` and `/forge-run`. Common combinations:
+Inherits everything from `/forge-launch` and `/forge-default`. Common combinations:
 
 | User says | Action |
 |-----------|--------|
 | "open StemForge and forge X" | template + audio |
 | "launch and forge X with the 6stem model" | template + `--model 6stem` |
 | "no template, just forge X" | bare Live launch + forge |
-| "forge X, don't open Live" | skip launch, just `/forge-run` |
+| "forge X, don't open Live" | skip launch, just `/forge-default` |
 
 ## Failure modes
 
