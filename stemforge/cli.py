@@ -905,7 +905,7 @@ def re_anchor(
     if curated_manifest_path.exists():
         try:
             from .forge import (
-                build_empty_arrangement,
+                build_arrangement_from_prechop,
                 build_from_curated_dict,
                 write_arrangement,
                 write_auto_curation,
@@ -920,8 +920,13 @@ def re_anchor(
                 first_downbeat_sec=float(first_downbeat),
             )
             write_auto_curation(track_dir, _fm)
-            _am = build_empty_arrangement(
-                slug=track_name,
+            # Re-anchor re-slices prechop, so prechop_manifest.json is fresh —
+            # build the arrangement FROM it rather than writing an empty
+            # manifest. build_empty_arrangement here silently wiped the
+            # arrangement view's chunks on every re-anchor (caught 2026-05-15).
+            _am = build_arrangement_from_prechop(
+                track_name,
+                forge_dir=track_dir,
                 source_audio=str(source_file),
                 bpm=float(bpm),
                 first_downbeat_sec=float(first_downbeat),
@@ -990,7 +995,7 @@ def reslice_curated(track_dir):
     # sees the post-reslice clip set with a fresh manifest_hash.
     try:
         from .forge import (
-            build_empty_arrangement,
+            build_arrangement_from_prechop,
             build_from_curated_dict,
             write_arrangement,
             write_auto_curation,
@@ -1012,8 +1017,9 @@ def reslice_curated(track_dir):
         _src = _stems.get("source_file") or str(track_dir)
         write_arrangement(
             track_dir,
-            build_empty_arrangement(
-                slug=_slug,
+            build_arrangement_from_prechop(
+                _slug,
+                forge_dir=track_dir,
                 source_audio=_src,
                 bpm=_bpm,
                 first_downbeat_sec=_dn,
@@ -1129,7 +1135,7 @@ def re_curate(slug, strategy, n_bars):
     """
     from .forge import (
         ForgeManifestError,
-        build_empty_arrangement,
+        build_arrangement_from_prechop,
         build_from_curated_dict,
         write_arrangement,
         write_auto_curation,
@@ -1208,8 +1214,9 @@ def re_curate(slug, strategy, n_bars):
             first_downbeat_sec=dn_val,
         )
         fm_path = write_auto_curation(forge_dir, fm)
-        am = build_empty_arrangement(
-            slug=slug,
+        am = build_arrangement_from_prechop(
+            slug,
+            forge_dir=forge_dir,
             source_audio=source_audio,
             bpm=bpm_val,
             first_downbeat_sec=dn_val,
@@ -1515,6 +1522,125 @@ def generate_pipeline_json(pipeline_dir):
     console.print("\nRestart or reload the M4L device to pick up changes.")
 
 
+def _forge_run_prechop(track_out, stem_paths, bpm, first_downbeat_sec, emit):
+    """Run arrangement-mode prechop on already-split stems so a single
+    ``forge`` run produces a populated ``arrangement_manifest.json`` next
+    to the curated one — `forge` otherwise only splits + curates and the
+    arrangement view comes up empty.
+
+    Uses ``pipelines/arrangement.yaml``'s prechop config (4-bar chunks,
+    1-bar pad). Best-effort: a prechop failure leaves an empty arrangement
+    manifest rather than aborting the whole forge.
+    """
+    from .pipelines import load_pipeline, run_post_split_steps
+
+    try:
+        pipeline_cfg = load_pipeline("arrangement")
+    except Exception as e:  # noqa: BLE001 — non-fatal; arrangement just stays empty
+        emit("progress", phase="prechop", pct=100,
+             message=f"prechop skipped — arrangement pipeline load failed: {e}")
+        return
+    if pipeline_cfg is None or pipeline_cfg.prechop is None:
+        emit("progress", phase="prechop", pct=100,
+             message="prechop skipped — no prechop config in arrangement pipeline")
+        return
+
+    # Auto-fill the intro: round down to a whole-chunk count of pre-bars so
+    # intro audio before bar 1 still lands as chunks on the bar grid.
+    bars_per_chunk = pipeline_cfg.prechop.bars
+    resolved_pre_bars = 0
+    if bpm > 0:
+        bar_period_sec = bars_per_chunk * pipeline_cfg.prechop.beats_per_bar * 60.0 / bpm
+        if bar_period_sec > 0:
+            resolved_pre_bars = int(first_downbeat_sec // bar_period_sec) * bars_per_chunk
+
+    emit("progress", phase="prechop", pct=0)
+    try:
+        run_post_split_steps(
+            pipeline_cfg,
+            stem_paths,
+            track_out,
+            bpm=bpm,
+            first_downbeat_sec=first_downbeat_sec,
+            pre_bars=resolved_pre_bars,
+        )
+        emit("progress", phase="prechop", pct=100)
+    except Exception as e:  # noqa: BLE001 — non-fatal
+        emit("progress", phase="prechop", pct=100, message=f"prechop failed: {e}")
+
+
+def _forge_reconcile_tempo(audio_file, stem_paths, track_out, track_name, backend, emit):
+    """Run the tempo reconciler on freshly-split stems and persist the
+    result to ``stems.json``.
+
+    ``forge`` used to skip this entirely — the curate step then fell back
+    to plain librosa beat detection, which harmonic-errors on half-time
+    material (Definition came back at 120 BPM instead of 90). Running
+    ``reconcile_tempo`` (beat-this neural detector) + ``refine_bpm`` here,
+    and writing the result to ``stems.json``, means ``stemforge_curate_bars``
+    picks the reconciled tempo up via ``_load_stems_manifest_tempo``.
+
+    Returns ``(bpm, first_downbeat_sec)``.
+    """
+    from .manifest import TempoProvenance
+    from .tempo_reconciler import reconcile_tempo, refine_bpm
+
+    emit("progress", phase="tempo", pct=0)
+    drums_stem = stem_paths.get("drums") or stem_paths.get("drum")
+    reconciled = reconcile_tempo(
+        mix_path=audio_file,
+        drums_path=drums_stem,
+        kick_tiebreaker=True,
+        kick_workdir=track_out / "tempo_substems",
+    )
+    bpm = reconciled.bpm
+    downbeats = reconciled.downbeat_times
+    first_downbeat_sec = float(downbeats[0]) if len(downbeats) > 0 else 0.0
+
+    # BPM refinement — always-on (mirrors `split`). The reconciler's mean
+    # estimator has ~0.1-0.4% residual error; refine_bpm cross-correlates a
+    # bar-comb against kick onsets and recovers true BPM to ~0.01.
+    try:
+        bpm = refine_bpm(audio_file, bpm, first_downbeat_sec)
+    except Exception as e:  # noqa: BLE001 — refinement is best-effort
+        emit("progress", phase="tempo", pct=50, message=f"refine_bpm skipped: {e}")
+
+    tempo_provenance = TempoProvenance(
+        source=reconciled.source,
+        confidence=reconciled.confidence,
+        first_downbeat_sec=first_downbeat_sec,
+        n_downbeats=int(len(downbeats)),
+        warning=reconciled.warning,
+        all_estimates=[e.to_dict() for e in reconciled.all_estimates],
+    )
+    write_manifest(
+        output_dir=track_out,
+        track_name=track_name,
+        source_file=audio_file,
+        backend=backend,
+        bpm=bpm,
+        beat_count=len(reconciled.beat_times),
+        stem_paths=stem_paths,
+        slice_counts={},
+        pipeline="default",
+        tempo=tempo_provenance,
+    )
+    emit(
+        "progress", phase="tempo", pct=100,
+        bpm=round(float(bpm), 3),
+        first_downbeat_sec=round(first_downbeat_sec, 4),
+        source=reconciled.source,
+        confidence=reconciled.confidence,
+    )
+    if (reconciled.warning or "").startswith("beat-this unavailable"):
+        emit(
+            "progress", phase="tempo", pct=100,
+            message="WARNING: beat-this unavailable — BPM may be wrong on "
+            "half-time material; install with `uv sync --extra beat`",
+        )
+    return float(bpm), first_downbeat_sec
+
+
 @cli.command()
 @click.argument("audio_file", type=click.Path(exists=True, path_type=Path))
 @click.option(
@@ -1592,6 +1718,12 @@ def forge(audio_file, analysis, model, strategy, n_bars, time_sig, output, curat
         sys.exit(1)
     emit("progress", phase="splitting", pct=100, stems=[str(p) for p in stem_paths.values()])
 
+    # ── 1.5 Tempo reconciliation ──
+    # Run the neural reconciler and persist stems.json BEFORE curation, so
+    # the curate step reads a correct BPM instead of harmonic-erroring via
+    # the librosa fallback (Definition: 120 BPM instead of 90).
+    _forge_reconcile_tempo(audio_file, stem_paths, track_out, track_name, backend, emit)
+
     # ── 2+3. Production curation (opt-in via --curation) ──
     # When a curation config is provided, delegate bar-slicing + curation to
     # v0/src/stemforge_curate_bars.py which writes a production-mode manifest
@@ -1638,7 +1770,7 @@ def forge(audio_file, analysis, model, strategy, n_bars, time_sig, output, curat
         # we read it back and project into the new two-file shape so
         # downstream configurator consumers see the same data.
         from .forge import (
-            build_empty_arrangement,
+            build_arrangement_from_prechop,
             build_from_curated_dict,
             write_arrangement,
             write_auto_curation,
@@ -1660,8 +1792,12 @@ def forge(audio_file, analysis, model, strategy, n_bars, time_sig, output, curat
             first_downbeat_sec=float(_curated_dict.get("first_downbeat_sec", 0.0) or 0.0),
         )
         _fm_path = write_auto_curation(track_out, _fm)
-        _am = build_empty_arrangement(
-            slug=track_name,
+        # Prechop the stems so the arrangement view has real chunks — forge
+        # used to only split+curate, leaving arrangement_manifest.json empty.
+        _forge_run_prechop(track_out, stem_paths, _fm.bpm, _fm.first_downbeat_sec, emit)
+        _am = build_arrangement_from_prechop(
+            track_name,
+            forge_dir=track_out,
             source_audio=str(audio_file),
             bpm=_fm.bpm,
             first_downbeat_sec=_fm.first_downbeat_sec,
@@ -1706,6 +1842,27 @@ def forge(audio_file, analysis, model, strategy, n_bars, time_sig, output, curat
         )
         detected_bpm = reconciled_for_forge.bpm
         shared_beat_times = reconciled_for_forge.beat_times
+        # Same `beat-this unavailable` guard the split command prints —
+        # without it, the forge silently bakes a librosa-only BPM into the
+        # manifest, which produces obvious half-time/doubled-tempo
+        # regressions on tracks like Definition (90 → 120). The split path
+        # has had this guard since 2026-05-03; mirror it here so a `forge`
+        # run in a venv missing `--extra beat` is just as loud.
+        if (reconciled_for_forge.warning or "").startswith("beat-this unavailable"):
+            console.print(Rule("[bold red]beat-this is not installed[/bold red]"))
+            console.print(
+                "  The neural downbeat detector is the half-time-hip-hop fix; "
+                "without it, BPM\n"
+                "  on tracks like Definition / DnB / trap will come back doubled, "
+                "and no\n"
+                "  first_downbeat will be detected on any track. Install with:\n\n"
+                "    [cyan]uv sync --extra beat --extra native[/cyan]\n\n"
+                "  Then re-run `stemforge forge` — the manifests this run produces "
+                "carry\n"
+                "  low-confidence metadata and should be regenerated for accurate "
+                "tempos."
+            )
+            console.print(Rule())
         if shared_beat_times is None or len(shared_beat_times) == 0:
             # Reconciler had no usable beats — fall back to librosa.
             bpm_source = drums_stem_f or next(iter(stem_paths.values()))
@@ -1810,7 +1967,7 @@ def forge(audio_file, analysis, model, strategy, n_bars, time_sig, output, curat
     # exporters/readers; the compat shim in `stemforge.forge.manifest_io`
     # accepts both shapes.
     from .forge import (
-        build_empty_arrangement,
+        build_arrangement_from_prechop,
         build_from_curated_dict,
         write_arrangement,
         write_auto_curation,
@@ -1829,8 +1986,15 @@ def forge(audio_file, analysis, model, strategy, n_bars, time_sig, output, curat
         first_downbeat_sec=_forge_dn,
     )
     _fm_path = write_auto_curation(track_out, _fm)
-    _am = build_empty_arrangement(
+    # Prechop the stems so the arrangement view has real chunks — forge
+    # used to only split+curate, leaving arrangement_manifest.json empty.
+    _forge_run_prechop(track_out, stem_paths, _fm.bpm, _forge_dn, emit)
+    # build_arrangement_from_prechop reads track_out/prechop_manifest.json
+    # and flattens its nested stems[].chunks[] into the schema's flat
+    # chunks[]. Falls back to an empty arrangement when no prechop exists.
+    _am = build_arrangement_from_prechop(
         slug=track_name,
+        forge_dir=track_out,
         source_audio=str(audio_file),
         bpm=_fm.bpm,
         first_downbeat_sec=_forge_dn,

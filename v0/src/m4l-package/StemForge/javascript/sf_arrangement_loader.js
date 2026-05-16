@@ -260,15 +260,34 @@ function _alIsAudioTrack(i) {
     return Number(v) === 1;
 }
 
+// Schema vs prechop label variance: schema is singular ("drum","vocal"),
+// prechop is plural ("drums","vocals"). Re-anchor reloads via the prechop
+// manifest, so the loader sees plural keys; without this alias table it
+// substring-fails against the singular tracks LOAD FORGE created
+// ("definition | drum") and falls through to `_alCreateAudioTrack`,
+// duplicating "drums"/"vocals" tracks. Caught 2026-05-15 after ANCH.
+var _AL_STEM_ALIASES = {
+    drum: ["drum", "drums"],
+    drums: ["drums", "drum"],
+    vocal: ["vocal", "vocals"],
+    vocals: ["vocals", "vocal"],
+    bass: ["bass"],
+    other: ["other"]
+};
+
 function _alFindTrackForStem(stemName) {
     var n = _alTrackCount();
     var lc = String(stemName).toLowerCase();
+    var aliases = _AL_STEM_ALIASES[lc] || [lc];
     var firstContains = -1;
     for (var i = 0; i < n; i++) {
         if (!_alIsAudioTrack(i)) continue;
         var name = _alTrackName(i).toLowerCase();
-        if (name === lc) return i;
-        if (firstContains < 0 && name.indexOf(lc) >= 0) firstContains = i;
+        for (var ai = 0; ai < aliases.length; ai++) {
+            var alias = aliases[ai];
+            if (name === alias) return i;
+            if (firstContains < 0 && name.indexOf(alias) >= 0) firstContains = i;
+        }
     }
     return firstContains;
 }
@@ -633,6 +652,8 @@ if (typeof module !== "undefined" && module.exports) {
         _alDirname: _alDirname,
         _alSecToBeats: _alSecToBeats,
         _alExpandTilde: _alExpandTilde,
-        _alAdaptChunksToStems: _alAdaptChunksToStems
+        _alAdaptChunksToStems: _alAdaptChunksToStems,
+        _alFindTrackForStem: _alFindTrackForStem,
+        _AL_STEM_ALIASES: _AL_STEM_ALIASES
     };
 }

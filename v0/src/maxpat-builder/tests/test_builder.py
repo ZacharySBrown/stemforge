@@ -61,7 +61,9 @@ def test_device_width_matches_yaml(patcher):
     with open(DEVICE_YAML) as f:
         spec = yaml.safe_load(f)
     assert patcher["patcher"]["devicewidth"] == float(spec["ui"]["size"]["width"])
-    assert patcher["patcher"]["devicewidth"] == 820.0
+    # Slim 480px canvas (down from 820 — the live.text refactor made the
+    # extra width dead space behind transparent buttons).
+    assert patcher["patcher"]["devicewidth"] == 480.0
 
 
 # ── v8ui canvas (background only — Configurator v1 §3.1 lifts UI to natives) ─
@@ -74,9 +76,9 @@ def test_v8ui_canvas_present_in_patching_only(boxes):
     assert len(v8s) == 1, "expected exactly one v8ui box"
     v8 = v8s[0]
     assert v8["filename"] == "sf_ui.js"
-    # Full-canvas patching_rect (820×149) — sf_state still emits `refresh`
+    # Full-canvas patching_rect (480×149) — sf_state still emits `refresh`
     # to it so the in-script debug surface keeps working.
-    assert v8["patching_rect"][2:] == [820, 149]
+    assert v8["patching_rect"][2:] == [480, 149]
     # NOT in presentation mode any more — there's no presentation_rect and
     # the `presentation` flag must be absent (or 0).
     assert not v8.get("presentation"), (
@@ -165,29 +167,39 @@ def test_primary_click_wired_to_loader(boxes, line_pairs):
     assert (msg["id"], "obj-sf-lom-loader") in line_pairs
 
 
-def test_status_picker_text_receives_sf_status(boxes, line_pairs):
-    """The picker's status display reads from [r sf-status]; the bus is
-    driven by a [s sf-status] send fed from the loader's outlet 0 (which
-    is where status() emits `set <text>` messages).
+def test_footer_status_text_receives_sf_status(boxes, line_pairs):
+    """The footer's `sf_status_text` live.comment is the SINGLE dynamic
+    status surface — it consumes `set <text>` from [r sf-status]. The
+    earlier 700px in-body status box (sf_status_picker_text) is gone; this
+    test guards against a regression that would either re-introduce it or
+    leave the footer text static.
 
-    NB: this must be `live.comment`, not `live.text`. live.text mode 0
-    is a momentary BUTTON that rejects `set <text>` with
-    `bad arguments for message "set"` (caught during first UAT round).
-    live.comment is the canonical M4L widget for dynamic text labels.
+    `live.comment` must remain — `live.text` in mode 0 is a momentary
+    BUTTON that rejects `set <text>` with `bad arguments for message
+    "set"` (caught during first UAT round).
     """
     txt = next(
-        (b for b in boxes if b.get("varname") == "sf_status_picker_text"), None
+        (b for b in boxes if b.get("varname") == "sf_status_text"), None
     )
-    assert txt is not None, "missing sf_status_picker_text"
+    assert txt is not None, "missing footer sf_status_text"
     assert txt["maxclass"] == "live.comment", (
-        "status widget must be live.comment — live.text rejects `set <text>` "
-        "and emits 'bad arguments for message set' (regression for first-UAT bug)"
+        "status widget must be live.comment — live.text rejects `set <text>`"
+    )
+
+    # The legacy body-status box must NOT be re-introduced.
+    legacy = next(
+        (b for b in boxes if b.get("varname") == "sf_status_picker_text"),
+        None,
+    )
+    assert legacy is None, (
+        "sf_status_picker_text (the legacy 700px body status box) is gone — "
+        "the footer's sf_status_text is the single status surface."
     )
 
     recv = next((b for b in boxes if b.get("text") == "r sf-status"), None)
     assert recv is not None, "missing [r sf-status]"
-    # recv → txt
-    assert ("obj-sf-status-recv", "obj-sf-status-picker-text") in line_pairs
+    # recv → footer status text
+    assert ("obj-sf-status-recv", "obj-sf-status-text") in line_pairs
     # And a [s sf-status] must be fed by the loader's status outlet (outlet 0).
     send = next((b for b in boxes if b.get("text") == "s sf-status"), None)
     assert send is not None, "missing [s sf-status]"
@@ -300,21 +312,68 @@ def test_export_button_present_and_wired(boxes, line_pairs):
     assert (msg["id"], "obj-sf-lom-loader") in line_pairs
 
 
+def test_anchor_button_present_and_wired(boxes, line_pairs):
+    """ANCH live.text → [message reAnchor] → js sf_lom_loader. The loader's
+    `reAnchor()` resolves the forge dir from pickedSource and fires
+    messnamed("sf-anchor-go", forgeDir); a separate receiver chain routes
+    that into sf_locator_anchor.anchor(forgeDir). Regression for the
+    button that 999ee1d removed in the v8ui-canvas refactor."""
+    btn = next((b for b in boxes if b.get("varname") == "sf_anchor_btn"), None)
+    assert btn is not None, "missing sf_anchor_btn"
+    assert btn["maxclass"] == "live.text"
+    assert btn.get("mode") == 1
+    assert btn.get("presentation") == 1
+    assert btn.get("text") == "ANCH"
+
+    msg = next(
+        (
+            b
+            for b in boxes
+            if b.get("maxclass") == "message" and b.get("text") == "reAnchor"
+        ),
+        None,
+    )
+    assert msg is not None, "missing [message reAnchor] box"
+    assert ("obj-sf-anchor-btn", msg["id"]) in line_pairs
+    assert (msg["id"], "obj-sf-lom-loader") in line_pairs
+
+
+def test_anchor_go_wire_routes_into_locator_anchor(boxes, line_pairs):
+    """[r sf-anchor-go] → [prepend anchor] → [js sf_locator_anchor]. JS
+    `reAnchor()` emits `messnamed("sf-anchor-go", forgeDir)`; the receiver
+    here makes the forge dir become the first argument to anchor()."""
+    recv = next(
+        (b for b in boxes if b.get("text", "") == "r sf-anchor-go"), None
+    )
+    assert recv is not None, "missing [r sf-anchor-go]"
+    prep = next(
+        (b for b in boxes if b.get("text", "") == "prepend anchor"), None
+    )
+    assert prep is not None, "missing [prepend anchor]"
+
+    assert (recv["id"], prep["id"]) in line_pairs
+    assert (prep["id"], "obj-sf-locator-anchor") in line_pairs
+
+
 # ── Snapshot / golden test on the picker + verb-row JSON ────────────────────
 
 
 def test_picker_and_verb_layout_snapshot(boxes):
-    """Snapshot the geometry of the 5 user-visible widgets so future
+    """Snapshot the geometry of the user-visible widgets so future
     layout edits are reviewable. If this test breaks because of a
-    deliberate move, update the expected dict here."""
+    deliberate move, update the expected dict here.
+
+    Layout (480x169):
+        row 1 (y=8-44):  Pick source (8,8,256,36) | Primary (272,8,200,36)
+        row 2 (y=52-80): COMMIT | BOUNCE | EXPORT | ANCH (4 × 113×28)
+    """
     expected = {
-        "sf_pick_source_btn": {"x": 8.0, "y": 8.0, "w": 360.0, "h": 32.0, "mode": 1},
-        # live.comment has no mode; absent key signals comment-widget.
-        "sf_status_picker_text": {"x": 8.0, "y": 48.0, "w": 700.0, "h": 28.0, "mode": None},
-        "sf_primary_btn": {"x": 720.0, "y": 8.0, "w": 92.0, "h": 44.0, "mode": 1},
-        "sf_commit_btn": {"x": 720.0, "y": 58.0, "mode": 1, "text": "COMMIT"},
-        "sf_bounce_btn": {"mode": 1, "text": "BOUNCE"},
-        "sf_export_btn": {"mode": 1, "text": "EXPORT"},
+        "sf_pick_source_btn": {"x": 8.0, "y": 8.0, "w": 256.0, "h": 36.0, "mode": 1},
+        "sf_primary_btn": {"x": 272.0, "y": 8.0, "w": 200.0, "h": 36.0, "mode": 1},
+        "sf_commit_btn": {"x": 8.0, "y": 52.0, "mode": 1, "text": "COMMIT"},
+        "sf_bounce_btn": {"x": 124.0, "y": 52.0, "mode": 1, "text": "BOUNCE"},
+        "sf_export_btn": {"x": 240.0, "y": 52.0, "mode": 1, "text": "EXPORT"},
+        "sf_anchor_btn": {"x": 356.0, "y": 52.0, "mode": 1, "text": "ANCH"},
     }
     found = {}
     for b in boxes:
@@ -631,4 +690,128 @@ def test_all_live_widgets_opt_out_of_parameter_enrollment(boxes):
     assert not offenders, (
         "live.* widgets without parameter_enable:0 or saved_attribute_attributes.valueof "
         f"(each emits one SendMessage error 2 at boot): {offenders}"
+    )
+
+
+# ── Phase 3B C2 — Device → Server HTTP wire ─────────────────────────────────
+
+
+# Hyphen→underscore convention MUST match `_httpRequestDictNameFor()` in
+# stemforge_loader.v0.js. The patcher's dict-name message boxes embed
+# these literals — any drift breaks the wire silently at runtime.
+HTTP_REQ_DICT_COMMIT = "sf_http_req_sf_commit_send"
+HTTP_REQ_DICT_BOUNCE_PROGRESS = "sf_http_req_sf_bounce_progress"
+HTTP_REQ_DICT_BOUNCE_COMPLETE = "sf_http_req_sf_bounce_complete"
+
+
+def test_http_maxurl_object_present(boxes):
+    """A single `[maxurl]` external owns all three POST verbs.
+
+    Verbosity must be 0 so dev sessions aren't drowned by per-request
+    console chatter; thread count >=2 so bounce-progress beacons (which
+    fire 3+ times back-to-back) don't block one another.
+    """
+    maxurl_boxes = [b for b in boxes if b.get("text", "").startswith("maxurl")]
+    assert len(maxurl_boxes) == 1, (
+        f"expected exactly one [maxurl] object; got {len(maxurl_boxes)}"
+    )
+    text = maxurl_boxes[0]["text"]
+    assert "@verbosity 0" in text, f"maxurl missing @verbosity 0: {text!r}"
+    # Thread count is the first positional arg after "maxurl".
+    tokens = text.split()
+    assert tokens[0] == "maxurl"
+    threads = int(tokens[1]) if len(tokens) > 1 and tokens[1].isdigit() else 1
+    assert threads >= 2, (
+        f"maxurl thread count must be >=2 so concurrent bounce posts don't "
+        f"block; got {threads}"
+    )
+
+
+@pytest.mark.parametrize(
+    "verb",
+    ["r sf-commit-send", "r sf-bounce-progress", "r sf-bounce-complete"],
+)
+def test_http_receivers_present(boxes, verb):
+    """Each of the three outbound HTTP verbs has a matching `[r <verb>]`.
+
+    Without these, JS `messnamed(verb, …)` calls land nowhere and the
+    server never sees a POST — the exact silent-drop failure mode C2
+    was opened to fix.
+    """
+    receivers = [b for b in boxes if b.get("text", "") == verb]
+    assert receivers, f"missing receiver: [{verb}]"
+
+
+@pytest.mark.parametrize(
+    "dict_name",
+    [
+        HTTP_REQ_DICT_COMMIT,
+        HTTP_REQ_DICT_BOUNCE_PROGRESS,
+        HTTP_REQ_DICT_BOUNCE_COMPLETE,
+    ],
+)
+def test_http_request_dict_messages_match_js_convention(boxes, dict_name):
+    """Each receiver pipes to a message box that fires
+    `dictionary <req_dict_name>` into maxurl.
+
+    The dict names are a wire contract with the JS loader's
+    `_httpRequestDictNameFor()` helper — any rename here without a
+    matching JS change silently breaks the post.
+    """
+    expected = f"dictionary {dict_name}"
+    msgs = [
+        b for b in boxes
+        if b.get("maxclass") == "message" and b.get("text", "") == expected
+    ]
+    assert msgs, f"missing message box with text {expected!r}"
+
+
+def test_http_request_chain_wired(line_pairs, boxes):
+    """End-to-end wire: each `[r sf-…]` → `[message dictionary …]` → `[maxurl]`."""
+    by_text = {b.get("text", ""): b["id"] for b in boxes}
+    maxurl_id = next(
+        b["id"] for b in boxes if b.get("text", "").startswith("maxurl")
+    )
+    pairs = [
+        ("r sf-commit-send", f"dictionary {HTTP_REQ_DICT_COMMIT}"),
+        ("r sf-bounce-progress", f"dictionary {HTTP_REQ_DICT_BOUNCE_PROGRESS}"),
+        ("r sf-bounce-complete", f"dictionary {HTTP_REQ_DICT_BOUNCE_COMPLETE}"),
+    ]
+    for recv_text, msg_text in pairs:
+        recv_id = by_text[recv_text]
+        msg_id = by_text[msg_text]
+        assert (recv_id, msg_id) in line_pairs, (
+            f"missing wire: [{recv_text}] → [{msg_text}]"
+        )
+        assert (msg_id, maxurl_id) in line_pairs, (
+            f"missing wire: [{msg_text}] → [maxurl]"
+        )
+
+
+def test_http_response_routed_to_loader(line_pairs, boxes):
+    """`[maxurl]` outlet 0 → `[route dictionary]` → `[prepend onHttpResponse]`
+    → `[js sf_lom_loader]` so JS receives the response dict name.
+
+    Without this chain, commitAck() never fires and the device's UI stalls
+    at `commit: sent` forever (one of the two acceptance-criteria failures
+    from the C2 handoff).
+    """
+    by_text = {b.get("text", ""): b["id"] for b in boxes}
+    maxurl_id = next(
+        b["id"] for b in boxes if b.get("text", "").startswith("maxurl")
+    )
+    route_id = by_text["route dictionary"]
+    prepend_id = by_text["prepend onHttpResponse"]
+    loader_id = next(
+        b["id"] for b in boxes
+        if b.get("text", "").startswith("js stemforge_loader.v0.js")
+    )
+    assert (maxurl_id, route_id) in line_pairs, (
+        "maxurl outlet 0 must feed [route dictionary]"
+    )
+    assert (route_id, prepend_id) in line_pairs, (
+        "[route dictionary] outlet 0 must feed [prepend onHttpResponse]"
+    )
+    assert (prepend_id, loader_id) in line_pairs, (
+        "[prepend onHttpResponse] must feed the JS loader"
     )

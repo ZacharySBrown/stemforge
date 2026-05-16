@@ -175,3 +175,70 @@ test('_alAdaptChunksToStems: bar_position is nullable (legacy chunks without pos
     assert.equal(adapted.drum.chunks[0].start_bar, null);
     assert.equal(adapted.drum.chunks[1].start_bar, null);
 });
+
+// ── Stem-name aliasing (plural ↔ singular) ─────────────────────────────────
+// Regression for ANCH → reload creating duplicate "drums"/"vocals" tracks:
+// LOAD FORGE writes singular-named tracks ("definition | drum"), the
+// prechop manifest emits plural stem keys, and the loader's substring
+// match failed → fell through to _alCreateAudioTrack with the plural
+// name. Caught 2026-05-15 after PR #125's ANCH button shipped.
+
+test('_AL_STEM_ALIASES round-trips drum/drums and vocal/vocals', () => {
+    const ctx = freshSandbox();
+    const { _AL_STEM_ALIASES } = getTestExports(ctx);
+    // JSON-roundtrip the vm-realm arrays into local-realm ones — Node's
+    // strict deepEqual treats cross-realm Array instances as unequal.
+    const aliases = JSON.parse(JSON.stringify(_AL_STEM_ALIASES));
+    assert.deepEqual(aliases.drum, ['drum', 'drums']);
+    assert.deepEqual(aliases.drums, ['drums', 'drum']);
+    assert.deepEqual(aliases.vocal, ['vocal', 'vocals']);
+    assert.deepEqual(aliases.vocals, ['vocals', 'vocal']);
+    assert.deepEqual(aliases.bass, ['bass']);
+    assert.deepEqual(aliases.other, ['other']);
+});
+
+test('_alFindTrackForStem("drums") matches a "definition | drum" track', () => {
+    const ctx = freshSandbox();
+    maxApi.seedLiveTree({
+        tracks: [
+            { _properties: { name: 'definition | drum',  has_audio_input: 1 } },
+            { _properties: { name: 'definition | bass',  has_audio_input: 1 } },
+            { _properties: { name: 'definition | other', has_audio_input: 1 } },
+            { _properties: { name: 'definition | vocal', has_audio_input: 1 } },
+        ],
+    });
+    const { _alFindTrackForStem } = getTestExports(ctx);
+
+    // Prechop emits plural keys; the singular tracks must still resolve.
+    assert.equal(_alFindTrackForStem('drums'), 0, "'drums' should find 'definition | drum'");
+    assert.equal(_alFindTrackForStem('vocals'), 3, "'vocals' should find 'definition | vocal'");
+});
+
+test('_alFindTrackForStem("drum") matches a "definition | drums" track', () => {
+    const ctx = freshSandbox();
+    maxApi.seedLiveTree({
+        tracks: [
+            { _properties: { name: 'definition | drums',  has_audio_input: 1 } },
+            { _properties: { name: 'definition | vocals', has_audio_input: 1 } },
+        ],
+    });
+    const { _alFindTrackForStem } = getTestExports(ctx);
+
+    // And the reverse — singular schema stems against pre-existing plural
+    // tracks must also resolve (the LOAD FORGE side may rename in the future).
+    assert.equal(_alFindTrackForStem('drum'), 0);
+    assert.equal(_alFindTrackForStem('vocal'), 1);
+});
+
+test('_alFindTrackForStem returns -1 when no track matches either alias', () => {
+    const ctx = freshSandbox();
+    maxApi.seedLiveTree({
+        tracks: [
+            { _properties: { name: 'Main',  has_audio_input: 1 } },
+            { _properties: { name: 'FORGE', has_audio_input: 1 } },
+        ],
+    });
+    const { _alFindTrackForStem } = getTestExports(ctx);
+    assert.equal(_alFindTrackForStem('drum'), -1);
+    assert.equal(_alFindTrackForStem('vocals'), -1);
+});

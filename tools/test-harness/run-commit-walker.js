@@ -80,7 +80,13 @@ function main() {
     );
     process.exit(1);
   }
-  const sentCurationName = sends[0].args[0];
+  // Phase 3B C2: args[0] is now the full POST URL; the curation name lives
+  // in the last `/curations/<name>/commit` path segment.
+  const sentUrl = String(sends[0].args[0] || "");
+  const urlMatch = sentUrl.match(/\/curations\/([^/]+)\/commit$/);
+  const sentCurationName = urlMatch
+    ? decodeURIComponent(urlMatch[1])
+    : sentUrl;
   let sentPayload;
   try {
     sentPayload = JSON.parse(sends[0].args[1]);

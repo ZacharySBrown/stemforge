@@ -16,16 +16,22 @@ device:
   bundle_identifier: "com.stemforge.m4l.v0"
   version: "0.1.0"
 
-# UI — 820×169px (M4L 169 is fixed; 820 is the spec canvas).
+# UI — 480×169px. M4L's height is fixed at 169; the previous 820 canvas
+# was a holdover from the v8ui matrix design (an off-presentation drawing
+# surface). The live.text refactor (999ee1d) made that canvas dead weight
+# behind the buttons — this trims to ~58% of the original width so the
+# device occupies a reasonable footprint in Live's track strip.
 ui:
-  size: { width: 820, height: 169 }
+  size: { width: 480, height: 169 }
 
-  # Visual body is drawn by v8ui; native objects live only in the 20px footer.
+  # v8ui sits behind the live.text widgets in patching mode (out of
+  # presentation). Kept so sf_state's refresh wire still has a destination
+  # for in-Max debug; not visible in Live.
   v8ui:
     id: sf_ui
     filename: sf_ui.js
     pos: { x: 0, y: 0 }
-    size: { width: 820, height: 149 }
+    size: { width: 480, height: 149 }
 
   status_bar:
     y: 152
@@ -36,15 +42,18 @@ ui:
       pos: { x: 8, y: 152 }
       size: { width: 12, height: 12 }
 
+    # Footer status_text is now the SINGLE dynamic status surface — driven
+    # by [r sf-status] (loader's outlet 0). The earlier 700px body box is
+    # gone (it covered most of the device for one line of text).
     status_text:
       id: sf_status_text
       pos: { x: 24, y: 152 }
-      size: { width: 600, height: 14 }
+      size: { width: 290, height: 14 }
 
     version_text:
       id: sf_version_text
-      pos: { x: 720, y: 152 }
-      size: { width: 90, height: 14 }
+      pos: { x: 422, y: 152 }
+      size: { width: 50, height: 14 }
 
 # JS modules to instantiate as classic [js] boxes in the patcher.
 # v8ui is handled separately. Order here is arbitrary (visual only).
