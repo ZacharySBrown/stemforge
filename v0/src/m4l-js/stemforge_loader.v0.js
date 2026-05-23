@@ -43,7 +43,7 @@ outlets = 4;   // 0: status text  1: bang  2: preset umenu  3: [shell] (mkdir-p)
 // File.readstring loops (caught during second-UAT run).
 
 // Build fingerprint, injected by tools/inject_build_manifest.py.
-var SF_BUILD_MANIFEST = "build=2026-05-16T19:43 amxd=967a3f8d js={sf_arrangement_loader=4bcd599d,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=77345a73,stemforge_loader.test=d15bbb07,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
+var SF_BUILD_MANIFEST = "build=2026-05-23T15:18 amxd=967a3f8d js={sf_arrangement_loader=4bcd599d,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=7035ac53,stemforge_loader.test=d15bbb07,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
 
 try {
     post("[sf_loader] " + SF_BUILD_MANIFEST + "\n");
@@ -810,6 +810,116 @@ function loadFromDict() {
            "`--pipeline pipelines/production_idm.yaml` to produce a " +
            "production-mode manifest.");
     outlet(1, "bang");
+}
+
+// ── setforge: 4-deck performance loader ─────────────────────────────────────
+// A live stem-DJing layout, distinct from the COMMIT `session_tracks` model
+// (which uses one track per deck with mixed stems in slots). Here each deck
+// (A/B/C/D) is FOUR flat audio tracks named "<DECK>-<stem>" — one stem per
+// track: "A-d" "A-b" "A-v" "A-o". loadDeck reloads a song's four stems into one
+// deck IN PLACE, leaving the other three decks untouched and still playing.
+// See docs/design-docs/setforge-loader.md.
+
+var SETFORGE_STEMS = ["d", "b", "v", "o"];
+var SETFORGE_STEM_KEY = { d: "drums", b: "bass", v: "vocals", o: "other" };
+
+// Convert a 0..1 hue to a Live color int (0xRRGGBB) at full saturation/value.
+// parseColor() covers int/#hex/{hex}; this is the hue path the deck manifest's
+// song.color_hue uses so each loaded song gets a vivid, distinct pad color.
+function hueToLiveColor(hue) {
+    var h = Number(hue);
+    if (!isFinite(h)) return null;
+    h = h - Math.floor(h);                       // wrap into [0,1)
+    var i = Math.floor(h * 6);
+    var f = h * 6 - i;
+    var q = 1 - f;
+    var r, g, b;
+    switch (i % 6) {
+        case 0: r = 1; g = f; b = 0; break;
+        case 1: r = q; g = 1; b = 0; break;
+        case 2: r = 0; g = 1; b = f; break;
+        case 3: r = 0; g = q; b = 1; break;
+        case 4: r = f; g = 0; b = 1; break;
+        default: r = 1; g = 0; b = q; break;
+    }
+    return (Math.round(r * 255) << 16) | (Math.round(g * 255) << 8) | Math.round(b * 255);
+}
+
+// Verify every clip's audio file exists BEFORE touching the session, so a bad
+// manifest can't half-load a live deck. Returns true iff all `rows` clips of
+// all four stems are present on disk.
+function validateDeckPaths(mf) {
+    if (!mf || !mf.stems) return false;
+    var rows = Number(mf.rows) || 0;
+    if (rows < 1) { status("deck manifest: rows must be >= 1"); return false; }
+    for (var i = 0; i < SETFORGE_STEMS.length; i++) {
+        var key = SETFORGE_STEM_KEY[SETFORGE_STEMS[i]];
+        var block = mf.stems[key];
+        if (!block || !block.clips || block.clips.length < rows) {
+            status("deck manifest missing " + key + " clips (need " + rows + ")");
+            return false;
+        }
+        for (var s = 0; s < rows; s++) {
+            var ap = block.clips[s] && block.clips[s].audio_path;
+            if (!ap || !_sfFileExists(ap)) {
+                status("deck file missing: " + key + " v" + s + " -> " + ap);
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+// Load one song's four stems into one deck's tracks, reloading clips in place.
+// `mf` is the parsed deck manifest (design doc §4). Reuses loadClip (which
+// already does delete->create->probe and sets warping/looping/name); loadDeck
+// only adds the per-clip color so the Launchpad mirrors it on the pad.
+function loadDeck(mf) {
+    if (!mf || !mf.deck) { status("loadDeck: no deck in manifest"); return; }
+    var deck = String(mf.deck);
+    var rows = Number(mf.rows) || 1;
+    var songName = (mf.song && mf.song.name) || "song";
+    var color = hueToLiveColor(mf.song && mf.song.color_hue);
+
+    if (!validateDeckPaths(mf)) { status("loadDeck aborted: deck " + deck); return; }
+    try { ensureScenes(rows); } catch (_eSc) { /* best-effort */ }
+
+    var totalPlaced = 0;
+    for (var i = 0; i < SETFORGE_STEMS.length; i++) {
+        var stem = SETFORGE_STEMS[i];
+        var trackName = deck + "-" + stem;
+        var trackIdx = findTrackByName(trackName);
+        if (trackIdx < 0) { status("loadDeck: no track " + trackName); return; }
+
+        var clips = mf.stems[SETFORGE_STEM_KEY[stem]].clips;
+        for (var s = 0; s < rows; s++) {
+            var clipName = songName + " " + stem + " v" + s;
+            if (!loadClip(trackIdx, s, clips[s].audio_path, clipName)) continue;
+            if (color !== null) {
+                try {
+                    var clip = new LiveAPI(
+                        "live_set tracks " + trackIdx + " clip_slots " + s + " clip");
+                    if (clip && clip.id !== "0") clip.set("color", color);
+                } catch (_eCol) { /* color is cosmetic; never block the load */ }
+            }
+            totalPlaced++;
+        }
+    }
+    status("Deck " + deck + " <- " + songName + " (" + totalPlaced + " clips)");
+    outlet(1, "bang");
+}
+
+// Max dict entry: read a deck manifest from a [dict] and load it. Mirrors
+// loadFromDict()'s plumbing — this is what the device/taste wires to.
+function loadDeckFromDict() {
+    var dictName = arrayfromargs(messagename, arguments).slice(1).join(" ") || "sf_deck";
+    var d;
+    try { d = new Dict(dictName); }
+    catch (e) { status("loadDeckFromDict: cannot open dict " + dictName + ": " + e); return; }
+    var mf;
+    try { mf = _unwrapDictContent(JSON.parse(d.stringify())); }
+    catch (e) { status("loadDeckFromDict: parse error: " + e); return; }
+    loadDeck(mf);
 }
 
 function ensureScenes(n) {
