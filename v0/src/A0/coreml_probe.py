@@ -17,13 +17,14 @@ running a single-inference forward pass with timing. The brief requires
 wall-clock latency on a 30-second stereo @ 44.1 kHz input; the concrete
 input shape is model-specific so the caller passes it via `probe_inputs`.
 """
+
 from __future__ import annotations
 
 import os
 import time
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 import numpy as np
 
@@ -77,13 +78,12 @@ def _coreml_providers() -> list:
         # Keep models that touch dynamic shapes on CPU inside the EP itself.
         "RequireStaticInputShapes": "0",
     }
-    return [("CoreMLExecutionProvider", coreml_opts),
-            "CPUExecutionProvider"]
+    return [("CoreMLExecutionProvider", coreml_opts), "CPUExecutionProvider"]
 
 
-def probe(onnx_path: Path, model_name: str,
-          probe_inputs: dict[str, np.ndarray],
-          runs: int = 1) -> CoreMLProbe:
+def probe(
+    onnx_path: Path, model_name: str, probe_inputs: dict[str, np.ndarray], runs: int = 1
+) -> CoreMLProbe:
     """
     Load `onnx_path` on CoreML EP and CPU-only. Measure single-inference
     wall clock for each. Record any ops that fell back.
@@ -103,7 +103,8 @@ def probe(onnx_path: Path, model_name: str,
 
     try:
         sess_cpu = ort.InferenceSession(
-            str(onnx_path), sess_options=so,
+            str(onnx_path),
+            sess_options=so,
             providers=["CPUExecutionProvider"],
         )
     except Exception as e:
@@ -121,7 +122,8 @@ def probe(onnx_path: Path, model_name: str,
     # with "CoreML refused to load at all".
     try:
         sess_cml = ort.InferenceSession(
-            str(onnx_path), sess_options=so,
+            str(onnx_path),
+            sess_options=so,
             providers=_coreml_providers(),
         )
         res.providers_resolved = list(sess_cml.get_providers())
@@ -172,9 +174,14 @@ def _collect_cpu_fallback_ops(onnx_path: Path, model_name: str) -> list[str]:
     # This list is intentionally conservative; Track A should replace it with
     # the runtime-captured assignment log on first launch.
     unsupported_hint = {
-        "STFT", "ISTFT", "SpectrogramExtractor", "MFCC",
-        "ComplexMul", "RealCosineTransform",
-        "NonMaxSuppression", "CumSum",
+        "STFT",
+        "ISTFT",
+        "SpectrogramExtractor",
+        "MFCC",
+        "ComplexMul",
+        "RealCosineTransform",
+        "NonMaxSuppression",
+        "CumSum",
         "LSTM",  # partial support — varies by version/activation
     }
     return sorted(ops & unsupported_hint)

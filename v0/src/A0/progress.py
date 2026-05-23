@@ -10,10 +10,10 @@ Follows the shared-memory protocol in `v0/SHARED.md`:
 
 Only A0 writes these paths. Other tracks are read-only over them.
 """
+
 from __future__ import annotations
 
 import json
-import os
 import sys
 import time
 from datetime import datetime, timezone
@@ -45,8 +45,9 @@ def emit(phase: str, pct: int | float, message: str, **fields: Any) -> None:
     sys.stderr.flush()
 
 
-def write_artifacts(status: str, artifacts: list[dict[str, Any]],
-                    duration_sec: float, **extras: Any) -> None:
+def write_artifacts(
+    status: str, artifacts: list[dict[str, Any]], duration_sec: float, **extras: Any
+) -> None:
     """Write the artifacts.json summary (SHARED.md format)."""
     config.A0_STATE_DIR.mkdir(parents=True, exist_ok=True)
     doc = {
@@ -86,8 +87,7 @@ def write_blocker(title: str, body_md: str) -> None:
 class Timer:
     """Context manager that records per-stage wall-clock latency into perf.json."""
 
-    def __init__(self, stage: str, perf_path: Path = config.STATE_PERF_JSON,
-                 **extras: Any) -> None:
+    def __init__(self, stage: str, perf_path: Path = config.STATE_PERF_JSON, **extras: Any) -> None:
         self.stage = stage
         self.perf_path = perf_path
         self.extras = extras
@@ -99,8 +99,9 @@ class Timer:
 
     def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
         dt = time.perf_counter() - self.t0
-        self._append({"stage": self.stage, "seconds": round(dt, 4),
-                      "failed": exc is not None, **self.extras})
+        self._append(
+            {"stage": self.stage, "seconds": round(dt, 4), "failed": exc is not None, **self.extras}
+        )
 
     def _append(self, rec: dict[str, Any]) -> None:
         self.perf_path.parent.mkdir(parents=True, exist_ok=True)

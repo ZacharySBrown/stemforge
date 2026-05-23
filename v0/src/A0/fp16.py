@@ -12,6 +12,7 @@ PIVOT §E requirements for A0.7:
 For classifiers (CLAP, AST) the null-test morphs into "top-1 accuracy within
 1% on ≥200-sample eval set". Callers pass the appropriate metric.
 """
+
 from __future__ import annotations
 
 import math
@@ -50,15 +51,20 @@ def rms_dbfs(signal: np.ndarray) -> float:
     signal = np.asarray(signal, dtype=np.float64)
     if signal.size == 0:
         return -math.inf
-    rms = float(np.sqrt(np.mean(signal ** 2)))
+    rms = float(np.sqrt(np.mean(signal**2)))
     if rms <= 0.0:
         return -math.inf
     return 20.0 * math.log10(rms)
 
 
-def null_test(fp32_output: np.ndarray, fp16_output: np.ndarray,
-              *, model_name: str, fixture: str,
-              threshold_dbfs: float = NULL_TEST_FLOOR_DBFS) -> NullTestResult:
+def null_test(
+    fp32_output: np.ndarray,
+    fp16_output: np.ndarray,
+    *,
+    model_name: str,
+    fixture: str,
+    threshold_dbfs: float = NULL_TEST_FLOOR_DBFS,
+) -> NullTestResult:
     """Compute residual and compare to threshold."""
     a = np.asarray(fp32_output, dtype=np.float64)
     b = np.asarray(fp16_output, dtype=np.float64)
@@ -76,15 +82,15 @@ def null_test(fp32_output: np.ndarray, fp16_output: np.ndarray,
     )
 
 
-def convert_to_fp16(src_onnx: Path, dst_onnx: Path, *,
-                    keep_io_types: bool = True) -> None:
+def convert_to_fp16(src_onnx: Path, dst_onnx: Path, *, keep_io_types: bool = True) -> None:
     """Wrap `onnxconverter_common.float16.convert_float_to_float16`."""
     import onnx
     from onnxconverter_common import float16
 
     model = onnx.load(str(src_onnx))
     model_fp16 = float16.convert_float_to_float16(
-        model, keep_io_types=keep_io_types,
+        model,
+        keep_io_types=keep_io_types,
     )
     dst_onnx.parent.mkdir(parents=True, exist_ok=True)
     onnx.save(model_fp16, str(dst_onnx))
@@ -110,10 +116,14 @@ class Fp16Attempt:
         }
 
 
-def attempt_fp16(fp32_path: Path, fp16_path: Path, model_name: str,
-                 run_fn: Callable[[Path], dict[str, np.ndarray]],
-                 fixture_names: Iterable[str],
-                 threshold_dbfs: float = NULL_TEST_FLOOR_DBFS) -> Fp16Attempt:
+def attempt_fp16(
+    fp32_path: Path,
+    fp16_path: Path,
+    model_name: str,
+    run_fn: Callable[[Path], dict[str, np.ndarray]],
+    fixture_names: Iterable[str],
+    threshold_dbfs: float = NULL_TEST_FLOOR_DBFS,
+) -> Fp16Attempt:
     """
     High-level helper: convert fp32→fp16, run `run_fn` on both, null-test.
 
@@ -124,25 +134,36 @@ def attempt_fp16(fp32_path: Path, fp16_path: Path, model_name: str,
     try:
         convert_to_fp16(fp32_path, fp16_path)
     except Exception as e:
-        return Fp16Attempt(model_name=model_name, fp32_path=str(fp32_path),
-                           fp16_path=None, notes=f"conversion failed: {e!s}")
+        return Fp16Attempt(
+            model_name=model_name,
+            fp32_path=str(fp32_path),
+            fp16_path=None,
+            notes=f"conversion failed: {e!s}",
+        )
 
     try:
         fp32_out = run_fn(fp32_path)
         fp16_out = run_fn(fp16_path)
     except Exception as e:
-        return Fp16Attempt(model_name=model_name, fp32_path=str(fp32_path),
-                           fp16_path=str(fp16_path),
-                           notes=f"inference failed: {e!s}")
+        return Fp16Attempt(
+            model_name=model_name,
+            fp32_path=str(fp32_path),
+            fp16_path=str(fp16_path),
+            notes=f"inference failed: {e!s}",
+        )
 
     residuals = []
     all_ok = True
     for name in fixture_names:
         if name not in fp32_out or name not in fp16_out:
             continue
-        r = null_test(fp32_out[name], fp16_out[name],
-                      model_name=model_name, fixture=name,
-                      threshold_dbfs=threshold_dbfs)
+        r = null_test(
+            fp32_out[name],
+            fp16_out[name],
+            model_name=model_name,
+            fixture=name,
+            threshold_dbfs=threshold_dbfs,
+        )
         residuals.append(r)
         all_ok &= r.passed
 
@@ -157,17 +178,20 @@ def attempt_fp16(fp32_path: Path, fp16_path: Path, model_name: str,
 
 def write_fp16_report(path: Path, attempts: list[Fp16Attempt]) -> None:
     """Write `v0/state/A0/fp16_report.md` when any attempt fails."""
-    lines = ["# fp16 Export Investigation — Track A0.7",
-             "",
-             "Null-test threshold: RMS residual of (fp32 − fp16) ≤ "
-             f"{NULL_TEST_FLOOR_DBFS} dBFS.",
-             "",
-             "| Model | Fixture | Residual RMS (dBFS) | Peak |abs| | Pass |",
-             "|---|---|---:|---:|:---:|"]
+    lines = [
+        "# fp16 Export Investigation — Track A0.7",
+        "",
+        f"Null-test threshold: RMS residual of (fp32 − fp16) ≤ {NULL_TEST_FLOOR_DBFS} dBFS.",
+        "",
+        "| Model | Fixture | Residual RMS (dBFS) | Peak |abs| | Pass |",
+        "|---|---|---:|---:|:---:|",
+    ]
     for a in attempts:
         if not a.residuals:
-            lines.append(f"| {a.model_name} | (no residuals) | — | — | "
-                         f"{'skip' if 'skip' in a.notes else 'fail'} |")
+            lines.append(
+                f"| {a.model_name} | (no residuals) | — | — | "
+                f"{'skip' if 'skip' in a.notes else 'fail'} |"
+            )
             continue
         for r in a.residuals:
             lines.append(

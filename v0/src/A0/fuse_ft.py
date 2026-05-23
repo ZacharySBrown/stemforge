@@ -41,6 +41,7 @@ Usage::
 
     uv run --active python -m v0.src.A0.fuse_ft
 """
+
 from __future__ import annotations
 
 import argparse
@@ -50,7 +51,6 @@ import sys
 import time
 import traceback
 from pathlib import Path
-from typing import Any
 
 import onnx
 from onnx import helper, TensorProto
@@ -66,8 +66,10 @@ SPECIALIST_SOURCES = ["drums", "bass", "other", "vocals"]
 
 
 def _dims_of(vi: onnx.ValueInfoProto) -> list[int | str]:
-    return [d.dim_value if d.HasField("dim_value") else d.dim_param
-            for d in vi.type.tensor_type.shape.dim]
+    return [
+        d.dim_value if d.HasField("dim_value") else d.dim_param
+        for d in vi.type.tensor_type.shape.dim
+    ]
 
 
 def _dedupe_opsets(model: onnx.ModelProto) -> None:
@@ -101,16 +103,18 @@ def fuse_ft(head_paths: list[Path], dst_onnx: Path) -> onnx.ModelProto:
     zcac_vi = next(vi for vi in fused.graph.input if vi.name == "h0__z_cac")
 
     shared_mix = helper.make_tensor_value_info(
-        "mix", mix_vi.type.tensor_type.elem_type, _dims_of(mix_vi))
+        "mix", mix_vi.type.tensor_type.elem_type, _dims_of(mix_vi)
+    )
     shared_zcac = helper.make_tensor_value_info(
-        "z_cac", zcac_vi.type.tensor_type.elem_type, _dims_of(zcac_vi))
+        "z_cac", zcac_vi.type.tensor_type.elem_type, _dims_of(zcac_vi)
+    )
 
     fanout = []
     for i in range(4):
-        fanout.append(helper.make_node(
-            "Identity", ["mix"], [f"h{i}__mix"], name=f"fanout_mix_{i}"))
-        fanout.append(helper.make_node(
-            "Identity", ["z_cac"], [f"h{i}__z_cac"], name=f"fanout_zcac_{i}"))
+        fanout.append(helper.make_node("Identity", ["mix"], [f"h{i}__mix"], name=f"fanout_mix_{i}"))
+        fanout.append(
+            helper.make_node("Identity", ["z_cac"], [f"h{i}__z_cac"], name=f"fanout_zcac_{i}")
+        )
 
     g = fused.graph
     skip = {f"h{i}__mix" for i in range(4)} | {f"h{i}__z_cac" for i in range(4)}
@@ -137,21 +141,33 @@ def fuse_ft(head_paths: list[Path], dst_onnx: Path) -> onnx.ModelProto:
     picked_time = []
     picked_zcac = []
     for i in range(4):
-        picker_nodes.append(helper.make_node(
-            "Gather", [f"h{i}__time_out", f"src_idx_{i}"], [f"pick_time_{i}"],
-            name=f"pick_time_{i}", axis=1))
-        picker_nodes.append(helper.make_node(
-            "Gather", [f"h{i}__zout_cac", f"src_idx_{i}"], [f"pick_zcac_{i}"],
-            name=f"pick_zcac_{i}", axis=1))
+        picker_nodes.append(
+            helper.make_node(
+                "Gather",
+                [f"h{i}__time_out", f"src_idx_{i}"],
+                [f"pick_time_{i}"],
+                name=f"pick_time_{i}",
+                axis=1,
+            )
+        )
+        picker_nodes.append(
+            helper.make_node(
+                "Gather",
+                [f"h{i}__zout_cac", f"src_idx_{i}"],
+                [f"pick_zcac_{i}"],
+                name=f"pick_zcac_{i}",
+                axis=1,
+            )
+        )
         picked_time.append(f"pick_time_{i}")
         picked_zcac.append(f"pick_zcac_{i}")
     # Concat along axis=1 (source dim) to reconstruct a 4-stem tensor.
-    picker_nodes.append(helper.make_node(
-        "Concat", picked_time, ["time_out_stacked"],
-        name="concat_time", axis=1))
-    picker_nodes.append(helper.make_node(
-        "Concat", picked_zcac, ["zout_cac_stacked"],
-        name="concat_zcac", axis=1))
+    picker_nodes.append(
+        helper.make_node("Concat", picked_time, ["time_out_stacked"], name="concat_time", axis=1)
+    )
+    picker_nodes.append(
+        helper.make_node("Concat", picked_zcac, ["zout_cac_stacked"], name="concat_zcac", axis=1)
+    )
 
     g.node.extend(picker_nodes)
 
@@ -164,14 +180,16 @@ def fuse_ft(head_paths: list[Path], dst_onnx: Path) -> onnx.ModelProto:
     # CPU fallback). Hardcoding the output value_info from the static input
     # dims avoids that — the upstream Gather+Concat are mathematically equivalent
     # to (batch, 4 sources, mix_channels, mix_samples).
-    mix_dims = _dims_of(mix_vi)        # (1, 2, 343980)
-    zcac_dims = _dims_of(zcac_vi)      # (1, 4, 2048, 336)
+    mix_dims = _dims_of(mix_vi)  # (1, 2, 343980)
+    zcac_dims = _dims_of(zcac_vi)  # (1, 4, 2048, 336)
     time_shape_static = [mix_dims[0], 4, mix_dims[1], mix_dims[2]]
     zcac_shape_static = [zcac_dims[0], 4, zcac_dims[1], zcac_dims[2], zcac_dims[3]]
     new_time = helper.make_tensor_value_info(
-        "time_out_stacked", TensorProto.FLOAT, time_shape_static)
+        "time_out_stacked", TensorProto.FLOAT, time_shape_static
+    )
     new_zcac = helper.make_tensor_value_info(
-        "zout_cac_stacked", TensorProto.FLOAT, zcac_shape_static)
+        "zout_cac_stacked", TensorProto.FLOAT, zcac_shape_static
+    )
     del g.output[:]
     g.output.extend([new_time, new_zcac])
 
@@ -223,8 +241,7 @@ def main(argv: list[str] | None = None) -> int:
 
     out_dir = Path(args.out_dir)
     out_path = out_dir / args.out_name
-    head_paths = [out_dir / f"htdemucs_ft.head{i}_static.onnx"
-                  for i in range(4)]
+    head_paths = [out_dir / f"htdemucs_ft.head{i}_static.onnx" for i in range(4)]
     for p in head_paths:
         if not p.exists():
             print(f"MISSING: {p}", file=sys.stderr)

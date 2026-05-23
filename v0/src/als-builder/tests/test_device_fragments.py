@@ -40,9 +40,7 @@ def test_compressor_params_applied():
 
 
 def test_reverb_decay_converted_to_ms():
-    elem = build_stock_device(
-        "Reverb", {"decay_sec": 6.0, "diffusion": 0.95}
-    )
+    elem = build_stock_device("Reverb", {"decay_sec": 6.0, "diffusion": 0.95})
     # 6.0 s → 6000 ms, but it's an integer-ish float → "6000"
     assert elem.find("./DecayTime/Manual").get("Value") == "6000"
     assert elem.find("./Diffusion/Manual").get("Value") == "0.95"
@@ -54,9 +52,7 @@ def test_utility_gain():
 
 
 def test_simpler_slice_mode():
-    elem = build_stock_device(
-        "Simpler", {"mode": "slice", "warp": "off"}
-    )
+    elem = build_stock_device("Simpler", {"mode": "slice", "warp": "off"})
     assert elem.find("./Playback/PlayMode/Manual").get("Value") == "2"
     assert elem.find("./Player/Warping/Manual").get("Value") == "false"
 

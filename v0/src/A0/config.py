@@ -5,6 +5,7 @@ All path/name/threshold constants live here so `convert.py`, `validate.py`,
 and the tests agree on the same values. Keep this module dependency-free
 (no torch, no onnx imports) so it is cheap to load from the test suite.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -16,7 +17,7 @@ from pathlib import Path
 # `v0/src/A0/config.py` → parents[3] is the repo root.
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-A0_SRC_DIR   = REPO_ROOT / "v0" / "src" / "A0"
+A0_SRC_DIR = REPO_ROOT / "v0" / "src" / "A0"
 A0_STATE_DIR = REPO_ROOT / "v0" / "state" / "A0"
 BUILD_MODELS_DIR = REPO_ROOT / "v0" / "build" / "models"
 
@@ -24,13 +25,13 @@ BUILD_MODELS_DIR = REPO_ROOT / "v0" / "build" / "models"
 ORT_CACHE_DIR = BUILD_MODELS_DIR / "ort_cache"
 
 # Files written to v0/state/A0/
-STATE_PROGRESS_NDJSON      = A0_STATE_DIR / "progress.ndjson"
-STATE_ARTIFACTS_JSON       = A0_STATE_DIR / "artifacts.json"
-STATE_VALIDATION_REPORT    = A0_STATE_DIR / "validation_report.json"
-STATE_FP16_REPORT_MD       = A0_STATE_DIR / "fp16_report.md"
-STATE_PERF_JSON            = A0_STATE_DIR / "perf.json"
-STATE_DONE_FLAG            = A0_STATE_DIR / "done.flag"
-STATE_BLOCKER_MD           = A0_STATE_DIR / "blocker.md"
+STATE_PROGRESS_NDJSON = A0_STATE_DIR / "progress.ndjson"
+STATE_ARTIFACTS_JSON = A0_STATE_DIR / "artifacts.json"
+STATE_VALIDATION_REPORT = A0_STATE_DIR / "validation_report.json"
+STATE_FP16_REPORT_MD = A0_STATE_DIR / "fp16_report.md"
+STATE_PERF_JSON = A0_STATE_DIR / "perf.json"
+STATE_DONE_FLAG = A0_STATE_DIR / "done.flag"
+STATE_BLOCKER_MD = A0_STATE_DIR / "blocker.md"
 
 MANIFEST_PATH = BUILD_MODELS_DIR / "manifest.json"
 
@@ -39,9 +40,9 @@ MANIFEST_PATH = BUILD_MODELS_DIR / "manifest.json"
 
 DEMUCS_MODELS = {
     # key                # (torch_ref_checkpoint, onnx_filename, priority,     purpose)
-    "htdemucs_ft":  ("htdemucs_ft",  "htdemucs_ft.onnx",  "primary",   "fine-tuned 4-stem"),
-    "htdemucs_6s":  ("htdemucs_6s",  "htdemucs_6s.onnx",  "secondary", "6-stem (guitar+piano)"),
-    "htdemucs":     ("htdemucs",     "htdemucs.onnx",     "fallback",  "base 4-stem"),
+    "htdemucs_ft": ("htdemucs_ft", "htdemucs_ft.onnx", "primary", "fine-tuned 4-stem"),
+    "htdemucs_6s": ("htdemucs_6s", "htdemucs_6s.onnx", "secondary", "6-stem (guitar+piano)"),
+    "htdemucs": ("htdemucs", "htdemucs.onnx", "fallback", "base 4-stem"),
 }
 
 CLAP_CHECKPOINT = "laion/clap-htsat-unfused"
@@ -64,14 +65,15 @@ AST_ONNX_FILENAME = "ast_audioset.onnx"
 # Wider tolerances are acceptable with a listening test; any loosened value
 # must be recorded explicitly in `validation_report.json`.
 
+
 @dataclass(frozen=True)
 class ParityTargets:
     demucs_max_abs_err: float = 1.0e-3
     demucs_max_rel_err: float = 1.0e-2
-    clap_min_cosine:     float = 0.999
-    ast_max_logit_diff:  float = 1.0e-3
-    ast_topk_labels:     int   = 5
-    fp16_null_rms_dbfs_max: float = -60.0   # stricter = more negative
+    clap_min_cosine: float = 0.999
+    ast_max_logit_diff: float = 1.0e-3
+    ast_topk_labels: int = 5
+    fp16_null_rms_dbfs_max: float = -60.0  # stricter = more negative
 
 
 PARITY = ParityTargets()

@@ -40,6 +40,7 @@ that this factoring is numerically equivalent to upstream ``forward``.
   6. ``run_bag_onnx`` — average per-head ONNX outputs the way
      ``demucs.apply.apply_model`` averages bag-of-heads internally.
 """
+
 from __future__ import annotations
 
 import math
@@ -56,11 +57,12 @@ from .progress import Timer, emit
 
 # ── STFT parameters HTDemucs uses internally (demucs/spec.py) ────────────────
 
+
 @dataclass(frozen=True)
 class StftConfig:
     n_fft: int = 4096
     hop_length: int = 1024
-    window: str = "hann"    # hann_window(n_fft)
+    window: str = "hann"  # hann_window(n_fft)
     center: bool = True
     pad_mode: str = "reflect"
     normalized: bool = False
@@ -94,12 +96,14 @@ def stft_params() -> dict[str, Any]:
 try:
     import torch
     import torch.nn as nn
+
     _TORCH_OK = True
 except ImportError:  # pragma: no cover
     _TORCH_OK = False
 
 
 if _TORCH_OK:
+
     class ExternalSpecHTDemucs(nn.Module):
         """
         Wraps one HTDemucs head so that STFT/iSTFT happen outside the graph.
@@ -129,6 +133,7 @@ if _TORCH_OK:
         def forward(self, mix: "torch.Tensor", z_cac: "torch.Tensor"):
             return self.head.forward_from_spec_cac(mix, z_cac)
 else:  # pragma: no cover
+
     class ExternalSpecHTDemucs:  # type: ignore[no-redef]
         def __init__(self, *a, **kw):
             raise RuntimeError("torch is not installed")
@@ -139,8 +144,10 @@ else:  # pragma: no cover
 # These are thin wrappers around the logic in the vendored module so the
 # validate harness and the C++ host share one reference.
 
-def apply_stft(mix_padded: "torch.Tensor", n_fft: int = STFT.n_fft,
-               hop: int = STFT.hop_length) -> "torch.Tensor":
+
+def apply_stft(
+    mix_padded: "torch.Tensor", n_fft: int = STFT.n_fft, hop: int = STFT.hop_length
+) -> "torch.Tensor":
     """
     Compute the complex spectrogram exactly as demucs.htdemucs._spec does.
 
@@ -148,32 +155,34 @@ def apply_stft(mix_padded: "torch.Tensor", n_fft: int = STFT.n_fft,
     """
     from demucs.spec import spectro
     from demucs.hdemucs import pad1d
+
     assert hop == n_fft // 4
     le = int(math.ceil(mix_padded.shape[-1] / hop))
     pad = hop // 2 * 3
-    x = pad1d(mix_padded, (pad, pad + le * hop - mix_padded.shape[-1]),
-              mode="reflect")
+    x = pad1d(mix_padded, (pad, pad + le * hop - mix_padded.shape[-1]), mode="reflect")
     z = spectro(x, n_fft, hop)[..., :-1, :]
-    z = z[..., 2: 2 + le]
+    z = z[..., 2 : 2 + le]
     return z
 
 
-def apply_istft(zout: "torch.Tensor", length: int,
-                n_fft: int = STFT.n_fft,
-                hop: int = STFT.hop_length) -> "torch.Tensor":
+def apply_istft(
+    zout: "torch.Tensor", length: int, n_fft: int = STFT.n_fft, hop: int = STFT.hop_length
+) -> "torch.Tensor":
     """Inverse STFT matching demucs.htdemucs._ispec at scale=0."""
     import torch.nn.functional as F
     from demucs.spec import ispectro
+
     z = F.pad(zout, (0, 0, 0, 1))
     z = F.pad(z, (2, 2))
     pad = hop // 2 * 3
     le = hop * int(math.ceil(length / hop)) + 2 * pad
     x = ispectro(z, hop, length=le)
-    x = x[..., pad: pad + length]
+    x = x[..., pad : pad + length]
     return x
 
 
 # ── Export entrypoint ───────────────────────────────────────────────────────
+
 
 def _wrap_head_with_vendored_class(head: "nn.Module") -> "nn.Module":
     """
@@ -191,10 +200,9 @@ def _wrap_head_with_vendored_class(head: "nn.Module") -> "nn.Module":
     """
     from stemforge._vendor.demucs_patched import HTDemucs as VendoredHTDemucs
     import types
-    for name in ("forward_from_spec", "forward_from_spec_cac",
-                 "_learned_forward"):
-        setattr(head, name, types.MethodType(getattr(VendoredHTDemucs, name),
-                                             head))
+
+    for name in ("forward_from_spec", "forward_from_spec_cac", "_learned_forward"):
+        setattr(head, name, types.MethodType(getattr(VendoredHTDemucs, name), head))
     return head
 
 
@@ -216,14 +224,12 @@ def pack_cac(z_complex: "torch.Tensor") -> "torch.Tensor":
     return m.reshape(B, C * 2, Fq, T).contiguous()
 
 
-def unpack_cac(zout_cac: "torch.Tensor", audio_channels: int = 2
-               ) -> "torch.Tensor":
+def unpack_cac(zout_cac: "torch.Tensor", audio_channels: int = 2) -> "torch.Tensor":
     """
     Invert :func:`pack_cac` on the network output ``(B, S, 2*C, Fq, T)``
     → complex ``(B, S, C, Fq, T)``.
     """
     B, S, twoC, Fq, T = zout_cac.shape
-    C = twoC // audio_channels  # For audio_channels=2 and twoC=4 → C=2
     # Reshape to (B, S, C, 2, Fq, T), permute so the trailing dim is the
     # real/imag pair, then view_as_complex.
     z = zout_cac.view(B, S, audio_channels, 2, Fq, T)
@@ -231,8 +237,7 @@ def unpack_cac(zout_cac: "torch.Tensor", audio_channels: int = 2
     return torch.view_as_complex(z)
 
 
-def export_head(head_module: "nn.Module", dst_onnx: Path,
-                segment_samples: int) -> Path:
+def export_head(head_module: "nn.Module", dst_onnx: Path, segment_samples: int) -> Path:
     """
     Export one HTDemucs head as ONNX using the external-spec refactor.
 
@@ -256,8 +261,7 @@ def export_head(head_module: "nn.Module", dst_onnx: Path,
     z_cac = torch.zeros(1, 4, freq_bins, frames)  # 2 audio chans × 2 (re, im)
 
     dst_onnx.parent.mkdir(parents=True, exist_ok=True)
-    with Timer(f"demucs.export_head.{dst_onnx.stem}",
-               segment_samples=segment_samples):
+    with Timer(f"demucs.export_head.{dst_onnx.stem}", segment_samples=segment_samples):
         torch.onnx.export(
             wrapper,
             (mix, z_cac),
@@ -279,8 +283,10 @@ def export_head(head_module: "nn.Module", dst_onnx: Path,
 
 # ── Legacy in-graph export (retained for diagnostic / smoke-test) ───────────
 
-def attempt_in_graph_export(head_module: "nn.Module", dst_onnx: Path,
-                            segment_samples: int) -> tuple[bool, str]:
+
+def attempt_in_graph_export(
+    head_module: "nn.Module", dst_onnx: Path, segment_samples: int
+) -> tuple[bool, str]:
     """
     Attempt the direct ``torch.onnx.export(head)`` with STFT inside the graph.
 
@@ -299,10 +305,15 @@ def attempt_in_graph_export(head_module: "nn.Module", dst_onnx: Path,
         try:
             with Timer(f"demucs.export.in_graph.dynamo={dynamo_flag}"):
                 torch.onnx.export(
-                    head_module.eval(), (mix,), str(dst_onnx),
-                    input_names=["mix"], output_names=["stems"],
-                    dynamic_axes={"mix": {0: "batch", 2: "samples"},
-                                  "stems": {0: "batch", 3: "samples"}},
+                    head_module.eval(),
+                    (mix,),
+                    str(dst_onnx),
+                    input_names=["mix"],
+                    output_names=["stems"],
+                    dynamic_axes={
+                        "mix": {0: "batch", 2: "samples"},
+                        "stems": {0: "batch", 3: "samples"},
+                    },
                     opset_version=config.OPSET_VERSION,
                     do_constant_folding=True,
                     dynamo=dynamo_flag,
@@ -316,8 +327,8 @@ def attempt_in_graph_export(head_module: "nn.Module", dst_onnx: Path,
 
 # ── Inference helpers ───────────────────────────────────────────────────────
 
-def run_head_onnx(onnx_path: Path, mix_np: np.ndarray,
-                  providers: list | None = None) -> np.ndarray:
+
+def run_head_onnx(onnx_path: Path, mix_np: np.ndarray, providers: list | None = None) -> np.ndarray:
     """
     Run one ONNX head on a ``(batch, 2, samples)`` mix.
 
@@ -348,7 +359,8 @@ def run_head_onnx(onnx_path: Path, mix_np: np.ndarray,
     mix_in = mix_t.numpy().astype(dtype)
 
     time_out, zout_cac = sess.run(
-        None, {"mix": mix_in, "z_cac": z_cac},
+        None,
+        {"mix": mix_in, "z_cac": z_cac},
     )
     time_out = np.asarray(time_out, dtype=np.float32)
     zout_cac_t = torch.from_numpy(np.asarray(zout_cac, dtype=np.float32))
@@ -357,9 +369,12 @@ def run_head_onnx(onnx_path: Path, mix_np: np.ndarray,
     return (time_out + x_freq).astype(np.float32)
 
 
-def run_bag_onnx(onnx_paths: list[Path], mix_np: np.ndarray,
-                 providers: list | None = None,
-                 weights: list[list[float]] | None = None) -> np.ndarray:
+def run_bag_onnx(
+    onnx_paths: list[Path],
+    mix_np: np.ndarray,
+    providers: list | None = None,
+    weights: list[list[float]] | None = None,
+) -> np.ndarray:
     """
     Combine per-head ONNX outputs using the bag's per-source weights.
 
@@ -368,8 +383,7 @@ def run_bag_onnx(onnx_paths: list[Path], mix_np: np.ndarray,
     sum(w_i[k])`` across heads.  When ``weights`` is None, uniform
     averaging is used (single-model bags collapse to this automatically).
     """
-    outs = [run_head_onnx(p, mix_np, providers=providers)
-            for p in onnx_paths]
+    outs = [run_head_onnx(p, mix_np, providers=providers) for p in onnx_paths]
     n_heads = len(outs)
     if n_heads == 1:
         return outs[0]
@@ -390,6 +404,7 @@ def run_bag_onnx(onnx_paths: list[Path], mix_np: np.ndarray,
 
 # ── Parity harness ──────────────────────────────────────────────────────────
 
+
 @dataclass
 class DemucsParity:
     fixture: str
@@ -408,18 +423,21 @@ class DemucsParity:
     passed: bool
 
     def as_dict(self) -> dict[str, Any]:
-        return {"fixture": self.fixture,
-                "model_key": self.model_key,
-                "segment_samples": self.segment_samples,
-                "max_abs_err": float(self.max_abs_err),
-                "max_rel_err": float(self.max_rel_err),
-                "residual_rms_dbfs": float(self.residual_rms_dbfs),
-                "rel_peak": float(self.rel_peak),
-                "passed": self.passed}
+        return {
+            "fixture": self.fixture,
+            "model_key": self.model_key,
+            "segment_samples": self.segment_samples,
+            "max_abs_err": float(self.max_abs_err),
+            "max_rel_err": float(self.max_rel_err),
+            "residual_rms_dbfs": float(self.residual_rms_dbfs),
+            "rel_peak": float(self.rel_peak),
+            "passed": self.passed,
+        }
 
 
-def _pad_fixture_to_segment(fixture_audio: np.ndarray, segment_samples: int
-                            ) -> tuple[np.ndarray, int]:
+def _pad_fixture_to_segment(
+    fixture_audio: np.ndarray, segment_samples: int
+) -> tuple[np.ndarray, int]:
     """Pad mono/stereo fixture to ``segment_samples`` along the last dim."""
     if fixture_audio.ndim == 1:
         fixture_audio = np.stack([fixture_audio, fixture_audio], axis=0)
@@ -429,7 +447,7 @@ def _pad_fixture_to_segment(fixture_audio: np.ndarray, segment_samples: int
     if length > segment_samples:
         # Take centre slice to keep transients.
         start = (length - segment_samples) // 2
-        mix = fixture_audio[..., start:start + segment_samples]
+        mix = fixture_audio[..., start : start + segment_samples]
         used_len = segment_samples
     else:
         pad = segment_samples - length
@@ -441,23 +459,28 @@ def _pad_fixture_to_segment(fixture_audio: np.ndarray, segment_samples: int
 def torch_reference(head_or_bag, mix_np: np.ndarray) -> np.ndarray:
     """Run the torch reference model on a mix array."""
     from demucs.apply import apply_model
+
     mix_t = torch.from_numpy(mix_np).to(torch.float32)
     if mix_t.dim() == 2:
         mix_t = mix_t.unsqueeze(0)
     # apply_model handles bag (list of heads) and single models.
     with torch.no_grad():
-        out = apply_model(head_or_bag, mix_t, shifts=0, split=False,
-                          overlap=0.0, progress=False, num_workers=0)
+        out = apply_model(
+            head_or_bag, mix_t, shifts=0, split=False, overlap=0.0, progress=False, num_workers=0
+        )
     return out.cpu().numpy()
 
 
-def validate_head(bag_or_head, onnx_paths: list[Path],
-                  fixture_audio: np.ndarray, fixture_name: str,
-                  model_key: str,
-                  segment_samples: int,
-                  abs_tol: float = config.PARITY.demucs_max_abs_err,
-                  rel_tol: float = config.PARITY.demucs_max_rel_err
-                  ) -> DemucsParity:
+def validate_head(
+    bag_or_head,
+    onnx_paths: list[Path],
+    fixture_audio: np.ndarray,
+    fixture_name: str,
+    model_key: str,
+    segment_samples: int,
+    abs_tol: float = config.PARITY.demucs_max_abs_err,
+    rel_tol: float = config.PARITY.demucs_max_rel_err,
+) -> DemucsParity:
     """Compare torch-reference stems to ONNX stems on `fixture_audio`."""
     mix, _used = _pad_fixture_to_segment(fixture_audio, segment_samples)
     # apply_model takes shape (B, C, S).
@@ -470,11 +493,9 @@ def validate_head(bag_or_head, onnx_paths: list[Path],
     weights = getattr(bag_or_head, "weights", None)
 
     with Timer(f"demucs.validate.torch.{model_key}.{fixture_name}"):
-        ref = np.asarray(torch_reference(bag_or_head, mix_bcs),
-                         dtype=np.float64)
+        ref = np.asarray(torch_reference(bag_or_head, mix_bcs), dtype=np.float64)
     with Timer(f"demucs.validate.onnx.{model_key}.{fixture_name}"):
-        got = np.asarray(run_bag_onnx(onnx_paths, mix_bcs, weights=weights),
-                         dtype=np.float64)
+        got = np.asarray(run_bag_onnx(onnx_paths, mix_bcs, weights=weights), dtype=np.float64)
 
     # Align shapes — apply_model returns (B, S, C, T) while our onnx runner
     # returns (B, S, C, T) too via head.forward_from_spec.  Sanity check.
@@ -488,7 +509,7 @@ def validate_head(bag_or_head, onnx_paths: list[Path],
 
     # Residual RMS in dBFS — stable across fixture levels.
     residual = ref - got
-    rms = float(np.sqrt(np.mean(residual ** 2)))
+    rms = float(np.sqrt(np.mean(residual**2)))
     rms_dbfs = -240.0 if rms <= 0 else 20.0 * math.log10(rms)
 
     # Peak-normalised relative error.

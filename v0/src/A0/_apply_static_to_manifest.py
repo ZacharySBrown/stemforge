@@ -10,6 +10,7 @@ without any source change to the dispatcher / lookup keys (which are
 The original dynamic-shape ONNX files are LEFT IN PLACE on disk so a
 caller can roll back by running this script with ``--mode dynamic``.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -27,18 +28,18 @@ APP_SUPPORT_MODELS = Path.home() / "Library/Application Support/StemForge/models
 
 # Layout of static files in the worktree.
 STATIC_FILES_WORKTREE = {
-    "htdemucs":          ("htdemucs",     "htdemucs_static.onnx"),
-    "htdemucs_6s":       ("htdemucs_6s",  "htdemucs_6s_static.onnx"),
-    "htdemucs_ft_head0": ("htdemucs_ft",  "htdemucs_ft.head0_static.onnx"),
-    "htdemucs_ft_head1": ("htdemucs_ft",  "htdemucs_ft.head1_static.onnx"),
-    "htdemucs_ft_head2": ("htdemucs_ft",  "htdemucs_ft.head2_static.onnx"),
-    "htdemucs_ft_head3": ("htdemucs_ft",  "htdemucs_ft.head3_static.onnx"),
+    "htdemucs": ("htdemucs", "htdemucs_static.onnx"),
+    "htdemucs_6s": ("htdemucs_6s", "htdemucs_6s_static.onnx"),
+    "htdemucs_ft_head0": ("htdemucs_ft", "htdemucs_ft.head0_static.onnx"),
+    "htdemucs_ft_head1": ("htdemucs_ft", "htdemucs_ft.head1_static.onnx"),
+    "htdemucs_ft_head2": ("htdemucs_ft", "htdemucs_ft.head2_static.onnx"),
+    "htdemucs_ft_head3": ("htdemucs_ft", "htdemucs_ft.head3_static.onnx"),
 }
 
 # Original dynamic file basenames, for rollback or reference.
 DYNAMIC_FILES = {
-    "htdemucs":          "htdemucs.onnx",
-    "htdemucs_6s":       "htdemucs_6s.onnx",
+    "htdemucs": "htdemucs.onnx",
+    "htdemucs_6s": "htdemucs_6s.onnx",
     "htdemucs_ft_head0": "htdemucs_ft.head0.onnx",
     "htdemucs_ft_head1": "htdemucs_ft.head1.onnx",
     "htdemucs_ft_head2": "htdemucs_ft.head2.onnx",
@@ -54,9 +55,9 @@ def _sha256(p: Path) -> str:
     return h.hexdigest()
 
 
-def patch_manifest(mode: str = "static",
-                   target_manifest: Path | None = None,
-                   physical_root: Path | None = None) -> Path:
+def patch_manifest(
+    mode: str = "static", target_manifest: Path | None = None, physical_root: Path | None = None
+) -> Path:
     """
     Update one manifest.json file in place.
 
@@ -82,8 +83,7 @@ def patch_manifest(mode: str = "static",
 
         physical_path = physical_root / subdir / basename
         if not physical_path.exists():
-            print(f"  WARN: physical file missing: {physical_path}",
-                  file=sys.stderr)
+            print(f"  WARN: physical file missing: {physical_path}", file=sys.stderr)
             continue
 
         size = physical_path.stat().st_size
@@ -94,8 +94,8 @@ def patch_manifest(mode: str = "static",
         entry["path"] = rel
         entry["sha256"] = sha
         entry["size"] = size
-        entry["coreml_ep_supported"] = (mode == "static")
-        entry["input_shape_locked"] = (mode == "static")
+        entry["coreml_ep_supported"] = mode == "static"
+        entry["input_shape_locked"] = mode == "static"
         entry.setdefault("notes", "")
         if mode == "static":
             entry["notes"] = (
@@ -112,7 +112,9 @@ def patch_manifest(mode: str = "static",
         # use these shapes, but keep them consistent for future tooling.)
         try:
             import onnx
+
             m = onnx.load(str(physical_path), load_external_data=False)
+
             def _shape(t):
                 dims = []
                 for d in t.type.tensor_type.shape.dim:
@@ -121,14 +123,16 @@ def patch_manifest(mode: str = "static",
                     else:
                         dims.append(d.dim_param or "dynamic")
                 return dims
+
             entry["input_shape"] = {t.name: _shape(t) for t in m.graph.input}
             entry["output_shape"] = {t.name: _shape(t) for t in m.graph.output}
         except Exception as e:
-            print(f"  warn: could not refresh I/O shapes for {key}: {e!s}",
-                  file=sys.stderr)
+            print(f"  warn: could not refresh I/O shapes for {key}: {e!s}", file=sys.stderr)
 
-        print(f"  {key} → {rel} sha={sha[:12]} size={size/1e6:.1f}MB "
-              f"coreml={entry['coreml_ep_supported']}")
+        print(
+            f"  {key} → {rel} sha={sha[:12]} size={size / 1e6:.1f}MB "
+            f"coreml={entry['coreml_ep_supported']}"
+        )
 
     target_manifest.write_text(json.dumps(doc, indent=2) + "\n")
     print(f"\nwrote {target_manifest}")
@@ -138,15 +142,12 @@ def patch_manifest(mode: str = "static",
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--mode", choices=["static", "dynamic"], default="static")
-    p.add_argument("--target",
-                   choices=["worktree", "app-support", "both"],
-                   default="worktree")
+    p.add_argument("--target", choices=["worktree", "app-support", "both"], default="worktree")
     args = p.parse_args(argv)
 
     targets = []
     if args.target in ("worktree", "both"):
-        targets.append(("worktree", SRC_MANIFEST,
-                        WORKTREE / "v0/build/models"))
+        targets.append(("worktree", SRC_MANIFEST, WORKTREE / "v0/build/models"))
     if args.target in ("app-support", "both"):
         # The app-support manifest is normally a symlink — we want to write
         # a real file at the symlink location's resolution.
@@ -161,18 +162,16 @@ def main(argv: list[str] | None = None) -> int:
     for label, mfp, root in targets:
         print(f"\n=== {label}: {mfp}")
         if not mfp.exists() and not mfp.is_symlink():
-            print(f"  skip: not present", file=sys.stderr)
+            print("  skip: not present", file=sys.stderr)
             continue
         # If it's a symlink, follow + edit (matches caller intent: update
         # whatever the binary actually reads).
         if mfp.is_symlink():
             real = mfp.resolve()
             print(f"  symlink → {real} (editing target)")
-            patch_manifest(mode=args.mode, target_manifest=real,
-                           physical_root=real.parent)
+            patch_manifest(mode=args.mode, target_manifest=real, physical_root=real.parent)
         else:
-            patch_manifest(mode=args.mode, target_manifest=mfp,
-                           physical_root=root)
+            patch_manifest(mode=args.mode, target_manifest=mfp, physical_root=root)
     return 0
 
 

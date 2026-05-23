@@ -40,9 +40,7 @@ except ImportError as exc:  # pragma: no cover - import error path
 try:
     from lxml import etree as ET
 except ImportError as exc:  # pragma: no cover
-    raise SystemExit(
-        "als-builder requires lxml. `uv pip install lxml`."
-    ) from exc
+    raise SystemExit("als-builder requires lxml. `uv pip install lxml`.") from exc
 
 from colors import hex_to_color_index  # noqa: E402 — local module
 
@@ -184,9 +182,7 @@ def build_stock_device(device_name: str, params: dict[str, Any]) -> ET._Element:
 # --------------------------------------------------------------------- #
 
 
-def build_vst3_missing_placeholder(
-    device_name: str, params: dict[str, Any]
-) -> ET._Element:
+def build_vst3_missing_placeholder(device_name: str, params: dict[str, Any]) -> ET._Element:
     """Emit a Live-compatible missing-plugin placeholder.
 
     Live 12 renders sets with unrecognized VST3 UIDs as a visible
@@ -357,9 +353,7 @@ def build_device_chain(
 # --------------------------------------------------------------------- #
 
 
-def _find_template_track(
-    root: ET._Element, kind: str
-) -> ET._Element | None:
+def _find_template_track(root: ET._Element, kind: str) -> ET._Element | None:
     """Find a single <AudioTrack> or <MidiTrack> in the skeleton to clone."""
     if kind == "audio":
         return root.find(".//AudioTrack")
@@ -390,9 +384,7 @@ def _synthesize_track(kind: str) -> ET._Element:
     return t
 
 
-def clone_track(
-    root: ET._Element, kind: str
-) -> ET._Element:
+def clone_track(root: ET._Element, kind: str) -> ET._Element:
     """Deep-copy a skeleton track of the given kind, or synthesize one."""
     template = _find_template_track(root, kind)
     if template is not None:
@@ -489,9 +481,7 @@ def build(
         track_el = clone_track(root, kind)
         _set_name(track_el, track_spec["name"])
         _set_color_index(track_el, track_spec["color"])
-        build_device_chain(
-            track_el, track_spec.get("chain", []), vst3_lookup
-        )
+        build_device_chain(track_el, track_spec.get("chain", []), vst3_lookup)
         tracks_container.append(track_el)
 
     # Fresh IDs for the whole document.
@@ -499,9 +489,7 @@ def build(
 
     # Write gzipped.
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    xml_bytes = ET.tostring(
-        tree, xml_declaration=True, encoding="UTF-8", standalone=False
-    )
+    xml_bytes = ET.tostring(tree, xml_declaration=True, encoding="UTF-8", standalone=False)
     with gzip.open(output_path, "wb") as f:
         f.write(xml_bytes)
 

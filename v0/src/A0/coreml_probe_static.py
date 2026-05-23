@@ -25,11 +25,11 @@ Outputs a JSON report at ``v0/state/A0/coreml_probe_static_report.json``
 and a human-readable Markdown summary at
 ``v0/state/A0/coreml_probe_static_report.md``.
 """
+
 from __future__ import annotations
 
 import argparse
 import contextlib
-import io
 import json
 import os
 import re
@@ -75,6 +75,7 @@ class ProbeResult:
 
 def _stft_shape(segment_samples: int) -> tuple[int, int]:
     import math
+
     n_fft = 4096
     hop = 1024
     return n_fft // 2, int(math.ceil(segment_samples / hop))
@@ -103,6 +104,7 @@ def _count_nodes(onnx_path: Path) -> int | None:
 
 # ── ORT VERBOSE log scraping ────────────────────────────────────────────────
 
+
 # CoreML EP emits lines like:
 #   [V:onnxruntime:, coreml_execution_provider.cc:GetCapability]
 #   <op_name> assigned to CoreML.
@@ -113,8 +115,7 @@ def _count_nodes(onnx_path: Path) -> int | None:
 def _capture_stderr_to_file():
     """Redirect fd 2 (stderr) to a temp file, yield path, restore on exit."""
     saved_fd = os.dup(2)
-    tmp = tempfile.NamedTemporaryFile(prefix="ort_stderr_", suffix=".log",
-                                      delete=False)
+    tmp = tempfile.NamedTemporaryFile(prefix="ort_stderr_", suffix=".log", delete=False)
     try:
         os.dup2(tmp.fileno(), 2)
         tmp.close()
@@ -124,8 +125,7 @@ def _capture_stderr_to_file():
         os.close(saved_fd)
 
 
-_RE_COREML_NODE = re.compile(r"node:\s*'([^']+)'.*?(?:CoreML|coreml)",
-                             re.IGNORECASE)
+_RE_COREML_NODE = re.compile(r"node:\s*'([^']+)'.*?(?:CoreML|coreml)", re.IGNORECASE)
 _RE_ASSIGN_LINE = re.compile(
     r"\b(?P<provider>CoreMLExecutionProvider|CPUExecutionProvider)\b",
     re.IGNORECASE,
@@ -166,14 +166,18 @@ def _scrape_assignments(log_path: Path) -> tuple[int, int]:
 
 # ── Probe a single (onnx, options) combination ──────────────────────────────
 
-def probe_one(label: str, onnx_path: Path,
-              probe_inputs: dict[str, np.ndarray],
-              coreml_options: dict[str, str] | None,
-              n_warmup: int = 3, n_timed: int = 5) -> ProbeResult:
+
+def probe_one(
+    label: str,
+    onnx_path: Path,
+    probe_inputs: dict[str, np.ndarray],
+    coreml_options: dict[str, str] | None,
+    n_warmup: int = 3,
+    n_timed: int = 5,
+) -> ProbeResult:
     import onnxruntime as ort
 
-    res = ProbeResult(label=label, onnx_path=str(onnx_path),
-                      options=dict(coreml_options or {}))
+    res = ProbeResult(label=label, onnx_path=str(onnx_path), options=dict(coreml_options or {}))
 
     so = ort.SessionOptions()
     so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
@@ -182,8 +186,7 @@ def probe_one(label: str, onnx_path: Path,
     so.intra_op_num_threads = max(1, (os.cpu_count() or 4) - 1)
 
     providers = (
-        [("CoreMLExecutionProvider", coreml_options or {}),
-         "CPUExecutionProvider"]
+        [("CoreMLExecutionProvider", coreml_options or {}), "CPUExecutionProvider"]
         if coreml_options is not None
         else ["CPUExecutionProvider"]
     )
@@ -192,7 +195,9 @@ def probe_one(label: str, onnx_path: Path,
     with _capture_stderr_to_file() as log_path:
         try:
             sess = ort.InferenceSession(
-                str(onnx_path), sess_options=so, providers=providers,
+                str(onnx_path),
+                sess_options=so,
+                providers=providers,
             )
             res.providers_resolved = list(sess.get_providers())
             res.coreml_loaded = "CoreMLExecutionProvider" in res.providers_resolved
@@ -230,9 +235,9 @@ def probe_one(label: str, onnx_path: Path,
         res.runs = n_timed
         res.mean_latency_sec = round(sum(latencies) / len(latencies), 4)
         res.p50_latency_sec = round(latencies[len(latencies) // 2], 4)
-        res.p95_latency_sec = round(latencies[min(len(latencies) - 1,
-                                                  int(0.95 * len(latencies)))],
-                                    4)
+        res.p95_latency_sec = round(
+            latencies[min(len(latencies) - 1, int(0.95 * len(latencies)))], 4
+        )
     except Exception as e:
         res.forward_error = f"timed: {type(e).__name__}: {e!s}"[:600]
 
@@ -249,62 +254,83 @@ def probe_one(label: str, onnx_path: Path,
 
 OPTION_MATRIX: list[tuple[str, dict[str, str] | None]] = [
     ("cpu_only", None),
-    ("coreml_mlprogram_all_dynamic", {
-        "MLComputeUnits": "ALL",
-        "ModelFormat": "MLProgram",
-        "RequireStaticInputShapes": "0",
-        "EnableOnSubgraphs": "1",
-    }),
-    ("coreml_mlprogram_all_static", {
-        "MLComputeUnits": "ALL",
-        "ModelFormat": "MLProgram",
-        "RequireStaticInputShapes": "1",
-        "EnableOnSubgraphs": "1",
-    }),
-    ("coreml_mlprogram_ane_only", {
-        "MLComputeUnits": "CPUAndNeuralEngine",
-        "ModelFormat": "MLProgram",
-        "RequireStaticInputShapes": "1",
-        "EnableOnSubgraphs": "1",
-    }),
-    ("coreml_neuralnetwork_all", {
-        "MLComputeUnits": "ALL",
-        "ModelFormat": "NeuralNetwork",
-        "RequireStaticInputShapes": "1",
-        "EnableOnSubgraphs": "1",
-    }),
+    (
+        "coreml_mlprogram_all_dynamic",
+        {
+            "MLComputeUnits": "ALL",
+            "ModelFormat": "MLProgram",
+            "RequireStaticInputShapes": "0",
+            "EnableOnSubgraphs": "1",
+        },
+    ),
+    (
+        "coreml_mlprogram_all_static",
+        {
+            "MLComputeUnits": "ALL",
+            "ModelFormat": "MLProgram",
+            "RequireStaticInputShapes": "1",
+            "EnableOnSubgraphs": "1",
+        },
+    ),
+    (
+        "coreml_mlprogram_ane_only",
+        {
+            "MLComputeUnits": "CPUAndNeuralEngine",
+            "ModelFormat": "MLProgram",
+            "RequireStaticInputShapes": "1",
+            "EnableOnSubgraphs": "1",
+        },
+    ),
+    (
+        "coreml_neuralnetwork_all",
+        {
+            "MLComputeUnits": "ALL",
+            "ModelFormat": "NeuralNetwork",
+            "RequireStaticInputShapes": "1",
+            "EnableOnSubgraphs": "1",
+        },
+    ),
 ]
 
 
-def probe_file(label_prefix: str, onnx_path: Path,
-               segment_samples: int = 343980,
-               option_matrix: list = OPTION_MATRIX,
-               n_warmup: int = 3, n_timed: int = 5) -> list[ProbeResult]:
+def probe_file(
+    label_prefix: str,
+    onnx_path: Path,
+    segment_samples: int = 343980,
+    option_matrix: list = OPTION_MATRIX,
+    n_warmup: int = 3,
+    n_timed: int = 5,
+) -> list[ProbeResult]:
     inputs = _build_inputs(segment_samples)
     results: list[ProbeResult] = []
     for combo_label, opts in option_matrix:
         full_label = f"{label_prefix}::{combo_label}"
         print(f"[probe] {full_label}", flush=True)
         try:
-            r = probe_one(full_label, onnx_path, inputs, opts,
-                          n_warmup=n_warmup, n_timed=n_timed)
+            r = probe_one(full_label, onnx_path, inputs, opts, n_warmup=n_warmup, n_timed=n_timed)
         except Exception as e:
-            r = ProbeResult(label=full_label, onnx_path=str(onnx_path),
-                            options=dict(opts or {}),
-                            load_error=f"outer: {type(e).__name__}: {e!s}")
+            r = ProbeResult(
+                label=full_label,
+                onnx_path=str(onnx_path),
+                options=dict(opts or {}),
+                load_error=f"outer: {type(e).__name__}: {e!s}",
+            )
         results.append(r)
         if r.load_error:
             print(f"  LOAD FAIL: {r.load_error}", flush=True)
         elif r.forward_error:
             print(f"  FWD  FAIL: {r.forward_error}", flush=True)
         else:
-            print(f"  load=ok coreml_loaded={r.coreml_loaded} "
-                  f"part={r.coreml_partition_pct}% mean={r.mean_latency_sec}s",
-                  flush=True)
+            print(
+                f"  load=ok coreml_loaded={r.coreml_loaded} "
+                f"part={r.coreml_partition_pct}% mean={r.mean_latency_sec}s",
+                flush=True,
+            )
     return results
 
 
 # ── Reporting ───────────────────────────────────────────────────────────────
+
 
 def write_markdown_report(results: list[ProbeResult], path: Path) -> None:
     lines = ["# CoreML EP probe — static vs dynamic shapes", ""]
@@ -316,8 +342,7 @@ def write_markdown_report(results: list[ProbeResult], path: Path) -> None:
         "|---|---:|---|---:|---:|---:|---:|---|",
     ]
     for r in results:
-        nodes = (f"{r.n_nodes_coreml}/{r.n_nodes_cpu}/{r.n_nodes_total}"
-                 if r.n_nodes_total else "—")
+        nodes = f"{r.n_nodes_coreml}/{r.n_nodes_cpu}/{r.n_nodes_total}" if r.n_nodes_total else "—"
         err = (r.load_error or r.forward_error or "").replace("|", "/")
         lines.append(
             f"| {r.label} | {r.coreml_loaded} | {nodes} | "
@@ -333,13 +358,17 @@ def write_markdown_report(results: list[ProbeResult], path: Path) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
-    p.add_argument("--onnx", action="append", required=True,
-                   help="(label, path) pair, e.g. htdemucs:/abs/path.onnx")
+    p.add_argument(
+        "--onnx",
+        action="append",
+        required=True,
+        help="(label, path) pair, e.g. htdemucs:/abs/path.onnx",
+    )
     p.add_argument("--segment-samples", type=int, default=343980)
-    p.add_argument("--report-json", type=Path,
-                   default=STATE_DIR / "coreml_probe_static_report.json")
-    p.add_argument("--report-md", type=Path,
-                   default=STATE_DIR / "coreml_probe_static_report.md")
+    p.add_argument(
+        "--report-json", type=Path, default=STATE_DIR / "coreml_probe_static_report.json"
+    )
+    p.add_argument("--report-md", type=Path, default=STATE_DIR / "coreml_probe_static_report.md")
     args = p.parse_args(argv)
 
     all_results: list[ProbeResult] = []
@@ -352,8 +381,7 @@ def main(argv: list[str] | None = None) -> int:
         if not path.exists():
             print(f"missing onnx: {path}", file=sys.stderr)
             return 2
-        all_results += probe_file(label, path,
-                                  segment_samples=args.segment_samples)
+        all_results += probe_file(label, path, segment_samples=args.segment_samples)
 
     args.report_json.parent.mkdir(parents=True, exist_ok=True)
     with open(args.report_json, "w") as fh:

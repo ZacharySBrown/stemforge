@@ -59,7 +59,9 @@ def _u32_be(value: int) -> bytes:
     return struct.pack(">I", value)
 
 
-def _build_patch_chunk(patcher_json: str, embed_files: list[tuple[str, bytes]] | None = None) -> bytes:
+def _build_patch_chunk(
+    patcher_json: str, embed_files: list[tuple[str, bytes]] | None = None
+) -> bytes:
     """Encode patch JSON + optional embedded JS resources into the ptch body.
 
     M4L project-type devices (device_type=7) embed JS files after the JSON
@@ -165,9 +167,13 @@ def unpack_amxd(path: str | Path) -> dict[str, Any]:
         # not fatal — log and continue
         pass
 
-    # Expect 'iiii' at offset 8
-    if raw[8:12] != AAAA_SENTINEL:
-        raise ValueError(f"missing iiii sentinel at offset 8: {raw[8:12]!r}")
+    # Offset 8 carries the device-class sentinel: aaaa (audio effect),
+    # mmmm (midi effect), or iiii (instrument). Accept any known one —
+    # the old check hardcoded `aaaa` and rejected real instrument/builder
+    # .amxd files (e.g. the StemForgeTemplateBuilder reference, which is
+    # `iiii`).
+    if raw[8:12] not in set(DEVICE_CLASS_SENTINEL.values()):
+        raise ValueError(f"unknown device-class sentinel at offset 8: {raw[8:12]!r}")
 
     # Expect 'meta' at offset 12
     if raw[12:16] != META_TAG:
@@ -177,9 +183,7 @@ def unpack_amxd(path: str | Path) -> dict[str, Any]:
 
     ptch_off = 20 + meta_len
     if raw[ptch_off : ptch_off + 4] != PTCH_TAG:
-        raise ValueError(
-            f"missing ptch tag at offset {ptch_off}: {raw[ptch_off:ptch_off + 4]!r}"
-        )
+        raise ValueError(f"missing ptch tag at offset {ptch_off}: {raw[ptch_off : ptch_off + 4]!r}")
     ptch_len = struct.unpack_from("<I", raw, ptch_off + 4)[0]
     ptch_body = raw[ptch_off + 8 : ptch_off + 8 + ptch_len]
 

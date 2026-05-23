@@ -10,6 +10,7 @@ deterministic test audio (silence + click track, tonal sweep) so the pipeline
 is runnable on a fresh checkout. The synthetic fixtures are reproducible
 given a fixed random seed so parity numbers are comparable across runs.
 """
+
 from __future__ import annotations
 
 import math
@@ -28,15 +29,14 @@ FULL_MIX_SECS = 30.0
 class Fixture:
     name: str
     sr: int
-    samples: np.ndarray   # shape (channels, samples)
+    samples: np.ndarray  # shape (channels, samples)
 
     @property
     def seconds(self) -> float:
         return self.samples.shape[-1] / self.sr
 
 
-def _click_track(seconds: float, sr: int, bpm: float = 120.0,
-                 seed: int = 1234) -> np.ndarray:
+def _click_track(seconds: float, sr: int, bpm: float = 120.0, seed: int = 1234) -> np.ndarray:
     """Deterministic percussive click at `bpm` with soft noise floor."""
     rng = np.random.default_rng(seed)
     n = int(seconds * sr)
@@ -58,8 +58,7 @@ def _click_track(seconds: float, sr: int, bpm: float = 120.0,
     return np.stack([y, y], axis=0)
 
 
-def _full_mix(seconds: float, sr: int, bpm: float = 128.0,
-              seed: int = 4321) -> np.ndarray:
+def _full_mix(seconds: float, sr: int, bpm: float = 128.0, seed: int = 4321) -> np.ndarray:
     """Synthetic multi-band mix: click + bass sine + mid pad + stereo decor."""
     rng = np.random.default_rng(seed)
     n = int(seconds * sr)
@@ -73,8 +72,9 @@ def _full_mix(seconds: float, sr: int, bpm: float = 128.0,
 
     # Pad (filtered noise band around 800 Hz).
     freqs = np.linspace(400, 1200, 5)
-    pad = sum(0.05 * np.sin(2 * math.pi * f * t + rng.uniform(0, 2 * math.pi))
-              for f in freqs).astype(np.float32)
+    pad = sum(
+        0.05 * np.sin(2 * math.pi * f * t + rng.uniform(0, 2 * math.pi)) for f in freqs
+    ).astype(np.float32)
 
     # Click on top.
     click = _click_track(seconds, sr, bpm=bpm, seed=seed + 1)[0]
@@ -91,13 +91,15 @@ def _full_mix(seconds: float, sr: int, bpm: float = 128.0,
 
 
 def drum_loop(sr: int = DEFAULT_SR) -> Fixture:
-    return Fixture(name="drum_loop_10s", sr=sr,
-                   samples=_click_track(DRUM_LOOP_SECS, sr).astype(np.float32))
+    return Fixture(
+        name="drum_loop_10s", sr=sr, samples=_click_track(DRUM_LOOP_SECS, sr).astype(np.float32)
+    )
 
 
 def full_mix(sr: int = DEFAULT_SR) -> Fixture:
-    return Fixture(name="full_mix_30s", sr=sr,
-                   samples=_full_mix(FULL_MIX_SECS, sr).astype(np.float32))
+    return Fixture(
+        name="full_mix_30s", sr=sr, samples=_full_mix(FULL_MIX_SECS, sr).astype(np.float32)
+    )
 
 
 def all_fixtures(sr: int = DEFAULT_SR) -> list[Fixture]:
@@ -106,6 +108,7 @@ def all_fixtures(sr: int = DEFAULT_SR) -> list[Fixture]:
 
 def save_wav(fixture: Fixture, path: Path) -> None:
     import soundfile as sf
+
     path.parent.mkdir(parents=True, exist_ok=True)
     sf.write(str(path), fixture.samples.T, fixture.sr, subtype="PCM_24")
 
@@ -115,6 +118,7 @@ def load_external_fixture(path: Path) -> Fixture | None:
     if not path.exists():
         return None
     import soundfile as sf
+
     data, sr = sf.read(str(path), always_2d=True)
     # soundfile returns (samples, channels) — transpose to (channels, samples).
     arr = np.asarray(data, dtype=np.float32).T

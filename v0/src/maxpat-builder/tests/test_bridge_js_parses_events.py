@@ -86,52 +86,57 @@ def _run_bridge(lines: list[str]) -> list[list]:
 
 @pytest.mark.skipif(not _node_available(), reason="node not installed")
 def test_progress_event_emits_pct_and_phase():
-    calls = _run_bridge([json.dumps({
-        "event": "progress", "phase": "splitting", "pct": 42
-    })])
+    calls = _run_bridge([json.dumps({"event": "progress", "phase": "splitting", "pct": 42})])
     assert calls == [["progress", 42, "splitting"]]
 
 
 @pytest.mark.skipif(not _node_available(), reason="node not installed")
 def test_stem_event_emits_name_and_path():
-    calls = _run_bridge([json.dumps({
-        "event": "stem", "name": "drums",
-        "path": "/tmp/drums.wav", "size_bytes": 1234
-    })])
+    calls = _run_bridge(
+        [
+            json.dumps(
+                {"event": "stem", "name": "drums", "path": "/tmp/drums.wav", "size_bytes": 1234}
+            )
+        ]
+    )
     assert calls == [["stem", "drums", "/tmp/drums.wav", 1234]]
 
 
 @pytest.mark.skipif(not _node_available(), reason="node not installed")
 def test_bpm_event_emits_value():
-    calls = _run_bridge([json.dumps({
-        "event": "bpm", "bpm": 128.5, "beat_count": 512
-    })])
+    calls = _run_bridge([json.dumps({"event": "bpm", "bpm": 128.5, "beat_count": 512})])
     assert calls == [["bpm", 128.5, 512]]
 
 
 @pytest.mark.skipif(not _node_available(), reason="node not installed")
 def test_slice_dir_event_emits_triple():
-    calls = _run_bridge([json.dumps({
-        "event": "slice_dir", "stem": "drums",
-        "dir": "/tmp/drums_beats", "count": 32
-    })])
+    calls = _run_bridge(
+        [
+            json.dumps(
+                {"event": "slice_dir", "stem": "drums", "dir": "/tmp/drums_beats", "count": 32}
+            )
+        ]
+    )
     assert calls == [["slice_dir", "drums", "/tmp/drums_beats", 32]]
 
 
 @pytest.mark.skipif(not _node_available(), reason="node not installed")
 def test_complete_event_emits_manifest():
-    calls = _run_bridge([json.dumps({
-        "event": "complete", "manifest": "/tmp/stems.json",
-        "bpm": 120, "stem_count": 4
-    })])
+    calls = _run_bridge(
+        [
+            json.dumps(
+                {"event": "complete", "manifest": "/tmp/stems.json", "bpm": 120, "stem_count": 4}
+            )
+        ]
+    )
     assert calls == [["complete", "/tmp/stems.json", 120, 4]]
 
 
 @pytest.mark.skipif(not _node_available(), reason="node not installed")
 def test_error_event_emits_phase_and_message():
-    calls = _run_bridge([json.dumps({
-        "event": "error", "phase": "splitting", "message": "ORT crash"
-    })])
+    calls = _run_bridge(
+        [json.dumps({"event": "error", "phase": "splitting", "message": "ORT crash"})]
+    )
     assert calls == [["error", "splitting", "ORT crash"]]
 
 
@@ -149,9 +154,9 @@ def test_unknown_event_is_dropped():
 
 @pytest.mark.skipif(not _node_available(), reason="node not installed")
 def test_started_event_surfaces_as_progress_zero():
-    calls = _run_bridge([json.dumps({
-        "event": "started", "track": "t", "audio": "/a.wav", "output_dir": "/o"
-    })])
+    calls = _run_bridge(
+        [json.dumps({"event": "started", "track": "t", "audio": "/a.wav", "output_dir": "/o"})]
+    )
     assert calls == [["progress", 0, "starting"]]
 
 
@@ -161,8 +166,7 @@ def test_stream_of_events_preserves_order():
         json.dumps({"event": "progress", "phase": "loading_model", "pct": 5}),
         json.dumps({"event": "progress", "phase": "splitting", "pct": 50}),
         json.dumps({"event": "bpm", "bpm": 128, "beat_count": 256}),
-        json.dumps({"event": "complete", "manifest": "/m.json",
-                    "bpm": 128, "stem_count": 4}),
+        json.dumps({"event": "complete", "manifest": "/m.json", "bpm": 128, "stem_count": 4}),
     ]
     calls = _run_bridge(lines)
     assert [c[0] for c in calls] == ["progress", "progress", "bpm", "complete"]

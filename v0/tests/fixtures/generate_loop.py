@@ -21,6 +21,7 @@ Usage (regenerate from scratch; DO NOT overwrite committed short_loop.wav):
 
 Track G does not call this at test time — it uses the committed WAV.
 """
+
 from __future__ import annotations
 
 import sys
@@ -35,7 +36,9 @@ NUM_BEATS = 8  # 2 bars at 4/4
 TARGET_DURATION_SEC = 10.0  # A-validator committed a 10s loop
 
 
-def render_loop(sr: int = SAMPLE_RATE, bpm: int = BPM, duration_sec: float = TARGET_DURATION_SEC) -> np.ndarray:
+def render_loop(
+    sr: int = SAMPLE_RATE, bpm: int = BPM, duration_sec: float = TARGET_DURATION_SEC
+) -> np.ndarray:
     """Render a mono float32 drum-like loop."""
     beat_sec = 60.0 / bpm
     base_dur = NUM_BEATS * beat_sec  # 4.0s @ 120 BPM

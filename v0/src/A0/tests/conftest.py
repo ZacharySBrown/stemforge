@@ -3,9 +3,9 @@ Shared test fixtures — kept light so CI doesn't need to download torch
 reference models. Every test here runs in under a second and uses only
 numpy + onnx (no torch, no transformers, no demucs).
 """
+
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
@@ -27,6 +27,7 @@ def _ensure_v0_package(monkeypatch, tmp_path):
     in-memory via `sys.modules` monkey-patching.
     """
     import types
+
     if "v0" not in sys.modules:
         v0 = types.ModuleType("v0")
         v0.__path__ = [str(REPO_ROOT / "v0")]
