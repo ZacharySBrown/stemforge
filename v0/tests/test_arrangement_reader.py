@@ -8,6 +8,7 @@ The JS suite exercises ``v0/src/m4l-js/sf_arrangement_reader.js`` (the
 arrangement-view → snapshot.json reader) under a Node-vm sandbox with
 mock LiveAPI/File so no Max install or Ableton instance is required.
 """
+
 from __future__ import annotations
 
 import shutil

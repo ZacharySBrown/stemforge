@@ -18,6 +18,7 @@ Outputs
   /tmp/sf_fusion_debug/02_uuid_cache.log   — full verbose ORT log
   /tmp/sf_fusion_debug/02_uuid_cache.json  — structured summary
 """
+
 from __future__ import annotations
 
 import json

@@ -11,6 +11,7 @@ C++ host will replicate the feature extraction (Track A concern). For
 A0 parity, we compare the *model* end-to-end given an identical feature
 tensor.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -28,8 +29,9 @@ AST_LOGIT_DIFF_TOL = config.PARITY.ast_max_logit_diff
 AST_TOPK = config.PARITY.ast_topk_labels
 
 
-def export(dst_dir: Path, checkpoint: str = config.AST_CHECKPOINT,
-           opset: int = config.OPSET_VERSION) -> Path:
+def export(
+    dst_dir: Path, checkpoint: str = config.AST_CHECKPOINT, opset: int = config.OPSET_VERSION
+) -> Path:
     """
     Export AST via optimum. Returns the path to the produced .onnx file.
 
@@ -70,10 +72,9 @@ def export(dst_dir: Path, checkpoint: str = config.AST_CHECKPOINT,
 
 def _load_torch():
     """Return `(model, feature_extractor)` loaded from HF hub."""
-    from transformers import (AutoFeatureExtractor,
-                              AutoModelForAudioClassification)
-    model = AutoModelForAudioClassification.from_pretrained(
-        config.AST_CHECKPOINT).eval()
+    from transformers import AutoFeatureExtractor, AutoModelForAudioClassification
+
+    model = AutoModelForAudioClassification.from_pretrained(config.AST_CHECKPOINT).eval()
     fe = AutoFeatureExtractor.from_pretrained(config.AST_CHECKPOINT)
     return model, fe
 
@@ -81,6 +82,7 @@ def _load_torch():
 def _torch_logits(model, fe, audio_16k_mono: np.ndarray) -> np.ndarray:
     """Run AST forward in torch; return logits over all 527 AudioSet classes."""
     import torch
+
     inputs = fe(audio_16k_mono, sampling_rate=16_000, return_tensors="pt")
     with torch.no_grad():
         out = model(**inputs)
@@ -89,8 +91,7 @@ def _torch_logits(model, fe, audio_16k_mono: np.ndarray) -> np.ndarray:
 
 def _ort_logits(session, fe, audio_16k_mono: np.ndarray) -> np.ndarray:
     inputs = fe(audio_16k_mono, sampling_rate=16_000, return_tensors="np")
-    feed = {k: v for k, v in inputs.items()
-            if k in {i.name for i in session.get_inputs()}}
+    feed = {k: v for k, v in inputs.items() if k in {i.name for i in session.get_inputs()}}
     if not feed:  # model input name is usually "input_values"
         feed = {session.get_inputs()[0].name: list(inputs.values())[0]}
     out = session.run(None, feed)
@@ -117,14 +118,18 @@ class AstParity:
         }
 
 
-def validate(onnx_path: Path, audio_16k_mono: np.ndarray, fixture_name: str,
-             tolerance: float = AST_LOGIT_DIFF_TOL,
-             topk: int = AST_TOPK) -> AstParity:
+def validate(
+    onnx_path: Path,
+    audio_16k_mono: np.ndarray,
+    fixture_name: str,
+    tolerance: float = AST_LOGIT_DIFF_TOL,
+    topk: int = AST_TOPK,
+) -> AstParity:
     """Run torch + onnx forward, compare top-k and logit residual."""
     import onnxruntime as ort
+
     model, fe = _load_torch()
-    session = ort.InferenceSession(str(onnx_path),
-                                   providers=["CPUExecutionProvider"])
+    session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
     with Timer("ast.validate.torch"):
         torch_logits = _torch_logits(model, fe, audio_16k_mono)
     with Timer("ast.validate.onnx"):

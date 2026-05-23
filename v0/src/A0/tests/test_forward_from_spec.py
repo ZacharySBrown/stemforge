@@ -6,6 +6,7 @@ The contract (see ``stemforge/_vendor/demucs_patched.py``): running
 caller-side ``_ispec`` and the canonical post-pad crop must be
 numerically indistinguishable from the upstream ``forward(mix)``.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -35,7 +36,7 @@ def _make_tiny_htdemucs():
         t_layers=1,
         bottom_channels=0,
         samplerate=44100,
-        segment=1,            # 1 s training segment
+        segment=1,  # 1 s training segment
         use_train_segment=True,
     ).eval()
     return model
@@ -97,9 +98,7 @@ def test_forward_from_spec_matches_forward_random_input():
     # Float32 STFT/iSTFT round-trip has a tiny numerical residual; 1e-5 is
     # looser than the 1e-6 headline but still orders of magnitude below the
     # Demucs parity budget of 1e-3.
-    assert max_abs < 1e-5, (
-        f"forward vs forward_from_spec parity failed: max_abs={max_abs:.3e}"
-    )
+    assert max_abs < 1e-5, f"forward vs forward_from_spec parity failed: max_abs={max_abs:.3e}"
 
 
 def test_forward_from_spec_matches_forward_training_length_input():
@@ -113,8 +112,7 @@ def test_forward_from_spec_matches_forward_training_length_input():
     got = _apply_external_spec(model, mix)
     max_abs = (ref - got).abs().max().item()
     assert max_abs < 1e-5, (
-        f"forward vs forward_from_spec parity failed (no pad): "
-        f"max_abs={max_abs:.3e}"
+        f"forward vs forward_from_spec parity failed (no pad): max_abs={max_abs:.3e}"
     )
 
 
@@ -137,9 +135,10 @@ def test_forward_from_spec_cac_matches_forward_from_spec():
         zout_from_cac = unpack_cac(zout_cac)
 
     # Time branch must be exact (no packing involved).
-    assert torch.allclose(xt_ref, xt_cac, atol=0.0), \
-        f"time branch differs: max_abs={(xt_ref-xt_cac).abs().max()}"
+    assert torch.allclose(xt_ref, xt_cac, atol=0.0), (
+        f"time branch differs: max_abs={(xt_ref - xt_cac).abs().max()}"
+    )
     # Freq branch: complex → CAC → complex round-trip must be bit-exact.
-    assert torch.allclose(zout_ref, zout_from_cac, atol=1e-6), \
-        (f"freq branch differs: max_abs="
-         f"{(zout_ref - zout_from_cac).abs().max()}")
+    assert torch.allclose(zout_ref, zout_from_cac, atol=1e-6), (
+        f"freq branch differs: max_abs={(zout_ref - zout_from_cac).abs().max()}"
+    )

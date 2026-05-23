@@ -27,6 +27,7 @@ Invocation::
     # or (explicit ORT verbose logging):
     ORT_LOG_LEVEL=VERBOSE uv run --active python -m v0.src.A0.fusion_smoke
 """
+
 from __future__ import annotations
 
 import argparse
@@ -39,7 +40,6 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import onnx
 import onnxruntime as ort
 
@@ -63,8 +63,7 @@ class SmokeResult:
         return asdict(self)
 
 
-def _prefix_model(model: onnx.ModelProto, prefix: str,
-                  rename_io: bool = True) -> onnx.ModelProto:
+def _prefix_model(model: onnx.ModelProto, prefix: str, rename_io: bool = True) -> onnx.ModelProto:
     """Add a prefix to every name in the model (optionally including I/O)."""
     return onnx.compose.add_prefix(
         model,
@@ -129,23 +128,29 @@ def fuse_heads(head_paths: list[Path], dst_onnx: Path) -> onnx.ModelProto:
         raise RuntimeError("cannot find head 0 inputs in fused graph")
 
     shared_mix = helper.make_tensor_value_info(
-        "mix", mix_vi.type.tensor_type.elem_type,
-        [d.dim_value if d.HasField("dim_value") else d.dim_param
-         for d in mix_vi.type.tensor_type.shape.dim],
+        "mix",
+        mix_vi.type.tensor_type.elem_type,
+        [
+            d.dim_value if d.HasField("dim_value") else d.dim_param
+            for d in mix_vi.type.tensor_type.shape.dim
+        ],
     )
     shared_zcac = helper.make_tensor_value_info(
-        "z_cac", zcac_vi.type.tensor_type.elem_type,
-        [d.dim_value if d.HasField("dim_value") else d.dim_param
-         for d in zcac_vi.type.tensor_type.shape.dim],
+        "z_cac",
+        zcac_vi.type.tensor_type.elem_type,
+        [
+            d.dim_value if d.HasField("dim_value") else d.dim_param
+            for d in zcac_vi.type.tensor_type.shape.dim
+        ],
     )
 
     # Identity nodes copying shared inputs → per-head renamed inputs.
     fanout_nodes = []
     for i, (m_in, z_in) in enumerate(head_inputs):
-        fanout_nodes.append(helper.make_node(
-            "Identity", ["mix"], [m_in], name=f"fanout_mix_{i}"))
-        fanout_nodes.append(helper.make_node(
-            "Identity", ["z_cac"], [z_in], name=f"fanout_zcac_{i}"))
+        fanout_nodes.append(helper.make_node("Identity", ["mix"], [m_in], name=f"fanout_mix_{i}"))
+        fanout_nodes.append(
+            helper.make_node("Identity", ["z_cac"], [z_in], name=f"fanout_zcac_{i}")
+        )
 
     # Mutate fused.graph: replace inputs with just (mix, z_cac), and prepend
     # fanout nodes. The per-head names become internal edges.
@@ -154,7 +159,8 @@ def fuse_heads(head_paths: list[Path], dst_onnx: Path) -> onnx.ModelProto:
     # Keep any other inputs that were NOT per-head mix/zcac (shouldn't be any).
     skip = set()
     for m_in, z_in in head_inputs:
-        skip.add(m_in); skip.add(z_in)
+        skip.add(m_in)
+        skip.add(z_in)
     for vi in list(g.input):
         if vi.name not in skip and vi.name not in {"mix", "z_cac"}:
             new_inputs.append(vi)
@@ -214,7 +220,6 @@ def _capture_coreml_coverage(onnx_path: Path, verbose_log: Path) -> SmokeResult:
 
     # Force verbose logging — CoreML EP prints its GetCapability line at VERBOSE.
     # We redirect stderr to a file to capture it.
-    import contextlib
 
     sess_opts = ort.SessionOptions()
     sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
@@ -235,9 +240,9 @@ def _capture_coreml_coverage(onnx_path: Path, verbose_log: Path) -> SmokeResult:
         os.dup2(log_fd, 2)
         try:
             sess = ort.InferenceSession(
-                str(onnx_path), sess_opts,
-                providers=[("CoreMLExecutionProvider", coreml_opts),
-                           "CPUExecutionProvider"],
+                str(onnx_path),
+                sess_opts,
+                providers=[("CoreMLExecutionProvider", coreml_opts), "CPUExecutionProvider"],
             )
             result.coreml_loaded = True
             # Optional: actually run once with zero inputs so CoreML compile happens.
@@ -263,6 +268,7 @@ def _capture_coreml_coverage(onnx_path: Path, verbose_log: Path) -> SmokeResult:
             result.verbose_log_snippets.append(line.strip())
     # Best-effort parse of N / total.
     import re
+
     m_supported = re.search(r"number of nodes supported by CoreML:\s*(\d+)", text)
     m_total = re.search(r"number of nodes in the graph:\s*(\d+)", text)
     m_parts = re.search(r"number of partitions supported by CoreML:\s*(\d+)", text)
@@ -282,15 +288,18 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--head1", default=str(FT_MODELS_DIR / "htdemucs_ft.head1_static.onnx"))
     p.add_argument("--out", default="/tmp/sf_fusion_smoke.onnx")
     p.add_argument("--log", default="/tmp/sf_fusion_smoke.verbose.log")
-    p.add_argument("--threshold", type=float, default=90.0,
-                   help="coverage %% below which Phase 2 must abort")
+    p.add_argument(
+        "--threshold", type=float, default=90.0, help="coverage %% below which Phase 2 must abort"
+    )
     args = p.parse_args(argv)
 
     h0 = Path(args.head0)
     h1 = Path(args.head1)
     if not h0.exists() or not h1.exists():
-        print(f"MISSING head files: {h0=} exists={h0.exists()} "
-              f"{h1=} exists={h1.exists()}", file=sys.stderr)
+        print(
+            f"MISSING head files: {h0=} exists={h0.exists()} {h1=} exists={h1.exists()}",
+            file=sys.stderr,
+        )
         return 2
 
     out = Path(args.out)
@@ -304,29 +313,38 @@ def main(argv: list[str] | None = None) -> int:
     fuse_dt = time.perf_counter() - t0
 
     result = _capture_coreml_coverage(out, Path(args.log))
-    print(json.dumps({
-        "fused_path": result.fused_path,
-        "fuse_sec": round(fuse_dt, 3),
-        "coreml_loaded": result.coreml_loaded,
-        "coverage_pct": result.coverage_pct,
-        "coreml_partitions": result.coreml_partitions,
-        "coreml_nodes_supported": result.coreml_nodes_supported,
-        "total_nodes": result.total_nodes,
-        "verbose_log": args.log,
-        "error": result.error,
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "fused_path": result.fused_path,
+                "fuse_sec": round(fuse_dt, 3),
+                "coreml_loaded": result.coreml_loaded,
+                "coverage_pct": result.coverage_pct,
+                "coreml_partitions": result.coreml_partitions,
+                "coreml_nodes_supported": result.coreml_nodes_supported,
+                "total_nodes": result.total_nodes,
+                "verbose_log": args.log,
+                "error": result.error,
+            },
+            indent=2,
+        )
+    )
 
     if result.coverage_pct is None:
-        print(f"\nABORT: could not parse CoreML coverage from {args.log}",
-              file=sys.stderr)
+        print(f"\nABORT: could not parse CoreML coverage from {args.log}", file=sys.stderr)
         return 4
     if result.coverage_pct < args.threshold:
-        print(f"\nABORT: 2-head fusion coverage {result.coverage_pct:.1f}% "
-              f"< threshold {args.threshold}%", file=sys.stderr)
+        print(
+            f"\nABORT: 2-head fusion coverage {result.coverage_pct:.1f}% "
+            f"< threshold {args.threshold}%",
+            file=sys.stderr,
+        )
         return 5
 
-    print(f"\nPHASE 1 PASS: 2-head fusion CoreML coverage "
-          f"{result.coverage_pct:.1f}% ≥ {args.threshold}% — proceed to Phase 2")
+    print(
+        f"\nPHASE 1 PASS: 2-head fusion CoreML coverage "
+        f"{result.coverage_pct:.1f}% ≥ {args.threshold}% — proceed to Phase 2"
+    )
     return 0
 
 

@@ -10,10 +10,10 @@ embeddings → softmax → top-1 genre.
 Parity target: cosine similarity ≥ 0.999 between torch and ONNX audio
 embeddings on the full GENRE_LABELS eval set.
 """
+
 from __future__ import annotations
 
 import json
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -44,8 +44,9 @@ GENRE_LABELS = [
 ]
 
 
-def export(dst_dir: Path, checkpoint: str = config.CLAP_CHECKPOINT,
-           opset: int = config.OPSET_VERSION) -> Path:
+def export(
+    dst_dir: Path, checkpoint: str = config.CLAP_CHECKPOINT, opset: int = config.OPSET_VERSION
+) -> Path:
     """
     Export CLAP audio-branch directly via `torch.onnx.export`.
 
@@ -66,7 +67,7 @@ def export(dst_dir: Path, checkpoint: str = config.CLAP_CHECKPOINT,
             super().__init__()
             self.clap = clap
 
-        def forward(self, input_features, is_longer):   # type: ignore[no-untyped-def]
+        def forward(self, input_features, is_longer):  # type: ignore[no-untyped-def]
             return self.clap.get_audio_features(
                 input_features=input_features,
                 is_longer=is_longer,
@@ -93,8 +94,7 @@ def export(dst_dir: Path, checkpoint: str = config.CLAP_CHECKPOINT,
             str(canonical),
             input_names=["input_features", "is_longer"],
             output_names=["audio_embed"],
-            dynamic_axes={"input_features": {0: "batch"},
-                          "is_longer":      {0: "batch"}},
+            dynamic_axes={"input_features": {0: "batch"}, "is_longer": {0: "batch"}},
             opset_version=opset,
             do_constant_folding=True,
             dynamo=False,
@@ -138,23 +138,20 @@ def bake_genre_embeddings(dst_path: Path) -> Path:
     return dst_path
 
 
-def _torch_audio_embedding(model, processor, audio_48k_mono: np.ndarray
-                           ) -> np.ndarray:
+def _torch_audio_embedding(model, processor, audio_48k_mono: np.ndarray) -> np.ndarray:
     import torch
-    inputs = processor(audios=audio_48k_mono, sampling_rate=48_000,
-                       return_tensors="pt")
+
+    inputs = processor(audios=audio_48k_mono, sampling_rate=48_000, return_tensors="pt")
     with torch.no_grad():
         feat = model.get_audio_features(**inputs)
     feat = feat / feat.norm(dim=-1, keepdim=True).clamp_min(1e-12)
     return feat.numpy()[0]
 
 
-def _ort_audio_embedding(session, processor, audio_48k_mono: np.ndarray
-                         ) -> np.ndarray:
+def _ort_audio_embedding(session, processor, audio_48k_mono: np.ndarray) -> np.ndarray:
     # Processor in NumPy mode returns `input_features` as float32 and
     # `is_longer` as bool; ORT session wants them verbatim.
-    inputs = processor(audios=audio_48k_mono, sampling_rate=48_000,
-                       return_tensors="np")
+    inputs = processor(audios=audio_48k_mono, sampling_rate=48_000, return_tensors="np")
     wanted = {i.name for i in session.get_inputs()}
     feed = {k: np.asarray(v) for k, v in inputs.items() if k in wanted}
     out = session.run(None, feed)
@@ -174,13 +171,15 @@ class ClapParity:
     passed: bool
 
     def as_dict(self) -> dict[str, Any]:
-        return {"fixture": self.fixture,
-                "cosine": round(self.cosine, 6),
-                "passed": self.passed}
+        return {"fixture": self.fixture, "cosine": round(self.cosine, 6), "passed": self.passed}
 
 
-def validate(onnx_path: Path, audio_48k_mono: np.ndarray, fixture_name: str,
-             min_cosine: float = config.PARITY.clap_min_cosine) -> ClapParity:
+def validate(
+    onnx_path: Path,
+    audio_48k_mono: np.ndarray,
+    fixture_name: str,
+    min_cosine: float = config.PARITY.clap_min_cosine,
+) -> ClapParity:
     """
     Compare torch vs ONNX audio embeddings on identical preprocessor output.
 
@@ -197,14 +196,12 @@ def validate(onnx_path: Path, audio_48k_mono: np.ndarray, fixture_name: str,
 
     model = ClapModel.from_pretrained(config.CLAP_CHECKPOINT).eval()
     processor = ClapProcessor.from_pretrained(config.CLAP_CHECKPOINT)
-    session = ort.InferenceSession(str(onnx_path),
-                                   providers=["CPUExecutionProvider"])
+    session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
 
     # Seed before the processor runs so repeated validations are deterministic.
     torch.manual_seed(0)
     np.random.seed(0)
-    pp = processor(audios=audio_48k_mono, sampling_rate=48_000,
-                   return_tensors="pt")
+    pp = processor(audios=audio_48k_mono, sampling_rate=48_000, return_tensors="pt")
 
     with Timer("clap.validate.torch"):
         with torch.no_grad():
@@ -215,15 +212,14 @@ def validate(onnx_path: Path, audio_48k_mono: np.ndarray, fixture_name: str,
     torch_emb = torch_emb / (np.linalg.norm(torch_emb) + 1e-12)
 
     with Timer("clap.validate.onnx"):
-        feed = {i.name: np.asarray(pp[i.name].numpy()
-                                   if hasattr(pp[i.name], "numpy")
-                                   else pp[i.name])
-                for i in session.get_inputs()}
+        feed = {
+            i.name: np.asarray(pp[i.name].numpy() if hasattr(pp[i.name], "numpy") else pp[i.name])
+            for i in session.get_inputs()
+        }
         onnx_emb = np.asarray(session.run(None, feed)[0])
     if onnx_emb.ndim > 1:
         onnx_emb = onnx_emb[0]
     onnx_emb = onnx_emb / (np.linalg.norm(onnx_emb) + 1e-12)
 
     cos = float(np.dot(torch_emb, onnx_emb))
-    return ClapParity(fixture=fixture_name, cosine=cos,
-                      passed=cos >= min_cosine)
+    return ClapParity(fixture=fixture_name, cosine=cos, passed=cos >= min_cosine)

@@ -15,6 +15,7 @@ Usage:
 Input:  directory with drums.wav, bass.wav, vocals.wav, other.wav
 Output: curated/ subdirectory with N bars per stem + updated stems.json
 """
+
 from __future__ import annotations
 
 import argparse
@@ -32,7 +33,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from stemforge.slicer import detect_bpm_and_beats, slice_at_bars, group_bars_into_phrases
-from stemforge.beat_align import find_best_downbeat_offset, apply_downbeat_offset, filter_ghost_beats
+from stemforge.beat_align import (
+    find_best_downbeat_offset,
+    apply_downbeat_offset,
+    filter_ghost_beats,
+)
 from stemforge.curator import curate, section_stratified_select
 from stemforge.config import load_curation_config, CurationConfig
 from stemforge.curation_schema import (
@@ -40,9 +45,13 @@ from stemforge.curation_schema import (
     build_curation_block,
     CurationSchemaConfig,
 )
-from stemforge.oneshot import extract_oneshots, extract_kicks_from_bass, select_diverse_oneshots, extract_drum_oneshots_via_larsnet
+from stemforge.oneshot import (
+    extract_oneshots,
+    extract_kicks_from_bass,
+    select_diverse_oneshots,
+    extract_drum_oneshots_via_larsnet,
+)
 from stemforge.drum_classifier import classify_and_assign, arrange_drum_pads
-from stemforge.layout import build_stems_layout, layout_to_manifest
 
 
 STEM_NAMES = ["drums", "bass", "vocals", "other"]
@@ -198,9 +207,7 @@ def _reslice_with_padding(
     sr = info.samplerate
     stem_duration = float(info.duration)
 
-    raw_start_in_stem = max(
-        0.0, float(first_downbeat_sec) + (bar_idx - 1) * bar_duration_sec
-    )
+    raw_start_in_stem = max(0.0, float(first_downbeat_sec) + (bar_idx - 1) * bar_duration_sec)
     raw_end_in_stem = min(stem_duration, raw_start_in_stem + phrase_bars * bar_duration_sec)
 
     pad_sec = float(pad_bars_yaml) * bar_duration_sec
@@ -222,9 +229,7 @@ def _reslice_with_padding(
     start_frame = max(0, int(round(window_start_sec * sr)))
     stop_frame = min(info.frames, int(round(window_end_sec * sr)))
     if stop_frame <= start_frame:
-        raise ValueError(
-            f"Empty slice window for bar {bar_idx} in {source_stem_path.name}"
-        )
+        raise ValueError(f"Empty slice window for bar {bar_idx} in {source_stem_path.name}")
 
     data, _ = sf.read(
         str(source_stem_path),
@@ -264,9 +269,13 @@ def _detect_reference_onsets(
     musical downbeats.
     """
     import librosa
+
     y, sr = librosa.load(str(reference_wav), sr=target_sr, mono=True)
     onset_frames = librosa.onset.onset_detect(
-        y=y, sr=sr, units="frames", backtrack=True,
+        y=y,
+        sr=sr,
+        units="frames",
+        backtrack=True,
     )
     return librosa.frames_to_time(onset_frames, sr=sr)
 
@@ -308,8 +317,7 @@ def _reextract_slice(
             f.seek(start_frame)
             data = f.read(n_frames, always_2d=True)
         if data.shape[0] < n_frames:
-            pad = np.zeros((n_frames - data.shape[0], data.shape[1]),
-                           dtype=data.dtype)
+            pad = np.zeros((n_frames - data.shape[0], data.shape[1]), dtype=data.dtype)
             data = np.concatenate([data, pad], axis=0)
         sf.write(str(dst_path), data, sr, subtype="PCM_24")
         return True
@@ -327,11 +335,15 @@ def _trim_wav_to_first_onset(wav_path: Path, threshold_ms: float = 30.0) -> bool
     trim it and zero-pad the tail. Returns True if the file was modified.
     """
     import librosa
+
     info = sf.info(str(wav_path))
     target_sr = info.samplerate
     y_mono, _ = librosa.load(str(wav_path), sr=target_sr, mono=True)
     onset_frames = librosa.onset.onset_detect(
-        y=y_mono, sr=target_sr, units="samples", backtrack=True,
+        y=y_mono,
+        sr=target_sr,
+        units="samples",
+        backtrack=True,
     )
     if len(onset_frames) == 0:
         return False
@@ -368,8 +380,7 @@ def _normalize_wav_duration(wav_path: Path, target_sec: float) -> None:
     if data.shape[0] > target_frames:
         data = data[:target_frames]
     elif data.shape[0] < target_frames:
-        pad = np.zeros((target_frames - data.shape[0], data.shape[1]),
-                       dtype=data.dtype)
+        pad = np.zeros((target_frames - data.shape[0], data.shape[1]), dtype=data.dtype)
         data = np.concatenate([data, pad], axis=0)
     sf.write(str(wav_path), data, sr, subtype="PCM_24")
 
@@ -387,7 +398,10 @@ def _parse_phrase_index(filename: str) -> int | None:
 
 
 def _first_bar_idx_for_phrase(
-    bar_dir: Path, stem_name: str, phrase_bars: int, phrase_idx: int,
+    bar_dir: Path,
+    stem_name: str,
+    phrase_bars: int,
+    phrase_idx: int,
 ) -> int | None:
     """Resolve phrase idx (1-based) → bar-grid idx of its first underlying bar.
 
@@ -436,21 +450,41 @@ def run(
     # `--pipeline` together. Believer-bug regression 2026-05-06.
     if _pipeline_injects_processing_config(pipeline) and layout_mode != "production":
         if json_events:
-            emit({"event": "progress", "phase": "config", "pct": 0,
-                  "message": (f"--pipeline injects processing_config; "
-                              f"overriding layout_mode {layout_mode!r} -> 'production' "
-                              f"so the M4L loadSong() path triggers")})
+            emit(
+                {
+                    "event": "progress",
+                    "phase": "config",
+                    "pct": 0,
+                    "message": (
+                        f"--pipeline injects processing_config; "
+                        f"overriding layout_mode {layout_mode!r} -> 'production' "
+                        f"so the M4L loadSong() path triggers"
+                    ),
+                }
+            )
         layout_mode = "production"
 
     is_loops_only = layout_mode == "loops-only"
     is_production = layout_mode == "production"
 
     if is_loops_only and json_events:
-        emit({"event": "progress", "phase": "config", "pct": 0,
-              "message": "loops-only mode: 16 bar loops per stem, no one-shots"})
+        emit(
+            {
+                "event": "progress",
+                "phase": "config",
+                "pct": 0,
+                "message": "loops-only mode: 16 bar loops per stem, no one-shots",
+            }
+        )
     if is_production and json_events:
-        emit({"event": "progress", "phase": "config", "pct": 0,
-              "message": "production mode: 16 loops per stem + drum one-shots"})
+        emit(
+            {
+                "event": "progress",
+                "phase": "config",
+                "pct": 0,
+                "message": "production mode: 16 loops per stem + drum one-shots",
+            }
+        )
 
     if not stems:
         if json_events:
@@ -458,12 +492,14 @@ def run(
         raise FileNotFoundError(f"No stems found in {stems_dir}")
 
     if json_events:
-        emit({
-            "event": "progress",
-            "phase": "slicing",
-            "pct": 0,
-            "message": f"Slicing {len(stems)} stems into bars (time sig: {time_sig}/4)",
-        })
+        emit(
+            {
+                "event": "progress",
+                "phase": "slicing",
+                "pct": 0,
+                "message": f"Slicing {len(stems)} stems into bars (time sig: {time_sig}/4)",
+            }
+        )
 
     # Step 1: Detect BPM and beats.
     #
@@ -504,9 +540,7 @@ def run(
         bpm = manifest_tempo["bpm"]
         first_downbeat_sec = manifest_tempo["first_downbeat_sec"]
         # Use the longest stem as the duration anchor for grid synthesis.
-        max_duration = max(
-            float(sf.info(str(p)).duration) for p in stems.values()
-        )
+        max_duration = max(float(sf.info(str(p)).duration) for p in stems.values())
         beat_times, downbeat_times = _synthesize_beat_grid(
             bpm=bpm,
             first_downbeat_sec=first_downbeat_sec,
@@ -514,17 +548,19 @@ def run(
             time_sig=time_sig,
         )
         if json_events:
-            emit({
-                "event": "progress",
-                "phase": "alignment",
-                "pct": 2,
-                "message": (
-                    f"using stems.json tempo: bpm={bpm:.2f}, "
-                    f"first_downbeat={first_downbeat_sec:.4f}s "
-                    f"(source: {manifest_tempo['source']}) — "
-                    f"{len(beat_times)} beats, {len(downbeat_times)} downbeats"
-                ),
-            })
+            emit(
+                {
+                    "event": "progress",
+                    "phase": "alignment",
+                    "pct": 2,
+                    "message": (
+                        f"using stems.json tempo: bpm={bpm:.2f}, "
+                        f"first_downbeat={first_downbeat_sec:.4f}s "
+                        f"(source: {manifest_tempo['source']}) — "
+                        f"{len(beat_times)} beats, {len(downbeat_times)} downbeats"
+                    ),
+                }
+            )
     else:
         # No usable stems.json — fall back to in-process detection.
         # Always get librosa beats as baseline (fast, reliable on drums).
@@ -532,6 +568,7 @@ def run(
 
         try:
             from stemforge.beat_detect import detect_beats_and_downbeats
+
             bt_source = source_audio or bpm_source
             bt_bpm, bt_beats, bt_downbeats = detect_beats_and_downbeats(bt_source)
 
@@ -545,9 +582,7 @@ def run(
                 )
                 bt_bar_durs = np.diff(bt_downbeats)
                 bt_cv = (
-                    bt_bar_durs[:-1].std() / bt_bar_durs[:-1].mean()
-                    if len(bt_bar_durs) > 2
-                    else 1
+                    bt_bar_durs[:-1].std() / bt_bar_durs[:-1].mean() if len(bt_bar_durs) > 2 else 1
                 )
 
                 if bt_cv < lib_cv:
@@ -556,11 +591,23 @@ def run(
                     downbeat_times = bt_downbeats
                     if json_events:
                         src_label = "full mix" if source_audio else "drums stem"
-                        emit({"event": "progress", "phase": "alignment", "pct": 2,
-                              "message": f"beat-this ({src_label}): {len(downbeat_times)} downbeats, CV {bt_cv*100:.1f}% (librosa was {lib_cv*100:.1f}%)"})
+                        emit(
+                            {
+                                "event": "progress",
+                                "phase": "alignment",
+                                "pct": 2,
+                                "message": f"beat-this ({src_label}): {len(downbeat_times)} downbeats, CV {bt_cv * 100:.1f}% (librosa was {lib_cv * 100:.1f}%)",
+                            }
+                        )
                 elif json_events:
-                    emit({"event": "progress", "phase": "alignment", "pct": 2,
-                          "message": f"beat-this CV {bt_cv*100:.1f}% > librosa {lib_cv*100:.1f}%, using librosa"})
+                    emit(
+                        {
+                            "event": "progress",
+                            "phase": "alignment",
+                            "pct": 2,
+                            "message": f"beat-this CV {bt_cv * 100:.1f}% > librosa {lib_cv * 100:.1f}%, using librosa",
+                        }
+                    )
         except ImportError:
             pass
 
@@ -593,8 +640,14 @@ def run(
                 if downbeat_offset > 0:
                     corrections.append(f"shifted {downbeat_offset} beat(s)")
                 if json_events:
-                    emit({"event": "progress", "phase": "alignment", "pct": 2,
-                          "message": f"beat grid corrected: {', '.join(corrections)} (CV {original_cv*100:.1f}%→{corrected_cv*100:.1f}%)"})
+                    emit(
+                        {
+                            "event": "progress",
+                            "phase": "alignment",
+                            "pct": 2,
+                            "message": f"beat grid corrected: {', '.join(corrections)} (CV {original_cv * 100:.1f}%→{corrected_cv * 100:.1f}%)",
+                        }
+                    )
 
     if json_events:
         emit({"event": "bpm", "bpm": bpm, "beat_count": len(beat_times)})
@@ -637,12 +690,14 @@ def run(
 
         pct = int(((i + 1) / len(stems)) * 50)  # slicing = 0-50%
         if json_events:
-            emit({
-                "event": "progress",
-                "phase": "slicing",
-                "pct": pct,
-                "message": f"{stem_name}: {len(bar_paths)} bars",
-            })
+            emit(
+                {
+                    "event": "progress",
+                    "phase": "slicing",
+                    "pct": pct,
+                    "message": f"{stem_name}: {len(bar_paths)} bars",
+                }
+            )
 
     # Step 3: Per-stem phrase grouping + curation
     # Each stem gets its own phrase_bars and strategy from the config.
@@ -663,6 +718,7 @@ def run(
     # not explicitly forwarded.
     if is_loops_only or is_production:
         import dataclasses as _dc
+
         for s in stem_configs:
             sc = stem_configs[s]
             os_count = 8 if (is_production and s == "drums") else 0
@@ -679,9 +735,7 @@ def run(
     # In loops-only mode, always use per-stem curation — mirroring from drums
     # causes silent bars in non-drum stems (e.g. vocal bars from instrumental sections).
     all_same_phrase = (
-        len(phrase_bars_set) == 1
-        and next(iter(phrase_bars_set)) == 1
-        and not is_loops_only
+        len(phrase_bars_set) == 1 and next(iter(phrase_bars_set)) == 1 and not is_loops_only
     )
 
     curated_manifest = {
@@ -715,6 +769,7 @@ def run(
 
         # Build temp pool with only common-range bars
         import tempfile
+
         curation_pool = Path(tempfile.mkdtemp(prefix="sf_curate_"))
         common_bar_paths = []
         for bf in sorted(curation_bar_dir.glob(f"{curation_source}_bar_*.wav")):
@@ -725,16 +780,21 @@ def run(
                 common_bar_paths.append(dst)
 
         if json_events:
-            emit({
-                "event": "progress",
-                "phase": "curating",
-                "pct": 55,
-                "message": f"Selecting {n_bars} from {curation_source} ({len(common_bar_paths)} mirrorable)",
-            })
+            emit(
+                {
+                    "event": "progress",
+                    "phase": "curating",
+                    "pct": 55,
+                    "message": f"Selecting {n_bars} from {curation_source} ({len(common_bar_paths)} mirrorable)",
+                }
+            )
 
         selected_paths = curate(
-            curation_pool, n_bars=n_bars, strategy=sc.strategy,
-            rms_floor=sc.rms_floor, crest_min=sc.crest_min,
+            curation_pool,
+            n_bars=n_bars,
+            strategy=sc.strategy,
+            rms_floor=sc.rms_floor,
+            crest_min=sc.crest_min,
             content_density_min=sc.content_density_min,
             distance_weights=sc.distance_weights,
         )
@@ -752,10 +812,14 @@ def run(
                 selected_indices.append(int(m.group(1)))
 
         if json_events:
-            emit({
-                "event": "progress", "phase": "curating", "pct": 70,
-                "message": f"Selected {len(selected_indices)} bars, mirroring across stems",
-            })
+            emit(
+                {
+                    "event": "progress",
+                    "phase": "curating",
+                    "pct": 70,
+                    "message": f"Selected {len(selected_indices)} bars, mirroring across stems",
+                }
+            )
 
         # Mirror across all stems — v1: padded re-slice from source stem
         # per selected bar. Analysis ran on exact-bar WAVs; padding is
@@ -808,16 +872,19 @@ def run(
                         "phrase_bars": 1,
                         "file": str(dst),
                     }
-                    entry.update(build_curation_block(
-                        dst, phrase_bars=1,
-                        time_sig_numerator=time_sig,
-                        stem_schema=stem_schema,
-                        bpm=bpm,
-                        pad_bars_applied=reslice["pad_bars_applied"],
-                        bar_duration_sec=bar_duration_sec,
-                        ts_num=time_sig,
-                        raw_start_sec=reslice["raw_start_sec"],
-                    ))
+                    entry.update(
+                        build_curation_block(
+                            dst,
+                            phrase_bars=1,
+                            time_sig_numerator=time_sig,
+                            stem_schema=stem_schema,
+                            bpm=bpm,
+                            pad_bars_applied=reslice["pad_bars_applied"],
+                            bar_duration_sec=bar_duration_sec,
+                            ts_num=time_sig,
+                            raw_start_sec=reslice["raw_start_sec"],
+                        )
+                    )
                 else:
                     # Fallback: copy exact-bar WAV (v0 behaviour)
                     shutil.copy2(src, dst)
@@ -827,12 +894,15 @@ def run(
                         "phrase_bars": 1,
                         "file": str(dst),
                     }
-                    entry.update(build_curation_block(
-                        dst, phrase_bars=1,
-                        time_sig_numerator=time_sig,
-                        stem_schema=stem_schema,
-                        bpm=bpm,
-                    ))
+                    entry.update(
+                        build_curation_block(
+                            dst,
+                            phrase_bars=1,
+                            time_sig_numerator=time_sig,
+                            stem_schema=stem_schema,
+                            bpm=bpm,
+                        )
+                    )
                 stem_bars.append(entry)
             curated_manifest["stems"][stem_name] = stem_bars
 
@@ -854,12 +924,24 @@ def run(
             try:
                 ref_onsets = _detect_reference_onsets(ref_path)
                 if json_events:
-                    emit({"event": "progress", "phase": "curating", "pct": 88,
-                          "message": f"alignment: detected {len(ref_onsets)} onsets on {ref_stem_name} stem"})
+                    emit(
+                        {
+                            "event": "progress",
+                            "phase": "curating",
+                            "pct": 88,
+                            "message": f"alignment: detected {len(ref_onsets)} onsets on {ref_stem_name} stem",
+                        }
+                    )
             except Exception as e:
                 if json_events:
-                    emit({"event": "progress", "phase": "curating", "pct": 88,
-                          "message": f"alignment: ref-onset detection failed: {e}"})
+                    emit(
+                        {
+                            "event": "progress",
+                            "phase": "curating",
+                            "pct": 88,
+                            "message": f"alignment: ref-onset detection failed: {e}",
+                        }
+                    )
                 ref_onsets = None
 
         # ── Per-stem mode: each stem curated independently with its own phrase_bars ──
@@ -873,8 +955,11 @@ def run(
                 phrase_dir = stems_dir / f"{stem_name}_phrases"
                 if phrase_dir.exists():
                     shutil.rmtree(phrase_dir)
-                phrase_paths = group_bars_into_phrases(
-                    bar_dir, stem_name, sc.phrase_bars, output_dir=stems_dir,
+                group_bars_into_phrases(
+                    bar_dir,
+                    stem_name,
+                    sc.phrase_bars,
+                    output_dir=stems_dir,
                 )
                 curation_dir = phrase_dir
                 file_pattern = f"{stem_name}_phrase_*.wav"
@@ -887,39 +972,49 @@ def run(
             n_available = len(list(curation_dir.glob(file_pattern)))
 
             if json_events:
-                emit({
-                    "event": "progress",
-                    "phase": "curating",
-                    "pct": 55 + int((si / len(stem_bar_dirs)) * 35),
-                    "message": f"{stem_name}: selecting {sc.loop_count} {item_label}s from {n_available}",
-                })
+                emit(
+                    {
+                        "event": "progress",
+                        "phase": "curating",
+                        "pct": 55 + int((si / len(stem_bar_dirs)) * 35),
+                        "message": f"{stem_name}: selecting {sc.loop_count} {item_label}s from {n_available}",
+                    }
+                )
 
             # Detect song structure if any selection path needs it: melodic
             # mode (section-stratified) OR section-main-alt strategy.
             song_structure = None
             needs_structure = (
-                (sc.bottom_mode == "melodic" and sc.midi_extract)
-                or sc.strategy == "section-main-alt"
-            )
+                sc.bottom_mode == "melodic" and sc.midi_extract
+            ) or sc.strategy == "section-main-alt"
             if needs_structure:
                 try:
                     from stemforge.segmenter import detect_song_structure
+
                     song_structure = detect_song_structure(
                         stems.get(stem_name, next(iter(stems.values()))),
-                        beat_times=beat_times, bpm=bpm, time_sig=time_sig,
+                        beat_times=beat_times,
+                        bpm=bpm,
+                        time_sig=time_sig,
                     )
                     if json_events and song_structure.boundaries_bars:
-                        emit({
-                            "event": "progress",
-                            "phase": "curating",
-                            "pct": 55 + int((si / len(stem_bar_dirs)) * 35),
-                            "message": f"{stem_name}: form={song_structure.form}, selecting across sections",
-                        })
+                        emit(
+                            {
+                                "event": "progress",
+                                "phase": "curating",
+                                "pct": 55 + int((si / len(stem_bar_dirs)) * 35),
+                                "message": f"{stem_name}: form={song_structure.form}, selecting across sections",
+                            }
+                        )
                 except Exception:
                     pass  # fall back to regular curation
 
-            if (song_structure and song_structure.boundaries_bars
-                and sc.bottom_mode == "melodic" and sc.midi_extract):
+            if (
+                song_structure
+                and song_structure.boundaries_bars
+                and sc.bottom_mode == "melodic"
+                and sc.midi_extract
+            ):
                 selected = section_stratified_select(
                     curation_dir,
                     n_bars=sc.loop_count,
@@ -961,11 +1056,15 @@ def run(
                     if 0.5 * expected_dur <= d <= 1.5 * expected_dur:
                         kept.append(s)
                     elif json_events:
-                        emit({
-                            "event": "progress", "phase": "curating", "pct": 90,
-                            "message": f"{stem_name}: dropped {s.name} "
-                                       f"(duration {d:.2f}s vs expected {expected_dur:.2f}s)"
-                        })
+                        emit(
+                            {
+                                "event": "progress",
+                                "phase": "curating",
+                                "pct": 90,
+                                "message": f"{stem_name}: dropped {s.name} "
+                                f"(duration {d:.2f}s vs expected {expected_dur:.2f}s)",
+                            }
+                        )
                 selected = kept
 
             stem_bars = []
@@ -986,7 +1085,10 @@ def run(
                 phrase_idx = _parse_phrase_index(src.name)
                 if phrase_idx is not None:
                     first_bar_idx = _first_bar_idx_for_phrase(
-                        bar_dir, stem_name, sc.phrase_bars, phrase_idx,
+                        bar_dir,
+                        stem_name,
+                        sc.phrase_bars,
+                        phrase_idx,
                     )
                 else:
                     first_bar_idx = _parse_bar_index(src.name)
@@ -1015,16 +1117,19 @@ def run(
                         "phrase_bars": sc.phrase_bars,
                         "file": str(dst),
                     }
-                    entry.update(build_curation_block(
-                        dst, phrase_bars=sc.phrase_bars,
-                        time_sig_numerator=time_sig,
-                        stem_schema=stem_schema,
-                        bpm=bpm,
-                        pad_bars_applied=reslice["pad_bars_applied"],
-                        bar_duration_sec=bar_duration_sec,
-                        ts_num=time_sig,
-                        raw_start_sec=reslice["raw_start_sec"],
-                    ))
+                    entry.update(
+                        build_curation_block(
+                            dst,
+                            phrase_bars=sc.phrase_bars,
+                            time_sig_numerator=time_sig,
+                            stem_schema=stem_schema,
+                            bpm=bpm,
+                            pad_bars_applied=reslice["pad_bars_applied"],
+                            bar_duration_sec=bar_duration_sec,
+                            ts_num=time_sig,
+                            raw_start_sec=reslice["raw_start_sec"],
+                        )
+                    )
                 else:
                     target_dur = _bar_dur_for_filter * float(sc.phrase_bars or 1)
                     used_alignment = False
@@ -1045,10 +1150,15 @@ def run(
                     ):
                         nominal_start = float(first_bar_idx - 1) * bar_duration_sec
                         snapped_start = _snap_to_nearest_onset(
-                            nominal_start, ref_onsets, max_offset_sec=0.150,
+                            nominal_start,
+                            ref_onsets,
+                            max_offset_sec=0.150,
                         )
                         if _reextract_slice(
-                            source_stem_path, dst, snapped_start, target_dur,
+                            source_stem_path,
+                            dst,
+                            snapped_start,
+                            target_dur,
                         ):
                             used_alignment = True
 
@@ -1066,8 +1176,14 @@ def run(
                             _normalize_wav_duration(dst, target_dur)
                         except Exception as e:
                             if json_events:
-                                emit({"event": "progress", "phase": "curating", "pct": 92,
-                                      "message": f"normalize {dst.name} failed: {e}"})
+                                emit(
+                                    {
+                                        "event": "progress",
+                                        "phase": "curating",
+                                        "pct": 92,
+                                        "message": f"normalize {dst.name} failed: {e}",
+                                    }
+                                )
 
                     # Optional: trim to first onset for performance/key mode
                     # (rotate audio so first transient sits at sample 0; pad
@@ -1080,8 +1196,14 @@ def run(
                             )
                         except Exception as e:
                             if json_events:
-                                emit({"event": "progress", "phase": "curating", "pct": 93,
-                                      "message": f"trim-to-onset {dst.name} failed: {e}"})
+                                emit(
+                                    {
+                                        "event": "progress",
+                                        "phase": "curating",
+                                        "pct": 93,
+                                        "message": f"trim-to-onset {dst.name} failed: {e}",
+                                    }
+                                )
 
                     entry = {
                         "position": position + 1,
@@ -1089,12 +1211,15 @@ def run(
                         "phrase_bars": sc.phrase_bars,
                         "file": str(dst),
                     }
-                    entry.update(build_curation_block(
-                        dst, phrase_bars=sc.phrase_bars,
-                        time_sig_numerator=time_sig,
-                        stem_schema=stem_schema,
-                        bpm=bpm,
-                    ))
+                    entry.update(
+                        build_curation_block(
+                            dst,
+                            phrase_bars=sc.phrase_bars,
+                            time_sig_numerator=time_sig,
+                            stem_schema=stem_schema,
+                            bpm=bpm,
+                        )
+                    )
                 stem_bars.append(entry)
 
             curated_manifest["stems"][stem_name] = stem_bars
@@ -1103,8 +1228,14 @@ def run(
     # loops-only: skip all one-shots
     # production: only extract drum one-shots
     if is_loops_only and json_events:
-        emit({"event": "progress", "phase": "oneshots", "pct": 80,
-              "message": "loops-only mode: skipping one-shot extraction"})
+        emit(
+            {
+                "event": "progress",
+                "phase": "oneshots",
+                "pct": 80,
+                "message": "loops-only mode: skipping one-shot extraction",
+            }
+        )
 
     for stem_name, stem_path in stems.items():
         if is_loops_only:
@@ -1116,23 +1247,31 @@ def run(
             continue
 
         if json_events:
-            emit({
-                "event": "progress",
-                "phase": "oneshots",
-                "pct": 80,
-                "message": f"{stem_name}: extracting one-shots",
-            })
+            emit(
+                {
+                    "event": "progress",
+                    "phase": "oneshots",
+                    "pct": 80,
+                    "message": f"{stem_name}: extracting one-shots",
+                }
+            )
 
         # Extract one-shots — try LarsNet first for drums (clean sub-stem separation)
         os_profiles = []
         if stem_name == "drums":
             from stemforge.drum_separator import is_available as _larsnet_ok
+
             if _larsnet_ok():
                 if json_events:
-                    emit({"event": "progress", "phase": "oneshots", "pct": 81,
-                          "message": "drums: using LarsNet sub-stem separation (kick/snare/hihat/toms/cymbals)"})
-                os_profiles = extract_drum_oneshots_via_larsnet(
-                    stem_path, curated_root, config=sc)
+                    emit(
+                        {
+                            "event": "progress",
+                            "phase": "oneshots",
+                            "pct": 81,
+                            "message": "drums: using LarsNet sub-stem separation (kick/snare/hihat/toms/cymbals)",
+                        }
+                    )
+                os_profiles = extract_drum_oneshots_via_larsnet(stem_path, curated_root, config=sc)
 
         if not os_profiles:
             # Fallback: spectral heuristic extraction
@@ -1181,12 +1320,15 @@ def run(
             }
             # Oneshots have no fixed phrase_bars — pass None so beat_pos_end is
             # derived from BPM + duration.
-            entry.update(build_curation_block(
-                dst, phrase_bars=None,
-                time_sig_numerator=time_sig,
-                stem_schema=stem_schema,
-                bpm=bpm,
-            ))
+            entry.update(
+                build_curation_block(
+                    dst,
+                    phrase_bars=None,
+                    time_sig_numerator=time_sig,
+                    stem_schema=stem_schema,
+                    bpm=bpm,
+                )
+            )
             oneshot_entries.append(entry)
 
         # Upgrade manifest stem entry to v2 format (loops + oneshots)
@@ -1200,12 +1342,14 @@ def run(
             existing["oneshots"] = oneshot_entries
 
         if json_events:
-            emit({
-                "event": "progress",
-                "phase": "oneshots",
-                "pct": 85,
-                "message": f"{stem_name}: {len(oneshot_entries)} one-shots selected",
-            })
+            emit(
+                {
+                    "event": "progress",
+                    "phase": "oneshots",
+                    "pct": 85,
+                    "message": f"{stem_name}: {len(oneshot_entries)} one-shots selected",
+                }
+            )
 
     # Normalize all stems to {loops, oneshots} shape — stems that skipped
     # oneshot extraction (loops-only mode, or non-drum stems in production
@@ -1220,6 +1364,7 @@ def run(
     # Embed processing config (pipeline targets) into manifest for M4L loader
     if pipeline and pipeline.exists():
         import yaml
+
         pipeline_data = yaml.safe_load(pipeline.read_text())
         if "stems" in pipeline_data:
             curated_manifest["processing_config"] = pipeline_data["stems"]
@@ -1240,9 +1385,7 @@ def run(
     if main_manifest.exists():
         main_data = json.loads(main_manifest.read_text())
         # Count items per stem from the manifest we just built
-        bars_per_stem = max(
-            (len(v) for v in curated_manifest["stems"].values()), default=0
-        )
+        bars_per_stem = max((len(v) for v in curated_manifest["stems"].values()), default=0)
         main_data["curated"] = {
             "manifest": str(manifest_path),
             "n_bars": n_bars,
@@ -1263,19 +1406,23 @@ def run(
     items_per_stem = {k: _count_items(v) for k, v in curated_manifest["stems"].items()}
 
     if json_events:
-        emit({
-            "event": "progress",
-            "phase": "curating",
-            "pct": 95,
-            "message": f"Curated {total_items} items across {len(stems)} stems",
-        })
-        emit({
-            "event": "curated",
-            "manifest": str(manifest_path),
-            "items_per_stem": items_per_stem,
-            "stems": list(stems.keys()),
-            "bpm": bpm,
-        })
+        emit(
+            {
+                "event": "progress",
+                "phase": "curating",
+                "pct": 95,
+                "message": f"Curated {total_items} items across {len(stems)} stems",
+            }
+        )
+        emit(
+            {
+                "event": "curated",
+                "manifest": str(manifest_path),
+                "items_per_stem": items_per_stem,
+                "stems": list(stems.keys()),
+                "bpm": bpm,
+            }
+        )
 
     return manifest_path
 
@@ -1342,16 +1489,18 @@ def reslice_curated_from_anchor(
     bar_duration_sec = 60.0 / new_bpm * time_sig_numerator
 
     if json_events:
-        emit({
-            "event": "progress",
-            "phase": "reslice",
-            "pct": 0,
-            "message": (
-                f"reslicing curated loops at new anchor: bpm={new_bpm:.2f}, "
-                f"first_downbeat={new_first_downbeat:.4f}s, "
-                f"bar_duration={bar_duration_sec:.4f}s"
-            ),
-        })
+        emit(
+            {
+                "event": "progress",
+                "phase": "reslice",
+                "pct": 0,
+                "message": (
+                    f"reslicing curated loops at new anchor: bpm={new_bpm:.2f}, "
+                    f"first_downbeat={new_first_downbeat:.4f}s, "
+                    f"bar_duration={bar_duration_sec:.4f}s"
+                ),
+            }
+        )
 
     # Locate source stem WAVs for re-extraction.
     stems_by_name = find_stems(stems_dir)
@@ -1377,12 +1526,14 @@ def reslice_curated_from_anchor(
         source_stem_path = stems_by_name.get(stem_name)
         if source_stem_path is None or not source_stem_path.exists():
             if json_events:
-                emit({
-                    "event": "progress",
-                    "phase": "reslice",
-                    "pct": int((n_done / max(total_loops, 1)) * 100),
-                    "message": f"{stem_name}: no source stem on disk; skipping {len(loops)} loops",
-                })
+                emit(
+                    {
+                        "event": "progress",
+                        "phase": "reslice",
+                        "pct": int((n_done / max(total_loops, 1)) * 100),
+                        "message": f"{stem_name}: no source stem on disk; skipping {len(loops)} loops",
+                    }
+                )
             n_skipped += len(loops)
             continue
 
@@ -1411,12 +1562,14 @@ def reslice_curated_from_anchor(
                 )
             except ValueError as e:
                 if json_events:
-                    emit({
-                        "event": "progress",
-                        "phase": "reslice",
-                        "pct": int((n_done / max(total_loops, 1)) * 100),
-                        "message": f"{stem_name} bar {bar_idx}: {e}; skipping",
-                    })
+                    emit(
+                        {
+                            "event": "progress",
+                            "phase": "reslice",
+                            "pct": int((n_done / max(total_loops, 1)) * 100),
+                            "message": f"{stem_name} bar {bar_idx}: {e}; skipping",
+                        }
+                    )
                 n_skipped += 1
                 continue
 
@@ -1454,48 +1607,65 @@ def reslice_curated_from_anchor(
     # longest source stem so it reflects the new grid.
     curated["bpm"] = new_bpm
     if stems_by_name:
-        max_duration = max(
-            float(sf.info(str(p)).duration) for p in stems_by_name.values()
-        )
+        max_duration = max(float(sf.info(str(p)).duration) for p in stems_by_name.values())
         curated["beat_count"] = int(max_duration * new_bpm / 60.0)
 
     manifest_path.write_text(json.dumps(curated, indent=2))
 
     if json_events:
-        emit({
-            "event": "resliced",
-            "manifest": str(manifest_path),
-            "loops_resliced": n_done,
-            "loops_skipped": n_skipped,
-            "bpm": new_bpm,
-            "first_downbeat_sec": new_first_downbeat,
-        })
+        emit(
+            {
+                "event": "resliced",
+                "manifest": str(manifest_path),
+                "loops_resliced": n_done,
+                "loops_skipped": n_skipped,
+                "bpm": new_bpm,
+                "first_downbeat_sec": new_first_downbeat,
+            }
+        )
 
     return manifest_path
 
 
 def main():
     ap = argparse.ArgumentParser(description="Bar-slice + curate stems from a split session")
-    ap.add_argument("--stems-dir", required=True, type=Path,
-                    help="Directory containing drums.wav, bass.wav, etc.")
-    ap.add_argument("--n-bars", type=int, default=16,
-                    help="Number of bars to select per stem (default: 16)")
-    ap.add_argument("--strategy", default="max-diversity",
-                    choices=["max-diversity", "rhythm-taxonomy", "sectional"])
-    ap.add_argument("--time-sig", type=int, default=4,
-                    help="Time signature numerator (default: 4)")
-    ap.add_argument("--json-events", action="store_true",
-                    help="Emit NDJSON events on stdout")
-    ap.add_argument("--curation", type=Path, default=None,
-                    help="Curation config YAML (default: pipelines/curation.yaml)")
-    ap.add_argument("--pipeline", type=Path, default=None,
-                    help="Processing pipeline YAML to embed in manifest (e.g. pipelines/production_idm.yaml)")
-    ap.add_argument("--reslice-only", action="store_true",
-                    help="Skip bar-slicing + curation. Just rewrite the existing "
-                         "curated/<stem>/bar_NNN.wav files at the current "
-                         "stems.json anchor (BPM + first_downbeat). Used by "
-                         "`stemforge re-anchor` to keep curated loops in sync "
-                         "without re-running diversity selection or LarsNet.")
+    ap.add_argument(
+        "--stems-dir",
+        required=True,
+        type=Path,
+        help="Directory containing drums.wav, bass.wav, etc.",
+    )
+    ap.add_argument(
+        "--n-bars", type=int, default=16, help="Number of bars to select per stem (default: 16)"
+    )
+    ap.add_argument(
+        "--strategy",
+        default="max-diversity",
+        choices=["max-diversity", "rhythm-taxonomy", "sectional"],
+    )
+    ap.add_argument("--time-sig", type=int, default=4, help="Time signature numerator (default: 4)")
+    ap.add_argument("--json-events", action="store_true", help="Emit NDJSON events on stdout")
+    ap.add_argument(
+        "--curation",
+        type=Path,
+        default=None,
+        help="Curation config YAML (default: pipelines/curation.yaml)",
+    )
+    ap.add_argument(
+        "--pipeline",
+        type=Path,
+        default=None,
+        help="Processing pipeline YAML to embed in manifest (e.g. pipelines/production_idm.yaml)",
+    )
+    ap.add_argument(
+        "--reslice-only",
+        action="store_true",
+        help="Skip bar-slicing + curation. Just rewrite the existing "
+        "curated/<stem>/bar_NNN.wav files at the current "
+        "stems.json anchor (BPM + first_downbeat). Used by "
+        "`stemforge re-anchor` to keep curated loops in sync "
+        "without re-running diversity selection or LarsNet.",
+    )
     args = ap.parse_args()
 
     if args.reslice_only:

@@ -5,6 +5,7 @@ Fixture resolution is designed to be tolerant across development stages:
 - Amxd / Als: in-tree only; skip if absent so upstream gaps don't fail G.
 - Schema / yaml: always read from interfaces/ — required.
 """
+
 from __future__ import annotations
 
 import json
@@ -60,8 +61,7 @@ def als_path() -> Path:
     p = V0 / "build" / "StemForge.als"
     if not p.exists():
         pytest.skip(
-            "StemForge.als not built yet — skeleton.als asset pending "
-            "(see v0/state/D/blocker.md)"
+            "StemForge.als not built yet — skeleton.als asset pending (see v0/state/D/blocker.md)"
         )
     return p
 
@@ -82,12 +82,14 @@ def ndjson_schema() -> dict:
 @pytest.fixture(scope="session")
 def tracks_yaml() -> dict:
     import yaml
+
     return yaml.safe_load((V0 / "interfaces" / "tracks.yaml").read_text())
 
 
 @pytest.fixture(scope="session")
 def device_yaml() -> dict:
     import yaml
+
     return yaml.safe_load((V0 / "interfaces" / "device.yaml").read_text())
 
 

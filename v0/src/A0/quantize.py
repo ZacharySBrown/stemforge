@@ -8,11 +8,12 @@ within 1% of fp32 reference. Skip (not fail) if non-trivial; flag as
 Demucs is explicitly **out of scope** — the brief states int8 quant is
 almost certainly too lossy for a waveform regression model.
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import Any, Callable
 
 
 @dataclass
@@ -55,10 +56,14 @@ def quantize_dynamic(src: Path, dst: Path) -> None:
     )
 
 
-def attempt_int8(src: Path, dst: Path, model_name: str,
-                 eval_fn: Callable[[Path], float],
-                 min_samples: int = 200,
-                 max_accuracy_drop: float = 0.01) -> QuantAttempt:
+def attempt_int8(
+    src: Path,
+    dst: Path,
+    model_name: str,
+    eval_fn: Callable[[Path], float],
+    min_samples: int = 200,
+    max_accuracy_drop: float = 0.01,
+) -> QuantAttempt:
     """
     Attempt int8 dynamic quantization + eval.
 
@@ -69,17 +74,23 @@ def attempt_int8(src: Path, dst: Path, model_name: str,
     try:
         quantize_dynamic(src, dst)
     except Exception as e:
-        return QuantAttempt(model_name=model_name, src_path=str(src),
-                            int8_path=None,
-                            reason=f"quantize_dynamic failed: {e!s}")
+        return QuantAttempt(
+            model_name=model_name,
+            src_path=str(src),
+            int8_path=None,
+            reason=f"quantize_dynamic failed: {e!s}",
+        )
 
     try:
         fp32_top1 = eval_fn(src)
         int8_top1 = eval_fn(dst)
     except Exception as e:
-        return QuantAttempt(model_name=model_name, src_path=str(src),
-                            int8_path=str(dst),
-                            reason=f"eval failed: {e!s}")
+        return QuantAttempt(
+            model_name=model_name,
+            src_path=str(src),
+            int8_path=str(dst),
+            reason=f"eval failed: {e!s}",
+        )
 
     delta = float(fp32_top1 - int8_top1)
     passed = delta <= max_accuracy_drop
@@ -91,7 +102,9 @@ def attempt_int8(src: Path, dst: Path, model_name: str,
         int8_top1=round(float(int8_top1), 4),
         accuracy_delta=round(delta, 4),
         passed=passed,
-        reason=("within 1% of fp32" if passed
-                else f"top-1 dropped {delta*100:.2f}% > 1% threshold; "
-                     "not shipping int8"),
+        reason=(
+            "within 1% of fp32"
+            if passed
+            else f"top-1 dropped {delta * 100:.2f}% > 1% threshold; not shipping int8"
+        ),
     )

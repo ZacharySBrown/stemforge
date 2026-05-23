@@ -26,6 +26,7 @@ Outputs
   /tmp/sf_fusion_debug/03_subgraphs_off.log         — combined verbose log
   /tmp/sf_fusion_debug/03_subgraphs_off.json        — {combo: result}
 """
+
 from __future__ import annotations
 
 import json
@@ -100,9 +101,7 @@ def run_one(name: str, opts: dict[str, str]) -> dict:
     sess_opts.log_severity_level = 0
     sess_opts.log_verbosity_level = 1
     try:
-        sess_opts.add_session_config_entry(
-            "session.coreml.model_cache_dir", str(cache_dir)
-        )
+        sess_opts.add_session_config_entry("session.coreml.model_cache_dir", str(cache_dir))
     except Exception:  # noqa: BLE001
         pass
 
@@ -138,17 +137,19 @@ def run_one(name: str, opts: dict[str, str]) -> dict:
         and "CoreMLExecutionProvider" in result["providers_resolved"]
         and result["error"] is None
     )
-    print(f"[03] result {name}: compiled={result['coreml_compiled']} "
-          f"loaded={result['coreml_loaded']} "
-          f"infer={result['inference_sec']}s err={result['error']}", flush=True)
+    print(
+        f"[03] result {name}: compiled={result['coreml_compiled']} "
+        f"loaded={result['coreml_loaded']} "
+        f"infer={result['inference_sec']}s err={result['error']}",
+        flush=True,
+    )
     return result
 
 
 def main() -> int:
     if not FUSED.exists():
         print(f"ERROR: missing fused artifact: {FUSED}", file=sys.stderr)
-        print("Run `uv run --active python -m v0.src.A0.fuse_ft` first.",
-              file=sys.stderr)
+        print("Run `uv run --active python -m v0.src.A0.fuse_ft` first.", file=sys.stderr)
         return 2
 
     results: dict[str, dict] = {}
@@ -167,11 +168,7 @@ def main() -> int:
     print(json.dumps(results, indent=2))
 
     # Exit 0 if at least one combo (other than D CPUOnly) compiled on CoreML.
-    success = any(
-        r["coreml_compiled"]
-        for name, r in results.items()
-        if name != "D_cpuonly_sanity"
-    )
+    success = any(r["coreml_compiled"] for name, r in results.items() if name != "D_cpuonly_sanity")
     return 0 if success else 1
 
 

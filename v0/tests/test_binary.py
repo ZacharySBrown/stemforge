@@ -13,6 +13,7 @@ These tests run the binary against a committed test fixture
 
 All tests skip cleanly if the binary is not resolvable — A gates G at runtime.
 """
+
 from __future__ import annotations
 
 import json
@@ -27,7 +28,10 @@ TIMEOUT_SEC = 600  # Demucs on CPU takes ~20s per 10s of audio; leave headroom.
 
 # ── helpers ────────────────────────────────────────────────────────────────
 
-def _run_split(binary: Path, wav: Path, out: Path, json_events: bool = True) -> subprocess.CompletedProcess:
+
+def _run_split(
+    binary: Path, wav: Path, out: Path, json_events: bool = True
+) -> subprocess.CompletedProcess:
     # CLI flag is --out (see v0/src/A/cli/main.cpp).
     cmd = [str(binary), "split", str(wav), "--out", str(out)]
     if json_events:
@@ -73,6 +77,7 @@ def _type_name(v) -> str:
 
 # ── tests ──────────────────────────────────────────────────────────────────
 
+
 def test_binary_version(binary_path: Path) -> None:
     """Binary supports --version and exits 0."""
     proc = subprocess.run(
@@ -82,7 +87,7 @@ def test_binary_version(binary_path: Path) -> None:
         timeout=30,
     )
     assert proc.returncode == 0, f"stderr={proc.stderr!r}"
-    assert (proc.stdout.strip() or proc.stderr.strip()), "no version output"
+    assert proc.stdout.strip() or proc.stderr.strip(), "no version output"
 
 
 def test_binary_emits_valid_ndjson(
@@ -104,8 +109,7 @@ def test_binary_emits_valid_ndjson(
     for i, evt in enumerate(events):
         errors = list(validator.iter_errors(evt))
         assert not errors, (
-            f"event #{i} ({evt.get('event')!r}) failed schema: "
-            f"{[e.message for e in errors]}"
+            f"event #{i} ({evt.get('event')!r}) failed schema: {[e.message for e in errors]}"
         )
 
 

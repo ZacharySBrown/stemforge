@@ -1,4 +1,5 @@
 """Smoke tests for A0 config + parity constants."""
+
 from __future__ import annotations
 
 from v0.src.A0 import config
@@ -23,13 +24,11 @@ def test_opset_supports_stft():
 
 
 def test_paths_are_under_repo_root():
-    for p in (config.A0_STATE_DIR, config.BUILD_MODELS_DIR,
-              config.MANIFEST_PATH):
+    for p in (config.A0_STATE_DIR, config.BUILD_MODELS_DIR, config.MANIFEST_PATH):
         assert str(p).startswith(str(config.REPO_ROOT))
 
 
 def test_demucs_models_registry_complete():
     # PIVOT.md names these three as the required export set.
-    assert set(config.DEMUCS_MODELS) == {"htdemucs_ft", "htdemucs_6s",
-                                         "htdemucs"}
+    assert set(config.DEMUCS_MODELS) == {"htdemucs_ft", "htdemucs_6s", "htdemucs"}
     assert config.DEMUCS_MODELS["htdemucs_ft"][2] == "primary"

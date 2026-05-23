@@ -9,6 +9,7 @@ We parse with the stdlib ``xml.etree`` rather than adding an ``lxml``
 dependency — the checks here are structural (tag names, string matches) and
 don't need lxml's extra features.
 """
+
 from __future__ import annotations
 
 import gzip
@@ -17,6 +18,7 @@ from pathlib import Path
 
 
 # ── helpers ────────────────────────────────────────────────────────────────
+
 
 def _parse_als(als_path: Path) -> ET.ElementTree:
     with gzip.open(als_path, "rb") as f:
@@ -59,6 +61,7 @@ def _find_track_by_name(tree: ET.ElementTree, name: str):
 
 # ── tests ──────────────────────────────────────────────────────────────────
 
+
 def test_als_exists(als_path: Path) -> None:
     """File is present (else skipped) and is large enough to be real."""
     assert als_path.exists()
@@ -84,8 +87,7 @@ def test_als_has_expected_tracks(als_path: Path, tracks_yaml: dict) -> None:
     names = _track_names(tree)
     missing = [t["name"] for t in tracks_yaml["tracks"] if t["name"] not in names]
     assert not missing, (
-        f"tracks from tracks.yaml missing in .als: {missing}. "
-        f"Names seen: {sorted(names)}"
+        f"tracks from tracks.yaml missing in .als: {missing}. Names seen: {sorted(names)}"
     )
 
 

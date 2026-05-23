@@ -10,6 +10,7 @@ Usage:
     python -m v0.src.A0.validate                 # validate all models in manifest
     python -m v0.src.A0.validate --model ast     # validate one
 """
+
 from __future__ import annotations
 
 import argparse
@@ -19,8 +20,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import (ast_export, clap_export, config, demucs_export, fixtures,
-               manifest, progress)
+from . import ast_export, clap_export, config, demucs_export, fixtures, manifest, progress
 
 
 def _validate_demucs(manifest_entries: dict) -> list[dict]:
@@ -36,15 +36,16 @@ def _validate_demucs(manifest_entries: dict) -> list[dict]:
     for variant in variants:
         # Collect head entries (multi-head bags have *_headN keys;
         # single-model bags have the variant as the key directly).
-        head_entries = [entry for key, entry in manifest_entries.items()
-                        if key == variant or key.startswith(f"{variant}_head")]
+        head_entries = [
+            entry
+            for key, entry in manifest_entries.items()
+            if key == variant or key.startswith(f"{variant}_head")
+        ]
         if not head_entries:
             continue
 
         onnx_paths: list[Path] = []
-        for entry in sorted(
-                head_entries,
-                key=lambda e: e.get("bag_head_index", 0)):
+        for entry in sorted(head_entries, key=lambda e: e.get("bag_head_index", 0)):
             p = Path(entry["path"])
             if not p.is_absolute():
                 p = config.REPO_ROOT / p
@@ -59,27 +60,29 @@ def _validate_demucs(manifest_entries: dict) -> list[dict]:
         per_fx = []
         primary_pass = True
         for fx in fixtures.all_fixtures():
-            p = demucs_export.validate_head(
-                bag, onnx_paths, fx.samples, fx.name, variant, seg)
+            p = demucs_export.validate_head(bag, onnx_paths, fx.samples, fx.name, variant, seg)
             per_fx.append(p.as_dict())
             if fx.name == "full_mix_30s":
                 primary_pass &= p.passed
-            progress.emit("validate.demucs", 50,
-                          f"{variant} {fx.name}: "
-                          f"rms={p.residual_rms_dbfs:+.1f}dBFS "
-                          f"pass={p.passed}")
-        results.append({
-            "model": variant,
-            "passed": primary_pass,
-            "fixtures": per_fx,
-            "heads": [str(p.relative_to(config.REPO_ROOT))
-                      for p in onnx_paths],
-        })
+            progress.emit(
+                "validate.demucs",
+                50,
+                f"{variant} {fx.name}: rms={p.residual_rms_dbfs:+.1f}dBFS pass={p.passed}",
+            )
+        results.append(
+            {
+                "model": variant,
+                "passed": primary_pass,
+                "fixtures": per_fx,
+                "heads": [str(p.relative_to(config.REPO_ROOT)) for p in onnx_paths],
+            }
+        )
     return results
 
 
 def _validate_ast(onnx_path: Path) -> dict:
     import librosa
+
     results = {"model": "ast_audioset", "fixtures": [], "passed": True}
     for fx in fixtures.all_fixtures():
         mono = fx.samples.mean(axis=0).astype(np.float32)
@@ -87,14 +90,18 @@ def _validate_ast(onnx_path: Path) -> dict:
         p = ast_export.validate(onnx_path, y16, fx.name)
         results["fixtures"].append(p.as_dict())
         results["passed"] &= p.passed
-        progress.emit("validate.ast", 50,
-                      f"{fx.name}: labels_match={p.labels_match} "
-                      f"max_diff={p.max_logit_diff:.4e} pass={p.passed}")
+        progress.emit(
+            "validate.ast",
+            50,
+            f"{fx.name}: labels_match={p.labels_match} "
+            f"max_diff={p.max_logit_diff:.4e} pass={p.passed}",
+        )
     return results
 
 
 def _validate_clap(onnx_path: Path) -> dict:
     import librosa
+
     results = {"model": "clap_htsat_unfused", "fixtures": [], "passed": True}
     for fx in fixtures.all_fixtures():
         mono = fx.samples.mean(axis=0).astype(np.float32)
@@ -102,15 +109,13 @@ def _validate_clap(onnx_path: Path) -> dict:
         p = clap_export.validate(onnx_path, y48, fx.name)
         results["fixtures"].append(p.as_dict())
         results["passed"] &= p.passed
-        progress.emit("validate.clap", 50,
-                      f"{fx.name}: cos={p.cosine:.6f} pass={p.passed}")
+        progress.emit("validate.clap", 50, f"{fx.name}: cos={p.cosine:.6f} pass={p.passed}")
     return results
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="A0 parity validation")
-    parser.add_argument("--model", choices=("ast", "clap", "demucs", "all"),
-                        default="all")
+    parser.add_argument("--model", choices=("ast", "clap", "demucs", "all"), default="all")
     args = parser.parse_args(argv or sys.argv[1:])
 
     man = manifest.load()

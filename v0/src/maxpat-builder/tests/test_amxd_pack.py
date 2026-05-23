@@ -65,8 +65,9 @@ def test_repack_of_reference_opens_as_same_patcher(tmp_path):
     # are placed differently), so we don't compare bytes. What must be true
     # is: reparse → patcher struct equal.
     parsed = unpack_amxd(REFERENCE_AMXD)
-    repacked = pack_amxd(parsed["patcher"], tmp_path / "round.amxd",
-                         device_type=parsed["device_type"])
+    repacked = pack_amxd(
+        parsed["patcher"], tmp_path / "round.amxd", device_type=parsed["device_type"]
+    )
     re_parsed = unpack_amxd(repacked)
     assert re_parsed["patcher"] == parsed["patcher"]
     assert re_parsed["device_type"] == parsed["device_type"]

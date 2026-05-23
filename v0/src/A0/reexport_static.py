@@ -32,6 +32,7 @@ For each variant we:
 The original dynamic ONNX files are kept on disk so the C++ host can
 fall back to them.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -41,7 +42,7 @@ import math
 import sys
 import time
 import traceback
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any
 
@@ -118,12 +119,12 @@ def export_static_head(head_module, dst_onnx: Path, segment_samples: int) -> Pat
 
 def _onnx_inference_static(onnx_path: Path, mix_np: np.ndarray) -> np.ndarray:
     """Run the static ONNX once with fresh CPU-only session — for parity."""
-    return demucs_export.run_head_onnx(onnx_path, mix_np,
-                                       providers=["CPUExecutionProvider"])
+    return demucs_export.run_head_onnx(onnx_path, mix_np, providers=["CPUExecutionProvider"])
 
 
-def _parity_check(static_path: Path, dynamic_path: Path,
-                  segment_samples: int, fixture: np.ndarray) -> tuple[float, float, bool]:
+def _parity_check(
+    static_path: Path, dynamic_path: Path, segment_samples: int, fixture: np.ndarray
+) -> tuple[float, float, bool]:
     """
     Numerical parity static vs dynamic on a real fixture.
 
@@ -139,7 +140,7 @@ def _parity_check(static_path: Path, dynamic_path: Path,
         return float("nan"), float("nan"), False
     diff = static_out - dyn_out
     max_abs = float(np.max(np.abs(diff)))
-    rms = float(np.sqrt(np.mean(diff ** 2)))
+    rms = float(np.sqrt(np.mean(diff**2)))
     rms_dbfs = -240.0 if rms <= 0 else 20.0 * math.log10(rms)
     # Static and dynamic graphs must produce identical outputs (same
     # compute, just different shape metadata). Tight tolerance.
@@ -147,8 +148,7 @@ def _parity_check(static_path: Path, dynamic_path: Path,
     return max_abs, rms_dbfs, pass_
 
 
-def _probe_coreml(static_path: Path, segment_samples: int,
-                  variant: str) -> dict[str, Any]:
+def _probe_coreml(static_path: Path, segment_samples: int, variant: str) -> dict[str, Any]:
     """Run a single CoreML EP probe with the most-promising option set."""
     from . import coreml_probe_static as cps
 
@@ -161,20 +161,17 @@ def _probe_coreml(static_path: Path, segment_samples: int,
         "RequireStaticInputShapes": "1",
         "EnableOnSubgraphs": "1",
     }
-    cml = cps.probe_one(f"{variant}_static", static_path, inputs, opts,
-                        n_warmup=2, n_timed=3)
-    cpu = cps.probe_one(f"{variant}_static_cpu", static_path, inputs, None,
-                       n_warmup=1, n_timed=2)
+    cml = cps.probe_one(f"{variant}_static", static_path, inputs, opts, n_warmup=2, n_timed=3)
+    cpu = cps.probe_one(f"{variant}_static_cpu", static_path, inputs, None, n_warmup=1, n_timed=2)
     return {
         "coreml": cml.as_dict(),
         "cpu": cpu.as_dict(),
     }
 
 
-def reexport_variant(variant: str,
-                     fixture: np.ndarray | None,
-                     skip_parity: bool = False,
-                     skip_coreml: bool = False) -> list[ReexportResult]:
+def reexport_variant(
+    variant: str, fixture: np.ndarray | None, skip_parity: bool = False, skip_coreml: bool = False
+) -> list[ReexportResult]:
     from demucs.pretrained import get_model
 
     print(f"[{variant}] loading torch bag", flush=True)
@@ -199,20 +196,21 @@ def reexport_variant(variant: str,
 
     results: list[ReexportResult] = []
     for i, (head, dst) in enumerate(zip(bag.models, static_paths)):
-        r = ReexportResult(variant=variant, head_index=i,
-                           dynamic_path=str(onnx_paths[i]),
-                           static_path=str(dst))
+        r = ReexportResult(
+            variant=variant, head_index=i, dynamic_path=str(onnx_paths[i]), static_path=str(dst)
+        )
         try:
-            print(f"[{variant}] exporting static head {i+1}/{n} → {dst.name}",
-                  flush=True)
+            print(f"[{variant}] exporting static head {i + 1}/{n} → {dst.name}", flush=True)
             t0 = time.perf_counter()
             export_static_head(head.eval(), dst, seg)
             dt = time.perf_counter() - t0
             r.static_size_bytes = dst.stat().st_size
             r.static_sha256 = _sha256(dst)
-            print(f"[{variant}]   exported in {dt:.1f}s "
-                  f"size={r.static_size_bytes/1e6:.1f}MB sha={r.static_sha256[:12]}",
-                  flush=True)
+            print(
+                f"[{variant}]   exported in {dt:.1f}s "
+                f"size={r.static_size_bytes / 1e6:.1f}MB sha={r.static_sha256[:12]}",
+                flush=True,
+            )
         except Exception as e:
             r.error = f"export: {type(e).__name__}: {e!s}"[:600]
             traceback.print_exc()
@@ -227,8 +225,10 @@ def reexport_variant(variant: str,
                 r.parity_max_abs = ma
                 r.parity_residual_rms_dbfs = rms_db
                 r.parity_pass = ok
-                print(f"[{variant}]   parity max_abs={ma:.3e} "
-                      f"rms={rms_db:+.1f}dBFS pass={ok}", flush=True)
+                print(
+                    f"[{variant}]   parity max_abs={ma:.3e} rms={rms_db:+.1f}dBFS pass={ok}",
+                    flush=True,
+                )
             except Exception as e:
                 r.error = (r.error or "") + f" | parity: {e!s}"[:200]
                 print(f"[{variant}]   parity check failed: {e!s}", flush=True)
@@ -243,11 +243,13 @@ def reexport_variant(variant: str,
                 r.coreml_partition_pct = cml["coreml"]["coreml_partition_pct"]
                 r.coreml_mean_latency_sec = cml["coreml"]["mean_latency_sec"]
                 r.cpu_only_mean_latency_sec = cml["cpu"]["mean_latency_sec"]
-                print(f"[{variant}]   coreml loaded={r.coreml_loaded} "
-                      f"part%={r.coreml_partition_pct} "
-                      f"cml_lat={r.coreml_mean_latency_sec}s "
-                      f"cpu_lat={r.cpu_only_mean_latency_sec}s",
-                      flush=True)
+                print(
+                    f"[{variant}]   coreml loaded={r.coreml_loaded} "
+                    f"part%={r.coreml_partition_pct} "
+                    f"cml_lat={r.coreml_mean_latency_sec}s "
+                    f"cpu_lat={r.cpu_only_mean_latency_sec}s",
+                    flush=True,
+                )
             except Exception as e:
                 r.error = (r.error or "") + f" | coreml: {e!s}"[:200]
 
@@ -271,34 +273,41 @@ def _load_fixture() -> np.ndarray | None:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
-    p.add_argument("--models", nargs="*",
-                   default=list(config.DEMUCS_MODELS.keys()),
-                   choices=list(config.DEMUCS_MODELS.keys()))
+    p.add_argument(
+        "--models",
+        nargs="*",
+        default=list(config.DEMUCS_MODELS.keys()),
+        choices=list(config.DEMUCS_MODELS.keys()),
+    )
     p.add_argument("--skip-parity", action="store_true")
     p.add_argument("--skip-coreml", action="store_true")
     args = p.parse_args(argv)
 
     fixture = _load_fixture()
     if fixture is None:
-        print("warning: no v0/tests/fixtures/short_loop.wav — skipping parity",
-              file=sys.stderr)
+        print("warning: no v0/tests/fixtures/short_loop.wav — skipping parity", file=sys.stderr)
 
     all_results: list[ReexportResult] = []
     for variant in args.models:
         try:
             all_results += reexport_variant(
-                variant, fixture,
+                variant,
+                fixture,
                 skip_parity=args.skip_parity or fixture is None,
                 skip_coreml=args.skip_coreml,
             )
         except Exception as e:
             print(f"[{variant}] FAILED: {e!s}", file=sys.stderr)
             traceback.print_exc()
-            all_results.append(ReexportResult(
-                variant=variant, head_index=-1,
-                dynamic_path="", static_path="",
-                error=f"variant: {type(e).__name__}: {e!s}"[:600],
-            ))
+            all_results.append(
+                ReexportResult(
+                    variant=variant,
+                    head_index=-1,
+                    dynamic_path="",
+                    static_path="",
+                    error=f"variant: {type(e).__name__}: {e!s}"[:600],
+                )
+            )
 
     # Persist report.
     out_dir = config.A0_STATE_DIR

@@ -59,8 +59,7 @@ def main(argv: list[str] | None = None) -> int:
         import subprocess
 
         injector = (
-            Path(__file__).resolve().parents[2]
-            / ".." / "tools" / "inject_build_manifest.py"
+            Path(__file__).resolve().parents[2] / ".." / "tools" / "inject_build_manifest.py"
         ).resolve()
         if injector.is_file():
             cp = subprocess.run(

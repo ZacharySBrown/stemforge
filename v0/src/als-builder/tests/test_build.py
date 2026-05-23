@@ -121,9 +121,7 @@ def test_build_track_names_match_yaml(fake_skeleton, output_path):
     tree = _read_als(output_path)
     root = tree.getroot()
     tracks = root.findall(".//LiveSet/Tracks/")
-    actual_names = [
-        t.find("./Name/EffectiveName").get("Value") for t in tracks
-    ]
+    actual_names = [t.find("./Name/EffectiveName").get("Value") for t in tracks]
     assert actual_names == expected_names
 
 
@@ -142,10 +140,7 @@ def test_build_track_colors_match_palette_index(fake_skeleton, output_path):
 def test_build_track_kinds_match_yaml(fake_skeleton, output_path):
     build(skeleton_path=fake_skeleton, output_path=output_path)
     spec = load_tracks_spec()
-    expected_tags = [
-        "AudioTrack" if t["type"] == "audio" else "MidiTrack"
-        for t in spec["tracks"]
-    ]
+    expected_tags = ["AudioTrack" if t["type"] == "audio" else "MidiTrack" for t in spec["tracks"]]
 
     tree = _read_als(output_path)
     root = tree.getroot()
@@ -157,15 +152,11 @@ def test_build_track_kinds_match_yaml(fake_skeleton, output_path):
 def test_build_ids_are_unique(fake_skeleton, output_path):
     build(skeleton_path=fake_skeleton, output_path=output_path)
     tree = _read_als(output_path)
-    ids = [
-        el.get("Id") for el in tree.getroot().iter() if el.get("Id") is not None
-    ]
+    ids = [el.get("Id") for el in tree.getroot().iter() if el.get("Id") is not None]
     assert len(ids) == len(set(ids)), "Id collisions in output"
 
 
-def test_build_first_track_has_compressor_with_yaml_params(
-    fake_skeleton, output_path
-):
+def test_build_first_track_has_compressor_with_yaml_params(fake_skeleton, output_path):
     # tracks.yaml drums_raw: threshold_db: -18, ratio: 4
     build(skeleton_path=fake_skeleton, output_path=output_path)
     tree = _read_als(output_path)

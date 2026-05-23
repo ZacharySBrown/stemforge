@@ -13,11 +13,12 @@ import json
 from pathlib import Path
 
 
-def _box(obj_id, maxclass, rect, *, numinlets=1, numoutlets=0,
-         outlettype=None, extras=None):
+def _box(obj_id, maxclass, rect, *, numinlets=1, numoutlets=0, outlettype=None, extras=None):
     body = {
-        "id": obj_id, "maxclass": maxclass,
-        "numinlets": numinlets, "numoutlets": numoutlets,
+        "id": obj_id,
+        "maxclass": maxclass,
+        "numinlets": numinlets,
+        "numoutlets": numoutlets,
         "patching_rect": list(rect),
     }
     if outlettype:
@@ -37,32 +38,55 @@ def build_receiver(stem_name: str) -> dict:
     lines = []
 
     # Receive note events as "note <pitch> <velocity>" messages
-    boxes.append(_box(
-        "obj-recv", "newobj", (20, 20, 120, 22),
-        numinlets=0, numoutlets=1, outlettype=[""],
-        extras={"text": f"receive {send_name}"},
-    ))
+    boxes.append(
+        _box(
+            "obj-recv",
+            "newobj",
+            (20, 20, 120, 22),
+            numinlets=0,
+            numoutlets=1,
+            outlettype=[""],
+            extras={"text": f"receive {send_name}"},
+        )
+    )
 
     # midiformat converts "note pitch velocity" to raw MIDI bytes
-    boxes.append(_box(
-        "obj-midiformat", "newobj", (20, 50, 100, 22),
-        numinlets=6, numoutlets=1, outlettype=["int"],
-        extras={"text": "midiformat"},
-    ))
+    boxes.append(
+        _box(
+            "obj-midiformat",
+            "newobj",
+            (20, 50, 100, 22),
+            numinlets=6,
+            numoutlets=1,
+            outlettype=["int"],
+            extras={"text": "midiformat"},
+        )
+    )
     lines.append(_line("obj-recv", 0, "obj-midiformat", 0))
 
     # midiout sends properly formatted MIDI downstream to the Drum Rack
-    boxes.append(_box(
-        "obj-midiout", "newobj", (20, 80, 80, 22),
-        numinlets=1, numoutlets=0,
-        extras={"text": "midiout"},
-    ))
+    boxes.append(
+        _box(
+            "obj-midiout",
+            "newobj",
+            (20, 80, 80, 22),
+            numinlets=1,
+            numoutlets=0,
+            extras={"text": "midiout"},
+        )
+    )
     lines.append(_line("obj-midiformat", 0, "obj-midiout", 0))
 
     return {
         "patcher": {
             "fileversion": 1,
-            "appversion": {"major": 9, "minor": 0, "revision": 8, "architecture": "x64", "modernui": 1},
+            "appversion": {
+                "major": 9,
+                "minor": 0,
+                "revision": 8,
+                "architecture": "x64",
+                "modernui": 1,
+            },
             "classnamespace": "box",
             "rect": [100, 100, 300, 150],
             "openinpresentation": 0,
@@ -71,14 +95,26 @@ def build_receiver(stem_name: str) -> dict:
             "boxes": boxes,
             "lines": lines,
             "project": {
-                "version": 1, "creationdate": 3590052493, "modificationdate": 3590052493,
-                "viewrect": [0, 0, 300, 500], "autoorganize": 1, "hideprojectwindow": 1,
-                "showdependencies": 1, "autolocalize": 0,
+                "version": 1,
+                "creationdate": 3590052493,
+                "modificationdate": 3590052493,
+                "viewrect": [0, 0, 300, 500],
+                "autoorganize": 1,
+                "hideprojectwindow": 1,
+                "showdependencies": 1,
+                "autolocalize": 0,
                 "contents": {"patchers": {}, "code": {}},
-                "layout": {}, "searchpath": {}, "detailsvisible": 0,
-                "amxdtype": 1835361645, "readonly": 0, "devpathtype": 0, "devpath": ".",
+                "layout": {},
+                "searchpath": {},
+                "detailsvisible": 0,
+                "amxdtype": 1835361645,
+                "readonly": 0,
+                "devpathtype": 0,
+                "devpath": ".",
                 # 1835361645 = 0x6D6D6D6D = b'mmmm' = MIDI effect
-                "sortmode": 0, "viewmode": 0, "includepackages": 0,
+                "sortmode": 0,
+                "viewmode": 0,
+                "includepackages": 0,
             },
             "autosave": 0,
         }
@@ -87,6 +123,7 @@ def build_receiver(stem_name: str) -> dict:
 
 if __name__ == "__main__":
     import sys
+
     sys.path.insert(0, str(Path(__file__).parent))
     from amxd_pack import pack_amxd
 
@@ -106,9 +143,12 @@ if __name__ == "__main__":
         pack_amxd(patcher, str(amxd_path), device_type=1, device_class="midi")
 
         # Install to MIDI Effects
-        install_dir = Path.home() / "Music/Ableton/User Library/Presets/MIDI Effects/Max MIDI Effect"
+        install_dir = (
+            Path.home() / "Music/Ableton/User Library/Presets/MIDI Effects/Max MIDI Effect"
+        )
         install_dir.mkdir(parents=True, exist_ok=True)
         import shutil
+
         shutil.copy2(amxd_path, install_dir / f"{name}.amxd")
 
         print(f"  {name}: built + installed")

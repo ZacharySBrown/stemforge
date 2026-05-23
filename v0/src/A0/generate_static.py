@@ -35,11 +35,16 @@ TIME_OUT_SHAPE = [4, 2, 343980]
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate static-shape ONNX from fused htdemucs_ft")
-    parser.add_argument("--input",  default=DEFAULT_INPUT,  help="Path to htdemucs_ft_fused.onnx")
+    parser = argparse.ArgumentParser(
+        description="Generate static-shape ONNX from fused htdemucs_ft"
+    )
+    parser.add_argument("--input", default=DEFAULT_INPUT, help="Path to htdemucs_ft_fused.onnx")
     parser.add_argument("--output", default=DEFAULT_OUTPUT, help="Path to write the static .onnx")
-    parser.add_argument("--save-to-repo", action="store_true",
-                        help="Also copy the result into v0/build/models/htdemucs_ft/ (repo path)")
+    parser.add_argument(
+        "--save-to-repo",
+        action="store_true",
+        help="Also copy the result into v0/build/models/htdemucs_ft/ (repo path)",
+    )
     args = parser.parse_args()
 
     # -----------------------------------------------------------------------
@@ -53,7 +58,7 @@ def main():
         print("  pip install onnx")
         sys.exit(1)
 
-    input_path  = Path(args.input)
+    input_path = Path(args.input)
     output_path = Path(args.output)
 
     # -----------------------------------------------------------------------
@@ -154,6 +159,7 @@ def main():
     if args.save_to_repo:
         REPO_OUTPUT.parent.mkdir(parents=True, exist_ok=True)
         import shutil
+
         shutil.copy2(str(output_path), str(REPO_OUTPUT))
         print(f"Also saved to repo:\n  {REPO_OUTPUT}")
         print()
@@ -166,9 +172,9 @@ def main():
     print()
     print("1. Upload to Modal volume:")
     print("   modal volume create stemforge-models  # skip if already exists")
-    print(f"   modal volume put stemforge-models \\")
+    print("   modal volume put stemforge-models \\")
     print(f'     "{output_path}" \\')
-    print(f"     /htdemucs_ft_fused_static.onnx")
+    print("     /htdemucs_ft_fused_static.onnx")
     print()
     print("2. Run the CUDA compatibility test:")
     print("   modal run test_cuda_compat.py")

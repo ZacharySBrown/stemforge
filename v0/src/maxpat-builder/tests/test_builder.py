@@ -108,11 +108,7 @@ def test_pick_source_button_present(boxes):
 def test_pick_source_wired_to_loader(boxes, line_pairs):
     """Pick source button → [message pickSource] → js sf_lom_loader."""
     msg = next(
-        (
-            b
-            for b in boxes
-            if b.get("maxclass") == "message" and b.get("text") == "pickSource"
-        ),
+        (b for b in boxes if b.get("maxclass") == "message" and b.get("text") == "pickSource"),
         None,
     )
     assert msg is not None, "missing [message pickSource] box"
@@ -136,12 +132,8 @@ def test_primary_button_wired_via_messnamed(boxes, line_pairs):
     `primary-btn-label` and `primary-btn-enabled`; the patcher must have
     `[r primary-btn-label]` → prepend set → primary btn, and
     `[r primary-btn-enabled]` → prepend active → primary btn."""
-    label_recv = next(
-        (b for b in boxes if b.get("text") == "r primary-btn-label"), None
-    )
-    enabled_recv = next(
-        (b for b in boxes if b.get("text") == "r primary-btn-enabled"), None
-    )
+    label_recv = next((b for b in boxes if b.get("text") == "r primary-btn-label"), None)
+    enabled_recv = next((b for b in boxes if b.get("text") == "r primary-btn-enabled"), None)
     assert label_recv is not None, "missing [r primary-btn-label]"
     assert enabled_recv is not None, "missing [r primary-btn-enabled]"
     # Both must route through a prepend → primary btn.
@@ -155,11 +147,7 @@ def test_primary_click_wired_to_loader(boxes, line_pairs):
     """Primary button click → [message primary] → js sf_lom_loader. The
     loader's `primary()` function dispatches by sniffer type."""
     msg = next(
-        (
-            b
-            for b in boxes
-            if b.get("maxclass") == "message" and b.get("text") == "primary"
-        ),
+        (b for b in boxes if b.get("maxclass") == "message" and b.get("text") == "primary"),
         None,
     )
     assert msg is not None, "missing [message primary] box"
@@ -178,9 +166,7 @@ def test_footer_status_text_receives_sf_status(boxes, line_pairs):
     BUTTON that rejects `set <text>` with `bad arguments for message
     "set"` (caught during first UAT round).
     """
-    txt = next(
-        (b for b in boxes if b.get("varname") == "sf_status_text"), None
-    )
+    txt = next((b for b in boxes if b.get("varname") == "sf_status_text"), None)
     assert txt is not None, "missing footer sf_status_text"
     assert txt["maxclass"] == "live.comment", (
         "status widget must be live.comment — live.text rejects `set <text>`"
@@ -217,16 +203,12 @@ def test_picker_dialog_wired_from_messnamed_receiver(boxes, line_pairs):
     quirk that triggered `patchcord outlet out of range`. The HFS→POSIX
     conversion now happens in applyPickedSource() in JS.
     """
-    recv = next(
-        (b for b in boxes if b.get("text") == "r sf-open-source-dialog"), None
-    )
+    recv = next((b for b in boxes if b.get("text") == "r sf-open-source-dialog"), None)
     assert recv is not None, "missing [r sf-open-source-dialog]"
     assert (recv["id"], "obj-sf-picker-dialog") in line_pairs
     # opendialog wires directly to [prepend applyPickedSource] — no regex.
     assert ("obj-sf-picker-dialog", "obj-sf-picker-dialog-prepend") in line_pairs
-    prep = next(
-        (b for b in boxes if b.get("id") == "obj-sf-picker-dialog-prepend"), None
-    )
+    prep = next((b for b in boxes if b.get("id") == "obj-sf-picker-dialog-prepend"), None)
     assert prep is not None
     assert prep.get("text") == "prepend applyPickedSource"
     assert ("obj-sf-picker-dialog-prepend", "obj-sf-lom-loader") in line_pairs
@@ -252,11 +234,7 @@ def test_commit_button_present_and_wired(boxes, line_pairs):
     assert btn.get("text") == "COMMIT"
 
     msg = next(
-        (
-            b
-            for b in boxes
-            if b.get("maxclass") == "message" and b.get("text") == "commit"
-        ),
+        (b for b in boxes if b.get("maxclass") == "message" and b.get("text") == "commit"),
         None,
     )
     assert msg is not None, "missing [message commit] box"
@@ -275,11 +253,7 @@ def test_bounce_button_present_and_wired(boxes, line_pairs):
     assert btn.get("text") == "BOUNCE"
 
     msg = next(
-        (
-            b
-            for b in boxes
-            if b.get("maxclass") == "message" and b.get("text") == "bounceCuration"
-        ),
+        (b for b in boxes if b.get("maxclass") == "message" and b.get("text") == "bounceCuration"),
         None,
     )
     assert msg is not None, "missing [message bounceCuration] box"
@@ -326,11 +300,7 @@ def test_anchor_button_present_and_wired(boxes, line_pairs):
     assert btn.get("text") == "ANCH"
 
     msg = next(
-        (
-            b
-            for b in boxes
-            if b.get("maxclass") == "message" and b.get("text") == "reAnchor"
-        ),
+        (b for b in boxes if b.get("maxclass") == "message" and b.get("text") == "reAnchor"),
         None,
     )
     assert msg is not None, "missing [message reAnchor] box"
@@ -342,13 +312,9 @@ def test_anchor_go_wire_routes_into_locator_anchor(boxes, line_pairs):
     """[r sf-anchor-go] → [prepend anchor] → [js sf_locator_anchor]. JS
     `reAnchor()` emits `messnamed("sf-anchor-go", forgeDir)`; the receiver
     here makes the forge dir become the first argument to anchor()."""
-    recv = next(
-        (b for b in boxes if b.get("text", "") == "r sf-anchor-go"), None
-    )
+    recv = next((b for b in boxes if b.get("text", "") == "r sf-anchor-go"), None)
     assert recv is not None, "missing [r sf-anchor-go]"
-    prep = next(
-        (b for b in boxes if b.get("text", "") == "prepend anchor"), None
-    )
+    prep = next((b for b in boxes if b.get("text", "") == "prepend anchor"), None)
     assert prep is not None, "missing [prepend anchor]"
 
     assert (recv["id"], prep["id"]) in line_pairs
@@ -394,8 +360,7 @@ def test_picker_and_verb_layout_snapshot(boxes):
         got = found[varname]
         for key, value in want.items():
             assert got.get(key) == value, (
-                f"snapshot widget {varname}.{key}: got {got.get(key)!r}, "
-                f"expected {value!r}"
+                f"snapshot widget {varname}.{key}: got {got.get(key)!r}, expected {value!r}"
             )
 
 
@@ -407,9 +372,7 @@ def test_no_legacy_preset_or_source_umenus(boxes):
     they were the user-visible dropdowns that the new picker replaces."""
     for varname in ("sf_preset_menu", "sf_source_menu"):
         match = next((b for b in boxes if b.get("varname") == varname), None)
-        assert match is None, (
-            f"legacy umenu {varname!r} found — Configurator v1 §3.1 removes it"
-        )
+        assert match is None, f"legacy umenu {varname!r} found — Configurator v1 §3.1 removes it"
     # Belt-and-braces: no umenu objects at all in the patcher (the loaders
     # may still scan, but their outputs are no longer rendered).
     umenus = [b for b in boxes if b.get("maxclass") == "umenu"]
@@ -424,9 +387,7 @@ def test_no_legacy_v8ui_event_route(boxes):
         (b for b in boxes if b.get("text", "").startswith("route preset_click")),
         None,
     )
-    assert legacy_route is None, (
-        "legacy v8ui-event route table found — must be removed (P0-5)"
-    )
+    assert legacy_route is None, "legacy v8ui-event route table found — must be removed (P0-5)"
 
 
 def test_no_commit_click_dead_wire(boxes):
@@ -456,11 +417,9 @@ def test_no_legacy_forge_click_or_other_routes(boxes):
         "arrangement_load_click",
     )
     for b in boxes:
-        text = (b.get("text", "") or "")
+        text = b.get("text", "") or ""
         for needle in legacy_strings:
-            assert needle not in text, (
-                f"legacy token {needle!r} found in box {b.get('id')!r}"
-            )
+            assert needle not in text, f"legacy token {needle!r} found in box {b.get('id')!r}"
 
 
 # ── Modular JS objects ───────────────────────────────────────────────────────
@@ -648,7 +607,6 @@ def test_audio_passthrough_present(boxes, line_pairs):
 
 def test_no_live_slider_progress_bar(boxes):
     """v0.1.0 removed the live.slider progress bar — v8ui draws its own."""
-    texts = _texts(boxes)
     assert not any("StemForge Progress" in str(b) for b in boxes), (
         "old progress-bar live.slider should be gone"
     )
@@ -712,9 +670,7 @@ def test_http_maxurl_object_present(boxes):
     fire 3+ times back-to-back) don't block one another.
     """
     maxurl_boxes = [b for b in boxes if b.get("text", "").startswith("maxurl")]
-    assert len(maxurl_boxes) == 1, (
-        f"expected exactly one [maxurl] object; got {len(maxurl_boxes)}"
-    )
+    assert len(maxurl_boxes) == 1, f"expected exactly one [maxurl] object; got {len(maxurl_boxes)}"
     text = maxurl_boxes[0]["text"]
     assert "@verbosity 0" in text, f"maxurl missing @verbosity 0: {text!r}"
     # Thread count is the first positional arg after "maxurl".
@@ -722,8 +678,7 @@ def test_http_maxurl_object_present(boxes):
     assert tokens[0] == "maxurl"
     threads = int(tokens[1]) if len(tokens) > 1 and tokens[1].isdigit() else 1
     assert threads >= 2, (
-        f"maxurl thread count must be >=2 so concurrent bounce posts don't "
-        f"block; got {threads}"
+        f"maxurl thread count must be >=2 so concurrent bounce posts don't block; got {threads}"
     )
 
 
@@ -759,19 +714,14 @@ def test_http_request_dict_messages_match_js_convention(boxes, dict_name):
     matching JS change silently breaks the post.
     """
     expected = f"dictionary {dict_name}"
-    msgs = [
-        b for b in boxes
-        if b.get("maxclass") == "message" and b.get("text", "") == expected
-    ]
+    msgs = [b for b in boxes if b.get("maxclass") == "message" and b.get("text", "") == expected]
     assert msgs, f"missing message box with text {expected!r}"
 
 
 def test_http_request_chain_wired(line_pairs, boxes):
     """End-to-end wire: each `[r sf-…]` → `[message dictionary …]` → `[maxurl]`."""
     by_text = {b.get("text", ""): b["id"] for b in boxes}
-    maxurl_id = next(
-        b["id"] for b in boxes if b.get("text", "").startswith("maxurl")
-    )
+    maxurl_id = next(b["id"] for b in boxes if b.get("text", "").startswith("maxurl"))
     pairs = [
         ("r sf-commit-send", f"dictionary {HTTP_REQ_DICT_COMMIT}"),
         ("r sf-bounce-progress", f"dictionary {HTTP_REQ_DICT_BOUNCE_PROGRESS}"),
@@ -780,12 +730,8 @@ def test_http_request_chain_wired(line_pairs, boxes):
     for recv_text, msg_text in pairs:
         recv_id = by_text[recv_text]
         msg_id = by_text[msg_text]
-        assert (recv_id, msg_id) in line_pairs, (
-            f"missing wire: [{recv_text}] → [{msg_text}]"
-        )
-        assert (msg_id, maxurl_id) in line_pairs, (
-            f"missing wire: [{msg_text}] → [maxurl]"
-        )
+        assert (recv_id, msg_id) in line_pairs, f"missing wire: [{recv_text}] → [{msg_text}]"
+        assert (msg_id, maxurl_id) in line_pairs, f"missing wire: [{msg_text}] → [maxurl]"
 
 
 def test_http_response_routed_to_loader(line_pairs, boxes):
@@ -797,21 +743,14 @@ def test_http_response_routed_to_loader(line_pairs, boxes):
     from the C2 handoff).
     """
     by_text = {b.get("text", ""): b["id"] for b in boxes}
-    maxurl_id = next(
-        b["id"] for b in boxes if b.get("text", "").startswith("maxurl")
-    )
+    maxurl_id = next(b["id"] for b in boxes if b.get("text", "").startswith("maxurl"))
     route_id = by_text["route dictionary"]
     prepend_id = by_text["prepend onHttpResponse"]
     loader_id = next(
-        b["id"] for b in boxes
-        if b.get("text", "").startswith("js stemforge_loader.v0.js")
+        b["id"] for b in boxes if b.get("text", "").startswith("js stemforge_loader.v0.js")
     )
-    assert (maxurl_id, route_id) in line_pairs, (
-        "maxurl outlet 0 must feed [route dictionary]"
-    )
+    assert (maxurl_id, route_id) in line_pairs, "maxurl outlet 0 must feed [route dictionary]"
     assert (route_id, prepend_id) in line_pairs, (
         "[route dictionary] outlet 0 must feed [prepend onHttpResponse]"
     )
-    assert (prepend_id, loader_id) in line_pairs, (
-        "[prepend onHttpResponse] must feed the JS loader"
-    )
+    assert (prepend_id, loader_id) in line_pairs, "[prepend onHttpResponse] must feed the JS loader"

@@ -55,7 +55,7 @@ def main():
         print("ERROR: onnx not found. Install with: pip install onnx")
         sys.exit(1)
 
-    input_path  = Path(args.input)
+    input_path = Path(args.input)
     output_path = Path(args.output)
 
     if not input_path.exists():
@@ -121,9 +121,9 @@ def main():
     print("=" * 60)
     print("Next steps:\n")
     print("  modal volume create stemforge-models  # skip if already exists")
-    print(f"  modal volume put stemforge-models \\")
+    print("  modal volume put stemforge-models \\")
     print(f'    "{output_path}" \\')
-    print( "    /htdemucs_ft_fused_static.onnx\n")
+    print("    /htdemucs_ft_fused_static.onnx\n")
     print("  modal run test_cuda_compat.py")
     print("=" * 60)
 

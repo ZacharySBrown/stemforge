@@ -15,6 +15,7 @@ Uses CPU EP on both sides. CoreML EP testing for the fused graph is
 blocked by the MLProgram SystemError 20 compile failure
 (see v0/state/A/fusion_aborted.md for details).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -22,7 +23,6 @@ import json
 import math
 import sys
 import time
-from pathlib import Path
 
 import numpy as np
 import onnxruntime as ort
@@ -35,8 +35,7 @@ FT_MODELS_DIR = config.BUILD_MODELS_DIR / "htdemucs_ft"
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--fused", default=str(FT_MODELS_DIR / "htdemucs_ft_fused.onnx"))
-    p.add_argument("--fixture", default=str(
-        config.REPO_ROOT / "v0/tests/fixtures/short_loop.wav"))
+    p.add_argument("--fixture", default=str(config.REPO_ROOT / "v0/tests/fixtures/short_loop.wav"))
     args = p.parse_args(argv)
 
     import soundfile as sf
@@ -63,11 +62,12 @@ def main(argv: list[str] | None = None) -> int:
     unfused_sess = [
         ort.InferenceSession(
             str(FT_MODELS_DIR / f"htdemucs_ft.head{i}_static.onnx"),
-            providers=["CPUExecutionProvider"]) for i in range(4)
+            providers=["CPUExecutionProvider"],
+        )
+        for i in range(4)
     ]
     t0 = time.perf_counter()
-    unfused_outs = [s.run(None, {"mix": mix_in, "z_cac": z_cac})
-                    for s in unfused_sess]
+    unfused_outs = [s.run(None, {"mix": mix_in, "z_cac": z_cac}) for s in unfused_sess]
     t_unfused = time.perf_counter() - t0
     print(f"unfused bag seq    = {t_unfused:.3f} s (CPU, 4 heads)")
 
@@ -77,24 +77,24 @@ def main(argv: list[str] | None = None) -> int:
     max_abs_z = 0.0
     for i in range(4):
         # Each unfused head outputs (1, 4, 2, N); for head i, specialist source = i.
-        ref_t = unfused_outs[i][0][:, i:i + 1]  # keepdims
-        got_t = fused_time[:, i:i + 1]
-        ref_z = unfused_outs[i][1][:, i:i + 1]
-        got_z = fused_zcac[:, i:i + 1]
+        ref_t = unfused_outs[i][0][:, i : i + 1]  # keepdims
+        got_t = fused_time[:, i : i + 1]
+        ref_z = unfused_outs[i][1][:, i : i + 1]
+        got_z = fused_zcac[:, i : i + 1]
         d_t = float(np.max(np.abs(ref_t - got_t)))
         d_z = float(np.max(np.abs(ref_z - got_z)))
         rms_t_lin = float(np.sqrt(np.mean((ref_t - got_t) ** 2)))
         rms_t_db = -240.0 if rms_t_lin <= 0 else 20.0 * math.log10(rms_t_lin)
-        per_source.append({"source_index": i, "max_abs_time": d_t,
-                           "max_abs_zcac": d_z, "rms_time_dbfs": rms_t_db})
+        per_source.append(
+            {"source_index": i, "max_abs_time": d_t, "max_abs_zcac": d_z, "rms_time_dbfs": rms_t_db}
+        )
         max_abs_t = max(max_abs_t, d_t)
         max_abs_z = max(max_abs_z, d_z)
 
     # Combined time-branch residual RMS.
-    combined_time_ref = np.concatenate(
-        [unfused_outs[i][0][:, i:i + 1] for i in range(4)], axis=1)
+    combined_time_ref = np.concatenate([unfused_outs[i][0][:, i : i + 1] for i in range(4)], axis=1)
     resid = combined_time_ref.astype(np.float64) - fused_time.astype(np.float64)
-    rms = float(np.sqrt(np.mean(resid ** 2)))
+    rms = float(np.sqrt(np.mean(resid**2)))
     rms_db = -240.0 if rms <= 0 else 20.0 * math.log10(rms)
 
     summary = {
@@ -110,12 +110,13 @@ def main(argv: list[str] | None = None) -> int:
     print(json.dumps(summary, indent=2))
 
     if summary["parity_pass_lt_60dbfs"]:
-        print("\nPARITY PASS: time-branch RMS residual "
-              f"{rms_db:+.1f} dBFS ≤ -60 dBFS threshold")
+        print(f"\nPARITY PASS: time-branch RMS residual {rms_db:+.1f} dBFS ≤ -60 dBFS threshold")
         return 0
     else:
-        print(f"\nPARITY FAIL: time-branch RMS residual {rms_db:+.1f} dBFS "
-              "> -60 dBFS threshold", file=sys.stderr)
+        print(
+            f"\nPARITY FAIL: time-branch RMS residual {rms_db:+.1f} dBFS > -60 dBFS threshold",
+            file=sys.stderr,
+        )
         return 1
 
 

@@ -1,4 +1,5 @@
 """Tests for the fp16 null-test harness (no ONNX inference needed)."""
+
 from __future__ import annotations
 
 import math
@@ -46,6 +47,6 @@ def test_null_test_passes_on_quiet_perturbation():
 
 def test_null_test_shape_mismatch_raises():
     import pytest
+
     with pytest.raises(ValueError):
-        fp16.null_test(np.zeros(10), np.zeros(11),
-                       model_name="x", fixture="y")
+        fp16.null_test(np.zeros(10), np.zeros(11), model_name="x", fixture="y")

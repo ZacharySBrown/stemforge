@@ -25,6 +25,7 @@ Run:
    uv run pytest v0/tests/test_pkg_install.py -v
    STEMFORGE_INSTALL_E2E=1 uv run pytest v0/tests/test_pkg_install.py -v
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -42,9 +43,7 @@ REPO = Path(__file__).resolve().parents[2]
 V0 = REPO / "v0"
 PKG_PATH = V0 / "build" / "StemForge-0.0.0.pkg"
 PKG_MIN_BYTES = 100 * 1024 * 1024  # 100 MB floor; real pkg is ~409 MB.
-FUSED_ONNX_SHA256 = (
-    "71828190efe191a622f9c9273471de1458fe0e108f277872d43c5c81cbe29ce9"
-)
+FUSED_ONNX_SHA256 = "71828190efe191a622f9c9273471de1458fe0e108f277872d43c5c81cbe29ce9"
 PKGUTIL = "/usr/sbin/pkgutil"
 
 
@@ -218,8 +217,7 @@ def test_user_staging_has_manifest(user_staging: Path) -> None:
     assert manifest_path.is_file(), f"{manifest_path} missing"
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert "models" in data, (
-        f"manifest.json is missing top-level 'models' key. "
-        f"Keys present: {sorted(data.keys())}"
+        f"manifest.json is missing top-level 'models' key. Keys present: {sorted(data.keys())}"
     )
 
 
@@ -270,6 +268,7 @@ def test_user_staging_has_als(user_staging: Path) -> None:
     assert als.stat().st_size > 512, f"implausibly small: {als.stat().st_size}"
     import gzip
     import xml.etree.ElementTree as ET
+
     with gzip.open(als, "rb") as f:
         tree = ET.parse(f)
     root_tag = tree.getroot().tag.rsplit("}", 1)[-1]
@@ -314,10 +313,7 @@ E2E_ENV_VAR = "STEMFORGE_INSTALL_E2E"
 
 @pytest.mark.skipif(
     os.environ.get(E2E_ENV_VAR) != "1",
-    reason=(
-        f"tier-2 e2e install test is gated on {E2E_ENV_VAR}=1 "
-        "(requires sudo + takes ~1 min)"
-    ),
+    reason=(f"tier-2 e2e install test is gated on {E2E_ENV_VAR}=1 (requires sudo + takes ~1 min)"),
 )
 def test_pkg_installs_end_to_end(pkg_path: Path, tmp_path: Path) -> None:
     """W4 tier-2 — `sudo installer` into a throwaway root + run the binary.
@@ -331,9 +327,12 @@ def test_pkg_installs_end_to_end(pkg_path: Path, tmp_path: Path) -> None:
 
     install = subprocess.run(
         [
-            "sudo", "installer",
-            "-pkg", str(pkg_path),
-            "-target", str(tmproot),
+            "sudo",
+            "installer",
+            "-pkg",
+            str(pkg_path),
+            "-target",
+            str(tmproot),
         ],
         capture_output=True,
         text=True,

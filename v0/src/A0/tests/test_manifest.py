@@ -1,12 +1,10 @@
 """Tests for manifest writer — uses a trivial synthetic ONNX model."""
+
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-import numpy as np
 import onnx
-import pytest
 from onnx import TensorProto, helper
 
 from v0.src.A0 import manifest
@@ -61,13 +59,16 @@ def test_write_and_load_roundtrip(tmp_path, monkeypatch):
     _make_toy_onnx(p)
     monkeypatch.setattr(manifest.config, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(manifest.config, "BUILD_MODELS_DIR", tmp_path)
-    monkeypatch.setattr(manifest.config, "MANIFEST_PATH",
-                        tmp_path / "manifest.json")
+    monkeypatch.setattr(manifest.config, "MANIFEST_PATH", tmp_path / "manifest.json")
     entry = manifest.build_entry(
-        p, torch_ref_checkpoint="x",
-        max_abs_err=0.0, max_rel_err=0.0,
-        precision="fp32", coreml_ep_supported=False,
-        cpu_fallback_ops=[], optimized_cache=None,
+        p,
+        torch_ref_checkpoint="x",
+        max_abs_err=0.0,
+        max_rel_err=0.0,
+        precision="fp32",
+        coreml_ep_supported=False,
+        cpu_fallback_ops=[],
+        optimized_cache=None,
     )
     manifest.write({"toy": entry})
     loaded = manifest.load()

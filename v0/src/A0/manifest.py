@@ -27,6 +27,7 @@ Schema (frozen here, consumed by Track A, Track E, Track F):
       }
     }
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -59,6 +60,7 @@ def _utcnow() -> str:
 def _ort_version() -> str:
     try:
         import onnxruntime
+
         return onnxruntime.__version__
     except Exception:
         return "unknown"
@@ -66,7 +68,9 @@ def _ort_version() -> str:
 
 def _model_io_shapes(onnx_path: Path) -> tuple[dict, dict]:
     import onnx
+
     m = onnx.load(str(onnx_path), load_external_data=False)
+
     def _shape(t):
         dims = []
         for d in t.type.tensor_type.shape.dim:
@@ -75,25 +79,32 @@ def _model_io_shapes(onnx_path: Path) -> tuple[dict, dict]:
             else:
                 dims.append(d.dim_param or "dynamic")
         return dims
+
     inputs = {t.name: _shape(t) for t in m.graph.input}
     outputs = {t.name: _shape(t) for t in m.graph.output}
     return inputs, outputs
 
 
-def build_entry(onnx_path: Path, *,
-                torch_ref_checkpoint: str,
-                max_abs_err: float,
-                max_rel_err: float,
-                precision: str,
-                coreml_ep_supported: bool,
-                cpu_fallback_ops: list[str],
-                optimized_cache: Path | None,
-                notes: str = "") -> dict[str, Any]:
+def build_entry(
+    onnx_path: Path,
+    *,
+    torch_ref_checkpoint: str,
+    max_abs_err: float,
+    max_rel_err: float,
+    precision: str,
+    coreml_ep_supported: bool,
+    cpu_fallback_ops: list[str],
+    optimized_cache: Path | None,
+    notes: str = "",
+) -> dict[str, Any]:
     inputs, outputs = _model_io_shapes(onnx_path)
     # Path stored in manifest is relative to repo root for portability.
     rel_path = onnx_path.resolve().relative_to(config.REPO_ROOT)
-    rel_cache = (optimized_cache.resolve().relative_to(config.REPO_ROOT)
-                 if optimized_cache and optimized_cache.exists() else None)
+    rel_cache = (
+        optimized_cache.resolve().relative_to(config.REPO_ROOT)
+        if optimized_cache and optimized_cache.exists()
+        else None
+    )
     return {
         "path": str(rel_path),
         "sha256": sha256_of_file(onnx_path),

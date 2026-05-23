@@ -7,6 +7,7 @@ Used by the Track A self-test:
         | jq -c 'select(.event)' \
         | python v0/tests/validate-ndjson.py
 """
+
 from __future__ import annotations
 
 import json
@@ -16,12 +17,10 @@ from pathlib import Path
 try:
     import jsonschema
 except ImportError:  # pragma: no cover
-    print("jsonschema not installed — run `uv pip install jsonschema`",
-          file=sys.stderr)
+    print("jsonschema not installed — run `uv pip install jsonschema`", file=sys.stderr)
     sys.exit(2)
 
-SCHEMA_PATH = (Path(__file__).resolve().parents[1]
-               / "interfaces" / "ndjson.schema.json")
+SCHEMA_PATH = Path(__file__).resolve().parents[1] / "interfaces" / "ndjson.schema.json"
 
 
 def main() -> int:

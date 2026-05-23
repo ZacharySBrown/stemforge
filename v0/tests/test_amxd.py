@@ -11,6 +11,7 @@ These tests parse the built .amxd container and confirm:
 We reuse the Track C container reader (``v0/src/maxpat-builder/amxd_pack.py``)
 rather than re-implementing the format. conftest adds it to ``sys.path``.
 """
+
 from __future__ import annotations
 
 import json
@@ -18,10 +19,9 @@ import struct
 from pathlib import Path
 from typing import Iterable
 
-import pytest
-
 
 # ── helpers ────────────────────────────────────────────────────────────────
+
 
 def _walk_boxes(patcher: dict) -> Iterable[dict]:
     """Yield every ``box`` dict under ``patcher.boxes[].box`` recursively.
@@ -51,6 +51,7 @@ def _expected_box_id(yaml_id: str) -> str:
 
 
 # ── tests ──────────────────────────────────────────────────────────────────
+
 
 def test_amxd_exists(amxd_path: Path) -> None:
     """Built device is present and at least 1KB (rules out empty/truncated)."""
@@ -86,9 +87,7 @@ def test_amxd_references_bridge_js(amxd_path: Path) -> None:
     # Full-text search on the serialized patcher is robust to wherever the
     # filename ends up (node.script filename arg, inspector data, etc).
     blob = json.dumps(parsed["patcher"])
-    assert "stemforge_bridge.v0.js" in blob, (
-        "patcher does not reference stemforge_bridge.v0.js"
-    )
+    assert "stemforge_bridge.v0.js" in blob, "patcher does not reference stemforge_bridge.v0.js"
 
 
 def test_amxd_ui_matches_device_yaml(amxd_path: Path, device_yaml: dict) -> None:
