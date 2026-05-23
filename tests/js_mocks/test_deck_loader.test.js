@@ -282,6 +282,32 @@ test('loadDeckFromDict reads a [dict] manifest and loads it', () => {
     assert.ok(clipProps(IDX['D-d'], 0), 'loadDeckFromDict placed deck D clips');
 });
 
+test('loadDeckPath reads a deck manifest JSON from disk and loads it', () => {
+    const ctx = loadLoader();
+    installClipHandlers();
+    seedDeckLayout(4, 4);
+    const mf = deckManifest('C', 1);
+    seedDeckFiles(mf);
+    const manifestPath = '/forge/C/deck.json';
+    maxApi.seedFile(manifestPath, JSON.stringify(mf));
+
+    ctx.messagename = 'loadDeckPath';
+    ctx.loadDeckPath.call(ctx, manifestPath);
+
+    assert.ok(clipProps(IDX['C-d'], 0), 'loadDeckPath placed deck C clips from disk');
+    assert.ok(clipProps(IDX['C-d'], 0).file_path.indexOf('/forge/C') === 0);
+});
+
+test('loadDeckPath surfaces a clear status when the file is unreadable', () => {
+    const ctx = loadLoader();
+    seedDeckLayout(4, 4);
+    ctx.messagename = 'loadDeckPath';
+    assert.doesNotThrow(() => ctx.loadDeckPath.call(ctx, '/nope/missing.json'));
+    const status = maxApi.state.outlets[0] || [];
+    assert.ok(status.some((a) => String(a[1] || '').indexOf('cannot read') >= 0),
+        'should report it cannot read the missing manifest');
+});
+
 test('source and package copies of stemforge_loader.v0.js stay byte-identical', () => {
     const src = fs.readFileSync(SF_LOADER, 'utf8');
     const pkg = fs.readFileSync(path.join(

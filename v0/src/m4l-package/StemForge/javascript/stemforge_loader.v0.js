@@ -43,7 +43,7 @@ outlets = 4;   // 0: status text  1: bang  2: preset umenu  3: [shell] (mkdir-p)
 // File.readstring loops (caught during second-UAT run).
 
 // Build fingerprint, injected by tools/inject_build_manifest.py.
-var SF_BUILD_MANIFEST = "build=2026-05-16T19:43 amxd=967a3f8d js={sf_arrangement_loader=4bcd599d,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=77345a73,stemforge_loader.test=d15bbb07,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
+var SF_BUILD_MANIFEST = "build=2026-05-23T15:18 amxd=967a3f8d js={sf_arrangement_loader=4bcd599d,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=7035ac53,stemforge_loader.test=d15bbb07,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
 
 try {
     post("[sf_loader] " + SF_BUILD_MANIFEST + "\n");
@@ -907,6 +907,22 @@ function loadDeck(mf) {
     }
     status("Deck " + deck + " <- " + songName + " (" + totalPlaced + " clips)");
     outlet(1, "bang");
+}
+
+// Max path entry: read a deck manifest JSON from disk and load it. The
+// trigger-agnostic dev/test path — fire it with
+//   uv run sf-remote fire forge loadDeck /path/to/deck.json
+// (sf_forge.js:loadDeck forwards the path here). Production triggers (taste /
+// popup / Launchpad) can call loadDeckFromDict instead once wired.
+function loadDeckPath() {
+    var deckPath = arrayfromargs(messagename, arguments).slice(1).join(" ");
+    if (!deckPath) { status("loadDeckPath: no path"); return; }
+    var raw = readFileContents(deckPath);
+    if (!raw) { status("loadDeckPath: cannot read " + deckPath); return; }
+    var mf;
+    try { mf = _unwrapDictContent(JSON.parse(raw)); }
+    catch (e) { status("loadDeckPath: parse error: " + e); return; }
+    loadDeck(mf);
 }
 
 // Max dict entry: read a deck manifest from a [dict] and load it. Mirrors

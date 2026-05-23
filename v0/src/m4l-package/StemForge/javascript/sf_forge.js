@@ -460,6 +460,22 @@ function reload() {
     }
 }
 
+// Forwarder for `loadDeck` — fires the setforge 4-deck performance loader.
+// `sf-remote fire forge loadDeck <path>` routes here; we forward the manifest
+// path to the loader's loadDeckPath(), which reads it from disk and reloads the
+// deck's four stem tracks in place. See docs/design-docs/setforge-loader.md.
+function loadDeck() {
+    try {
+        var argv = arrayfromargs(messagename, arguments).slice(1);
+        var path = argv.join(" ");
+        if (!path) { log("loadDeck: no manifest path"); return; }
+        outlet(2, "loadDeckPath", path);
+        log("loadDeck forwarded to loader: " + path);
+    } catch (e) {
+        log("loadDeck outlet error: " + e);
+    }
+}
+
 // Forwarder for `bounceTracks` — drives Live's freeze+flatten on tracks
 // A/B/C/D (or a subset given as args), then chains into commitOffsets so the
 // post-bounce manifest reflects the freshly-rendered project-tempo audio.
