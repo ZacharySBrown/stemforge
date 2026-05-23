@@ -122,6 +122,8 @@ function clipProps(trackIdx, slotIdx) {
     return slot && slot.clip && slot.clip._properties;
 }
 
+const STEM_KEYS = ['drums', 'bass', 'vocals', 'other'];
+
 // Track-name → index in the seeded layout (source=0, then A-d=1...).
 const IDX = {};
 (() => {
@@ -228,6 +230,162 @@ test('loadDeck rows=2: 2 clips per stem, scenes auto-created', () => {
         assert.ok(clipProps(IDX[tn], 0), tn + ' scene 0 clip');
         assert.ok(clipProps(IDX[tn], 1), tn + ' scene 1 clip');
     });
+});
+
+// ── 4b. per-scene song identity: each row's clip carries its own name+color ──
+
+test('loadDeck per-clip name+color_hue: each scene gets its own song identity', () => {
+    const ctx = loadLoader();
+    installClipHandlers();
+    seedDeckLayout(2, 1); // 2 slots/track, 1 scene → ensureScenes adds the 2nd
+    // A merged setlist: deck A holds two DIFFERENT songs down its two scenes.
+    const songs = [
+        { name: 'Sigur Ros', hue: 0.10 },
+        { name: 'Drake', hue: 0.80 },
+    ];
+    const stems = {};
+    [['drums', 'd'], ['bass', 'b'], ['vocals', 'v'], ['other', 'o']].forEach(([k, s]) => {
+        stems[k] = {
+            clips: songs.map((song, r) => ({
+                slot: r,
+                audio_path: '/forge/' + s + '_v' + r + '.wav',
+                name: song.name,
+                color_hue: song.hue,
+            })),
+        };
+    });
+    const mf = {
+        version: 1, deck: 'A', rows: 2,
+        song: { name: 'A deck', color_hue: 0.5 }, bpm: 120, stems,
+    };
+    seedDeckFiles(mf);
+
+    ctx.loadDeck(mf);
+
+    ['A-d', 'A-b', 'A-v', 'A-o'].forEach((tn) => {
+        const p0 = clipProps(IDX[tn], 0);
+        const p1 = clipProps(IDX[tn], 1);
+        assert.equal(p0.color, ctx.hueToLiveColor(0.10), tn + ' scene0 color from song0');
+        assert.equal(p1.color, ctx.hueToLiveColor(0.80), tn + ' scene1 color from song1');
+        assert.ok(String(p0.name).indexOf('Sigur Ros') === 0, tn + ' scene0 name from song0');
+        assert.ok(String(p1.name).indexOf('Drake') === 0, tn + ' scene1 name from song1');
+        // The deck-level song.* must NOT win when a clip carries its own identity.
+        assert.notEqual(p0.color, ctx.hueToLiveColor(0.5), tn + ' deck hue must not override');
+        // A per-clip name drops the "vN" variation suffix.
+        assert.equal(String(p0.name).indexOf(' v0'), -1, 'no vN suffix with per-clip name');
+    });
+});
+
+// ── 4c. beat-matching: applyDeckWarp imposes a clean 2-marker native warp ────
+
+// Clip node from a "...clip_slots S clip" path.
+function clipNode(lomPath) {
+    const slot = resolveSlot(lomPath);
+    return slot ? slot.clip || null : null;
+}
+
+// Warp-aware clip lifecycle: create seeds Live-style auto-warp markers (bogus)
+// so we can prove applyDeckWarp REPLACES them with its own linear pair.
+function installWarpHandlers() {
+    const sync = (clip) => {
+        clip._properties.warp_markers = JSON.stringify({ warp_markers: clip._wm });
+    };
+    maxApi.setLiveCallHandler('create_audio_clip', (lomPath, args) => {
+        const slot = resolveSlot(lomPath);
+        if (!slot) return 0;
+        const clip = { _properties: { file_path: String(args[0]) } };
+        clip._wm = [{ beat_time: 0, sample_time: 0 }, { beat_time: 4, sample_time: 2.0 }];
+        sync(clip);
+        slot.clip = clip;
+        slot._properties.has_clip = 1;
+        return 0;
+    });
+    maxApi.setLiveCallHandler('delete_clip', (lomPath) => {
+        const slot = resolveSlot(lomPath);
+        if (!slot) return 0;
+        delete slot.clip;
+        slot._properties.has_clip = 0;
+        return 0;
+    });
+    maxApi.setLiveCallHandler('create_scene', () => {
+        maxApi.getLiveTree().scenes.push({ _properties: {} });
+        return 0;
+    });
+    maxApi.setLiveCallHandler('add_warp_marker', (lomPath, args) => {
+        const clip = clipNode(lomPath);
+        if (!clip) return 0;
+        const d = args[0];
+        const beat = Number(d.get('beat_time'));
+        const sample = Number(d.get('sample_time'));
+        // Live silently rejects a second marker at an occupied sample_time.
+        if (clip._wm.some((m) => Math.abs(m.sample_time - sample) < 0.0005)) return 0;
+        clip._wm.push({ beat_time: beat, sample_time: sample });
+        sync(clip);
+        return 0;
+    });
+    maxApi.setLiveCallHandler('move_warp_marker', (lomPath, args) => {
+        const clip = clipNode(lomPath);
+        if (!clip) return 0;
+        const m = clip._wm.find((x) => Math.abs(x.beat_time - Number(args[0])) < 1e-6);
+        if (m) { m.beat_time += Number(args[1]); sync(clip); }
+        return 0;
+    });
+    maxApi.setLiveCallHandler('remove_warp_marker', (lomPath, args) => {
+        const clip = clipNode(lomPath);
+        if (!clip) return 0;
+        const i = clip._wm.findIndex((x) => Math.abs(x.beat_time - Number(args[0])) < 1e-6);
+        if (i >= 0) { clip._wm.splice(i, 1); sync(clip); }
+        return 0;
+    });
+}
+
+test('applyDeckWarp: native bpm+downbeat → clean 2-marker warp, extras removed', () => {
+    const ctx = loadLoader();
+    installWarpHandlers();
+    seedDeckLayout(4, 4);
+    const mf = deckManifest('A', 1);
+    const bpm = 120;
+    const db = 0.5;
+    STEM_KEYS.forEach((k) => {
+        mf.stems[k].clips[0].bpm = bpm;
+        mf.stems[k].clips[0].downbeat_sec = db;
+    });
+    seedDeckFiles(mf);
+
+    ctx.loadDeck(mf);
+
+    const tree = maxApi.getLiveTree();
+    ['A-d', 'A-b', 'A-v', 'A-o'].forEach((tn) => {
+        const clip = tree.tracks[IDX[tn]].clip_slots[0].clip;
+        assert.equal(clip._properties.warping, 1, tn + ' warping on');
+        const wm = JSON.parse(clip._properties.warp_markers).warp_markers;
+        assert.equal(wm.length, 2, tn + ' must end with exactly 2 markers (extras removed)');
+        const byBeat = {};
+        wm.forEach((m) => { byBeat[m.beat_time] = m.sample_time; });
+        assert.ok(Math.abs(byBeat[0] - db) < 1e-6, tn + ' beat 0 pinned to the downbeat');
+        assert.ok(Math.abs(byBeat[1] - (db + 60 / bpm)) < 1e-6, tn + ' beat 1 one native beat later');
+    });
+    // Per-stem warp mode: drums/bass = Beats(0), vocals/other = Complex(4).
+    assert.equal(tree.tracks[IDX['A-d']].clip_slots[0].clip._properties.warp_mode, 0, 'drums = Beats');
+    assert.equal(tree.tracks[IDX['A-b']].clip_slots[0].clip._properties.warp_mode, 0, 'bass = Beats');
+    assert.equal(tree.tracks[IDX['A-v']].clip_slots[0].clip._properties.warp_mode, 4, 'vocals = Complex');
+    assert.equal(tree.tracks[IDX['A-o']].clip_slots[0].clip._properties.warp_mode, 4, 'other = Complex');
+});
+
+test('loadDeck without bpm leaves Live auto-warp (no marker surgery)', () => {
+    const ctx = loadLoader();
+    installWarpHandlers();
+    seedDeckLayout(4, 4);
+    const mf = deckManifest('A', 1); // no bpm/downbeat fields
+    seedDeckFiles(mf);
+
+    ctx.loadDeck(mf);
+
+    // The seeded auto-warp markers stay untouched when no bpm is supplied.
+    const clip = maxApi.getLiveTree().tracks[IDX['A-d']].clip_slots[0].clip;
+    const wm = JSON.parse(clip._properties.warp_markers).warp_markers;
+    assert.equal(wm.length, 2, 'auto-warp markers untouched');
+    assert.ok(wm.some((m) => m.sample_time === 2.0), 'original auto marker still present');
 });
 
 // ── 5. validate-before-mutate: a missing file aborts with NO clips placed ────

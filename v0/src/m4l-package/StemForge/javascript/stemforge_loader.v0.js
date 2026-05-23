@@ -43,7 +43,7 @@ outlets = 4;   // 0: status text  1: bang  2: preset umenu  3: [shell] (mkdir-p)
 // File.readstring loops (caught during second-UAT run).
 
 // Build fingerprint, injected by tools/inject_build_manifest.py.
-var SF_BUILD_MANIFEST = "build=2026-05-23T15:18 amxd=967a3f8d js={sf_arrangement_loader=4bcd599d,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=3d7fcc90,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=7035ac53,stemforge_loader.test=d15bbb07,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
+var SF_BUILD_MANIFEST = "build=2026-05-23T22:15 amxd=967a3f8d js={sf_arrangement_loader=4bcd599d,sf_arrangement_reader=b67c502e,sf_clip_export=4b1a9d8c,sf_forge=363878f9,sf_locator_anchor=a3bc63f2,sf_logger=4553d0b2,sf_manifest_loader=10eafd2c,sf_preset_loader=e89b01ab,sf_settings=d7628255,sf_state=e5b4e215,sf_ui=0479c90c,stemforge_bridge=723460c9,stemforge_loader=b02772ef,stemforge_loader.test=d15bbb07,stemforge_ndjson_parser=2447843f,stemforge_param_scraper=849b1239,stemforge_quadrant_router=a919d46e}";
 
 try {
     post("[sf_loader] " + SF_BUILD_MANIFEST + "\n");
@@ -870,6 +870,107 @@ function validateDeckPaths(mf) {
     return true;
 }
 
+// Read a clip's current warp markers as [{beat_time, sample_time}, ...].
+// Live returns warp_markers as a ONE-element array holding a JSON string
+// `["{\"warp_markers\":[...]}"]` (see applyCurationV2Clip's notes). sample_time
+// is in SECONDS despite the name.
+function _readWarpMarkers(clipApi) {
+    try {
+        var raw = clipApi.get("warp_markers");
+        if (raw && raw.length > 0) {
+            var s = (typeof raw[0] === "string") ? raw[0] : String(raw[0]);
+            var p = JSON.parse(s);
+            if (p && p.warp_markers && p.warp_markers.length) return p.warp_markers;
+        }
+    } catch (_) {}
+    return [];
+}
+
+function _markerBySample(list, sec) {
+    for (var i = 0; i < list.length; i++) {
+        if (Math.abs(Number(list[i].sample_time) - sec) < 0.0005) return list[i];
+    }
+    return null;
+}
+
+// Beat-match one clip to its NATIVE tempo so the global tempo controls playback.
+// Imposes a clean two-marker linear warp: the musical downbeat (downbeatSec) is
+// pinned to beat 0, and one native beat later (downbeatSec + 60/bpm) to beat 1.
+// The slope between them IS the clip's tempo (warp_bpm is read-only — only marker
+// slope sets it), so with warping on Live stretches the clip to the session
+// tempo, phase-aligned on the "1".
+//
+// ORDER MATTERS. A fresh warped clip has Live's default marker at beat 0 /
+// sample 0 (which is why an untreated clip reads Seg.BPM 120). add_warp_marker
+// SILENTLY REJECTS a second marker at an occupied beat_time, so adding our
+// downbeat anchor at beat 0 first is dropped — the bug that left tempo at 120.
+// Instead: (1) anchor beat 1 (no collision), (2) remove every default/auto
+// marker including the beat-0 one, (3) THEN add the beat-0 downbeat anchor.
+//
+// bpm + downbeatSec come from taste's analysis (stems.json: bpm,
+// tempo.first_downbeat_sec — detected on the MIX, so all four stems of a song
+// share them and lock to each other). Returns true if a warp was applied.
+function applyDeckWarp(clipApi, bpm, downbeatSec, stemName) {
+    bpm = Number(bpm);
+    if (!isFinite(bpm) || bpm <= 0) return false;   // no tempo → leave Live's auto-warp
+    downbeatSec = Number(downbeatSec);
+    if (!isFinite(downbeatSec) || downbeatSec < 0) downbeatSec = 0;
+
+    try { clipApi.set("warping", 1); } catch (_eW) {}
+    var wmode = (BAR_WARP_MODES[stemName] !== undefined) ? BAR_WARP_MODES[stemName] : 4;
+    try { clipApi.set("warp_mode", wmode); } catch (_eM) {}
+
+    var spb = 60.0 / bpm;                            // native seconds per beat
+    var aSec = downbeatSec;                          // downbeat       → beat 0
+    var bSec = downbeatSec + spb;                    // one beat later → beat 1
+
+    function addMarker(beat, sec) {
+        try {
+            var d = new Dict();
+            d.set("beat_time", beat);
+            d.set("sample_time", sec);
+            clipApi.call("add_warp_marker", d);
+        } catch (_) {}
+    }
+
+    // 1. Anchor beat 1 first — a distinct beat AND sample, so no collision with
+    //    the default beat-0 marker.
+    if (!_markerBySample(_readWarpMarkers(clipApi), bSec)) addMarker(1.0, bSec);
+
+    // 2. Remove every marker that isn't one of our two targets — crucially the
+    //    default (beat 0, sample 0) one. Removal is by beat_time; the trailing
+    //    shadow marker may refuse, which is harmless (it auto-tracks the slope).
+    var list = _readWarpMarkers(clipApi);
+    for (var r = list.length - 1; r >= 0; r--) {
+        var sec = Number(list[r].sample_time);
+        if (Math.abs(sec - aSec) < 0.0005 || Math.abs(sec - bSec) < 0.0005) continue;
+        try { clipApi.call("remove_warp_marker", Number(list[r].beat_time)); } catch (_) {}
+    }
+
+    // 3. Now beat 0 is free — add the downbeat anchor there.
+    if (!_markerBySample(_readWarpMarkers(clipApi), aSec)) addMarker(0.0, aSec);
+
+    // 4. Correct any beat_times that didn't land exactly (e.g. a survivor moved).
+    list = _readWarpMarkers(clipApi);
+    var mA = _markerBySample(list, aSec);
+    var mB = _markerBySample(list, bSec);
+    if (mA && Math.abs(Number(mA.beat_time) - 0.0) > 1e-6) {
+        try { clipApi.call("move_warp_marker", Number(mA.beat_time), 0.0 - Number(mA.beat_time)); } catch (_) {}
+    }
+    if (mB && Math.abs(Number(mB.beat_time) - 1.0) > 1e-6) {
+        try { clipApi.call("move_warp_marker", Number(mB.beat_time), 1.0 - Number(mB.beat_time)); } catch (_) {}
+    }
+
+    // Pin launch + loop to the downbeat. beat 0 == the musical "1", so the start
+    // marker AND loop_start both go to 0 — otherwise Live's default loop region
+    // (which can begin in the pre-downbeat pickup) governs where launch begins,
+    // and two decks won't agree on the "1" when launched together.
+    try { clipApi.set("looping", 1); } catch (_) {}
+    try { clipApi.set("loop_start", 0.0); } catch (_) {}
+    try { clipApi.set("start_marker", 0.0); } catch (_) {}
+    return true;
+}
+
 // Load one song's four stems into one deck's tracks, reloading clips in place.
 // `mf` is the parsed deck manifest (design doc §4). Reuses loadClip (which
 // already does delete->create->probe and sets warping/looping/name); loadDeck
@@ -879,12 +980,13 @@ function loadDeck(mf) {
     var deck = String(mf.deck);
     var rows = Number(mf.rows) || 1;
     var songName = (mf.song && mf.song.name) || "song";
-    var color = hueToLiveColor(mf.song && mf.song.color_hue);
+    var deckHue = mf.song && mf.song.color_hue;
 
     if (!validateDeckPaths(mf)) { status("loadDeck aborted: deck " + deck); return; }
     try { ensureScenes(rows); } catch (_eSc) { /* best-effort */ }
 
     var totalPlaced = 0;
+    var totalWarped = 0;
     for (var i = 0; i < SETFORGE_STEMS.length; i++) {
         var stem = SETFORGE_STEMS[i];
         var trackName = deck + "-" + stem;
@@ -893,20 +995,76 @@ function loadDeck(mf) {
 
         var clips = mf.stems[SETFORGE_STEM_KEY[stem]].clips;
         for (var s = 0; s < rows; s++) {
-            var clipName = songName + " " + stem + " v" + s;
-            if (!loadClip(trackIdx, s, clips[s].audio_path, clipName)) continue;
-            if (color !== null) {
-                try {
-                    var clip = new LiveAPI(
-                        "live_set tracks " + trackIdx + " clip_slots " + s + " clip");
-                    if (clip && clip.id !== "0") clip.set("color", color);
-                } catch (_eCol) { /* color is cosmetic; never block the load */ }
+            var entry = clips[s];
+            // Per-scene song identity: a merged setlist stacks a DIFFERENT song
+            // per row (scene), so a clip may carry its own name/color_hue. Fall
+            // back to the deck-level song.* for single-song decks. With a per-clip
+            // name the "vN" suffix is meaningless (each row is a distinct song,
+            // not a variation of one), so it's dropped.
+            var rowName = entry.name || songName;
+            var clipName = entry.name
+                ? (rowName + " " + stem)
+                : (rowName + " " + stem + " v" + s);
+            var rowHue = (entry.color_hue !== undefined && entry.color_hue !== null)
+                ? entry.color_hue : deckHue;
+            var rowColor = hueToLiveColor(rowHue);
+            if (!loadClip(trackIdx, s, entry.audio_path, clipName)) continue;
+            // Resolve the clip once for both color and warp.
+            var clip = null;
+            try {
+                clip = new LiveAPI(
+                    "live_set tracks " + trackIdx + " clip_slots " + s + " clip");
+                if (!clip || clip.id === "0") clip = null;
+            } catch (_eClip) { clip = null; }
+            if (clip && rowColor !== null) {
+                try { clip.set("color", rowColor); } catch (_eCol) { /* cosmetic */ }
+            }
+            // Beat-match: warp to native tempo + downbeat so global tempo rules.
+            // entry.bpm / entry.downbeat_sec come from taste (stems.json). Absent
+            // → leave Live's auto-warp (plain warping=1 from loadClip).
+            if (clip && entry.bpm !== undefined) {
+                if (applyDeckWarp(clip, entry.bpm, entry.downbeat_sec, SETFORGE_STEM_KEY[stem])) {
+                    totalWarped++;
+                }
             }
             totalPlaced++;
         }
     }
-    status("Deck " + deck + " <- " + songName + " (" + totalPlaced + " clips)");
+    status("Deck " + deck + " <- " + songName + " (" + totalPlaced + " clips, "
+        + totalWarped + " beat-matched)");
     outlet(1, "bang");
+}
+
+// Debug: dump the warp state of a deck's four slot-0 clips to the log so we can
+// see on-device what loadDeck/applyDeckWarp actually produced (warping flag,
+// warp_mode, start_marker, marker count + positions). Fire via
+//   uv run sf-remote fire forge inspectDeck A
+function inspectDeck() {
+    var deck = arrayfromargs(messagename, arguments).slice(1).join(" ") || "A";
+    for (var i = 0; i < SETFORGE_STEMS.length; i++) {
+        var stem = SETFORGE_STEMS[i];
+        var trackName = deck + "-" + stem;
+        var trackIdx = findTrackByName(trackName);
+        if (trackIdx < 0) { status("inspect " + trackName + ": no track"); continue; }
+        var clip;
+        try { clip = new LiveAPI("live_set tracks " + trackIdx + " clip_slots 0 clip"); }
+        catch (_eC) { status("inspect " + trackName + ": no clip handle"); continue; }
+        if (!clip || clip.id === "0") { status("inspect " + trackName + ": empty slot"); continue; }
+        var warping = "?", wmode = "?", startM = "?", loopS = "?", loopE = "?";
+        try { warping = clip.get("warping"); } catch (_) {}
+        try { wmode = clip.get("warp_mode"); } catch (_) {}
+        try { startM = clip.get("start_marker"); } catch (_) {}
+        try { loopS = clip.get("loop_start"); } catch (_) {}
+        try { loopE = clip.get("loop_end"); } catch (_) {}
+        var markers = _readWarpMarkers(clip);
+        var summary = "";
+        for (var m = 0; m < Math.min(markers.length, 4); m++) {
+            summary += " [b=" + markers[m].beat_time + ",s=" + markers[m].sample_time + "]";
+        }
+        status("inspect " + trackName + ": warping=" + warping + " mode=" + wmode
+            + " start=" + startM + " loop=" + loopS + ".." + loopE
+            + " markers=" + markers.length + summary);
+    }
 }
 
 // Max path entry: read a deck manifest JSON from disk and load it. The

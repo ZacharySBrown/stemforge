@@ -181,6 +181,10 @@ Dict.prototype.replace = function (key, value) {
     tree[key] = value;
 };
 
+// Max's Dict has both `replace` and `set`; classic [js] code uses `set` for
+// scalar key/value (e.g. add_warp_marker's {beat_time, sample_time} scratch).
+Dict.prototype.set = Dict.prototype.replace;
+
 Dict.prototype.get = function (key) {
     const tree = this._tree();
     return tree[key];

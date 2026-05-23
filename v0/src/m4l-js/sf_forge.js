@@ -476,6 +476,18 @@ function loadDeck() {
     }
 }
 
+// Forwarder for `inspectDeck` — debug: dump a deck's clip warp state to the log.
+// `sf-remote fire forge inspectDeck A` routes here → loader's inspectDeck().
+function inspectDeck() {
+    try {
+        var argv = arrayfromargs(messagename, arguments).slice(1);
+        outlet(2, "inspectDeck", argv.length ? String(argv[0]) : "A");
+        log("inspectDeck forwarded to loader: " + (argv[0] || "A"));
+    } catch (e) {
+        log("inspectDeck outlet error: " + e);
+    }
+}
+
 // Forwarder for `bounceTracks` — drives Live's freeze+flatten on tracks
 // A/B/C/D (or a subset given as args), then chains into commitOffsets so the
 // post-bounce manifest reflects the freshly-rendered project-tempo audio.
