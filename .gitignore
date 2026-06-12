@@ -83,3 +83,10 @@ v0/src/m4l-devices/configurator-strip/
 # they're regenerable on first open and have caused accidental commits
 # (e.g. grooves/*.wav.asd, root the_champ_30s.wav.asd).
 *.asd
+.claude/worktrees/
+.claude/settings.local.json
+.vite/
+node_modules/
+targets/
+research/
+*.zip
