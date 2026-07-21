@@ -555,3 +555,79 @@ class TestRefineBpm:
         assert abs(offset - round(offset)) < 1e-3, (
             f"refined {refined} not on the step grid (offset={offset})"
         )
+
+
+class TestOctavePlausibilityPrior:
+    """The kick tiebreaker is not an independent vote — mix, drums and kick are all beat-this, so a
+    doubled reading doubles on all three and the tiebreaker ratifies the error. Aphex Twin
+    "180db_[130]" shipped bpm 260.0 (mix 130.50, drums 259.71, kick 259.94) for a track whose title
+    states its tempo. The prior catches that class without pretending to fix the tiebreaker.
+    """
+
+    def _run(self, tmp_path, mix_bpm, drums_bpm, kick_bpm):
+        mix, drums = tmp_path / "mix.wav", tmp_path / "drums.wav"
+        mix.touch()
+        drums.touch()
+        with mock.patch("stemforge.tempo_reconciler._detect_beat_this") as m, \
+             mock.patch("stemforge.tempo_reconciler._isolate_kick") as k:
+            k.return_value = tmp_path / "kick.wav"
+            m.side_effect = [
+                _make_estimate("beat-this:mix", mix_bpm),
+                _make_estimate("beat-this:drums", drums_bpm),
+                _make_estimate("beat-this:kick", kick_bpm),
+            ]
+            return reconcile_tempo(mix, drums, kick_tiebreaker=True)
+
+    def test_aphex_twin_180db_lands_on_130_not_260(self, tmp_path):
+        r = self._run(tmp_path, 130.50, 259.71, 259.94)
+        assert r.bpm == 130.50, f"expected the in-band candidate, got {r.bpm}"
+        assert "OVERRIDDEN" in (r.warning or "")
+
+    def test_bpm_and_downbeats_stay_coherent_after_override(self, tmp_path):
+        """The override swaps the CANDIDATE, so the grid must come from that candidate too. A
+        halved scalar with the loser's downbeats would desync bpm from bar_starts (invariant G4).
+        """
+        r = self._run(tmp_path, 130.50, 259.71, 259.94)
+        implied = 60.0 / float(np.median(np.diff(r.beat_times)))
+        assert abs(implied - r.bpm) / r.bpm < 0.01, f"grid implies {implied}, stated {r.bpm}"
+
+    def test_plausible_disagreement_is_left_alone(self, tmp_path):
+        """Definition: drums 179.76 is a legitimate tempo, so the prior must not fire."""
+        r = self._run(tmp_path, 89.88, 179.76, 179.76)
+        assert "OVERRIDDEN" not in (r.warning or "")
+
+    def test_both_implausible_flags_low_confidence_instead_of_shipping_quietly(self, tmp_path):
+        r = self._run(tmp_path, 260.0, 520.0, 519.0)
+        assert r.confidence == "low"
+        assert "NEEDS REVIEW" in (r.warning or "")
+
+    def test_agreeing_detectors_still_flagged_when_both_implausible(self, tmp_path):
+        """Baby Dodds solo rudiments: mix 444.9 and drums 444.4 AGREE, so no tiebreaker fires and
+        the in-branch prior never runs. Agreement is not correctness — it shipped conf="high" with
+        no warning. The final guard must catch it, and must NOT invent a corrected BPM.
+        """
+        mix, drums = tmp_path / "mix.wav", tmp_path / "drums.wav"
+        mix.touch()
+        drums.touch()
+        with mock.patch("stemforge.tempo_reconciler._detect_beat_this") as m:
+            m.side_effect = [
+                _make_estimate("beat-this:mix", 444.9),
+                _make_estimate("beat-this:drums", 444.4),
+            ]
+            r = reconcile_tempo(mix, drums, kick_tiebreaker=False)
+        assert r.confidence == "low"
+        assert "IMPLAUSIBLE TEMPO" in (r.warning or "")
+        assert abs(r.bpm - 444.9) < 1.0, "the guard must not rewrite the measurement"
+
+    def test_normal_track_untouched_by_the_guard(self, tmp_path):
+        mix, drums = tmp_path / "mix.wav", tmp_path / "drums.wav"
+        mix.touch()
+        drums.touch()
+        with mock.patch("stemforge.tempo_reconciler._detect_beat_this") as m:
+            m.side_effect = [
+                _make_estimate("beat-this:mix", 120.0),
+                _make_estimate("beat-this:drums", 120.0),
+            ]
+            r = reconcile_tempo(mix, drums, kick_tiebreaker=False)
+        assert r.confidence == "high"
+        assert "IMPLAUSIBLE" not in (r.warning or "")

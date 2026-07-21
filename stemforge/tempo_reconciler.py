@@ -61,6 +61,15 @@ SUSPICIOUS_RATIOS: tuple[float, ...] = (
 )
 RATIO_TOLERANCE = 0.01  # 1% — tight enough to require a "clean" round ratio
 
+# Tempi people actually notate. Real music above ~200 BPM is essentially always written at half
+# (a 260 BPM reading is a 130 BPM track counted twice), so a candidate outside this band that has
+# an in-band partner related by a clean factor is the wrong octave, not a fast song.
+PLAUSIBLE_BPM = (40.0, 200.0)
+
+
+def _implausible(bpm: float) -> bool:
+    return not (PLAUSIBLE_BPM[0] <= bpm <= PLAUSIBLE_BPM[1])
+
 ConfidenceLevel = Literal["high", "medium", "low"]
 TempoSource = Literal[
     "beat-this:mix",
@@ -525,7 +534,32 @@ def _isolate_kick(drums_path: Path, output_dir: Path, device: str) -> Path | Non
     return None
 
 
-def reconcile_tempo(
+def reconcile_tempo(*args, **kwargs) -> ReconciledTempo:
+    """`_reconcile_tempo` plus a final plausibility guard applied to whatever it decided.
+
+    The guard sits out here, not on one branch, because the octave problem is not confined to
+    disagreements. Baby Dodds' solo drum rudiments have mix and drums AGREEING at ~444 BPM — no
+    suspicious ratio, so no tiebreaker, so the in-branch prior never runs, and the result shipped as
+    `confidence="high"` with no warning at all. Two detectors agreeing is not evidence when both are
+    measuring the same wrong thing; that is the same mistake the kick tiebreaker makes.
+
+    This only ever DOWNGRADES confidence and appends a warning — it never rewrites a BPM. When no
+    candidate is plausible there is no evidence for what the right answer would be, and inventing one
+    (halving until it looks reasonable) would be a guess wearing the costume of a measurement.
+    """
+    result = _reconcile_tempo(*args, **kwargs)
+    if _implausible(result.bpm):
+        note = (
+            f"IMPLAUSIBLE TEMPO: {result.bpm:.2f} is outside {PLAUSIBLE_BPM[0]:.0f}-"
+            f"{PLAUSIBLE_BPM[1]:.0f} BPM. Left as measured (no candidate was in band), but the grid "
+            f"should not be trusted — free-time or unpitched material often has no steady tempo."
+        )
+        result.warning = f"{result.warning} {note}" if result.warning else note
+        result.confidence = "low"
+    return result
+
+
+def _reconcile_tempo(
     mix_path: Path | None,
     drums_path: Path | None = None,
     *,
@@ -686,18 +720,53 @@ def reconcile_tempo(
                     mix_dist = abs(mix_est.bpm - kick_est.bpm)
                     drums_dist = abs(drums_est.bpm - kick_est.bpm)
                     winner = mix_est if mix_dist <= drums_dist else drums_est
+                    confidence: ConfidenceLevel = "medium"
+                    note = (
+                        f"mix ({mix_est.bpm:.2f}) and drums ({drums_est.bpm:.2f}) "
+                        f"disagreed by ratio {ratio_value:.3f}; kick tiebreaker "
+                        f"({kick_est.bpm:.2f}) preferred {winner.audio_label}."
+                    )
+
+                    # The kick tiebreaker is NOT an independent vote: mix, drums and kick are all
+                    # beat-this, so when beat-this doubles it doubles on all three and the
+                    # "tiebreaker" ratifies the error instead of arbitrating it. Comparing absolute
+                    # BPM distance makes that structural — for candidates f and 2f with a kick
+                    # reading 2f, |f-2f| vs 0 elects 2f every time.
+                    #
+                    # Aphex Twin "180db_[130]": mix 130.50, drums 259.71, kick 259.94 -> shipped 260
+                    # for a track whose own title states its tempo. Same failure on Definition.
+                    #
+                    # Until the tiebreaker can actually see octaves (score each candidate GRID
+                    # against the kick onset envelope, penalising grid lines that land on silence —
+                    # a reward-only score can never prefer f over 2f), apply the musical prior: if
+                    # the winner is outside the plausible band and the loser is inside it, the loser
+                    # is right. Swap the CANDIDATE, never rescale the BPM — downbeats travel with
+                    # the winner, and a halved scalar would desync bpm from the bar grid.
+                    if _implausible(winner.bpm):
+                        other = drums_est if winner is mix_est else mix_est
+                        if not _implausible(other.bpm):
+                            note += (
+                                f" OVERRIDDEN: {winner.bpm:.2f} is outside the plausible band "
+                                f"{PLAUSIBLE_BPM[0]:.0f}-{PLAUSIBLE_BPM[1]:.0f} and "
+                                f"{other.bpm:.2f} is not, so the kick reading is a doubled/halved "
+                                f"octave. Using {other.audio_label}."
+                            )
+                            winner = other
+                        else:
+                            note += (
+                                f" NEEDS REVIEW: {winner.bpm:.2f} is outside the plausible band "
+                                f"and no candidate is inside it."
+                            )
+                            confidence = "low"
+
                     return ReconciledTempo(
                         bpm=winner.bpm,
                         beat_times=winner.beat_times,
                         downbeat_times=winner.downbeat_times,
                         source=winner.source,
-                        confidence="medium",
+                        confidence=confidence,
                         all_estimates=estimates,
-                        warning=(
-                            f"mix ({mix_est.bpm:.2f}) and drums ({drums_est.bpm:.2f}) "
-                            f"disagreed by ratio {ratio_value:.3f}; kick tiebreaker "
-                            f"({kick_est.bpm:.2f}) preferred {winner.audio_label}."
-                        ),
+                        warning=note,
                     )
 
         # Disagreement without a clean half/double/triplet relationship.
