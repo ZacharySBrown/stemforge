@@ -773,9 +773,14 @@ def _reconcile_tempo(
         # The kick tiebreaker only fires for clean round-factor ratios
         # because LarsNet costs ~10s and is most informative when one
         # detector locked onto a known wrong layer. For "fuzzy" disagreements
-        # the kick reading is unlikely to be cleaner than the mix reading,
-        # so we prefer mix (more rhythmic context) and flag low confidence.
-        winner = mix_est
+        # (e.g. Pente Rala 190.9 vs 134.4, a ~3:2 that isn't within tolerance
+        # of any round factor) the higher reading is the over-count more often
+        # than not, so we take the LOWER / more-plausible estimate — validated
+        # against 16 hand-labelled tracks (Pente → 134, Tribe → 92; the only
+        # miss is a genuinely-fast motorik track, which no BPM number can catch).
+        lower = min((mix_est, drums_est), key=lambda e: e.bpm)
+        higher = max((mix_est, drums_est), key=lambda e: e.bpm)
+        winner = lower if lower.bpm >= PLAUSIBLE_BPM[0] else higher
         ratio = mix_est.bpm / drums_est.bpm
         return ReconciledTempo(
             bpm=winner.bpm,
@@ -788,8 +793,8 @@ def _reconcile_tempo(
                 f"mix ({mix_est.bpm:.2f}) and drums ({drums_est.bpm:.2f}) "
                 f"disagreed (ratio {ratio:.3f}) but the disagreement is not a "
                 f"clean half/double/triplet factor — no tiebreaker fired. "
-                f"Using mix BPM. If this BPM looks wrong, the source has an "
-                f"unusual rhythmic structure."
+                f"Took the plausible {winner.audio_label} BPM ({winner.bpm:.2f}). "
+                f"If this looks wrong, the source has an unusual rhythmic structure."
             ),
         )
 

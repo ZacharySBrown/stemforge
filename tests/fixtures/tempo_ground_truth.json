@@ -1,0 +1,311 @@
+{
+ "description": "Hand-labelled tempo+downbeat ground truth for the reconciler. 16 tracks, tempo verified by click-drift, downbeat by visual bar-line. Use to build pytest fixtures asserting reconcile() picks the plausible tempo (agree/lower) and the drums downbeat; the 2 edge_case_feel tracks are KNOWN unresolvable by a BPM-number rule.",
+ "collected": "2026-07-24",
+ "n": 16,
+ "tracks": [
+  {
+   "title": "13 - Skrillex, Dismantle, DJ 2K DO TAQUARIL,",
+   "sha": "8711d6061e23600c",
+   "class": "fuzzy",
+   "edge_case_feel": false,
+   "beat_this_drums": {
+    "bpm": 190.867,
+    "first_downbeat_sec": 0.02
+   },
+   "beat_this_mix": {
+    "bpm": 134.429,
+    "first_downbeat_sec": 0.02
+   },
+   "ground_truth": {
+    "bpm": 134.58,
+    "downbeat_sec": 7.194,
+    "source": "human/Ableton-grade annotation tool"
+   }
+  },
+  {
+   "title": "Green Day - 1,000 Hours",
+   "sha": "9111b62e013db41b",
+   "class": "agree",
+   "edge_case_feel": false,
+   "beat_this_drums": {
+    "bpm": 178.767,
+    "first_downbeat_sec": 6
+   },
+   "beat_this_mix": {
+    "bpm": 178.767,
+    "first_downbeat_sec": 0.56
+   },
+   "ground_truth": {
+    "bpm": 180.28,
+    "downbeat_sec": 17.082,
+    "source": "human/Ableton-grade annotation tool"
+   }
+  },
+  {
+   "title": "A Tribe Called Quest - His Name Is Mutty Ran",
+   "sha": "c8bc210d79b93659",
+   "class": "fuzzy",
+   "edge_case_feel": false,
+   "beat_this_drums": {
+    "bpm": 91.942,
+    "first_downbeat_sec": 8.98
+   },
+   "beat_this_mix": {
+    "bpm": 143.713,
+    "first_downbeat_sec": 3.64
+   },
+   "ground_truth": {
+    "bpm": 91.99,
+    "downbeat_sec": 9.025,
+    "source": "human/Ableton-grade annotation tool"
+   }
+  },
+  {
+   "title": "Beck - All In Your Mind",
+   "sha": "7700990200bfee0d",
+   "class": "agree",
+   "edge_case_feel": true,
+   "beat_this_drums": {
+    "bpm": 108.371,
+    "first_downbeat_sec": 4.54
+   },
+   "beat_this_mix": {
+    "bpm": 108.194,
+    "first_downbeat_sec": 0.32
+   },
+   "ground_truth": {
+    "bpm": 53.89,
+    "downbeat_sec": 35.444,
+    "source": "human/Ableton-grade annotation tool"
+   }
+  },
+  {
+   "title": "Aphex Twin - 180db_",
+   "sha": "343683260de07a35",
+   "class": "clean-ratio",
+   "edge_case_feel": false,
+   "beat_this_drums": {
+    "bpm": 260.0,
+    "first_downbeat_sec": 58.94
+   },
+   "beat_this_mix": {
+    "bpm": 130.24,
+    "first_downbeat_sec": 0.78
+   },
+   "ground_truth": {
+    "bpm": 128.66,
+    "downbeat_sec": 11.852,
+    "source": "human/Ableton-grade annotation tool"
+   }
+  },
+  {
+   "title": "Can - Oh Yeah",
+   "sha": "26c141fac05ca508",
+   "class": "clean-ratio",
+   "edge_case_feel": true,
+   "beat_this_drums": {
+    "bpm": 202.532,
+    "first_downbeat_sec": 17.8
+   },
+   "beat_this_mix": {
+    "bpm": 100.329,
+    "first_downbeat_sec": 31.26
+   },
+   "ground_truth": {
+    "bpm": 203.01,
+    "downbeat_sec": 101.487,
+    "source": "human/Ableton-grade annotation tool"
+   }
+  },
+  {
+   "title": "B.O.B. (Bombs Over Baghdad)",
+   "sha": "bb453a11ec9b4e33",
+   "class": "agree",
+   "edge_case_feel": false,
+   "beat_this_drums": {
+    "bpm": 153.824,
+    "first_downbeat_sec": 3.3
+   },
+   "beat_this_mix": {
+    "bpm": 153.857,
+    "first_downbeat_sec": 0.2
+   },
+   "ground_truth": {
+    "bpm": 152.92,
+    "downbeat_sec": 6.459,
+    "source": "human/Ableton-grade annotation tool"
+   }
+  },
+  {
+   "title": "Q-Tip - Breathe and Stop",
+   "sha": "628ddc32b0c84d21",
+   "class": "agree",
+   "edge_case_feel": false,
+   "beat_this_drums": {
+    "bpm": 98.77,
+    "first_downbeat_sec": 2.38
+   },
+   "beat_this_mix": {
+    "bpm": 98.774,
+    "first_downbeat_sec": 2.38
+   },
+   "ground_truth": {
+    "bpm": 98.96,
+    "downbeat_sec": 19.402,
+    "source": "human/Ableton-grade annotation tool"
+   }
+  },
+  {
+   "title": "03 - Fred again.., Skrillex, Four Tet - Baby",
+   "sha": "6d22b4c5cb387458",
+   "class": "clean-ratio",
+   "edge_case_feel": false,
+   "beat_this_drums": {
+    "bpm": 254.042,
+    "first_downbeat_sec": 0.06
+   },
+   "beat_this_mix": {
+    "bpm": 127.104,
+    "first_downbeat_sec": 0.06
+   },
+   "ground_truth": {
+    "bpm": 127.13,
+    "downbeat_sec": 7.611,
+    "source": "human/Ableton-grade annotation tool"
+   }
+  },
+  {
+   "title": "Soul Coughing - Blame",
+   "sha": "1193a3cdc86a7a0a",
+   "class": "agree",
+   "edge_case_feel": false,
+   "beat_this_drums": {
+    "bpm": 183.975,
+    "first_downbeat_sec": 42.1
+   },
+   "beat_this_mix": {
+    "bpm": 183.871,
+    "first_downbeat_sec": 44.76
+   },
+   "ground_truth": {
+    "bpm": 183.81,
+    "downbeat_sec": 63.26,
+    "source": "human/Ableton-grade annotation tool"
+   }
+  },
+  {
+   "title": "D.L.Byron - Trying To Get Away (The Last Lud",
+   "sha": "d12251bfd47cbce8",
+   "class": "fuzzy",
+   "edge_case_feel": false,
+   "beat_this_drums": {
+    "bpm": 162.006,
+    "first_downbeat_sec": 12.94
+   },
+   "beat_this_mix": {
+    "bpm": 161.11,
+    "first_downbeat_sec": 0.84
+   },
+   "ground_truth": {
+    "bpm": 161.08,
+    "downbeat_sec": 38.141,
+    "source": "human/Ableton-grade annotation tool"
+   }
+  },
+  {
+   "title": "Madcon - Beggin'",
+   "sha": "8f4df0cfd040765c",
+   "class": "agree",
+   "edge_case_feel": false,
+   "beat_this_drums": {
+    "bpm": 129.005,
+    "first_downbeat_sec": 20.72
+   },
+   "beat_this_mix": {
+    "bpm": 129.277,
+    "first_downbeat_sec": 0.8
+   },
+   "ground_truth": {
+    "bpm": 128.6,
+    "downbeat_sec": 30.069,
+    "source": "human/Ableton-grade annotation tool"
+   }
+  },
+  {
+   "title": "Busta Rhymes - Woo Hah!! Got You All in Chec",
+   "sha": "d47abce3625aaec0",
+   "class": "agree",
+   "edge_case_feel": false,
+   "beat_this_drums": {
+    "bpm": 91.497,
+    "first_downbeat_sec": 21.26
+   },
+   "beat_this_mix": {
+    "bpm": 91.244,
+    "first_downbeat_sec": 4.7
+   },
+   "ground_truth": {
+    "bpm": 91.99,
+    "downbeat_sec": 69.961,
+    "source": "human/Ableton-grade annotation tool"
+   }
+  },
+  {
+   "title": "Chat Pile - Anywhere",
+   "sha": "16d56c56c662a899",
+   "class": "agree",
+   "edge_case_feel": false,
+   "beat_this_drums": {
+    "bpm": 108.854,
+    "first_downbeat_sec": 0.24
+   },
+   "beat_this_mix": {
+    "bpm": 109.098,
+    "first_downbeat_sec": 0.22
+   },
+   "ground_truth": {
+    "bpm": 108.21,
+    "downbeat_sec": 17.936,
+    "source": "human/Ableton-grade annotation tool"
+   }
+  },
+  {
+   "title": "Pharoahe Monch - Simon Says",
+   "sha": "c396abc8925955f6",
+   "class": "agree",
+   "edge_case_feel": false,
+   "beat_this_drums": {
+    "bpm": 93.814,
+    "first_downbeat_sec": 11.12
+   },
+   "beat_this_mix": {
+    "bpm": 93.659,
+    "first_downbeat_sec": 8.58
+   },
+   "ground_truth": {
+    "bpm": 94.29,
+    "downbeat_sec": 11.103,
+    "source": "human/Ableton-grade annotation tool"
+   }
+  },
+  {
+   "title": "Telekinesis - Country Lane",
+   "sha": "500e52cf4ee34d36",
+   "class": "agree",
+   "edge_case_feel": false,
+   "beat_this_drums": {
+    "bpm": 146.083,
+    "first_downbeat_sec": 8.38
+   },
+   "beat_this_mix": {
+    "bpm": 145.749,
+    "first_downbeat_sec": 0.12
+   },
+   "ground_truth": {
+    "bpm": 145.87,
+    "downbeat_sec": 26.545,
+    "source": "human/Ableton-grade annotation tool"
+   }
+  }
+ ]
+}
